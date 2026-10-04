@@ -1,3 +1,17 @@
 backlog/
 idea.md
 PRD.md
+.sdlc/status/
+
+# Java / Maven
+backend/target/
+*.class
+
+# Environment (secrets never belong in the repo)
+.env
+
+# IDE / OS noise
+.idea/
+*.iml
+.vscode/
+.DS_Store
