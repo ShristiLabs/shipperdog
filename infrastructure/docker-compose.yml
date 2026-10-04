@@ -1,0 +1,58 @@
+name: shipperdog
+
+services:
+  postgres:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-shipperdog}
+      POSTGRES_USER: ${POSTGRES_USER:-shipperdog}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-shipperdog}
+    ports:
+      - "${POSTGRES_PORT:-5432}:5432"
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-shipperdog} -d ${POSTGRES_DB:-shipperdog}"]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+
+  redis:
+    image: redis:8-alpine
+    ports:
+      - "${REDIS_PORT:-6379}:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+
+  gcs-emulator:
+    image: fsouza/fake-gcs-server:1.56.1
+    command: ["-scheme", "http", "-host", "0.0.0.0", "-port", "4443"]
+    ports:
+      - "${GCS_EMULATOR_PORT:-4443}:4443"
+
+  api:
+    build:
+      context: ../backend
+    environment:
+      SERVER_PORT: "8080"
+      DATABASE_URL: jdbc:postgresql://postgres:5432/${POSTGRES_DB:-shipperdog}
+      DATABASE_USERNAME: ${POSTGRES_USER:-shipperdog}
+      DATABASE_PASSWORD: ${POSTGRES_PASSWORD:-shipperdog}
+      REDIS_HOST: redis
+      REDIS_PORT: "6379"
+      GCS_EMULATOR_ENDPOINT: http://gcs-emulator:4443
+    ports:
+      - "${API_PORT:-8080}:8080"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      gcs-emulator:
+        condition: service_started
+
+volumes:
+  postgres-data:
