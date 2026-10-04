@@ -9,6 +9,8 @@ spring:
     hibernate:
       ddl-auto: validate
     open-in-view: false
+  flyway:
+    locations: ${FLYWAY_LOCATIONS:classpath:db/migration}
 
 server:
   port: ${SERVER_PORT:8080}
@@ -22,3 +24,12 @@ management:
   endpoint:
     health:
       show-details: ${MANAGEMENT_HEALTH_SHOW_DETAILS:never}
+
+---
+
+spring:
+  config:
+    activate:
+      on-profile: dev
+  flyway:
+    locations: ${FLYWAY_LOCATIONS:classpath:db/migration,classpath:db/seed}
