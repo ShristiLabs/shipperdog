@@ -9,6 +9,7 @@ conventions; every migration must follow them.
 backend/src/main/resources/db/
   migration/            schema migrations, always applied
     V1__baseline_schema.sql
+    V2__identity_auth.sql
   seed/                 dev fixture, applied only when the seed location is active
     R__dev_seed.sql
 ```
@@ -52,9 +53,10 @@ backend/src/main/resources/db/
 - `tenant_id` on `applications` is NULL for organization-owned applications;
   the explicit `ownership_scope` discriminator arrives with S3-02.
 - Forward references: `testers.user_id`, `artifacts.uploaded_by`,
-  `releases.created_by`, `release_approvals.approver` reference the identity
-  user table that lands with S1-03; the foreign keys will be added by that
-  story's migration.
+  `releases.created_by`, `release_approvals.approver` referenced the
+  identity user table before it existed; `V2__identity_auth.sql` (S1-03)
+  created `users` and added the promised foreign keys with explicit
+  `fk_<table>_<column>` names.
 
 ## Status and type columns
 

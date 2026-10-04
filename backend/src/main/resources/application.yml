@@ -12,6 +12,21 @@ spring:
   flyway:
     locations: ${FLYWAY_LOCATIONS:classpath:db/migration}
 
+shipperdog:
+  auth:
+    # HMAC-SHA256 signing key for JWTs. No committed default: the
+    # application refuses to start when blank or shorter than 32 bytes.
+    # Local development supplies it via docker compose (.env); production
+    # supplies a high-entropy secret from its secret manager (PRD 25).
+    jwt-secret: ${AUTH_JWT_SECRET:}
+    issuer: ${AUTH_JWT_ISSUER:shipperdog-api}
+    access-token-ttl: ${AUTH_ACCESS_TOKEN_TTL:PT15M}
+    refresh-token-ttl: ${AUTH_REFRESH_TOKEN_TTL:P7D}
+    lockout-threshold: ${AUTH_LOCKOUT_THRESHOLD:5}
+    lockout-duration: ${AUTH_LOCKOUT_DURATION:PT15M}
+    password-reset-ttl: ${AUTH_PASSWORD_RESET_TTL:PT30M}
+    invitation-ttl: ${AUTH_INVITATION_TTL:P3D}
+
 server:
   port: ${SERVER_PORT:8080}
   shutdown: graceful

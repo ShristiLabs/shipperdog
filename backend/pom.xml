@@ -22,6 +22,7 @@
     <archunit.version>1.5.1</archunit.version>
     <palantir-java-format.version>2.101.0</palantir-java-format.version>
     <testcontainers.version>1.21.4</testcontainers.version>
+    <bouncycastle.version>1.86</bouncycastle.version>
   </properties>
 
   <dependencyManagement>
@@ -44,6 +45,19 @@
     <dependency>
       <groupId>org.springframework.boot</groupId>
       <artifactId>spring-boot-starter-security</artifactId>
+    </dependency>
+    <dependency>
+      <groupId>org.springframework.boot</groupId>
+      <artifactId>spring-boot-starter-security-oauth2-resource-server</artifactId>
+    </dependency>
+    <!-- Argon2id password hashing (issue #3): spring-security-crypto ships the
+         Argon2PasswordEncoder but delegates the algorithm to Bouncy Castle, so
+         the provider must be on the runtime classpath. -->
+    <dependency>
+      <groupId>org.bouncycastle</groupId>
+      <artifactId>bcprov-jdk18on</artifactId>
+      <version>${bouncycastle.version}</version>
+      <scope>runtime</scope>
     </dependency>
     <dependency>
       <groupId>org.springframework.boot</groupId>

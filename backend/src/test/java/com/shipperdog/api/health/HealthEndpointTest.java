@@ -17,7 +17,9 @@ import org.testcontainers.utility.DockerImageName;
  * authentication (for infrastructure probes), while everything else stays
  * locked down by default.
  */
-@SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
+@SpringBootTest(
+        webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT,
+        properties = "shipperdog.auth.jwt-secret=test-jwt-secret-0123456789abcdef0123456789abcdef")
 @Testcontainers
 class HealthEndpointTest {
 

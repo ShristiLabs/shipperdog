@@ -9,7 +9,7 @@ import org.testcontainers.junit.jupiter.Testcontainers;
 import org.testcontainers.utility.DockerImageName;
 
 /** Boots the full context against a real PostgreSQL to prove the scaffold wires up. */
-@SpringBootTest
+@SpringBootTest(properties = "shipperdog.auth.jwt-secret=test-jwt-secret-0123456789abcdef0123456789abcdef")
 @Testcontainers
 class ShipperDogApplicationTests {
 

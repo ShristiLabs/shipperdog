@@ -42,6 +42,9 @@ services:
       DATABASE_URL: jdbc:postgresql://postgres:5432/${POSTGRES_DB:-shipperdog}
       DATABASE_USERNAME: ${POSTGRES_USER:-shipperdog}
       DATABASE_PASSWORD: ${POSTGRES_PASSWORD:-shipperdog}
+      # Local-only HMAC key for JWT signing, same policy as the local-only
+      # database password above. Production must inject a real secret.
+      AUTH_JWT_SECRET: ${AUTH_JWT_SECRET:-shipperdog-local-dev-jwt-secret-0123456789abcdef}
       REDIS_HOST: redis
       REDIS_PORT: "6379"
       GCS_EMULATOR_ENDPOINT: http://gcs-emulator:4443
