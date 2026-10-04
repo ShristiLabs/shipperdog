@@ -131,9 +131,10 @@ response); org-scoped `INVITATION_CREATED` events carry
 `ORG_IDP_CONFIGURED` from the organization module; S1-05 adds
 `ORG_MEMBER_ROLE_CHANGED`, `ORG_MEMBER_REMOVED`,
 `TENANT_MEMBER_ROLE_CHANGED`, and `TENANT_MEMBER_REMOVED` (see
-[authorization](authorization.md)). The current binding
-logs events and republishes them in-process; the durable audit sink
-arrives with S1-06 without changing callers.
+[authorization](authorization.md)). Since S1-06 the binding also
+enriches, redacts, and persists every event to the append-only audit
+store in the same transaction — no caller changed shape (see
+[audit](audit.md)).
 
 ## Extension path
 

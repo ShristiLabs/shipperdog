@@ -15,6 +15,9 @@ Current contents:
   denials, role-assignment endpoints and guards (S1-05).
 - [Organizations](organizations.md) — organization lifecycle, settings,
   and membership surface (S1-04, extended by S1-05).
+- [Audit logging](audit.md) — append-only audit trail, transactional
+  persistence, redaction, correlation ids, and the admin query API
+  (S1-06).
 - [ADR-0001: Flyway with plain SQL migrations](adr/ADR-0001-flyway-schema-migrations.md)
 
 Start with the top-level README for local setup and CI.

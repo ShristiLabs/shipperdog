@@ -12,6 +12,7 @@ backend/src/main/resources/db/
     V2__identity_auth.sql
     V3__organization_management.sql
     V4__rbac_roles.sql
+    V5__audit_framework.sql
   seed/                 dev fixture, applied only when the seed location is active
     R__dev_seed.sql
 ```
@@ -39,7 +40,9 @@ backend/src/main/resources/db/
 - Audit columns on every table: `created_at timestamptz NOT NULL DEFAULT
   now()` and `updated_at timestamptz NOT NULL DEFAULT now()`. The
   application layer maintains `updated_at` (planned JPA auditing); there are
-  no database triggers by decision.
+  no database triggers by decision. The one exception is the append-only
+  `audit_events` table (V5), which carries no `updated_at` because its
+  rows are never updated.
 - Foreign keys are declared bare (`REFERENCES` with no explicit action),
   so PostgreSQL applies its default referential action `NO ACTION`:
   deleting (or updating the key of) a referenced row is rejected. There
@@ -83,6 +86,20 @@ backend/src/main/resources/db/
   migration use the new `org_role` values: PostgreSQL forbids using an
   enum value added in the same transaction, and the permission catalog
   lives in code, so no data migration is needed.
+- `V5__audit_framework.sql` (S1-06) creates the append-only
+  `audit_events` table (see [audit](audit.md) for behavior). It is the
+  deliberate exception to two conventions above: the table has **no
+  `updated_at`** (rows are never updated — insert-only by design) and
+  **no foreign keys** (audit history must survive the entities it
+  references; actors and context are recorded as plain UUIDs).
+  `event_type` is `varchar(64)`, not a PostgreSQL enum, mirroring the
+  `release_gates.gate_type` precedent for open vocabularies — the Java
+  `AuditEventType` enum validates on write. Indexes follow
+  `idx_audit_events_<column>` on `user_id`, `org_id`, `tenant_id`, and
+  `occurred_at`; no unique constraints (identical events are
+  legitimate). Production deployments should additionally `REVOKE
+  UPDATE, DELETE` on the table from the runtime role (documented in
+  the migration itself).
 
 ## Status and type columns
 
