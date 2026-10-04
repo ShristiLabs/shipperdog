@@ -20,7 +20,11 @@ import org.testcontainers.utility.DockerImageName;
  * enabled, exactly one organization, two tenants, and one application exist,
  * with the stable external identifiers later integration tests rely on.
  */
-@SpringBootTest(properties = "spring.flyway.locations=classpath:db/migration,classpath:db/seed")
+@SpringBootTest(
+        properties = {
+            "spring.flyway.locations=classpath:db/migration,classpath:db/seed",
+            "shipperdog.auth.jwt-secret=test-jwt-secret-0123456789abcdef0123456789abcdef"
+        })
 @Testcontainers
 class DevSeedIntegrationTest {
 
@@ -40,10 +44,21 @@ class DevSeedIntegrationTest {
         Integer orgs = jdbc.queryForObject("SELECT count(*) FROM organizations", Integer.class);
         Integer tenants = jdbc.queryForObject("SELECT count(*) FROM tenants", Integer.class);
         Integer applications = jdbc.queryForObject("SELECT count(*) FROM applications", Integer.class);
+        Integer users = jdbc.queryForObject("SELECT count(*) FROM users", Integer.class);
 
         assertThat(orgs).isEqualTo(1);
         assertThat(tenants).isEqualTo(2);
         assertThat(applications).isEqualTo(1);
+        assertThat(users).isEqualTo(1);
+    }
+
+    @Test
+    void devSeedCreatesBootstrapAdminWithArgon2idHash() {
+        var row =
+                jdbc.queryForMap("SELECT email, password_hash, status FROM users WHERE email = 'dev@shipperdog.local'");
+
+        assertThat(row.get("status")).isEqualTo("ACTIVE");
+        assertThat((String) row.get("password_hash")).startsWith("$argon2id$");
     }
 
     @Test
@@ -62,9 +77,11 @@ class DevSeedIntegrationTest {
         Integer orgs = jdbc.queryForObject("SELECT count(*) FROM organizations", Integer.class);
         Integer tenants = jdbc.queryForObject("SELECT count(*) FROM tenants", Integer.class);
         Integer applications = jdbc.queryForObject("SELECT count(*) FROM applications", Integer.class);
+        Integer users = jdbc.queryForObject("SELECT count(*) FROM users", Integer.class);
 
         assertThat(orgs).as("seed re-execution must not duplicate rows").isEqualTo(1);
         assertThat(tenants).isEqualTo(2);
         assertThat(applications).isEqualTo(1);
+        assertThat(users).isEqualTo(1);
     }
 }

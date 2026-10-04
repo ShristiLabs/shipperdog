@@ -23,7 +23,7 @@ import org.testcontainers.utility.DockerImageName;
  * baseline applies cleanly to an empty PostgreSQL, the documented schema
  * objects exist, and re-running migrations is a no-op (restart safety).
  */
-@SpringBootTest
+@SpringBootTest(properties = "shipperdog.auth.jwt-secret=test-jwt-secret-0123456789abcdef0123456789abcdef")
 @Testcontainers
 class MigrationIntegrationTest {
 

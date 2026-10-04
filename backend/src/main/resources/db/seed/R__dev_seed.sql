@@ -1,5 +1,6 @@
 -- R__dev_seed.sql
--- Development fixture: one organization, two tenants, one application.
+-- Development fixture: one organization, two tenants, one application,
+-- and one bootstrap admin user for the identity module (issue #3).
 --
 -- Loaded ONLY when the seed Flyway location is active (the `dev` profile
 -- adds classpath:db/seed to spring.flyway.locations; see
@@ -12,6 +13,17 @@
 
 INSERT INTO organizations (id, name)
 VALUES ('10000000-0000-4000-8000-000000000001', 'ShipperDog Demo Org')
+ON CONFLICT (id) DO NOTHING;
+
+-- Bootstrap dev admin. Argon2id hash of the local-only password
+-- "shipperdog-dev-admin" (issue #3); never valid outside local
+-- development because this file never runs in production or CI.
+INSERT INTO users (id, email, password_hash, full_name)
+VALUES (
+    '10000000-0000-4000-8000-000000000010',
+    'dev@shipperdog.local',
+    '$argon2id$v=19$m=19456,t=2,p=1$rcTTp+SlrHFDVHLZ2ldpgA$IrecYlooXAarJah1NUyEO0taZ+VUYgc715akqUftZU4',
+    'ShipperDog Dev Admin')
 ON CONFLICT (id) DO NOTHING;
 
 INSERT INTO tenants (id, organization_id, name, external_id)

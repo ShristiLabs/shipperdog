@@ -45,6 +45,15 @@ curl http://localhost:8080/actuator/health
 # {"status":"UP","groups":["liveness","readiness"]}
 ```
 
+The dev profile seeds a bootstrap admin (`dev@shipperdog.local` /
+`shipperdog-dev-admin`, local only — see `docs/authentication.md`):
+
+```bash
+curl -s -X POST http://localhost:8080/api/v1/auth/login \
+  -H 'Content-Type: application/json' \
+  -d '{"email":"dev@shipperdog.local","password":"shipperdog-dev-admin"}'
+```
+
 Tear down (and drop the local database volume):
 
 ```bash
@@ -79,8 +88,19 @@ and `.env.example`):
 | `DATABASE_URL` | JDBC URL | `jdbc:postgresql://localhost:5432/shipperdog` |
 | `DATABASE_USERNAME` / `DATABASE_PASSWORD` | Database credentials | `shipperdog` |
 | `SERVER_PORT` | HTTP port | `8080` |
+| `AUTH_JWT_SECRET` | HS256 signing key for auth tokens (min 32 bytes; required) | compose-only dev value |
+| `AUTH_ACCESS_TOKEN_TTL` | Access-token lifetime | `PT15M` |
+| `AUTH_REFRESH_TOKEN_TTL` | Refresh-token lifetime | `P7D` |
+| `AUTH_LOCKOUT_THRESHOLD` | Failed logins before lockout | `5` |
+| `AUTH_LOCKOUT_DURATION` | Lockout duration | `PT15M` |
+| `AUTH_PASSWORD_RESET_TTL` | Password-reset token lifetime | `PT30M` |
+| `AUTH_INVITATION_TTL` | Registration invitation lifetime | `P3D` |
 | `MANAGEMENT_ENDPOINTS_EXPOSE` | Actuator endpoints exposed | `health,info` |
 | `MANAGEMENT_HEALTH_SHOW_DETAILS` | Health detail visibility | `never` |
+
+The API refuses to start without `AUTH_JWT_SECRET`. Production supplies a
+high-entropy value from its secret manager; local development uses the
+compose default, which is local-only exactly like the database password.
 
 ## CI
 
