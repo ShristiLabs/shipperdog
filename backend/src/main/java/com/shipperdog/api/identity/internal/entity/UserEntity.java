@@ -45,6 +45,9 @@ public class UserEntity {
 
     private Instant lastLoginAt;
 
+    /** Platform administrators operate above organization scope (S1-04). */
+    private boolean platformAdmin;
+
     private Instant createdAt;
 
     private Instant updatedAt;
@@ -120,6 +123,14 @@ public class UserEntity {
 
     public void setLastLoginAt(Instant lastLoginAt) {
         this.lastLoginAt = lastLoginAt;
+    }
+
+    public boolean isPlatformAdmin() {
+        return platformAdmin;
+    }
+
+    public void setPlatformAdmin(boolean platformAdmin) {
+        this.platformAdmin = platformAdmin;
     }
 
     public Instant getCreatedAt() {

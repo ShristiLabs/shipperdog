@@ -3,8 +3,8 @@ package com.shipperdog.api.identity.internal.service;
 import com.shipperdog.api.audit.AuditEvent;
 import com.shipperdog.api.audit.AuditEventPublisher;
 import com.shipperdog.api.audit.AuditEventType;
+import com.shipperdog.api.identity.AuthenticatedPrincipal;
 import com.shipperdog.api.identity.internal.AuthException;
-import com.shipperdog.api.identity.internal.AuthenticatedPrincipal;
 import com.shipperdog.api.identity.internal.config.AuthProperties;
 import com.shipperdog.api.identity.internal.crypto.SecureTokens;
 import com.shipperdog.api.identity.internal.entity.PersonalAccessTokenEntity;
@@ -12,6 +12,8 @@ import com.shipperdog.api.identity.internal.entity.RefreshTokenEntity;
 import com.shipperdog.api.identity.internal.entity.UserEntity;
 import com.shipperdog.api.identity.internal.repository.PersonalAccessTokenRepository;
 import com.shipperdog.api.identity.internal.repository.RefreshTokenRepository;
+import com.shipperdog.api.identity.internal.repository.UserRepository;
+import com.shipperdog.api.organization.OrganizationAccess;
 import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
@@ -36,10 +38,13 @@ import org.springframework.transaction.annotation.Transactional;
  * access tokens, rotating JWT refresh tokens (grouped into revocable
  * families), and prefixed opaque personal access tokens for CLI/CI.
  *
- * <p>Organization/tenant claims are attached as soon as a user's membership
- * can be resolved (S1-04/S1-05); until then tokens carry {@code sub} and
- * {@code type} only, and downstream authorization treats them as
- * context-free identities.
+ * <p>Since S1-04, access tokens carry the {@code org_id} claim of the
+ * user's primary organization: the earliest ACTIVE membership. Users
+ * without an active organization get context-free identities. Refresh is
+ * refused for users whose every organization is DEACTIVATED (platform
+ * admins exempt), so deactivation outlives sessions issued before it.
+ * {@code tenant_id} attaches with S1-05/E2 once tenant membership
+ * resolves.
  */
 @Service
 @Transactional
@@ -58,6 +63,8 @@ public class TokenService {
     private final RefreshTokenRepository refreshTokens;
     private final PersonalAccessTokenRepository pats;
     private final AuditEventPublisher audit;
+    private final UserRepository users;
+    private final OrganizationAccess organizations;
 
     TokenService(
             JwtEncoder encoder,
@@ -66,7 +73,9 @@ public class TokenService {
             Clock clock,
             RefreshTokenRepository refreshTokens,
             PersonalAccessTokenRepository pats,
-            AuditEventPublisher audit) {
+            AuditEventPublisher audit,
+            UserRepository users,
+            OrganizationAccess organizations) {
         this.encoder = encoder;
         this.decoder = decoder;
         this.properties = properties;
@@ -74,13 +83,15 @@ public class TokenService {
         this.refreshTokens = refreshTokens;
         this.pats = pats;
         this.audit = audit;
+        this.users = users;
+        this.organizations = organizations;
     }
 
     /** A freshly issued access/refresh pair; the refresh starts a family. */
     public IssuedTokens issueForLogin(UserEntity user) {
         Instant now = Instant.now(clock);
         String refresh = mintRefresh(user.getId(), UUID.randomUUID(), now);
-        String access = mintAccess(user.getId(), null, null, now);
+        String access = mintAccess(user.getId(), primaryOrgId(user.getId()), null, now);
         audit(AuditEventType.TOKEN_ISSUED, user.getId(), true, Map.of("kind", "login"));
         return new IssuedTokens(access, refresh, properties.accessTokenTtl().toSeconds());
     }
@@ -99,9 +110,20 @@ public class TokenService {
         if (record.getExpiresAt().isBefore(now)) {
             throw invalidRefresh();
         }
+        if (deactivatedOrgBlocksUser(record.getUserId())) {
+            // S1-04: org deactivation must outlive tokens issued before it,
+            // so refresh is refused for affected users (platform admins stay
+            // exempt) instead of minting a fresh 7-day session.
+            audit(
+                    AuditEventType.TOKEN_REFRESHED,
+                    record.getUserId(),
+                    false,
+                    Map.of("kind", "refresh", "reason", "organization_deactivated"));
+            throw invalidRefresh();
+        }
         refreshTokens.revokeFamily(record.getFamilyId(), now);
         String rotated = mintRefresh(record.getUserId(), record.getFamilyId(), now);
-        String access = mintAccess(record.getUserId(), null, null, now);
+        String access = mintAccess(record.getUserId(), primaryOrgId(record.getUserId()), null, now);
         audit(AuditEventType.TOKEN_REFRESHED, record.getUserId(), true, Map.of("kind", "refresh"));
         return new IssuedTokens(access, rotated, properties.accessTokenTtl().toSeconds());
     }
@@ -190,6 +212,18 @@ public class TokenService {
             claims.claim(CLAIM_TENANT, tenantId.toString());
         }
         return encode(claims.build());
+    }
+
+    /** Earliest membership, or null when the user belongs to no organization. */
+    private UUID primaryOrgId(UUID userId) {
+        return organizations.primaryOrganizationId(userId).orElse(null);
+    }
+
+    /** Deactivated-org login block (S1-04) with platform-admin exemption. */
+    private boolean deactivatedOrgBlocksUser(UUID userId) {
+        boolean platformAdmin =
+                users.findById(userId).map(UserEntity::isPlatformAdmin).orElse(false);
+        return !platformAdmin && organizations.loginBlockedFor(userId);
     }
 
     private String mintRefresh(UUID userId, UUID familyId, Instant now) {

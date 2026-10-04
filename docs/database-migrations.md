@@ -10,6 +10,7 @@ backend/src/main/resources/db/
   migration/            schema migrations, always applied
     V1__baseline_schema.sql
     V2__identity_auth.sql
+    V3__organization_management.sql
   seed/                 dev fixture, applied only when the seed location is active
     R__dev_seed.sql
 ```
@@ -22,8 +23,10 @@ backend/src/main/resources/db/
   only. Override with the `FLYWAY_LOCATIONS` environment variable if needed.
 - The seed is a repeatable migration (`R__`) with fixed UUIDs and
   `ON CONFLICT DO NOTHING`, so re-runs are no-ops. It provides one
-  organization, two tenants (`demo-acme`, `demo-contoso`), and one
-  application; later integration tests rely on these identifiers.
+  organization (`external_id demo-shipperdog`), two tenants
+  (`demo-acme`, `demo-contoso`), and one application; the bootstrap
+  admin is a platform administrator and `ORG_ADMIN` of the organization
+  (S1-04). Later integration tests rely on these identifiers.
 
 ## Table conventions
 
@@ -57,6 +60,15 @@ backend/src/main/resources/db/
   identity user table before it existed; `V2__identity_auth.sql` (S1-03)
   created `users` and added the promised foreign keys with explicit
   `fk_<table>_<column>` names.
+- `V3__organization_management.sql` (S1-04) is the template for these
+  conventions: it creates `organization_members` (uuid PK, unique
+  `(organization_id, user_id)`, `idx_organization_members_user_id`) and
+  `organization_idp_configs` (unique `organization_id`), adds
+  `organizations.external_id` (unique), `users.platform_admin`, and the
+  optional invitation scope `user_invitations.organization_id` +
+  `role` guarded by `ck_user_invitations_org_role_pair` (both set or
+  both null). All constraints use the explicit `fk_`/`uq_`/`ck_`/`idx_`
+  names.
 
 ## Status and type columns
 
@@ -67,7 +79,12 @@ section 18); other tables carry minimal documented sets that later stories
 extend.
 
 - To add a value: new migration with `ALTER TYPE <type> ADD VALUE '...'`.
+  `V3` did this for `org_status` (`DEACTIVATED`, S1-04); the V1 label
+  `DISABLED` stays reserved-unused — the application never assigns it.
 - Values are never removed or renamed (see rollback policy).
+- `org_role` (`ORG_ADMIN`, `ORG_MEMBER`, S1-04) is the membership-role
+  vocabulary; the RBAC engine (S1-05) extends it when richer role sets
+  are needed.
 - Exception: `release_gates.gate_type` is `varchar(64)` because gate kinds
   are an open, integration-defined vocabulary.
 

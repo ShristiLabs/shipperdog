@@ -1,7 +1,6 @@
 package com.shipperdog.api.identity;
 
 import com.shipperdog.api.identity.internal.AuthException;
-import com.shipperdog.api.identity.internal.AuthenticatedPrincipal;
 import com.shipperdog.api.identity.internal.entity.PersonalAccessTokenEntity;
 import com.shipperdog.api.identity.internal.entity.UserEntity;
 import com.shipperdog.api.identity.internal.repository.UserRepository;
@@ -9,9 +8,12 @@ import com.shipperdog.api.identity.internal.service.AuthService;
 import com.shipperdog.api.identity.internal.service.PasswordResetService;
 import com.shipperdog.api.identity.internal.service.RegistrationService;
 import com.shipperdog.api.identity.internal.service.TokenService;
+import com.shipperdog.api.organization.OrgRole;
+import com.shipperdog.api.organization.OrganizationAccess;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.List;
+import java.util.Locale;
 import java.util.UUID;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -41,18 +43,21 @@ public class AuthController {
     private final PasswordResetService passwordReset;
     private final TokenService tokens;
     private final UserRepository users;
+    private final OrganizationAccess organizations;
 
     AuthController(
             AuthService auth,
             RegistrationService registration,
             PasswordResetService passwordReset,
             TokenService tokens,
-            UserRepository users) {
+            UserRepository users,
+            OrganizationAccess organizations) {
         this.auth = auth;
         this.registration = registration;
         this.passwordReset = passwordReset;
         this.tokens = tokens;
         this.users = users;
+        this.organizations = organizations;
     }
 
     @PostMapping("/login")
@@ -84,12 +89,10 @@ public class AuthController {
     @GetMapping("/me")
     MeResponse me(@AuthenticationPrincipal Object principal) {
         UUID userId;
-        UUID orgId = null;
         UUID tenantId = null;
         String via;
         if (principal instanceof Jwt jwt) {
             userId = UUID.fromString(jwt.getSubject());
-            orgId = parseClaim(jwt, TokenService.CLAIM_ORG);
             tenantId = parseClaim(jwt, TokenService.CLAIM_TENANT);
             via = "jwt";
         } else if (principal instanceof AuthenticatedPrincipal patPrincipal) {
@@ -100,6 +103,7 @@ public class AuthController {
         }
         UserEntity user = users.findById(userId)
                 .orElseThrow(() -> new AuthException(AuthException.Code.INVALID_CREDENTIALS, "user no longer exists"));
+        UUID orgId = organizations.primaryOrganizationId(userId).orElse(null);
         return new MeResponse(
                 user.getId(),
                 user.getEmail(),
@@ -114,9 +118,14 @@ public class AuthController {
     @ResponseStatus(HttpStatus.CREATED)
     InvitationResponse createInvitation(
             @AuthenticationPrincipal Object principal, @RequestBody CreateInvitationRequest request) {
-        RegistrationService.Invitation invitation =
-                registration.createInvitation(requireUserId(principal), request.email());
-        return new InvitationResponse(invitation.email(), invitation.rawToken(), invitation.expiresAt());
+        RegistrationService.Invitation invitation = registration.createInvitation(
+                requireUserId(principal), request.email(), request.organizationId(), parseRole(request.role()));
+        return new InvitationResponse(
+                invitation.email(),
+                invitation.rawToken(),
+                invitation.expiresAt(),
+                invitation.organizationId(),
+                invitation.role() == null ? null : invitation.role().name());
     }
 
     @PostMapping("/password-reset/request")
@@ -181,6 +190,17 @@ public class AuthController {
         return value == null ? null : UUID.fromString(value);
     }
 
+    private static OrgRole parseRole(String role) {
+        if (role == null) {
+            return null;
+        }
+        try {
+            return OrgRole.valueOf(role.trim().toUpperCase(Locale.ROOT));
+        } catch (IllegalArgumentException e) {
+            throw new AuthException(AuthException.Code.INVALID_REQUEST, "role must be ORG_ADMIN or ORG_MEMBER");
+        }
+    }
+
     private record LoginRequest(String email, String password) {}
 
     private record RegisterRequest(String invitationToken, String email, String password, String fullName) {}
@@ -193,7 +213,8 @@ public class AuthController {
 
     private record PasswordResetConfirmRequest(String token, String newPassword) {}
 
-    public record CreateInvitationRequest(String email) {}
+    /** Optional organizationId + role scope the invitation to an organization (S1-04). */
+    public record CreateInvitationRequest(String email, UUID organizationId, String role) {}
 
     public record CreatePatRequest(String name, Long expiresInSeconds) {}
 
@@ -212,7 +233,7 @@ public class AuthController {
         }
     }
 
-    /** Current-actor view; org/tenant appear once membership exists. */
+    /** Current-actor view; org resolves from membership (S1-04), tenant with E2. */
     public record MeResponse(
             UUID id,
             String email,
@@ -223,7 +244,8 @@ public class AuthController {
             String authenticatedVia) {}
 
     /** Created invitation; the token is shown exactly once. */
-    public record InvitationResponse(String email, String invitationToken, Instant expiresAt) {}
+    public record InvitationResponse(
+            String email, String invitationToken, Instant expiresAt, UUID organizationId, String role) {}
 
     /** PAT metadata for listings; the secret never appears here. */
     public record PatResponse(

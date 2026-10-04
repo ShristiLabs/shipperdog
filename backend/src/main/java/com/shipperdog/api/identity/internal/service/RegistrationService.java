@@ -3,6 +3,7 @@ package com.shipperdog.api.identity.internal.service;
 import com.shipperdog.api.audit.AuditEvent;
 import com.shipperdog.api.audit.AuditEventPublisher;
 import com.shipperdog.api.audit.AuditEventType;
+import com.shipperdog.api.identity.PlatformAdmins;
 import com.shipperdog.api.identity.internal.AuthException;
 import com.shipperdog.api.identity.internal.config.AuthProperties;
 import com.shipperdog.api.identity.internal.crypto.SecureTokens;
@@ -10,8 +11,12 @@ import com.shipperdog.api.identity.internal.entity.UserEntity;
 import com.shipperdog.api.identity.internal.entity.UserInvitationEntity;
 import com.shipperdog.api.identity.internal.repository.UserInvitationRepository;
 import com.shipperdog.api.identity.internal.repository.UserRepository;
+import com.shipperdog.api.organization.OrgRole;
+import com.shipperdog.api.organization.OrganizationAccess;
+import com.shipperdog.api.organization.OrganizationException;
 import java.time.Clock;
 import java.time.Instant;
+import java.util.HashMap;
 import java.util.Map;
 import java.util.UUID;
 import org.springframework.security.crypto.password.PasswordEncoder;
@@ -22,7 +27,10 @@ import org.springframework.transaction.annotation.Transactional;
  * Invitation-only registration: an authenticated user invites an address,
  * the invitee presents the one-time invitation token plus a chosen
  * password, and the account is created ACTIVE. Re-inviting an address
- * revokes its previous pending invitation.
+ * revokes its previous pending invitation. Since S1-04, an invitation may
+ * carry an organization and role: organization administrators (or platform
+ * administrators) may invite, and accepting such an invitation grants the
+ * membership with the recorded role.
  */
 @Service
 public class RegistrationService {
@@ -37,6 +45,8 @@ public class RegistrationService {
     private final Clock clock;
     private final InvitationStateRecorder invitationState;
     private final AuditEventPublisher audit;
+    private final PlatformAdmins platformAdmins;
+    private final OrganizationAccess organizations;
 
     RegistrationService(
             UserRepository users,
@@ -45,7 +55,9 @@ public class RegistrationService {
             AuthProperties properties,
             Clock clock,
             InvitationStateRecorder invitationState,
-            AuditEventPublisher audit) {
+            AuditEventPublisher audit,
+            PlatformAdmins platformAdmins,
+            OrganizationAccess organizations) {
         this.users = users;
         this.invitations = invitations;
         this.passwordEncoder = passwordEncoder;
@@ -53,13 +65,33 @@ public class RegistrationService {
         this.clock = clock;
         this.invitationState = invitationState;
         this.audit = audit;
+        this.platformAdmins = platformAdmins;
+        this.organizations = organizations;
     }
 
-    /** Creates an invitation; the raw token is returned exactly once. */
+    /** Creates a platform invitation (no organization context). */
     @Transactional
     public Invitation createInvitation(UUID invitedBy, String rawEmail) {
+        return createInvitation(invitedBy, rawEmail, null, null);
+    }
+
+    /**
+     * Creates an invitation, optionally scoped to an organization with the
+     * role granted on acceptance. Org-scoped invitations require the
+     * inviter to be that organization's administrator (or a platform
+     * administrator).
+     */
+    @Transactional
+    public Invitation createInvitation(UUID invitedBy, String rawEmail, UUID organizationId, OrgRole role) {
         String email = AuthService.normalizeEmail(rawEmail);
         requireValidEmail(email);
+        if (organizationId == null && role != null) {
+            throw new AuthException(AuthException.Code.INVALID_REQUEST, "role requires organizationId");
+        }
+        if (organizationId != null) {
+            requireInvitationPermission(organizationId, invitedBy);
+        }
+        OrgRole grantedRole = organizationId == null ? null : (role == null ? OrgRole.ORG_MEMBER : role);
         Instant now = Instant.now(clock);
         invitations
                 .findByEmailAndStatus(email, UserInvitationEntity.Status.PENDING)
@@ -69,10 +101,21 @@ public class RegistrationService {
                 });
         String rawToken = SecureTokens.randomToken();
         UserInvitationEntity invitation = new UserInvitationEntity(
-                email, invitedBy, SecureTokens.sha256Hex(rawToken), now.plus(properties.invitationTtl()));
+                email,
+                invitedBy,
+                SecureTokens.sha256Hex(rawToken),
+                now.plus(properties.invitationTtl()),
+                organizationId,
+                grantedRole);
         invitations.save(invitation);
-        audit(AuditEventType.INVITATION_CREATED, invitedBy, true, null);
-        return new Invitation(email, rawToken, invitation.getExpiresAt());
+        Map<String, String> detail = new HashMap<>();
+        if (organizationId != null) {
+            detail.put("organizationId", organizationId.toString());
+            detail.put("role", grantedRole.name());
+        }
+        audit.publish(new AuditEvent(
+                AuditEventType.INVITATION_CREATED, Instant.now(clock), invitedBy, organizationId, null, true, detail));
+        return new Invitation(email, rawToken, invitation.getExpiresAt(), organizationId, grantedRole);
     }
 
     /** Accepts an invitation and creates the ACTIVE user account. */
@@ -110,8 +153,31 @@ public class RegistrationService {
         invitation.setStatus(UserInvitationEntity.Status.ACCEPTED);
         invitation.setAcceptedAt(now);
         invitations.save(invitation);
+        if (invitation.getOrganizationId() != null) {
+            try {
+                organizations.addMember(
+                        invitation.getOrganizationId(), user.getId(), invitation.getRole(), invitation.getInvitedBy());
+            } catch (OrganizationException e) {
+                // The organization context became invalid after the invitation
+                // was created (e.g. deactivation); the registration fails
+                // atomically with the same generic error as any dead token.
+                throw invalidInvitation();
+            }
+        }
         audit(AuditEventType.USER_REGISTERED, user.getId(), true, null);
         return user;
+    }
+
+    /** Org-scoped invitations are reserved to org admins / platform admins. */
+    private void requireInvitationPermission(UUID organizationId, UUID invitedBy) {
+        if (!organizations.organizationExists(organizationId)) {
+            throw new AuthException(AuthException.Code.NOT_FOUND, "organization not found");
+        }
+        if (!platformAdmins.isPlatformAdmin(invitedBy)
+                && !organizations.isOrganizationAdmin(organizationId, invitedBy)) {
+            throw new AuthException(
+                    AuthException.Code.FORBIDDEN, "only organization administrators may invite into an organization");
+        }
     }
 
     private void requireValidEmail(String email) {
@@ -138,5 +204,5 @@ public class RegistrationService {
     }
 
     /** Created invitation; {@code rawToken} is shown exactly once. */
-    public record Invitation(String email, String rawToken, Instant expiresAt) {}
+    public record Invitation(String email, String rawToken, Instant expiresAt, UUID organizationId, OrgRole role) {}
 }

@@ -6,6 +6,7 @@ import com.shipperdog.api.audit.AuditEventType;
 import com.shipperdog.api.identity.internal.AuthException;
 import com.shipperdog.api.identity.internal.entity.UserEntity;
 import com.shipperdog.api.identity.internal.repository.UserRepository;
+import com.shipperdog.api.organization.OrganizationAccess;
 import java.time.Clock;
 import java.time.Instant;
 import java.util.Locale;
@@ -20,7 +21,9 @@ import org.springframework.transaction.annotation.Transactional;
  * Email/password login with failed-attempt lockout. Every outcome emits an
  * audit event; every failure path performs a password hash comparison (the
  * dummy digest for unknown addresses) so response timing does not reveal
- * whether an address is registered.
+ * whether an address is registered. Since S1-04, users whose every
+ * organization is DEACTIVATED are refused (uniform 401, distinct audit
+ * reason) unless they are platform administrators.
  */
 @Service
 public class AuthService {
@@ -39,6 +42,7 @@ public class AuthService {
     private final TokenService tokens;
     private final LoginFailureRecorder failures;
     private final AuditEventPublisher audit;
+    private final OrganizationAccess organizations;
 
     AuthService(
             UserRepository users,
@@ -46,13 +50,15 @@ public class AuthService {
             Clock clock,
             TokenService tokens,
             LoginFailureRecorder failures,
-            AuditEventPublisher audit) {
+            AuditEventPublisher audit,
+            OrganizationAccess organizations) {
         this.users = users;
         this.passwordEncoder = passwordEncoder;
         this.clock = clock;
         this.tokens = tokens;
         this.failures = failures;
         this.audit = audit;
+        this.organizations = organizations;
     }
 
     @Transactional
@@ -84,6 +90,13 @@ public class AuthService {
             // REQUIRES_NEW: the counter must survive the rollback this throw causes.
             failures.registerFailure(user.getId());
             audit(AuditEventType.LOGIN_FAILURE, user.getId(), "invalid_credentials");
+            throw invalidCredentials();
+        }
+        if (!user.isPlatformAdmin() && organizations.loginBlockedFor(user.getId())) {
+            // S1-04: a user whose every organization is DEACTIVATED may not
+            // log in; platform administrators stay exempt. The response stays
+            // the uniform generic 401 so organization state is not revealed.
+            audit(AuditEventType.LOGIN_FAILURE, user.getId(), "organization_deactivated");
             throw invalidCredentials();
         }
 
