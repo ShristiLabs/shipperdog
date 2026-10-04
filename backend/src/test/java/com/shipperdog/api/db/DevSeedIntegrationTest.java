@@ -68,6 +68,24 @@ class DevSeedIntegrationTest {
         assertThat(rows).containsExactly("demo-acme", "demo-contoso");
     }
 
+    /** V3 additions (issue #4): platform-admin bootstrap admin administering the demo org. */
+    @Test
+    void devSeedMakesBootstrapAdminPlatformAdminOfDemoOrg() {
+        Boolean platformAdmin = jdbc.queryForObject(
+                "SELECT platform_admin FROM users WHERE email = 'dev@shipperdog.local'", Boolean.class);
+        assertThat(platformAdmin).isTrue();
+
+        var membership = jdbc.queryForMap("SELECT om.role, o.name FROM organization_members om "
+                + "JOIN organizations o ON o.id = om.organization_id "
+                + "JOIN users u ON u.id = om.user_id WHERE u.email = 'dev@shipperdog.local'");
+        assertThat(membership.get("role")).isEqualTo("ORG_ADMIN");
+        assertThat(membership.get("name")).isEqualTo("ShipperDog Demo Org");
+
+        String orgExternalId = jdbc.queryForObject(
+                "SELECT external_id FROM organizations WHERE name = 'ShipperDog Demo Org'", String.class);
+        assertThat(orgExternalId).isEqualTo("demo-shipperdog");
+    }
+
     @Test
     void reRunningSeedScriptAgainstSeededDatabaseIsANoop() {
         ResourceDatabasePopulator populator =

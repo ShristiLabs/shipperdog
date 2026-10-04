@@ -1,5 +1,6 @@
 package com.shipperdog.api.identity.internal.entity;
 
+import com.shipperdog.api.organization.OrgRole;
 import jakarta.persistence.Entity;
 import jakarta.persistence.EnumType;
 import jakarta.persistence.Enumerated;
@@ -40,6 +41,14 @@ public class UserInvitationEntity {
 
     private String tokenHash;
 
+    /** Optional organization context (issue #4): accepting grants membership. */
+    private UUID organizationId;
+
+    /** The membership role granted on acceptance; null for plain invitations. */
+    @Enumerated(EnumType.STRING)
+    @JdbcTypeCode(SqlTypes.NAMED_ENUM)
+    private OrgRole role;
+
     private Instant expiresAt;
 
     private Instant acceptedAt;
@@ -51,10 +60,17 @@ public class UserInvitationEntity {
     protected UserInvitationEntity() {}
 
     public UserInvitationEntity(String email, UUID invitedBy, String tokenHash, Instant expiresAt) {
+        this(email, invitedBy, tokenHash, expiresAt, null, null);
+    }
+
+    public UserInvitationEntity(
+            String email, UUID invitedBy, String tokenHash, Instant expiresAt, UUID organizationId, OrgRole role) {
         this.email = email;
         this.invitedBy = invitedBy;
         this.status = Status.PENDING;
         this.tokenHash = tokenHash;
+        this.organizationId = organizationId;
+        this.role = role;
         this.expiresAt = expiresAt;
     }
 
@@ -92,6 +108,14 @@ public class UserInvitationEntity {
 
     public String getTokenHash() {
         return tokenHash;
+    }
+
+    public UUID getOrganizationId() {
+        return organizationId;
+    }
+
+    public OrgRole getRole() {
+        return role;
     }
 
     public Instant getExpiresAt() {

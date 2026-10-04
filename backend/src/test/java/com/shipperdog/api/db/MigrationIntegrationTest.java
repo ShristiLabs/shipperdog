@@ -107,6 +107,43 @@ class MigrationIntegrationTest {
                         "idx_devices_tester_id");
     }
 
+    /** V3 (issue #4): organization management objects and vocabularies. */
+    @Test
+    void organizationManagementObjectsExist() {
+        Set<String> tables = new HashSet<>(jdbc.queryForList(
+                "SELECT table_name FROM information_schema.tables WHERE table_schema = 'public'", String.class));
+        assertThat(tables).contains("organization_members", "organization_idp_configs");
+
+        Set<String> constraints = new HashSet<>(jdbc.queryForList(
+                "SELECT conname FROM pg_constraint WHERE connamespace = 'public'::regnamespace", String.class));
+        assertThat(constraints)
+                .contains(
+                        "uq_organizations_external_id",
+                        "uq_organization_members_org_user",
+                        "uq_organization_idp_configs_organization",
+                        "fk_organization_members_organization_id",
+                        "fk_organization_members_user_id",
+                        "fk_user_invitations_organization_id",
+                        "fk_organization_idp_configs_organization_id",
+                        "ck_user_invitations_org_role_pair");
+
+        Set<String> indexes = new HashSet<>(
+                jdbc.queryForList("SELECT indexname FROM pg_indexes WHERE schemaname = 'public'", String.class));
+        assertThat(indexes).contains("idx_organization_members_user_id");
+
+        List<String> orgStates = jdbc.queryForList(
+                "SELECT e.enumlabel FROM pg_enum e "
+                        + "JOIN pg_type t ON t.oid = e.enumtypid WHERE t.typname = 'org_status'",
+                String.class);
+        assertThat(orgStates).containsExactlyInAnyOrder("ACTIVE", "DISABLED", "DEACTIVATED");
+
+        List<String> orgRoles = jdbc.queryForList(
+                "SELECT e.enumlabel FROM pg_enum e "
+                        + "JOIN pg_type t ON t.oid = e.enumtypid WHERE t.typname = 'org_role'",
+                String.class);
+        assertThat(orgRoles).containsExactlyInAnyOrder("ORG_ADMIN", "ORG_MEMBER");
+    }
+
     @Test
     void statusColumnsAreBackedByEnumTypes() {
         List<String> releaseStates = jdbc.queryForList(

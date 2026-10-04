@@ -1,4 +1,4 @@
-# Authentication (S1-03)
+# Authentication (S1-03, extended by S1-04)
 
 First-party authentication for the platform: invitation-only user
 registration, email/password login, JWT access tokens with rotating
@@ -6,6 +6,9 @@ refresh tokens, single-use password resets, and personal access tokens
 (PATs) for CLI/CI. Implemented by the `identity` module
 (`backend/src/main/java/com/shipperdog/api/identity`); every auth event
 flows through the `audit` module's `AuditEventPublisher` surface.
+Since S1-04, identity also enforces the organization-deactivation login
+block and attaches the `org_id` claim, both via the `organization`
+module's public `OrganizationAccess` surface.
 
 ## Endpoints (base `/api/v1/auth`)
 
@@ -15,8 +18,8 @@ flows through the `audit` module's `AuditEventPublisher` surface.
 | POST | `/register` | none (invitation token in body) | `201` user view; `400` invalid_invitation / weak_password; `409` email_taken |
 | POST | `/refresh` | none (refresh token in body) | `200` rotated token pair; `401` invalid_refresh_token |
 | POST | `/logout` | none (refresh token in body) | `204`; idempotent — revokes the token family |
-| GET | `/me` | access JWT or PAT | `200` current actor (`orgId`/`tenantId` null until S1-04) |
-| POST | `/invitations` | access JWT or PAT | `201` with the raw invitation token (shown once); re-inviting an address revokes its previous pending invitation |
+| GET | `/me` | access JWT or PAT | `200` current actor (`orgId` resolves live from the earliest ACTIVE membership, S1-04; `tenantId` null until E2) |
+| POST | `/invitations` | access JWT or PAT | `201` with the raw invitation token (shown once); re-inviting an address revokes its previous pending invitation. Optional `organizationId` + `role` (`ORG_ADMIN`/`ORG_MEMBER`, default `ORG_MEMBER`) scope it to an organization: `403` unless the inviter is that organization's admin or a platform admin, `404` unknown organization, `400` invalid role or `role` without `organizationId`; accepting grants the membership with the recorded role |
 | POST | `/password-reset/request` | none | `202` always — known and unknown addresses are indistinguishable |
 | POST | `/password-reset/confirm` | none (token in body) | `204`; `400` invalid_reset_token (expired or already used) |
 | POST | `/tokens` | access JWT or PAT | `201` with the raw PAT (shown once); optional `expiresInSeconds` |
@@ -28,13 +31,23 @@ flows through the `audit` module's `AuditEventPublisher` surface.
 - **Access tokens** are HS256 JWTs: `iss` (configurable), `sub` (user
   id), `type=access`, `jti`, `iat`, `exp`. TTL defaults to 15 minutes
   (the issue caps it there; authorization caching in S7-03 must not
-  depend on it). The `org_id` and `tenant_id` claims are attached once a
-  user's membership can be resolved (S1-04/S1-05); until then they are
-  absent, never defaulted.
+  depend on it). Since S1-04 the `org_id` claim carries the user's
+  primary organization: the **earliest-created membership in an ACTIVE
+  organization**. It is absent — never defaulted, never a deactivated
+  organization's id — when the user has no active organization
+  (org-less users, and members of only deactivated organizations, such
+  as exempt platform admins). `tenant_id` attaches with E2 once tenant
+  membership resolves.
 - **Refresh tokens** are JWTs with `type=refresh`, TTL 7 days by
   default. Every use rotates them; reuse of an already-rotated token
   revokes the whole token family and emits a `TOKEN_REUSE_DETECTED`
   audit event. Logout and password reset revoke families as well.
+  Since S1-04, refresh is also refused (`401 invalid_refresh_token`,
+  failed `TOKEN_REFRESHED` audit event) while every organization of the
+  user is DEACTIVATED, so deactivation outlives sessions issued before
+  it; platform administrators are exempt. The family is intentionally
+  NOT revoked on that refusal — reactivating the organization restores
+  the session.
 - Refresh tokens are rejected as access credentials, and access tokens
   are rejected at `/refresh`.
 - **Personal access tokens** are opaque (`sdp_` + 43 URL-safe chars),
@@ -52,6 +65,15 @@ flows through the `audit` module's `AuditEventPublisher` surface.
   all answer the same generic 401, with a dummy Argon2 comparison on
   every failure path so timing does not reveal account state. A
   `USER_LOCKED_OUT` audit event accompanies the lock.
+- Organization deactivation (S1-04): a user whose organizations are all
+  DEACTIVATED (and who has at least one membership) is refused at login
+  and at token refresh. The response stays the uniform generic 401 —
+  organization state is not revealed to the caller — while the
+  accompanying `LOGIN_FAILURE` audit event carries the distinct reason
+  `organization_deactivated`. **Platform administrators**
+  (`users.platform_admin`) are exempt: they may hold deactivated-only
+  memberships and still log in and refresh; their access tokens carry no
+  `org_id` in that state.
 - Password reset tokens are single-use with a 30-minute TTL. Until the
   notification module exists (S12-02), the reset link is emitted on a
   WARN log line; treat local logs as sensitive. Confirming a reset
@@ -72,8 +94,10 @@ All values are environment variables (defaults in parentheses):
 
 ## Local development
 
-The dev seed (docker compose, `dev` profile) provides a bootstrap admin:
-`dev@shipperdog.local` / `shipperdog-dev-admin`. It never exists in
+The dev seed (docker compose, `dev` profile) provides a bootstrap
+**platform administrator**: `dev@shipperdog.local` /
+`shipperdog-dev-admin`, flagged `platform_admin` and administering the
+seeded demo organization as `ORG_ADMIN` (S1-04). It never exists in
 production or clean-database CI runs.
 
 ```bash
@@ -88,13 +112,21 @@ curl -s -X POST http://localhost:8080/api/v1/auth/login \
 `INVITATION_CREATED`, `PASSWORD_RESET_REQUESTED`,
 `PASSWORD_RESET_COMPLETED`, `TOKEN_ISSUED`, `TOKEN_REFRESHED`,
 `TOKEN_REVOKED`, `TOKEN_REUSE_DETECTED`, `PAT_CREATED`, `PAT_REVOKED`.
-The current binding logs events and republishes them in-process; the
-durable audit sink arrives with S1-06 without changing callers.
+`LOGIN_FAILURE` distinguishes `invalid_credentials` from
+`organization_deactivated` in its audit detail (never in the HTTP
+response); org-scoped `INVITATION_CREATED` events carry
+`organizationId` and `role`. The S1-04 organization mutations emit
+`ORGANIZATION_CREATED`, `ORGANIZATION_UPDATED`, `ORG_MEMBER_ADDED`, and
+`ORG_IDP_CONFIGURED` from the organization module. The current binding
+logs events and republishes them in-process; the durable audit sink
+arrives with S1-06 without changing callers.
 
 ## Extension path
 
 Credential sources sit behind the identity services so an OIDC provider
-can be added (S14-01) as an alternative without touching callers. There
-is deliberately no organization or RBAC logic here — that lands with
-S1-04/S1-05, which will also start attaching `org_id`/`tenant_id`
-claims.
+can be added (S14-01) as an alternative without touching callers; the
+per-organization IdP configuration record itself is stored (not yet
+functional) by the `organization` module since S1-04. Identity touches
+organizations only through the `OrganizationAccess` interface (login
+block, `org_id` claim, invitation membership grants) — the general RBAC
+engine lands with S1-05 and `tenant_id` claims with E2.

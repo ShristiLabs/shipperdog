@@ -18,7 +18,8 @@ public class AuthException extends RuntimeException {
         EMAIL_TAKEN(HttpStatus.CONFLICT, "email_taken"),
         INVALID_RESET_TOKEN(HttpStatus.BAD_REQUEST, "invalid_reset_token"),
         INVALID_REQUEST(HttpStatus.BAD_REQUEST, "invalid_request"),
-        NOT_FOUND(HttpStatus.NOT_FOUND, "not_found");
+        NOT_FOUND(HttpStatus.NOT_FOUND, "not_found"),
+        FORBIDDEN(HttpStatus.FORBIDDEN, "forbidden");
 
         final HttpStatus httpStatus;
         final String errorSlug;
