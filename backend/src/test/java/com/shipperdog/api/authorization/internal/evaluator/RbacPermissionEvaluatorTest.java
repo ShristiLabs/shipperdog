@@ -2,9 +2,11 @@ package com.shipperdog.api.authorization.internal.evaluator;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import com.shipperdog.api.audit.AuditLogger;
 import com.shipperdog.api.organization.OrgRole;
 import com.shipperdog.api.tenant.TenantAccess;
 import com.shipperdog.api.tenant.TenantRole;
+import java.time.Clock;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -27,8 +29,7 @@ class RbacPermissionEvaluatorTest {
 
     @Test
     void failsClosedOnUnauthenticatedOrUnrecognizedPrincipals() {
-        RbacPermissionEvaluator evaluator =
-                new RbacPermissionEvaluator(grants(snapshot(UUID.randomUUID(), false, Map.of(), Map.of())));
+        RbacPermissionEvaluator evaluator = evaluator(grants(snapshot(UUID.randomUUID(), false, Map.of(), Map.of())));
         Authentication unauthenticated = new UsernamePasswordAuthenticationToken(jwt(UUID.randomUUID()), null);
         Authentication stringPrincipal = new UsernamePasswordAuthenticationToken("not-a-principal", null, List.of());
 
@@ -44,8 +45,7 @@ class RbacPermissionEvaluatorTest {
     void failsClosedOnUnknownPermissionsAndMalformedTargets() {
         UUID userId = UUID.randomUUID();
         Authentication auth = jwtAuth(userId);
-        RbacPermissionEvaluator evaluator =
-                new RbacPermissionEvaluator(grants(snapshot(userId, false, Map.of(), Map.of())));
+        RbacPermissionEvaluator evaluator = evaluator(grants(snapshot(userId, false, Map.of(), Map.of())));
 
         assertThat(evaluator.hasPermission(auth, UUID.randomUUID(), "organization", "made:up:code"))
                 .as("permissions outside the catalog are denied")
@@ -68,8 +68,7 @@ class RbacPermissionEvaluatorTest {
     void platformAdministratorsPassPlatformScopeByWildcard() {
         UUID userId = UUID.randomUUID();
         Authentication auth = jwtAuth(userId);
-        RbacPermissionEvaluator evaluator =
-                new RbacPermissionEvaluator(grants(snapshot(userId, true, Map.of(), Map.of())));
+        RbacPermissionEvaluator evaluator = evaluator(grants(snapshot(userId, true, Map.of(), Map.of())));
 
         assertThat(evaluator.hasPermission(auth, UUID.randomUUID(), "platform", "platform:organizations:create"))
                 .as("platform administrators hold every permission (PRD 7.1 wildcard)")
@@ -82,7 +81,7 @@ class RbacPermissionEvaluatorTest {
         UUID orgOne = UUID.randomUUID();
         UUID orgTwo = UUID.randomUUID();
         Authentication auth = jwtAuth(userId);
-        RbacPermissionEvaluator evaluator = new RbacPermissionEvaluator(grants(
+        RbacPermissionEvaluator evaluator = evaluator(grants(
                 snapshot(userId, false, Map.of(orgOne, OrgRole.ORG_ADMIN, orgTwo, OrgRole.ORG_MEMBER), Map.of())));
 
         assertThat(evaluator.hasPermission(auth, orgOne, "organization", "org:members:read"))
@@ -104,32 +103,32 @@ class RbacPermissionEvaluatorTest {
         Authentication auth = jwtAuth(userId);
         TenantAccess ownedByOrg = owningOrg(tenant, owningOrg);
 
-        RbacPermissionEvaluator tenantAdmin = new RbacPermissionEvaluator(grants(
+        RbacPermissionEvaluator tenantAdmin = evaluator(grants(
                 new UserRolesSnapshot(userId, false, Map.of(), Map.of(tenant, TenantRole.TENANT_ADMIN), ownedByOrg)));
         assertThat(tenantAdmin.hasPermission(auth, tenant, "tenant", "tenant:members:read"))
                 .as("TENANT_ADMIN holds tenant:members:read at their tenant")
                 .isTrue();
 
-        RbacPermissionEvaluator tenantTester = new RbacPermissionEvaluator(grants(
+        RbacPermissionEvaluator tenantTester = evaluator(grants(
                 new UserRolesSnapshot(userId, false, Map.of(), Map.of(tenant, TenantRole.TENANT_TESTER), ownedByOrg)));
         assertThat(tenantTester.hasPermission(auth, tenant, "tenant", "tenant:members:read"))
                 .as("TENANT_TESTER lacks tenant:members:read")
                 .isFalse();
 
-        RbacPermissionEvaluator orgOverlay = new RbacPermissionEvaluator(grants(
+        RbacPermissionEvaluator orgOverlay = evaluator(grants(
                 new UserRolesSnapshot(userId, false, Map.of(owningOrg, OrgRole.ORG_ADMIN), Map.of(), ownedByOrg)));
         assertThat(orgOverlay.hasPermission(auth, tenant, "tenant", "tenant:members:manage"))
                 .as("ORG_ADMIN of the owning organization holds tenant permissions (union)")
                 .isTrue();
 
-        RbacPermissionEvaluator noGrantChannel = new RbacPermissionEvaluator(
+        RbacPermissionEvaluator noGrantChannel = evaluator(
                 grants(new UserRolesSnapshot(userId, false, Map.of(owningOrg, OrgRole.VIEWER), Map.of(), ownedByOrg)));
         assertThat(noGrantChannel.hasPermission(auth, tenant, "tenant", "tenant:members:read"))
                 .as("VIEWER in the owning organization grants nothing in the tenant")
                 .isFalse();
 
-        RbacPermissionEvaluator unknownTenant = new RbacPermissionEvaluator(
-                grants(new UserRolesSnapshot(userId, false, Map.of(), Map.of(), unknownTenants())));
+        RbacPermissionEvaluator unknownTenant =
+                evaluator(grants(new UserRolesSnapshot(userId, false, Map.of(), Map.of(), unknownTenants())));
         assertThat(unknownTenant.hasPermission(auth, UUID.randomUUID(), "tenant", "tenant:members:read"))
                 .as("tenants without an owning organization fall back to membership only")
                 .isFalse();
@@ -139,8 +138,8 @@ class RbacPermissionEvaluatorTest {
     void appScopeFailsClosedUntilApplicationRecordsExist() {
         UUID userId = UUID.randomUUID();
         Authentication auth = jwtAuth(userId);
-        RbacPermissionEvaluator evaluator = new RbacPermissionEvaluator(
-                grants(snapshot(userId, false, Map.of(UUID.randomUUID(), OrgRole.VIEWER), Map.of())));
+        RbacPermissionEvaluator evaluator =
+                evaluator(grants(snapshot(userId, false, Map.of(UUID.randomUUID(), OrgRole.VIEWER), Map.of())));
 
         assertThat(evaluator.hasPermission(auth, UUID.randomUUID(), "application", "app:applications:read"))
                 .as("app: permissions stay denied even for roles that list them (E3 fail-closed)")
@@ -150,6 +149,11 @@ class RbacPermissionEvaluatorTest {
     // ---------------------------------------------------------------------
     // Fixtures
     // ---------------------------------------------------------------------
+
+    /** Evaluator under test; audit emission goes to a no-op publisher. */
+    private static RbacPermissionEvaluator evaluator(RequestRoleGrants grants) {
+        return new RbacPermissionEvaluator(grants, new AuditLogger(event -> {}, Clock.systemUTC()));
+    }
 
     private static Authentication jwtAuth(UUID userId) {
         return new UsernamePasswordAuthenticationToken(jwt(userId), null, List.of());

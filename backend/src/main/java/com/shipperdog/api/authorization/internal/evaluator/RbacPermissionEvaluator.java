@@ -1,17 +1,24 @@
 package com.shipperdog.api.authorization.internal.evaluator;
 
+import com.shipperdog.api.audit.AuditEvent;
+import com.shipperdog.api.audit.AuditEventType;
+import com.shipperdog.api.audit.AuditLogger;
 import com.shipperdog.api.authorization.Permission;
 import com.shipperdog.api.authorization.RolePermissions;
 import com.shipperdog.api.identity.AuthenticatedPrincipal;
 import com.shipperdog.api.organization.OrgRole;
 import com.shipperdog.api.tenant.TenantRole;
 import java.io.Serializable;
+import java.util.LinkedHashMap;
+import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
 import org.springframework.security.access.PermissionEvaluator;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.stereotype.Component;
+import org.springframework.web.context.request.RequestContextHolder;
+import org.springframework.web.context.request.ServletRequestAttributes;
 
 /**
  * The single enforcement point of the RBAC engine (issue #5). Controller
@@ -48,9 +55,11 @@ import org.springframework.stereotype.Component;
 public class RbacPermissionEvaluator implements PermissionEvaluator {
 
     private final RequestRoleGrants grants;
+    private final AuditLogger audit;
 
-    RbacPermissionEvaluator(RequestRoleGrants grants) {
+    RbacPermissionEvaluator(RequestRoleGrants grants, AuditLogger audit) {
         this.grants = grants;
+        this.audit = audit;
     }
 
     @Override
@@ -63,6 +72,14 @@ public class RbacPermissionEvaluator implements PermissionEvaluator {
     @Override
     public boolean hasPermission(
             Authentication authentication, Serializable targetId, String targetType, Object permission) {
+        boolean allowed = decide(authentication, targetId, permission);
+        if (!allowed && authentication != null && authentication.isAuthenticated()) {
+            userIdOf(authentication).ifPresent(actor -> recordDenial(actor, permission));
+        }
+        return allowed;
+    }
+
+    private boolean decide(Authentication authentication, Serializable targetId, Object permission) {
         if (authentication == null || !authentication.isAuthenticated()) {
             return false;
         }
@@ -90,6 +107,27 @@ public class RbacPermissionEvaluator implements PermissionEvaluator {
             case "tenant" -> scopeId != null && tenantGrants(snapshot, scopeId, required);
             default -> false; // app scope: fail-closed until E3
         };
+    }
+
+    /**
+     * Opaque 403s (PRD 12) leave no HTTP trace of what was denied, so the
+     * audit trail is the only record (issue #6): every authenticated
+     * permission denial emits an ACCESS_DENIED event carrying the actor,
+     * the required permission, and the attempted endpoint. Unauthenticated
+     * attempts are 401s at the filter chain and are not audited here.
+     */
+    private void recordDenial(UUID actor, Object permission) {
+        Map<String, String> detail = new LinkedHashMap<>();
+        detail.put("permission", permission == null ? "unknown" : permission.toString());
+        if (RequestContextHolder.getRequestAttributes() instanceof ServletRequestAttributes attributes) {
+            detail.put("method", attributes.getRequest().getMethod());
+            detail.put("uri", attributes.getRequest().getRequestURI());
+        }
+        audit.record(AuditEvent.builder(AuditEventType.ACCESS_DENIED)
+                .userId(actor)
+                .success(false)
+                .detail(detail)
+                .build());
     }
 
     private boolean orgGrants(UserRolesSnapshot snapshot, UUID organizationId, Permission required) {

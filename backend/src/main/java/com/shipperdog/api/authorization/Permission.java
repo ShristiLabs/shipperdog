@@ -34,6 +34,7 @@ import java.util.Optional;
 public enum Permission {
     // platform scope
     PLATFORM_ORGANIZATIONS_CREATE("platform:organizations:create"),
+    PLATFORM_AUDIT_READ("platform:audit:read"),
 
     // org scope
     ORG_ORGANIZATIONS_READ("org:organizations:read"),

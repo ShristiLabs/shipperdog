@@ -102,7 +102,9 @@ with no hint about which permission was missing or whether the target
 resource exists. A denied caller cannot distinguish an existing
 organization from an unknown id; a permitted caller still learns
 existence through ordinary `404`s. Denial detail (who/what) belongs to
-the audit trail, never the HTTP response.
+the audit trail, never the HTTP response. Since S1-06 every
+authenticated denial is recorded there automatically as an
+`ACCESS_DENIED` event (see [audit](audit.md)).
 
 ## Role-assignment endpoints
 

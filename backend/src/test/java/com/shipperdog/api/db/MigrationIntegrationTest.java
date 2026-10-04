@@ -4,6 +4,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 import java.util.HashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 import javax.sql.DataSource;
 import org.flywaydb.core.Flyway;
@@ -197,5 +198,58 @@ class MigrationIntegrationTest {
                         "ROLLED_BACK",
                         "COMPLETED",
                         "FAILED");
+    }
+
+    /** V5 (issue #6): the append-only audit store. */
+    @Test
+    void auditFrameworkObjectsExist() {
+        Set<String> tables = new HashSet<>(jdbc.queryForList(
+                "SELECT table_name FROM information_schema.tables WHERE table_schema = 'public'", String.class));
+        assertThat(tables).contains("audit_events");
+
+        Set<String> columns = new HashSet<>(jdbc.queryForList(
+                "SELECT column_name FROM information_schema.columns "
+                        + "WHERE table_schema = 'public' AND table_name = 'audit_events'",
+                String.class));
+        assertThat(columns)
+                .contains(
+                        "id",
+                        "event_type",
+                        "occurred_at",
+                        "created_at",
+                        "user_id",
+                        "org_id",
+                        "tenant_id",
+                        "application_id",
+                        "version_id",
+                        "artifact_id",
+                        "ip_address",
+                        "correlation_id",
+                        "reason",
+                        "success",
+                        "detail",
+                        "before_snapshot",
+                        "after_snapshot");
+        assertThat(columns)
+                .as("the append-only table deliberately has no updated_at (documented in V5)")
+                .doesNotContain("updated_at");
+
+        Set<String> indexes = new HashSet<>(
+                jdbc.queryForList("SELECT indexname FROM pg_indexes WHERE schemaname = 'public'", String.class));
+        assertThat(indexes)
+                .contains(
+                        "idx_audit_events_user_id",
+                        "idx_audit_events_org_id",
+                        "idx_audit_events_tenant_id",
+                        "idx_audit_events_occurred_at");
+
+        List<Map<String, Object>> nullability =
+                jdbc.queryForList("SELECT column_name, is_nullable FROM information_schema.columns "
+                        + "WHERE table_schema = 'public' AND table_name = 'audit_events' "
+                        + "AND column_name IN ('event_type', 'occurred_at', 'success')");
+        assertThat(nullability)
+                .as("core audit fields are mandatory")
+                .hasSize(3)
+                .allSatisfy(column -> assertThat(column.get("is_nullable")).isEqualTo("NO"));
     }
 }
