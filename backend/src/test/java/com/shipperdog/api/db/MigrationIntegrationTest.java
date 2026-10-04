@@ -141,7 +141,40 @@ class MigrationIntegrationTest {
                 "SELECT e.enumlabel FROM pg_enum e "
                         + "JOIN pg_type t ON t.oid = e.enumtypid WHERE t.typname = 'org_role'",
                 String.class);
-        assertThat(orgRoles).containsExactlyInAnyOrder("ORG_ADMIN", "ORG_MEMBER");
+        assertThat(orgRoles)
+                .containsExactlyInAnyOrder(
+                        "ORG_ADMIN",
+                        "ORG_MEMBER",
+                        "APP_OWNER",
+                        "DEVELOPER",
+                        "QA_ENGINEER",
+                        "RELEASE_MANAGER",
+                        "SECURITY_REVIEWER",
+                        "COMPLIANCE_REVIEWER",
+                        "VIEWER");
+    }
+
+    /** V4 (issue #5): tenant-scoped role vocabulary and memberships. */
+    @Test
+    void rbacObjectsExist() {
+        Set<String> tables = new HashSet<>(jdbc.queryForList(
+                "SELECT table_name FROM information_schema.tables WHERE table_schema = 'public'", String.class));
+        assertThat(tables).contains("tenant_members");
+
+        Set<String> constraints = new HashSet<>(jdbc.queryForList(
+                "SELECT conname FROM pg_constraint WHERE connamespace = 'public'::regnamespace", String.class));
+        assertThat(constraints)
+                .contains("uq_tenant_members_tenant_user", "fk_tenant_members_tenant_id", "fk_tenant_members_user_id");
+
+        Set<String> indexes = new HashSet<>(
+                jdbc.queryForList("SELECT indexname FROM pg_indexes WHERE schemaname = 'public'", String.class));
+        assertThat(indexes).contains("idx_tenant_members_user_id");
+
+        List<String> tenantRoles = jdbc.queryForList(
+                "SELECT e.enumlabel FROM pg_enum e "
+                        + "JOIN pg_type t ON t.oid = e.enumtypid WHERE t.typname = 'tenant_role'",
+                String.class);
+        assertThat(tenantRoles).containsExactlyInAnyOrder("TENANT_ADMIN", "TENANT_TESTER");
     }
 
     @Test

@@ -11,6 +11,7 @@ backend/src/main/resources/db/
     V1__baseline_schema.sql
     V2__identity_auth.sql
     V3__organization_management.sql
+    V4__rbac_roles.sql
   seed/                 dev fixture, applied only when the seed location is active
     R__dev_seed.sql
 ```
@@ -69,6 +70,19 @@ backend/src/main/resources/db/
   `role` guarded by `ck_user_invitations_org_role_pair` (both set or
   both null). All constraints use the explicit `fk_`/`uq_`/`ck_`/`idx_`
   names.
+- `V4__rbac_roles.sql` (S1-05) is the RBAC vocabulary migration: it
+  expands `org_role` with the seven PRD section 7 functional roles
+  (`APP_OWNER`, `DEVELOPER`, `QA_ENGINEER`, `RELEASE_MANAGER`,
+  `SECURITY_REVIEWER`, `COMPLIANCE_REVIEWER`, `VIEWER`) via
+  expand-only `ALTER TYPE ... ADD VALUE IF NOT EXISTS`, creates the
+  `tenant_role` enum (`TENANT_ADMIN`, `TENANT_TESTER`) and the
+  `tenant_members` table (uuid PK, unique `(tenant_id, user_id)` as
+  `uq_tenant_members_tenant_user`, named `fk_`s to `tenants` and
+  `users`, `idx_tenant_members_user_id`). Tenant membership is
+  independent of organization membership. No statements in the
+  migration use the new `org_role` values: PostgreSQL forbids using an
+  enum value added in the same transaction, and the permission catalog
+  lives in code, so no data migration is needed.
 
 ## Status and type columns
 
@@ -82,9 +96,12 @@ extend.
   `V3` did this for `org_status` (`DEACTIVATED`, S1-04); the V1 label
   `DISABLED` stays reserved-unused — the application never assigns it.
 - Values are never removed or renamed (see rollback policy).
-- `org_role` (`ORG_ADMIN`, `ORG_MEMBER`, S1-04) is the membership-role
-  vocabulary; the RBAC engine (S1-05) extends it when richer role sets
-  are needed.
+- `org_role` (`ORG_ADMIN`, `ORG_MEMBER` since V3) is the membership-role
+  vocabulary; V4 (S1-05) extended it to nine values with the PRD
+  section 7 functional roles — the full vocabulary and its
+  permission mapping are documented in
+  [authorization](authorization.md). `tenant_role` (`TENANT_ADMIN`,
+  `TENANT_TESTER`) is the tenant-scoped counterpart, also from V4.
 - Exception: `release_gates.gate_type` is `varchar(64)` because gate kinds
   are an open, integration-defined vocabulary.
 

@@ -1,11 +1,12 @@
 package com.shipperdog.api.organization;
 
+import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
 
 /**
  * The organization module's public query/command surface for other
- * modules (issue #4). Implementation lives in the module's
+ * modules (issues #4 and #5). Implementation lives in the module's
  * {@code .internal.} packages; cross-module callers must use only this
  * interface (enforced by ArchUnit).
  */
@@ -30,6 +31,14 @@ public interface OrganizationAccess {
 
     /** Whether the user holds an ORG_ADMIN membership in the organization. */
     boolean isOrganizationAdmin(UUID organizationId, UUID userId);
+
+    /**
+     * The user's roles in ACTIVE organizations, keyed by organization id
+     * (issue #5). Roles held in DEACTIVATED organizations grant nothing
+     * and are omitted, so deactivation revokes effective permissions
+     * without touching memberships.
+     */
+    Map<UUID, OrgRole> activeOrganizationRoles(UUID userId);
 
     /** Whether the organization exists. */
     boolean organizationExists(UUID organizationId);

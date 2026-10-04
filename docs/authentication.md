@@ -1,4 +1,4 @@
-# Authentication (S1-03, extended by S1-04)
+# Authentication (S1-03, extended by S1-04 and S1-05)
 
 First-party authentication for the platform: invitation-only user
 registration, email/password login, JWT access tokens with rotating
@@ -19,7 +19,7 @@ module's public `OrganizationAccess` surface.
 | POST | `/refresh` | none (refresh token in body) | `200` rotated token pair; `401` invalid_refresh_token |
 | POST | `/logout` | none (refresh token in body) | `204`; idempotent — revokes the token family |
 | GET | `/me` | access JWT or PAT | `200` current actor (`orgId` resolves live from the earliest ACTIVE membership, S1-04; `tenantId` null until E2) |
-| POST | `/invitations` | access JWT or PAT | `201` with the raw invitation token (shown once); re-inviting an address revokes its previous pending invitation. Optional `organizationId` + `role` (`ORG_ADMIN`/`ORG_MEMBER`, default `ORG_MEMBER`) scope it to an organization: `403` unless the inviter is that organization's admin or a platform admin, `404` unknown organization, `400` invalid role or `role` without `organizationId`; accepting grants the membership with the recorded role |
+| POST | `/invitations` | access JWT or PAT | `201` with the raw invitation token (shown once); re-inviting an address revokes its previous pending invitation. Optional `organizationId` + `role` (any `org_role` value, default `ORG_MEMBER`) scope it to an organization: since S1-05 the inviter needs the `org:members:invite` permission there (organization administrators and platform administrators hold it) and denials are opaque `403`s; `404` unknown organization, `400` invalid role or `role` without `organizationId`; accepting grants the membership with the recorded role |
 | POST | `/password-reset/request` | none | `202` always — known and unknown addresses are indistinguishable |
 | POST | `/password-reset/confirm` | none (token in body) | `204`; `400` invalid_reset_token (expired or already used) |
 | POST | `/tokens` | access JWT or PAT | `201` with the raw PAT (shown once); optional `expiresInSeconds` |
@@ -37,7 +37,10 @@ module's public `OrganizationAccess` surface.
   organization's id — when the user has no active organization
   (org-less users, and members of only deactivated organizations, such
   as exempt platform admins). `tenant_id` attaches with E2 once tenant
-  membership resolves.
+  membership resolves. Since S1-05, tokens deliberately carry **no role
+  claims**: the RBAC engine evaluates permissions against live database
+  memberships on every request (see [authorization](authorization.md)),
+  so role changes take effect immediately.
 - **Refresh tokens** are JWTs with `type=refresh`, TTL 7 days by
   default. Every use rotates them; reuse of an already-rotated token
   revokes the whole token family and emits a `TOKEN_REUSE_DETECTED`
@@ -47,13 +50,21 @@ module's public `OrganizationAccess` surface.
   user is DEACTIVATED, so deactivation outlives sessions issued before
   it; platform administrators are exempt. The family is intentionally
   NOT revoked on that refusal — reactivating the organization restores
-  the session.
+  the session. Since S1-05, a `DISABLED` account is refused at refresh
+  AND its family is revoked (reason `account_disabled`) — disabling an
+  account ends its sessions, while organization deactivation stays
+  reversible. Role demotions and membership removals also revoke
+  families (reasons `role_demoted` / `membership_removed`); the
+  evaluator's live role reads make even unrevoked short-lived access
+  tokens respect the change at once.
 - Refresh tokens are rejected as access credentials, and access tokens
   are rejected at `/refresh`.
 - **Personal access tokens** are opaque (`sdp_` + 43 URL-safe chars),
   returned exactly once, and stored only as SHA-256 digests. The
   listing shows a short prefix. `last_used_at` is refreshed at most
-  once per minute per token.
+  once per minute per token. Since S1-05, PAT authentication re-checks
+  the user's status, so a `DISABLED` account cannot keep using existing
+  PATs (401, same as an unknown token).
 
 ## Security behavior
 
@@ -117,7 +128,10 @@ curl -s -X POST http://localhost:8080/api/v1/auth/login \
 response); org-scoped `INVITATION_CREATED` events carry
 `organizationId` and `role`. The S1-04 organization mutations emit
 `ORGANIZATION_CREATED`, `ORGANIZATION_UPDATED`, `ORG_MEMBER_ADDED`, and
-`ORG_IDP_CONFIGURED` from the organization module. The current binding
+`ORG_IDP_CONFIGURED` from the organization module; S1-05 adds
+`ORG_MEMBER_ROLE_CHANGED`, `ORG_MEMBER_REMOVED`,
+`TENANT_MEMBER_ROLE_CHANGED`, and `TENANT_MEMBER_REMOVED` (see
+[authorization](authorization.md)). The current binding
 logs events and republishes them in-process; the durable audit sink
 arrives with S1-06 without changing callers.
 
@@ -128,5 +142,6 @@ can be added (S14-01) as an alternative without touching callers; the
 per-organization IdP configuration record itself is stored (not yet
 functional) by the `organization` module since S1-04. Identity touches
 organizations only through the `OrganizationAccess` interface (login
-block, `org_id` claim, invitation membership grants) — the general RBAC
-engine lands with S1-05 and `tenant_id` claims with E2.
+block, `org_id` claim, invitation membership grants, role snapshots for
+the S1-05 RBAC engine — see [authorization](authorization.md));
+`tenant_id` claims arrive with E2.

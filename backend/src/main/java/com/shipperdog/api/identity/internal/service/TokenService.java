@@ -4,6 +4,7 @@ import com.shipperdog.api.audit.AuditEvent;
 import com.shipperdog.api.audit.AuditEventPublisher;
 import com.shipperdog.api.audit.AuditEventType;
 import com.shipperdog.api.identity.AuthenticatedPrincipal;
+import com.shipperdog.api.identity.SessionRevocation;
 import com.shipperdog.api.identity.internal.AuthException;
 import com.shipperdog.api.identity.internal.config.AuthProperties;
 import com.shipperdog.api.identity.internal.crypto.SecureTokens;
@@ -45,10 +46,18 @@ import org.springframework.transaction.annotation.Transactional;
  * admins exempt), so deactivation outlives sessions issued before it.
  * {@code tenant_id} attaches with S1-05/E2 once tenant membership
  * resolves.
+ *
+ * <p>Since S1-05, tokens deliberately carry no role claims: the RBAC
+ * engine evaluates permissions against live database memberships on
+ * every request, so role changes take effect immediately — stricter than
+ * the issue's "next token refresh at the latest". Demotions revoke
+ * refresh families through the {@link SessionRevocation} surface, and
+ * refresh/PAT use re-checks the user's status so a DISABLED account
+ * cannot keep an existing session alive.
  */
 @Service
 @Transactional
-public class TokenService {
+public class TokenService implements SessionRevocation {
 
     public static final String CLAIM_TYPE = "type";
     public static final String TYPE_ACCESS = "access";
@@ -110,6 +119,18 @@ public class TokenService {
         if (record.getExpiresAt().isBefore(now)) {
             throw invalidRefresh();
         }
+        if (userDisabled(record.getUserId())) {
+            // S1-05: disabling an account must outlive sessions issued
+            // before it, so refresh refuses AND the family is revoked
+            // (unlike org deactivation, which stays reversible).
+            refreshTokens.revokeFamily(record.getFamilyId(), now);
+            audit(
+                    AuditEventType.TOKEN_REFRESHED,
+                    record.getUserId(),
+                    false,
+                    Map.of("kind", "refresh", "reason", "account_disabled"));
+            throw invalidRefresh();
+        }
         if (deactivatedOrgBlocksUser(record.getUserId())) {
             // S1-04: org deactivation must outlive tokens issued before it,
             // so refresh is refused for affected users (platform admins stay
@@ -148,6 +169,17 @@ public class TokenService {
         refreshTokens.revokeAllForUser(userId, Instant.now(clock));
     }
 
+    /**
+     * SessionRevocation surface (S1-05): role demotions revoke the user's
+     * refresh families so the change cannot be outlived by an existing
+     * session. The reason reaches the audit trail only.
+     */
+    @Override
+    public void revokeRefreshTokens(UUID userId, String reason) {
+        revokeAllForUser(userId);
+        audit(AuditEventType.TOKEN_REVOKED, userId, true, Map.of("kind", "refresh", "reason", reason));
+    }
+
     /** Creates a PAT and returns the raw value exactly once. */
     public CreatedPat createPat(UUID userId, String name, Duration expiresIn) {
         Instant now = Instant.now(clock);
@@ -183,6 +215,7 @@ public class TokenService {
         return pats.findByTokenHash(SecureTokens.sha256Hex(rawToken))
                 .filter(pat -> pat.getRevokedAt() == null)
                 .filter(pat -> pat.getExpiresAt() == null || pat.getExpiresAt().isAfter(Instant.now(clock)))
+                .filter(pat -> !userDisabled(pat.getUserId()))
                 .map(pat -> {
                     Instant now = Instant.now(clock);
                     if (pat.getLastUsedAt() == null || pat.getLastUsedAt().isBefore(now.minus(Duration.ofMinutes(1)))) {
@@ -224,6 +257,13 @@ public class TokenService {
         boolean platformAdmin =
                 users.findById(userId).map(UserEntity::isPlatformAdmin).orElse(false);
         return !platformAdmin && organizations.loginBlockedFor(userId);
+    }
+
+    /** S1-05: DISABLED accounts keep neither refresh sessions nor PATs. */
+    private boolean userDisabled(UUID userId) {
+        return users.findById(userId)
+                .map(user -> user.getStatus() == UserEntity.Status.DISABLED)
+                .orElse(false);
     }
 
     private String mintRefresh(UUID userId, UUID familyId, Instant now) {
