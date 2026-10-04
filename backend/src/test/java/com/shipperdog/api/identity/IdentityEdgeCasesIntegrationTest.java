@@ -220,8 +220,12 @@ class IdentityEdgeCasesIntegrationTest {
         String accessToken = loginAndExtract(registerFreshUser(), "accessToken");
         String[] parts = accessToken.split("\\.");
         String signature = parts[2];
-        char flipped = signature.charAt(signature.length() - 1) == 'A' ? 'B' : 'A';
-        String tampered = parts[0] + "." + parts[1] + "." + signature.substring(0, signature.length() - 1) + flipped;
+        // Flip the FIRST signature character: every bit of it lands in the
+        // decoded bytes, so the tamper always invalidates the signature.
+        // (Flipping the last base64url character can collide in the
+        // ignored padding bits and decode to the same valid signature.)
+        char flipped = signature.charAt(0) == 'A' ? 'B' : 'A';
+        String tampered = flipped + signature.substring(1);
 
         assertThat(statusOf(client.get().uri("/api/v1/auth/me").header("Authorization", "Bearer " + tampered)))
                 .isEqualTo(401);

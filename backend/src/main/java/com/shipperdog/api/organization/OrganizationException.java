@@ -16,7 +16,8 @@ public class OrganizationException extends RuntimeException {
         INVALID_REQUEST(HttpStatus.BAD_REQUEST, "invalid_request"),
         EXTERNAL_ID_TAKEN(HttpStatus.CONFLICT, "external_id_taken"),
         MEMBER_EXISTS(HttpStatus.CONFLICT, "member_exists"),
-        ORGANIZATION_DEACTIVATED(HttpStatus.CONFLICT, "organization_deactivated");
+        ORGANIZATION_DEACTIVATED(HttpStatus.CONFLICT, "organization_deactivated"),
+        LAST_ORG_ADMIN(HttpStatus.CONFLICT, "last_org_admin");
 
         final HttpStatus httpStatus;
         final String errorSlug;

@@ -4,6 +4,7 @@ import com.shipperdog.api.organization.OrgRole;
 import com.shipperdog.api.organization.internal.entity.OrganizationEntity;
 import com.shipperdog.api.organization.internal.entity.OrganizationMemberEntity;
 import java.util.List;
+import java.util.Optional;
 import java.util.UUID;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
@@ -21,7 +22,13 @@ public interface OrganizationMemberRepository extends JpaRepository<Organization
 
     boolean existsByOrganizationIdAndUserId(UUID organizationId, UUID userId);
 
+    Optional<OrganizationMemberEntity> findByOrganizationIdAndUserId(UUID organizationId, UUID userId);
+
     boolean existsByOrganizationIdAndUserIdAndRole(UUID organizationId, UUID userId, OrgRole role);
+
+    List<OrganizationMemberEntity> findByOrganizationIdOrderByCreatedAtAscIdAsc(UUID organizationId);
+
+    long countByOrganizationIdAndRole(UUID organizationId, OrgRole role);
 
     long countByUserId(UUID userId);
 

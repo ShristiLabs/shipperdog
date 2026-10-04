@@ -10,6 +10,11 @@ Current contents:
 - [Authentication](authentication.md) — identity module endpoints, token
   semantics (rotation, family revocation, PATs), lockout and reset
   behavior, AUTH_* configuration (S1-03).
+- [Authorization](authorization.md) — RBAC permission catalog and role
+  matrix, the single enforcement point, deny-by-default and opaque
+  denials, role-assignment endpoints and guards (S1-05).
+- [Organizations](organizations.md) — organization lifecycle, settings,
+  and membership surface (S1-04, extended by S1-05).
 - [ADR-0001: Flyway with plain SQL migrations](adr/ADR-0001-flyway-schema-migrations.md)
 
 Start with the top-level README for local setup and CI.

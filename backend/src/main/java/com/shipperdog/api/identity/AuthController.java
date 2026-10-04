@@ -17,6 +17,7 @@ import java.util.Locale;
 import java.util.UUID;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.web.bind.annotation.DeleteMapping;
@@ -87,6 +88,7 @@ public class AuthController {
     }
 
     @GetMapping("/me")
+    @PreAuthorize("isAuthenticated()")
     MeResponse me(@AuthenticationPrincipal Object principal) {
         UUID userId;
         UUID tenantId = null;
@@ -116,6 +118,8 @@ public class AuthController {
 
     @PostMapping("/invitations")
     @ResponseStatus(HttpStatus.CREATED)
+    @PreAuthorize("#request.organizationId() == null"
+            + " or hasPermission(#request.organizationId(), 'organization', 'org:members:invite')")
     InvitationResponse createInvitation(
             @AuthenticationPrincipal Object principal, @RequestBody CreateInvitationRequest request) {
         RegistrationService.Invitation invitation = registration.createInvitation(
@@ -142,6 +146,7 @@ public class AuthController {
 
     @PostMapping("/tokens")
     @ResponseStatus(HttpStatus.CREATED)
+    @PreAuthorize("isAuthenticated()")
     CreatedPatResponse createToken(@AuthenticationPrincipal Object principal, @RequestBody CreatePatRequest request) {
         if (request.name() == null
                 || request.name().isBlank()
@@ -162,6 +167,7 @@ public class AuthController {
     }
 
     @GetMapping("/tokens")
+    @PreAuthorize("isAuthenticated()")
     List<PatResponse> listTokens(@AuthenticationPrincipal Object principal) {
         return tokens.listPats(requireUserId(principal)).stream()
                 .map(PatResponse::from)
@@ -170,6 +176,7 @@ public class AuthController {
 
     @DeleteMapping("/tokens/{id}")
     @ResponseStatus(HttpStatus.NO_CONTENT)
+    @PreAuthorize("isAuthenticated()")
     ResponseEntity<Void> revokeToken(@AuthenticationPrincipal Object principal, @PathVariable UUID id) {
         tokens.revokePat(requireUserId(principal), id);
         return ResponseEntity.noContent().build();
@@ -197,7 +204,7 @@ public class AuthController {
         try {
             return OrgRole.valueOf(role.trim().toUpperCase(Locale.ROOT));
         } catch (IllegalArgumentException e) {
-            throw new AuthException(AuthException.Code.INVALID_REQUEST, "role must be ORG_ADMIN or ORG_MEMBER");
+            throw new AuthException(AuthException.Code.INVALID_REQUEST, "unknown role: " + role.trim());
         }
     }
 

@@ -3,7 +3,6 @@ package com.shipperdog.api.identity.internal.service;
 import com.shipperdog.api.audit.AuditEvent;
 import com.shipperdog.api.audit.AuditEventPublisher;
 import com.shipperdog.api.audit.AuditEventType;
-import com.shipperdog.api.identity.PlatformAdmins;
 import com.shipperdog.api.identity.internal.AuthException;
 import com.shipperdog.api.identity.internal.config.AuthProperties;
 import com.shipperdog.api.identity.internal.crypto.SecureTokens;
@@ -28,9 +27,11 @@ import org.springframework.transaction.annotation.Transactional;
  * the invitee presents the one-time invitation token plus a chosen
  * password, and the account is created ACTIVE. Re-inviting an address
  * revokes its previous pending invitation. Since S1-04, an invitation may
- * carry an organization and role: organization administrators (or platform
- * administrators) may invite, and accepting such an invitation grants the
- * membership with the recorded role.
+ * carry an organization and role: accepting such an invitation grants the
+ * membership with the recorded role. Since S1-05 the inviter's
+ * permission (org:members:invite) is enforced by the controller's
+ * {@code @PreAuthorize}; the service keeps only the organization
+ * existence check.
  */
 @Service
 public class RegistrationService {
@@ -45,7 +46,6 @@ public class RegistrationService {
     private final Clock clock;
     private final InvitationStateRecorder invitationState;
     private final AuditEventPublisher audit;
-    private final PlatformAdmins platformAdmins;
     private final OrganizationAccess organizations;
 
     RegistrationService(
@@ -56,7 +56,6 @@ public class RegistrationService {
             Clock clock,
             InvitationStateRecorder invitationState,
             AuditEventPublisher audit,
-            PlatformAdmins platformAdmins,
             OrganizationAccess organizations) {
         this.users = users;
         this.invitations = invitations;
@@ -65,7 +64,6 @@ public class RegistrationService {
         this.clock = clock;
         this.invitationState = invitationState;
         this.audit = audit;
-        this.platformAdmins = platformAdmins;
         this.organizations = organizations;
     }
 
@@ -89,7 +87,7 @@ public class RegistrationService {
             throw new AuthException(AuthException.Code.INVALID_REQUEST, "role requires organizationId");
         }
         if (organizationId != null) {
-            requireInvitationPermission(organizationId, invitedBy);
+            requireInvitationPermission(organizationId);
         }
         OrgRole grantedRole = organizationId == null ? null : (role == null ? OrgRole.ORG_MEMBER : role);
         Instant now = Instant.now(clock);
@@ -168,15 +166,15 @@ public class RegistrationService {
         return user;
     }
 
-    /** Org-scoped invitations are reserved to org admins / platform admins. */
-    private void requireInvitationPermission(UUID organizationId, UUID invitedBy) {
+    /**
+     * Existence check for org-scoped invitations. Permission
+     * (org:members:invite) is enforced upstream by the controller
+     * annotation (S1-05); unauthenticated callers never reach the
+     * service, and unauthorized callers already received the opaque 403.
+     */
+    private void requireInvitationPermission(UUID organizationId) {
         if (!organizations.organizationExists(organizationId)) {
             throw new AuthException(AuthException.Code.NOT_FOUND, "organization not found");
-        }
-        if (!platformAdmins.isPlatformAdmin(invitedBy)
-                && !organizations.isOrganizationAdmin(organizationId, invitedBy)) {
-            throw new AuthException(
-                    AuthException.Code.FORBIDDEN, "only organization administrators may invite into an organization");
         }
     }
 
