@@ -1,0 +1,39 @@
+name: frontend-ci
+
+# Console gate (issue #12): lint, typecheck, build, and unit tests on
+# every PR and main push, mirroring backend-ci. Kept to a single job on
+# the Node 22 LTS image with npm caching — the full gate runs in about
+# a minute so it never queues behind backend-ci.
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+jobs:
+  lint-typecheck-build-test:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Build (includes strict typecheck)
+        run: npm run build
+
+      - name: Unit tests
+        run: npm test

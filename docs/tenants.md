@@ -5,7 +5,9 @@ multi-tenant (PRD 8.2): every tenant belongs to exactly one
 organization, and the organization's administrators manage the tenant
 lifecycle. A tenant is never a user (PRD 8.2/8.8) — it has no login
 surface and no identity coupling. Members (users holding tenant roles)
-arrived with S2-03; tester records themselves arrive with S6.
+arrived with S2-03; tester records themselves arrive with S6. The
+admin console drives this entire surface for organization
+administrators since S2-04 (see [frontend](frontend.md)).
 Implemented by the `tenant` module
 (`backend/src/main/java/com/shipperdog/api/tenant`). Permissions
 referenced below are enforced by the single RBAC enforcement point —

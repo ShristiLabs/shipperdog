@@ -13,7 +13,7 @@ subsequent story builds on.
 | Path | Contents |
 |---|---|
 | `backend/` | Spring Boot modular-monolith API (Java 25, single Maven module) |
-| `frontend/` | Tester and admin web app (placeholder until S8-01) |
+| `frontend/` | Admin console — React 19 + TypeScript + MUI (Vite; S2-04) |
 | `cli/` | Developer CLI (placeholder until S5-06) |
 | `infrastructure/` | Local docker compose stack |
 | `docs/` | Developer documentation |
@@ -35,8 +35,14 @@ docker compose up
 ```
 
 This starts PostgreSQL 17, Redis 8, a GCS emulator (fsouza/fake-gcs-server),
-the API, and the observability stack (Prometheus + Grafana, S1-07). Defaults
-are baked in; to override them, copy `.env.example` to `.env` and edit.
+the API, the admin console (S2-04), and the observability stack
+(Prometheus + Grafana, S1-07). Defaults are baked in; to override them,
+copy `.env.example` to `.env` and edit.
+
+The admin console (tenant administration, S2-04) is served by nginx at
+http://localhost:5173 — same origin as the API through the compose
+proxy, so the seeded admin above signs in directly. See
+[docs/frontend.md](docs/frontend.md).
 
 Verify the API (management endpoints live on the internal port, published
 loopback-only — never on the public API port):
@@ -120,8 +126,15 @@ compose default, which is local-only exactly like the database password.
 
 ## CI
 
-`.github/workflows/ci.yml` runs `mvn verify` (format check, build, tests)
-on every pull request and on pushes to `main`. Since S1-08 the build also
+Two gates run on every pull request and on pushes to `main`:
+
+- `.github/workflows/ci.yml` (backend-ci) runs `mvn verify` (format
+  check, build, tests) plus the OpenAPI export/breaking-diff below.
+- `.github/workflows/frontend-ci.yml` (frontend-ci, S2-04) runs the
+  console's lint, strict-typecheck build, and Vitest suite under
+  Node 22 with npm caching.
+
+Since S1-08 the backend build also
 exports the generated OpenAPI contract (`backend/target/openapi.yaml`,
 published as the `openapi-spec` artifact) and diffs it against the
 committed baseline `docs/openapi/baseline.yaml` with oasdiff — a breaking
@@ -129,7 +142,8 @@ API change fails the check until the baseline is consciously re-committed
 in the same PR (see [docs/api-conventions.md](docs/api-conventions.md)).
 
 Merge blocking: branch protection on `main` — requiring the
-`backend-ci / build-and-test` status check and pull requests for all
+`backend-ci / build-and-test` and `frontend-ci / lint-typecheck-build-test`
+status checks and pull requests for all
 changes — is the intended policy, but it could not be enabled
 programmatically because branch protection requires a public repository or
 a paid GitHub plan and this repository is currently private on a free

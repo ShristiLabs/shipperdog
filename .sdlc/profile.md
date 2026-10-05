@@ -38,6 +38,13 @@ Modular-monolith backend inside a monorepo. Greenfield as of issue #1.
 
 All Maven commands require JAVA_HOME set to the JDK 25 path above.
 
+Frontend (from `frontend/`, since S2-04 — see [docs/frontend.md]):
+
+- fmt-check/lint: `npm run lint` (eslint; no auto-format step yet)
+- build-cmd: `npm run build` (strict tsc typecheck + Vite bundle)
+- test-cmd: `npm test` (Vitest, happy-dom)
+- Node >= 22.12; all dependencies exact-pinned with a committed lockfile.
+
 ## Conventions
 
 - Conventional Commits (feat/fix/chore/docs/test/ci).
@@ -53,11 +60,11 @@ All Maven commands require JAVA_HOME set to the JDK 25 path above.
 | Component | Path | Notes |
 |---|---|---|
 | backend | backend/ | Spring Boot application, single Maven module |
-| frontend | frontend/ | placeholder until S8-01 |
+| frontend | frontend/ | Admin console: React 19 + TS strict + MUI 9 + React Query 5 + Router 7 on Vite 7 (S2-04) |
 | cli | cli/ | placeholder until S5-06 |
-| infrastructure | infrastructure/ | local docker compose stack |
+| infrastructure | infrastructure/ | local docker compose stack (API, console, data, observability) |
 | docs | docs/ | developer docs |
-| workflows | .github/workflows/ | GitHub Actions CI |
+| workflows | .github/workflows/ | GitHub Actions CI (backend-ci + frontend-ci) |
 
 ## Reviewers / CODEOWNERS
 

@@ -26,6 +26,10 @@ Current contents:
   identifier uniqueness, deactivation semantics, tenant isolation
   semantics, member management with the suspension switch, and the
   tenant-owned applications listing (S2-01, S2-02, S2-03).
+- [Admin console](frontend.md) — the React/MUI console (S2-04): stack
+  and structure, the shared API client (problem+json, correlation ids,
+  cursor pagination), token storage and silent refresh, role-aware
+  navigation probes, CI gate, and local development.
 - [Audit logging](audit.md) — append-only audit trail, transactional
   persistence, redaction, correlation ids, and the admin query API
   (S1-06).

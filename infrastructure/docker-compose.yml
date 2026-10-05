@@ -70,6 +70,19 @@ services:
       gcs-emulator:
         condition: service_started
 
+  # Admin console (issue #12): the built SPA served by nginx, proxying
+  # /api to the api service over the compose network so the browser
+  # treats the console and the API as one origin. Port 5173 mirrors the
+  # Vite dev server; Grafana keeps 3000.
+  frontend:
+    build:
+      context: ../frontend
+    ports:
+      - "${FRONTEND_PORT:-5173}:80"
+    depends_on:
+      api:
+        condition: service_started
+
   prometheus:
     # Scrapes the API's internal management port over the compose
     # network (api:8081); the UI is loopback-only for the operator.
