@@ -86,7 +86,15 @@ revocation (S3-03) carrying the authorized tenant, the pair's
 resulting status, and the request's `reason` on the event's reason
 field), version (`VERSION_CREATED` — issue #17/S4-01: version
 creation under an application, carrying `versionName` and birth
-`status`; the ownership-scope transition also counts the versions it
+`status`;
+`VERSION_TAGS_CHANGED` — issue #18/S4-02: a replace-set of a
+version's tags that actually changed something, carrying
+`versionName` plus comma-joined `added` and `removed` lists (each
+present only when non-empty; a PUT that changes nothing writes no
+event and no rows). Concurrent replaces of one version are serialized
+by a per-version advisory lock inside the mutation's transaction, so
+the trail records one event per real transition, last writer's set
+winning; the ownership-scope transition also counts the versions it
 carries along as `versionsCarried` on `APPLICATION_SCOPE_CHANGED`),
 and
 platform (`ACCESS_DENIED`, S1-06).

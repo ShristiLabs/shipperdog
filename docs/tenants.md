@@ -166,6 +166,11 @@ permissions resolve through the owning tenant/organization; see
 new versions (`409 APPLICATION_ARCHIVED`) but keeps its existing
 versions readable, and the audited ownership-scope transition carries
 version rows along with their application (ADR-0002 sixth amendment).
+A version's tags (S4-02) ride the same standing: `PUT .../tags`
+replaces the whole set (trimmed, UPPER, deduplicated), the listing's
+`tag` filter narrows inside the bound scope, and the tag rows
+themselves carry no owning-dimension snapshot — they are children of
+the seam-served version (ADR-0002 seventh amendment).
 
 ## Isolation (S2-02, INV-001)
 
