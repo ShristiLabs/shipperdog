@@ -677,6 +677,11 @@ paths:
         required: false
         schema:
           type: string
+      - name: include
+        in: query
+        required: false
+        schema:
+          type: string
       - name: limit
         in: query
         required: false
@@ -714,6 +719,62 @@ paths:
       responses:
         "201":
           description: Created
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/VersionDetail"
+  /api/v1/applications/{applicationId}/versions/{versionId}/revoke-distribution:
+    post:
+      tags:
+      - version-controller
+      operationId: revokeDistribution
+      parameters:
+      - name: applicationId
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - name: versionId
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RevokeDistributionRequest"
+        required: true
+      responses:
+        "200":
+          description: OK
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/VersionDetail"
+  /api/v1/applications/{applicationId}/versions/{versionId}/archive:
+    post:
+      tags:
+      - version-controller
+      operationId: archive
+      parameters:
+      - name: applicationId
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - name: versionId
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      responses:
+        "200":
+          description: OK
           content:
             '*/*':
               schema:
@@ -895,6 +956,8 @@ paths:
           - APPLICATION_TENANT_DEAUTHORIZED
           - VERSION_CREATED
           - VERSION_TAGS_CHANGED
+          - VERSION_ARCHIVED
+          - VERSION_DISTRIBUTION_REVOKED
       - name: applicationId
         in: query
         required: false
@@ -996,6 +1059,31 @@ paths:
             '*/*':
               schema:
                 $ref: "#/components/schemas/VersionDetail"
+  /api/v1/applications/{applicationId}/versions/{versionId}/history:
+    get:
+      tags:
+      - version-controller
+      operationId: history
+      parameters:
+      - name: applicationId
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - name: versionId
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      responses:
+        "200":
+          description: OK
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/VersionHistoryView"
   /api/v1/tenants/{id}/members/{userId}:
     delete:
       tags:
@@ -1146,6 +1234,8 @@ components:
     JsonNode:
       type: object
       properties:
+        valueNode:
+          type: boolean
         nodeType:
           type: string
           enum:
@@ -1158,17 +1248,11 @@ components:
           - OBJECT
           - POJO
           - STRING
-        string:
-          type: boolean
-        integralNumber:
-          type: boolean
         missingNode:
-          type: boolean
-        valueNode:
           type: boolean
         pojo:
           type: boolean
-        number:
+        integralNumber:
           type: boolean
         short:
           type: boolean
@@ -1189,9 +1273,13 @@ components:
           type: boolean
         binary:
           type: boolean
-        floatingPointNumber:
+        number:
+          type: boolean
+        string:
           type: boolean
         container:
+          type: boolean
+        floatingPointNumber:
           type: boolean
         empty:
           type: boolean
@@ -1457,6 +1545,14 @@ components:
         releaseHistory:
           type: array
           items: {}
+    RevokeDistributionRequest:
+      type: object
+      description: "The mandatory reason distribution of this version is revoked:\
+        \ trimmed, 1..1000 characters. Recorded in the audit trail (FR-024) and on\
+        \ the version's status timeline."
+      properties:
+        reason:
+          type: string
     PageResponseTenantResponse:
       type: object
       properties:
@@ -1587,6 +1683,8 @@ components:
           - APPLICATION_TENANT_DEAUTHORIZED
           - VERSION_CREATED
           - VERSION_TAGS_CHANGED
+          - VERSION_ARCHIVED
+          - VERSION_DISTRIBUTION_REVOKED
         occurredAt:
           type: string
           format: date-time
@@ -1680,3 +1778,39 @@ components:
           additionalProperties:
             type: array
             items: {}
+    StatusTransitionView:
+      type: object
+      properties:
+        status:
+          type: string
+        reason:
+          type: string
+        occurredAt:
+          type: string
+          format: date-time
+    VersionHistoryView:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        applicationId:
+          type: string
+          format: uuid
+        versionName:
+          type: string
+        status:
+          type: string
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+        statusHistory:
+          type: array
+          items:
+            $ref: "#/components/schemas/StatusTransitionView"
+        artifacts:
+          type: array
+          items: {}

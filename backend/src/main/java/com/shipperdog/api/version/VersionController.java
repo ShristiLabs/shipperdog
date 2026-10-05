@@ -45,10 +45,14 @@ import org.springframework.web.bind.annotation.RestController;
  * application miss (PRD 12). Creation honors {@code Idempotency-Key}.
  *
  * <p>The version's tag set (S4-02, FR-009) is replaced wholesale through
- * {@code PUT /{versionId}/tags}. Mutations beyond that — the
- * DRAFT/ACTIVE/ARCHIVED lifecycle, archiving, revocation — are S4-03;
- * version history is permanent (PRD P5), so no endpoint ever deletes a
- * version.
+ * {@code PUT /{versionId}/tags}. The lifecycle (S4-03, issue #19,
+ * INV-004/INV-006) has two terminal actions — archive (read-only
+ * retirement, out of the default listing, back with
+ * {@code ?include=archived}) and revoke-distribution (blocks new
+ * downloads within the version's scope, mandatory reason, deletes
+ * nothing) — plus the chronological history read the Compliance
+ * Reviewer audits from. Version history is permanent (PRD P5), so no
+ * endpoint ever deletes a version.
  */
 @RestController
 @RequestMapping("/api/v1/applications/{applicationId}/versions")
@@ -77,10 +81,12 @@ public class VersionController {
             @AuthenticationPrincipal Object principal,
             @PathVariable UUID applicationId,
             @RequestParam(required = false) String tag,
+            @RequestParam(required = false) String include,
             @RequestParam(required = false) String limit,
             @RequestParam(required = false) String cursor) {
         ListQuery query = ListQuery.of(limit, cursor);
-        Page<VersionService.VersionView> page = versions.list(applicationId, tag, query.offset(), query.limit());
+        Page<VersionService.VersionView> page =
+                versions.list(applicationId, tag, include, query.offset(), query.limit());
         return PageResponse.of(page.getContent(), page.hasNext(), query.offset() + query.limit());
     }
 
@@ -108,6 +114,55 @@ public class VersionController {
             @PathVariable UUID versionId,
             @RequestBody ReplaceTagsRequest request) {
         return versions.replaceTags(requireUserId(principal), applicationId, versionId, request.tags());
+    }
+
+    /**
+     * Archives the version (issue #19 AC2, FR-008): the soft terminal —
+     * read-only from here on, out of the default listing, fully
+     * readable forever (PRD P5, INV-006). Audited as
+     * {@code VERSION_ARCHIVED}; a repeat answers the precise 409. Not
+     * idempotency-keyed: like every transition, the state itself is
+     * the replay answer.
+     */
+    @PostMapping("/{versionId}/archive")
+    @PreAuthorize("hasPermission(#applicationId, 'application', 'app:versions:write')")
+    VersionService.VersionDetail archive(
+            @AuthenticationPrincipal Object principal, @PathVariable UUID applicationId, @PathVariable UUID versionId) {
+        return versions.archive(requireUserId(principal), applicationId, versionId);
+    }
+
+    /**
+     * Revokes the version's distribution (issue #19 AC3, FR-008,
+     * INV-006/INV-007): blocks NEW downloads within this version's
+     * scope while deleting nothing — the version, its tags, its
+     * timeline, and its artifacts (E5) all remain, readable per
+     * authorization, exactly as INV-006 demands. The reason is
+     * mandatory (1..1000 characters, trimmed) and feeds the
+     * {@code VERSION_DISTRIBUTION_REVOKED} audit event (FR-024) and
+     * the status timeline. A repeat answers the precise 409.
+     */
+    @PostMapping("/{versionId}/revoke-distribution")
+    @PreAuthorize("hasPermission(#applicationId, 'application', 'app:versions:write')")
+    VersionService.VersionDetail revokeDistribution(
+            @AuthenticationPrincipal Object principal,
+            @PathVariable UUID applicationId,
+            @PathVariable UUID versionId,
+            @RequestBody RevokeDistributionRequest request) {
+        return versions.revokeDistribution(requireUserId(principal), applicationId, versionId, request.reason());
+    }
+
+    /**
+     * The version's audit history (issue #19 AC5): the summary, the
+     * chronological status timeline (creation's DRAFT row, every
+     * archive, every revoke with its reason), and the chronological
+     * artifact list (empty until E5). Read-only forever — history
+     * never expires (INV-006).
+     */
+    @GetMapping("/{versionId}/history")
+    @PreAuthorize("hasPermission(#applicationId, 'application', 'app:versions:read')")
+    VersionService.VersionHistoryView history(
+            @AuthenticationPrincipal Object principal, @PathVariable UUID applicationId, @PathVariable UUID versionId) {
+        return versions.history(applicationId, versionId);
     }
 
     private static UUID requireUserId(Object principal) {
@@ -144,4 +199,16 @@ public class VersionController {
                     + "tags are first-class: 1..50 characters of letters, digits, underscore, or hyphen. "
                     + "At most 20 distinct tags per version.")
     public record ReplaceTagsRequest(List<String> tags) {}
+
+    /**
+     * The revoke body (issue #19 AC3): the mandatory reason — trimmed,
+     * 1..1000 characters. It is the audit trail's explanation
+     * (FR-024) and lands on the version's status-timeline row, so the
+     * takedown is self-explaining history.
+     */
+    @Schema(
+            description = "The mandatory reason distribution of this version is revoked: trimmed, "
+                    + "1..1000 characters. Recorded in the audit trail (FR-024) and on the version's "
+                    + "status timeline.")
+    public record RevokeDistributionRequest(String reason) {}
 }

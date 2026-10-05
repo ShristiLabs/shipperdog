@@ -21,6 +21,7 @@ backend/src/main/resources/db/
     V11__tenant_application_authorization.sql
     V12__version_management.sql
     V13__version_tags.sql
+    V14__version_lifecycle.sql
   seed/                 dev fixture, applied only when the seed location is active
     R__dev_seed.sql
 ```
@@ -187,6 +188,28 @@ backend/src/main/resources/db/
   snapshot: they are children of the seam-scoped version (ADR-0002
   seventh amendment). Timestamps are database-defaulted on insert and
   rows are never updated — a replace-set deletes and inserts.
+- `V14__version_lifecycle.sql` (S4-03, issue #19) is the lifecycle and
+  permanent-history migration, in two parts. First, `version_status`
+  gains `REVOKED` by additive `ALTER TYPE ... ADD VALUE` — the enum
+  rule this file pins, applied exactly as prescribed: appended, never
+  renamed or removed, and unused elsewhere in its own migration (the
+  new value cannot be referenced in the transaction that creates it).
+  `REVOKED` is the strongest terminal: revoke-distribution blocks new
+  downloads (E7 consumes the status) while deleting nothing (INV-006);
+  `ARCHIVED` stays the softer terminal. Second,
+  `version_status_history` records the chronological status timeline
+  the history query returns for audit — one row per real transition
+  (creation writes `DRAFT`; archive and revoke append theirs), with
+  the revoke action's mandatory reason on its row
+  (`ck_version_status_history_reason_length` caps it at 1000,
+  matching the service validation). Like `version_tags`, the table is
+  a plain child of the seam-served version: no owning-dimension
+  snapshot, no seam repository, isolation enforced at the parent
+  (ADR-0002 eighth amendment). The lifecycle's compare-and-set lives
+  on its repository (`transitionStatusIfCurrent`): the transition
+  commits only while the row's committed status still matches the
+  source state the attempt read, so concurrent transitions can never
+  double-commit or un-revoke a pulled version.
 
 ## Status and type columns
 
@@ -199,6 +222,8 @@ extend.
 - To add a value: new migration with `ALTER TYPE <type> ADD VALUE '...'`.
   `V3` did this for `org_status` (`DEACTIVATED`, S1-04); the V1 label
   `DISABLED` stays reserved-unused — the application never assigns it.
+  `V14` did it for `version_status` (`REVOKED`, S4-03) alongside the
+  lifecycle that emits it.
 - Values are never removed or renamed (see rollback policy).
 - `org_role` (`ORG_ADMIN`, `ORG_MEMBER` since V3) is the membership-role
   vocabulary; V4 (S1-05) extended it to nine values with the PRD

@@ -170,7 +170,15 @@ A version's tags (S4-02) ride the same standing: `PUT .../tags`
 replaces the whole set (trimmed, UPPER, deduplicated), the listing's
 `tag` filter narrows inside the bound scope, and the tag rows
 themselves carry no owning-dimension snapshot — they are children of
-the seam-served version (ADR-0002 seventh amendment).
+the seam-served version (ADR-0002 seventh amendment). The lifecycle
+(S4-03) changes nothing about that standing: archive and
+revoke-distribution are writes to the seam-served version row (the
+listing's default window drops terminal versions; `include=archived`
+and `include=revoked` return them), a terminal version is read-only
+(`409` on tag replaces), and the status timeline rows are children of
+the seam-served version exactly like tags (ADR-0002 eighth amendment)
+— revoked and archived versions stay fully readable inside their
+bound scope forever; only mutation and new distribution end.
 
 ## Isolation (S2-02, INV-001)
 

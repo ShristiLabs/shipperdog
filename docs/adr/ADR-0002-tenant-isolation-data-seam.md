@@ -367,3 +367,27 @@ clause describes. The replace-set's per-version advisory lock lives
 on the child repository precisely because the seam forbids declared
 methods on scoped repositories — a serialization point is not a data
 path, so it needs no seam standing of its own.
+
+## Eighth amendment (2026-10-06): plain children of seam-served parents are standing doctrine
+
+The lifecycle's status timeline (issue #19, S4-03, FR-008/FR-024)
+lands as the second such child — `version_status_history` (V14),
+exactly the seventh amendment's shape: no owning-dimension snapshot,
+no seam repository, every path resolving the version through the
+scoped parent first. Two landed instances make the pattern doctrine
+rather than a one-off judgment call: **a table whose every row hangs
+off exactly one seam-served parent and is never addressed by its own
+routes is a plain child** — it carries no snapshot columns and joins
+no seam repository, because re-deriving the parent's isolation at the
+child would duplicate the seam's authority (and drift from it);
+enforcing it at the parent is one guard, not two. The amendment also
+records the pattern's second corollary, first exercised by the tags
+lock: a child repository may carry the parent-path's serialization or
+compare-and-set points (`version_status_history`'s
+`transitionStatusIfCurrent` is the lifecycle's CAS on the parent row)
+because the seam's no-declared-methods rule and the registry's
+contract binding leave nowhere else legitimate for them, and a
+serialization point is not a data path. Future children of versions
+— artifacts (E5) among them — inherit this standing by default and
+need a new amendment only if they break the every-row-hangs-off-one
+parent invariant.

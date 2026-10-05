@@ -27,8 +27,9 @@ Current contents:
   semantics, member management with the suspension switch, and the
   applications surface (tenant effective-visibility listing, registry,
   ownership scopes, shared-app authorization, org-wide administration
-  listing, versions under an application) (S2-01, S2-02, S2-03, S3-01
-  through S3-04, S4-01, S4-02).
+  listing, versions under an application with their lifecycle and
+  permanent history) (S2-01, S2-02, S2-03, S3-01
+  through S3-04, S4-01 through S4-03).
 - [Admin console](frontend.md) — the React/MUI console (S2-04, S3-04):
   stack and structure, the shared API client (problem+json, correlation
   ids, cursor pagination), token storage and silent refresh, role-aware

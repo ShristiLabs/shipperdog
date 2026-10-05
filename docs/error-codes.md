@@ -91,6 +91,10 @@ below); issue #13 reserved it for exactly that surface.
 | Code | HTTP | Detail |
 |---|---|---|
 | `VERSION_NOT_FOUND` | 404 | Resource not found. (also the concealed-denial shape for unknown version ids; a denied or unknown application conceals as `APPLICATION_NOT_FOUND` through the permission check) |
+| `APPLICATION_NOT_FOUND` | 404 | Resource not found. (the service-layer application-miss backstop, aligned to the registry's one vocabulary since S4-03 — through HTTP the permission check already renders this shape before the service runs) |
 | `INVALID_REQUEST` | 400 | The request is invalid. |
 | `VERSION_NAME_TAKEN` | 409 | The version name is already in use for the application. (per application, `uq_versions_application_version` since V1; race-safe) |
 | `APPLICATION_ARCHIVED` | 409 | The application is archived; new versions cannot be added. (reserved in issue #13, emitted since S4-01; existing versions stay readable, and unarchiving resumes creation) |
+| `VERSION_ARCHIVED` | 409 | The version is archived; it is read-only and cannot transition further. (since S4-03: repeat archives and mutations of an archived version — its tags today, artifact uploads with E5) |
+| `VERSION_REVOKED` | 409 | The version's distribution is revoked; it is read-only and blocked from new downloads. (since S4-03: repeat revokes, archives of a revoked version, and mutations of a revoked version; the version and its history remain fully readable — INV-006) |
+| `VERSION_IMMUTABLE` | 409 | The version's artifact set is frozen (terminal lifecycle state or existing distribution); no artifacts can be added. (INV-004, since S4-03: the `VersionDistributionGuard` rejection E5's upload path surfaces — terminal status, or any distribution record reported through the contributor seam E7 grants and M2 releases will register on) |
