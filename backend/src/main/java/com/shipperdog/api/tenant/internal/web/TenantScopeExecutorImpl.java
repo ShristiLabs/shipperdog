@@ -62,6 +62,32 @@ public class TenantScopeExecutorImpl implements TenantScopeExecutor {
         }
     }
 
+    @Override
+    public <T> T inOrganizationScope(UUID organizationId, UUID actorId, Supplier<T> work) {
+        if (organizationId == null || actorId == null) {
+            throw new TenantIsolationException("an explicit organization scope requires organizationId and actorId");
+        }
+        if (TenantContext.current().isPresent()) {
+            throw new TenantIsolationException(
+                    "a tenant context is already bound to this thread; explicit scoping refuses to re-scope");
+        }
+        boolean platformAdmin = platformAdmins.isPlatformAdmin(actorId);
+        if (platformAdmin) {
+            audit.record(AuditEvent.builder(AuditEventType.CROSS_TENANT_ACCESS)
+                    .userId(actorId)
+                    .orgId(organizationId)
+                    .success(true)
+                    .detail(detailOf())
+                    .build());
+        }
+        TenantContext.beginOrganization(organizationId, actorId, platformAdmin);
+        try {
+            return work.get();
+        } finally {
+            TenantContext.end();
+        }
+    }
+
     private static Map<String, String> detailOf() {
         Map<String, String> detail = new LinkedHashMap<>();
         detail.put("scope", "explicit");

@@ -178,3 +178,54 @@ routes), derives the platform-admin override from
 platform-administered execution as `CROSS_TENANT_ACCESS`. It is the
 same binding authority, reviewable in one place, and doubles as the
 background-job entry point the original decision anticipated.
+
+## Third amendment (2026-10-05): the organization-scope context and the sanctioned scope transition
+
+The ownership scope (issue #14, S3-02, PRD 14) makes organization-owned
+rows real: an application is either tenant-owned (one owning tenant) or
+organization/shared (null tenant, owned by the organization itself,
+distributed to tenants only through S3-03's authorization mapping —
+distribution decides, never the other way around). Both facts below
+followed from that model:
+
+1. **Organization-owned rows stay behind the seam — via an
+   organization-scope context.** The seam's predicate
+   (`tenantId = :context`) can never match a null-tenant row, so a new
+   context mode serves them: `TenantContext.beginOrganization(orgId,
+   actor, override)` (the same fail-closed binding authority as
+   `begin`), composed by the seam as
+   `tenantId IS NULL AND organizationId = :context` for entities
+   implementing the `OrganizationScope` marker (`applications` is the
+   first). An organization-scope context over a purely tenant-owned
+   entity refuses — no organization-owned meaning exists for its rows —
+   and the write guard accepts an entity only when it belongs to the
+   context's owning dimension (tenant or organization). The route
+   interceptor resolves the application's ownership and binds the
+   owning tenant's or the owning organization's scope, and the
+   `TenantScopeExecutor` gained the matching establish-only
+   `inOrganizationScope` for creation routes and background jobs.
+   INV-001 therefore holds for both ownership modes by the same
+   construction: neither mode can read or write the other's rows.
+2. **The scope transition is the one sanctioned cross-scope write.**
+   Converting an application between TENANT and ORGANIZATION ownership
+   moves the row between scopes by definition — no single scoped
+   context can own both sides of the write, so the seam's write guard
+   must refuse it everywhere. The registry guard's single declared,
+   id-parameterized `transitionScope` update is the one exception,
+   called only from `ApplicationService` after its precondition checks
+   (INV-002 service checks on the future owner tenant; the
+   authorized-tenants precondition binds when S3-03's mapping exists;
+   the zero-distributions precondition binds when M2's release targets
+   exist) and audited as `APPLICATION_SCOPE_CHANGED` with before/after
+   pairs. It remains true that the marker carrier serves no endpoint
+   data path: reads and ordinary writes of application rows still go
+   only through the seam.
+
+V1's per-scope name index (`uq_applications_scope_name`) was replaced
+by the organization-wide `uq_applications_organization_name` (V10): the
+registry's documented name guard has been organization-wide since S3-01
+(the error registry says "in use in the organization"), and the
+per-scope shape silently under-enforced cross-scope races — two tenants
+of one organization could concurrently register the same name with no
+index collision. The database is again the final authority for the
+documented semantics.

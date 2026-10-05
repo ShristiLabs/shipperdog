@@ -111,22 +111,30 @@ Removal deletes the membership and revokes the member's refresh tokens
 (`status.before`/`status.after`, `sessionsRevoked`), and
 `TENANT_MEMBER_REMOVED`.
 
-## Applications (S2-03, S3-01)
+## Applications (S2-03, S3-01, S3-02)
 
 `GET /{id}/applications` returns the applications the tenant owns —
 the `applications.tenant_id` rows for that tenant, cursor-paginated
 and carrying the registry fields (platforms, identifiers,
-description, status since S3-01), readable by both tenant roles
-(`tenant:applications:read`). The
+description, status, ownership scope since S3-01/S3-02), readable by
+both tenant roles (`tenant:applications:read`). The
 listing runs through the isolation seam, so rows of other tenants and
-organization-owned applications (null `tenant_id`) are invisible by
+organization-shared applications (null `tenant_id`) are invisible by
 construction. FR-002's "assign applications" write side arrived with
 the application registry: creation and management are S3-01
 (`POST`/`GET`/`PATCH /api/v1/applications`, organization-level
 `app:applications:write` authority — see
-[authorization](authorization.md)); ownership scope is S3-02.
+[authorization](authorization.md)). Ownership scope (S3-02, PRD 14):
+an application is `TENANT`-owned — exactly one owning tenant — or
+`ORGANIZATION`-shared, owned by the organization itself, readable by
+organization roles org-wide and convertible both ways through an
+audited `APPLICATION_SCOPE_CHANGED` transition
+(`PATCH /api/v1/applications/{id}` with `ownershipScope`; converting
+to TENANT names the new owner tenant and enforces the INV-002 checks).
 Shared applications — an application reachable from more than one
-tenant — arrive with S3-03 and will extend this surface. A deactivated
+tenant — arrive with S3-03 and will extend the tenant listing;
+distribution decides which tenants receive a shared application,
+never the other way around (PRD 14/15). A deactivated
 tenant keeps a readable listing (deactivation blocks new affiliations,
 never reads).
 

@@ -2,12 +2,14 @@ package com.shipperdog.api.application.internal.service;
 
 import com.shipperdog.api.application.ApplicationException;
 import com.shipperdog.api.application.internal.entity.ApplicationEntity;
+import com.shipperdog.api.application.internal.entity.ApplicationEntity.OwnershipScope;
 import com.shipperdog.api.application.internal.repository.ApplicationRegistryRepository;
 import com.shipperdog.api.application.internal.repository.ApplicationScopedRepository;
 import com.shipperdog.api.audit.AuditEvent;
 import com.shipperdog.api.audit.AuditEventPublisher;
 import com.shipperdog.api.audit.AuditEventType;
 import com.shipperdog.api.config.TraceAttributes;
+import com.shipperdog.api.organization.OrganizationAccess;
 import com.shipperdog.api.tenant.TenantAccess;
 import com.shipperdog.api.tenant.TenantScopeExecutor;
 import java.time.Clock;
@@ -26,10 +28,11 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 /**
- * The application registry (issue #13, S3-01, FR-003, PRD 8.3):
- * registration of tenant-owned applications with their platform set and
+ * The application registry (issues #13 + #14, S3-01/S3-02, FR-003,
+ * PRD 8.3/14): registration of applications with their platform set and
  * per-platform identifiers, metadata edits with audited identifier
- * changes, and the ACTIVE/ARCHIVED lifecycle. Applications are born
+ * changes, the ACTIVE/ARCHIVED lifecycle, and — since S3-02 — the
+ * ownership scope with its audited transitions. Applications are born
  * ACTIVE; ARCHIVED is the soft retirement state — archived applications
  * stay readable with their audit history and accept no new
  * versions/artifacts (that guard binds in E4/E5, which create versions
@@ -37,28 +40,51 @@ import org.springframework.transaction.annotation.Transactional;
  * the error-code registry for them). The transition is reversible,
  * mirroring the tenant lifecycle precedent.
  *
+ * <p>Ownership scope (issue #14, PRD 14, INV-002): an application is
+ * TENANT-owned — it belongs to exactly one tenant of one organization,
+ * the tenant derived single source of truth for the organization — or
+ * ORGANIZATION-shared — owned by the organization itself with no tenant,
+ * visible to organization roles org-wide, and distributed to tenants
+ * only through authorization (S3-03, PRD 15: distribution decides which
+ * tenants receive a shared application, never the other way around).
+ * The pairing is pinned by the V10 database CHECK; the service enforces
+ * the same rule at the door (a TENANT registration resolves its owning
+ * tenant or fails the standard miss; an ORGANIZATION registration
+ * carries no tenant and requires a valid owning organization).
+ *
+ * <p>Scope transitions (issue #14, AC3) are audited as
+ * {@code APPLICATION_SCOPE_CHANGED} and run through the registry
+ * guard's single sanctioned cross-scope write: a transition moves the
+ * row between scopes by definition, so no scoped context can own both
+ * sides (ADR-0002 third amendment). Preconditions: converting
+ * ORGANIZATION to TENANT requires a valid, affiliated, active target
+ * tenant (INV-002 service check), and is blocked while tenants are
+ * authorized on the shared application — no authorization mapping
+ * exists in M1 (S3-03 delivers it), so the declared precondition point
+ * below is where S3-03 adds that check; converting TENANT to
+ * ORGANIZATION requires zero distributions — none can exist until M2's
+ * release targets, at the same declared point.
+ *
  * <p>Authorization (evaluated at the controller): {@code app:} grants
  * resolve through the owning tenant/organization union — creation
- * checks {@code app:applications:write} at the future owner tenant, so
- * every creator holds an organization-level role (ORG_ADMIN or
- * APP_OWNER); item routes check at the application itself.
+ * checks {@code app:applications:write} at the future owner tenant
+ * (TENANT registrations) or at the owning organization (ORGANIZATION
+ * registrations), so every creator holds an organization-level role
+ * (ORG_ADMIN or APP_OWNER); item routes check at the application
+ * itself, organization-shared rows resolving at their organization.
  *
  * <p>Tenant isolation (INV-001, ADR-0002): row reads and writes run
- * through the seam — the route interceptor binds the request's tenant
- * context for application-addressing routes, creation establishes its
- * scope explicitly through {@link TenantScopeExecutor} because the
- * owner tenant arrives in the request body. The organization-wide
- * uniqueness guards (name, bundle id, package name per organization —
- * AC2) necessarily span the tenants of one
- * organization and live on the marked {@link ApplicationRegistryRepository};
- * they answer existence booleans only, and the database indexes remain
- * the final authority, re-derived race-safe without driver-message
- * parsing.
- *
- * <p>Ownership scope (tenant-owned vs organization/shared) is S3-02's
- * discriminator; this story writes tenant-owned rows only, and
- * organization-owned rows (null owner tenant) render as the standard
- * miss until that story lands.
+ * through the seam — the route interceptor binds the request's context
+ * for application-addressing routes (the owning tenant's for TENANT
+ * rows, the owning organization's for ORGANIZATION rows since S3-02),
+ * and creation establishes its scope explicitly through
+ * {@link TenantScopeExecutor} because the owner arrives in the request
+ * body. The organization-wide uniqueness guards (name, bundle id,
+ * package name per organization — issue #13 AC2, now across both
+ * ownership scopes) necessarily span the tenants of one organization
+ * and live on the marked {@link ApplicationRegistryRepository}; they
+ * answer existence booleans only, and the database indexes remain the
+ * final authority, re-derived race-safe without driver-message parsing.
  */
 @Service
 public class ApplicationService {
@@ -79,6 +105,7 @@ public class ApplicationService {
     private final ApplicationRegistryRepository registry;
     private final ApplicationConflictResolver conflicts;
     private final TenantAccess tenants;
+    private final OrganizationAccess organizations;
     private final TenantScopeExecutor scope;
     private final AuditEventPublisher audit;
     private final Clock clock;
@@ -89,6 +116,7 @@ public class ApplicationService {
             ApplicationRegistryRepository registry,
             ApplicationConflictResolver conflicts,
             TenantAccess tenants,
+            OrganizationAccess organizations,
             TenantScopeExecutor scope,
             AuditEventPublisher audit,
             Clock clock,
@@ -97,6 +125,7 @@ public class ApplicationService {
         this.registry = registry;
         this.conflicts = conflicts;
         this.tenants = tenants;
+        this.organizations = organizations;
         this.scope = scope;
         this.audit = audit;
         this.clock = clock;
@@ -108,32 +137,63 @@ public class ApplicationService {
     // -------------------------------------------------------------------------
 
     /**
-     * Registers a tenant-owned application (AC1): at least one platform,
-     * the chosen platforms' identifiers required and reverse-DNS valid,
-     * uniqueness guards pre-checked with precise 409 codes. The owning
-     * organization is derived from the tenant — the single source of
-     * truth — never accepted from the caller.
+     * Registers an application (AC1): at least one platform, the chosen
+     * platforms' identifiers required and reverse-DNS valid, uniqueness
+     * guards pre-checked with precise 409 codes. TENANT scope (the
+     * default) derives the owning organization from the future owner
+     * tenant — the single source of truth, never accepted from the
+     * caller; ORGANIZATION scope (issue #14, PRD 14) states the owning
+     * organization directly and carries no tenant.
      */
     @Transactional
     public ApplicationView create(
             UUID actorId,
+            String ownershipScope,
             UUID tenantId,
+            UUID organizationId,
             String name,
             String description,
             List<String> platforms,
             String bundleId,
             String packageName) {
-        if (tenantId == null) {
-            // The permission check denies null targets before the handler
-            // runs; this guard keeps the invariant local and loud.
-            throw invalid("tenantId is required");
-        }
-        UUID organizationId = tenants.owningOrganizationId(tenantId)
-                .orElseThrow(() -> new ApplicationException(ApplicationException.Code.NOT_FOUND, "tenant not found"));
-        if (!tenants.acceptsNewAffiliations(tenantId)) {
-            // Deactivation blocks NEW affiliations; an application is one
-            // (the registry analog of the membership rule, issue #9/#11).
-            throw new ApplicationException(ApplicationException.Code.TENANT_DEACTIVATED, "tenant is deactivated");
+        OwnershipScope requestedScope = parseScope(ownershipScope);
+        UUID ownerTenantId;
+        UUID owningOrganizationId;
+        if (requestedScope == OwnershipScope.ORGANIZATION) {
+            if (tenantId != null) {
+                throw invalid("tenantId is not valid for ORGANIZATION ownership");
+            }
+            if (organizationId == null) {
+                throw invalid("organizationId is required for ORGANIZATION ownership");
+            }
+            if (!organizations.organizationExists(organizationId)) {
+                // The permission check already demands an organization
+                // role for non-platform callers; this keeps the platform
+                // wildcard on the same standard miss instead of an FK 500.
+                throw notFound("organization not found");
+            }
+            ownerTenantId = null;
+            owningOrganizationId = organizationId;
+        } else {
+            if (organizationId != null) {
+                throw invalid("organizationId is only valid for ORGANIZATION ownership");
+            }
+            if (tenantId == null) {
+                // The permission check denies null targets before the
+                // handler runs; this guard keeps the invariant local and
+                // loud (INV-002: a tenant-scoped application must have its
+                // owning tenant).
+                throw invalid("tenantId is required");
+            }
+            owningOrganizationId =
+                    tenants.owningOrganizationId(tenantId).orElseThrow(() -> notFound("tenant not found"));
+            if (!tenants.acceptsNewAffiliations(tenantId)) {
+                // Deactivation blocks NEW affiliations; an application is
+                // one (the registry analog of the membership rule, issue
+                // #9/#11).
+                throw new ApplicationException(ApplicationException.Code.TENANT_DEACTIVATED, "tenant is deactivated");
+            }
+            ownerTenantId = tenantId;
         }
         String validatedName = requireName(name);
         String validatedDescription = optionalDescription(description);
@@ -142,37 +202,51 @@ public class ApplicationService {
                 platformIdentifier(bundleId, validatedPlatforms, ApplicationEntity.Platform.IOS, "bundleId");
         String validatedPackage =
                 platformIdentifier(packageName, validatedPlatforms, ApplicationEntity.Platform.ANDROID, "packageName");
-        if (registry.existsByOrganizationIdAndName(organizationId, validatedName)) {
+        if (registry.existsByOrganizationIdAndName(owningOrganizationId, validatedName)) {
             throw nameTaken();
         }
-        if (validatedBundle != null && registry.existsByOrganizationIdAndBundleId(organizationId, validatedBundle)) {
+        if (validatedBundle != null
+                && registry.existsByOrganizationIdAndBundleId(owningOrganizationId, validatedBundle)) {
             throw bundleTaken();
         }
         if (validatedPackage != null
-                && registry.existsByOrganizationIdAndPackageName(organizationId, validatedPackage)) {
+                && registry.existsByOrganizationIdAndPackageName(owningOrganizationId, validatedPackage)) {
             throw packageTaken();
         }
         ApplicationEntity entity = new ApplicationEntity(
-                organizationId,
-                tenantId,
+                owningOrganizationId,
+                requestedScope,
+                ownerTenantId,
                 validatedName,
                 validatedDescription,
                 validatedPlatforms,
                 validatedBundle,
                 validatedPackage);
+        // The scope executor establishes the owning dimension at the point
+        // of use: the future owner tenant for TENANT registrations, the
+        // owning organization for ORGANIZATION registrations (issue #14).
         ApplicationEntity saved;
         try {
-            saved = scope.inScope(tenantId, actorId, () -> {
-                ApplicationEntity inserted = applications.saveScoped(entity);
-                // Push the insert to the database inside the guard so
-                // a lost uniqueness race translates here, not at commit.
-                applications.flush();
-                return inserted;
-            });
+            if (requestedScope == OwnershipScope.ORGANIZATION) {
+                saved = scope.inOrganizationScope(owningOrganizationId, actorId, () -> {
+                    ApplicationEntity inserted = applications.saveScoped(entity);
+                    applications.flush();
+                    return inserted;
+                });
+            } else {
+                saved = scope.inScope(ownerTenantId, actorId, () -> {
+                    ApplicationEntity inserted = applications.saveScoped(entity);
+                    // Push the insert to the database inside the guard so
+                    // a lost uniqueness race translates here, not at
+                    // commit.
+                    applications.flush();
+                    return inserted;
+                });
+            }
         } catch (DataIntegrityViolationException e) {
             // Fresh-transaction re-derivation: the racing transaction is
             // aborted and cannot answer probes (PostgreSQL).
-            throw conflicts.insertConflict(organizationId, validatedName, validatedBundle, validatedPackage);
+            throw conflicts.insertConflict(owningOrganizationId, validatedName, validatedBundle, validatedPackage);
         }
         // The created id is only known after the insert (issue #7 convention).
         trace.application(saved.getId());
@@ -189,11 +263,12 @@ public class ApplicationService {
             created.put("packageName", validatedPackage);
         }
         created.put("status", saved.getStatus().name());
+        created.put("ownershipScope", saved.getOwnershipScope().name());
         audit(
                 AuditEventType.APPLICATION_CREATED,
                 actorId,
-                organizationId,
-                tenantId,
+                owningOrganizationId,
+                ownerTenantId,
                 saved.getId(),
                 Map.copyOf(created));
         return ApplicationView.from(saved);
@@ -214,14 +289,16 @@ public class ApplicationService {
     // -------------------------------------------------------------------------
 
     /**
-     * Partial update (AC3): null fields are left unchanged; an empty
-     * description clears it. Identifier and platform edits revalidate
-     * the per-platform coupling — removing a platform retires its
-     * identifier — and every changed field, identifiers included, is
+     * Partial update (AC3 + issue #14): null fields are left unchanged;
+     * an empty description clears it. Identifier and platform edits
+     * revalidate the per-platform coupling — removing a platform retires
+     * its identifier — and every changed field, identifiers included, is
      * audited with before/after pairs (identifier changes affect
-     * artifact matching, S5-05). The status field carries the
-     * reversible ACTIVE/ARCHIVED transition; V1's DISABLED label stays
-     * reserved-unused.
+     * artifact matching, S5-05). The status field carries the reversible
+     * ACTIVE/ARCHIVED transition; V1's DISABLED label stays
+     * reserved-unused. A changed {@code ownershipScope} carries the
+     * audited scope transition (see {@link #transitionOf}), executed
+     * after the metadata edit inside the same request.
      */
     @Transactional
     public ApplicationView update(
@@ -232,9 +309,12 @@ public class ApplicationService {
             List<String> platforms,
             String bundleId,
             String packageName,
-            String status) {
+            String status,
+            String ownershipScope,
+            UUID targetTenantId) {
         ApplicationEntity application = load(applicationId);
         UUID organizationId = application.getOrganizationId();
+        ScopeTransition transition = transitionOf(application, ownershipScope, targetTenantId);
         Map<String, String> changes = new LinkedHashMap<>();
 
         String effectiveName = application.getName();
@@ -287,14 +367,19 @@ public class ApplicationService {
             throw conflicts.updateConflict(
                     organizationId, applicationId, effectiveName, effectiveBundle, effectivePackage);
         }
-        audit(
-                AuditEventType.APPLICATION_UPDATED,
-                actorId,
-                organizationId,
-                application.getTenantId(),
-                applicationId,
-                Map.copyOf(changes));
-        return ApplicationView.from(application);
+        if (!changes.isEmpty()) {
+            audit(
+                    AuditEventType.APPLICATION_UPDATED,
+                    actorId,
+                    organizationId,
+                    application.getTenantId(),
+                    applicationId,
+                    Map.copyOf(changes));
+        }
+        if (transition == null) {
+            return ApplicationView.from(application);
+        }
+        return transitionScope(actorId, application, transition);
     }
 
     // -------------------------------------------------------------------------
@@ -306,6 +391,7 @@ public class ApplicationService {
             UUID id,
             UUID organizationId,
             UUID tenantId,
+            String ownershipScope,
             String name,
             String description,
             List<String> platforms,
@@ -320,6 +406,7 @@ public class ApplicationService {
                     application.getId(),
                     application.getOrganizationId(),
                     application.getTenantId(),
+                    application.getOwnershipScope().name(),
                     application.getName(),
                     application.getDescription(),
                     application.getPlatforms(),
@@ -336,19 +423,150 @@ public class ApplicationService {
     // -------------------------------------------------------------------------
 
     /**
-     * Loads through the seam inside the route's bound context: the seam
-     * composes {@code tenantId = context} into the query, so an
-     * application of another tenant is indistinguishable from an unknown
-     * id — the standard concealed miss (PRD 12). The ownership resolve
-     * first keeps unknown ids and the not-yet-existing organization-owned
-     * mode on the same miss instead of an unscoped-seam refusal.
+     * Loads through the seam inside the route's bound context: the route
+     * interceptor resolves the application's ownership and binds the
+     * owning tenant's context for TENANT rows or the owning
+     * organization's for ORGANIZATION rows (issue #14), and the seam
+     * composes the matching predicate. An application outside the bound
+     * scope — another tenant's, another organization's shared row, or an
+     * unknown id — is indistinguishable from a miss: the standard
+     * concealed miss (PRD 12).
      */
     private ApplicationEntity load(UUID applicationId) {
-        return registry.ownershipOf(applicationId)
-                .filter(ownership -> ownership.tenantId() != null)
-                .flatMap(ownership -> applications.findScoped(applicationId))
+        return applications
+                .findScoped(applicationId)
                 .orElseThrow(
                         () -> new ApplicationException(ApplicationException.Code.NOT_FOUND, "application not found"));
+    }
+
+    /**
+     * The requested ownership-scope transition of a PATCH (issue #14,
+     * AC3), or null when the request changes nothing about ownership:
+     * an absent {@code ownershipScope} with an absent {@code tenantId}
+     * is a metadata-only edit, and a restated current scope is a no-op.
+     * The rules:
+     *
+     * <ul>
+     *   <li>{@code tenantId} without a scope change is rejected —
+     *       re-owning between tenants is not a registry operation
+     *       (distribution, PRD 15, decides reachability, never the
+     *       other way around).</li>
+     *   <li>ORGANIZATION to TENANT requires the new owner tenant and
+     *       enforces INV-002's service check: the tenant must exist,
+     *       belong to the application's organization (a foreign
+     *       organization's tenant is the same miss as an unknown id),
+     *       and accept new affiliations. Precondition: blocked while
+     *       tenants are authorized on the shared application — no
+     *       authorization mapping exists in M1 (S3-03 delivers it);
+     *       this method is the declared single point where that check
+     *       binds.</li>
+     *   <li>TENANT to ORGANIZATION carries no tenant. Precondition:
+     *       zero distributions — none can exist until M2's release
+     *       targets; the same declared point.</li>
+     * </ul>
+     */
+    private ScopeTransition transitionOf(ApplicationEntity application, String ownershipScope, UUID targetTenantId) {
+        if (ownershipScope == null && targetTenantId == null) {
+            return null;
+        }
+        OwnershipScope requested = parseScope(ownershipScope);
+        if (requested == application.getOwnershipScope()) {
+            if (targetTenantId != null) {
+                throw invalid("tenantId is only valid when converting an ORGANIZATION application to TENANT");
+            }
+            return null;
+        }
+        if (requested == OwnershipScope.TENANT) {
+            if (targetTenantId == null) {
+                throw invalid("tenantId is required when converting to TENANT ownership");
+            }
+            // INV-002 service check: the future owner must exist inside
+            // the application's organization and accept affiliations.
+            UUID ownerOrganization =
+                    tenants.owningOrganizationId(targetTenantId).orElseThrow(() -> notFound("tenant not found"));
+            if (!ownerOrganization.equals(application.getOrganizationId())) {
+                throw notFound("tenant not found");
+            }
+            if (!tenants.acceptsNewAffiliations(targetTenantId)) {
+                throw new ApplicationException(ApplicationException.Code.TENANT_DEACTIVATED, "tenant is deactivated");
+            }
+            // Precondition (AC3): no tenant may be authorized on the
+            // shared application. S3-03's authorization mapping does not
+            // exist in M1, so nothing can be authorized yet; that story
+            // binds its check here.
+            return new ScopeTransition(OwnershipScope.TENANT, targetTenantId);
+        }
+        if (targetTenantId != null) {
+            throw invalid("tenantId is not valid when converting to ORGANIZATION ownership");
+        }
+        // Precondition (AC3): zero distributions may anchor the
+        // application to its tenant. M2's release targets do not exist
+        // in M1; that story binds its check here.
+        return new ScopeTransition(OwnershipScope.ORGANIZATION, null);
+    }
+
+    /**
+     * Executes the sanctioned transition (ADR-0002 third amendment) and
+     * audits it as {@code APPLICATION_SCOPE_CHANGED} with before/after
+     * pairs. The write itself is the registry guard's single declared
+     * cross-scope update: the row moves between scopes, so the request's
+     * bound scope (either mode) cannot own both sides, and the service
+     * has already run every precondition.
+     */
+    private ApplicationView transitionScope(UUID actorId, ApplicationEntity application, ScopeTransition transition) {
+        OwnershipScope before = application.getOwnershipScope();
+        UUID beforeTenantId = application.getTenantId();
+        int moved = registry.transitionScope(
+                application.getId(), transition.to(), transition.tenantId(), Instant.now(clock));
+        if (moved != 1) {
+            throw notFound("application not found");
+        }
+        Map<String, String> detail = new LinkedHashMap<>();
+        putChange(detail, "ownershipScope", before.name(), transition.to().name());
+        putChange(detail, "tenantId", beforeTenantId, transition.tenantId());
+        audit(
+                AuditEventType.APPLICATION_SCOPE_CHANGED,
+                actorId,
+                application.getOrganizationId(),
+                transition.tenantId(),
+                application.getId(),
+                Map.copyOf(detail));
+        // The bulk update bypasses the persistence context; the view
+        // reflects the transitioned row without mutating the managed
+        // entity (an unrequested dirty write would re-cross the scopes
+        // the seam just refused).
+        return new ApplicationView(
+                application.getId(),
+                application.getOrganizationId(),
+                transition.tenantId(),
+                transition.to().name(),
+                application.getName(),
+                application.getDescription(),
+                application.getPlatforms(),
+                application.getBundleId(),
+                application.getPackageName(),
+                application.getStatus().name(),
+                application.getCreatedAt(),
+                Instant.now(clock));
+    }
+
+    /** The parsed transition request: the target scope and owner tenant. */
+    private record ScopeTransition(OwnershipScope to, UUID tenantId) {}
+
+    /** Ownership scope of a request; absent means TENANT (S3-01 clients). */
+    private static OwnershipScope parseScope(String ownershipScope) {
+        if (ownershipScope == null || ownershipScope.isBlank()) {
+            return OwnershipScope.TENANT;
+        }
+        String normalized = ownershipScope.trim().toUpperCase(Locale.ROOT);
+        if ("TENANT".equals(normalized) || "ORGANIZATION".equals(normalized)) {
+            return OwnershipScope.valueOf(normalized);
+        }
+        throw invalid("ownershipScope must be TENANT or ORGANIZATION");
+    }
+
+    private static ApplicationException notFound(String message) {
+        return new ApplicationException(ApplicationException.Code.NOT_FOUND, message);
     }
 
     /**
@@ -490,6 +708,11 @@ public class ApplicationService {
     private static void putChange(Map<String, String> changes, String field, String before, String after) {
         changes.put(field + ".before", before == null ? "" : before);
         changes.put(field + ".after", after == null ? "" : after);
+    }
+
+    /** Before/after pair for id-valued audit detail; empty means unset. */
+    private static void putChange(Map<String, String> changes, String field, UUID before, UUID after) {
+        putChange(changes, field, before == null ? null : before.toString(), after == null ? null : after.toString());
     }
 
     private void audit(

@@ -718,6 +718,7 @@ paths:
           - ACCESS_DENIED
           - APPLICATION_CREATED
           - APPLICATION_UPDATED
+          - APPLICATION_SCOPE_CHANGED
       - name: applicationId
         in: query
         required: false
@@ -1126,6 +1127,8 @@ components:
         tenantId:
           type: string
           format: uuid
+        ownershipScope:
+          type: string
         name:
           type: string
         description:
@@ -1271,6 +1274,7 @@ components:
           - ACCESS_DENIED
           - APPLICATION_CREATED
           - APPLICATION_UPDATED
+          - APPLICATION_SCOPE_CHANGED
         occurredAt:
           type: string
           format: date-time

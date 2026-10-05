@@ -17,8 +17,9 @@ public interface ApplicationAccess {
 
     /**
      * The owning scope of the application, or empty when unknown. A null
-     * {@code tenantId} means organization-owned — that ownership mode
-     * arrives with S3-02; S3-01 creates tenant-owned rows only.
+     * {@code tenantId} means organization-shared (PRD 14, S3-02): the
+     * row is owned by the organization itself and resolves at
+     * organization scope.
      */
     Optional<Ownership> ownershipOf(UUID applicationId);
 

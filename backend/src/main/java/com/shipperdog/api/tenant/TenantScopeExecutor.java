@@ -32,4 +32,21 @@ public interface TenantScopeExecutor {
      *     re-scope, which the seam forbids
      */
     <T> T inScope(UUID tenantId, UUID actorId, Supplier<T> work);
+
+    /**
+     * Runs {@code work} inside an organization scope bound to
+     * {@code organizationId} for {@code actorId} (issue #14, S3-02): the
+     * sanctioned establishment for organization-owned rows whose owning
+     * organization arrives in the request body (creating an
+     * organization-shared application, PRD 14) and for background jobs
+     * over organization-owned data. Same semantics as {@link #inScope}:
+     * establish-only, platform-administrator override derived from
+     * {@code users.platform_admin}, every platform-administered execution
+     * audited as {@code CROSS_TENANT_ACCESS}.
+     *
+     * @throws TenantIsolationException when a context is already bound to
+     *     this thread — establishing a second scope would be a re-scope,
+     *     which the seam forbids
+     */
+    <T> T inOrganizationScope(UUID organizationId, UUID actorId, Supplier<T> work);
 }

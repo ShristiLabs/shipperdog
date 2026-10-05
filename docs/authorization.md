@@ -95,14 +95,15 @@ password-reset pair) matched by the security chain's `permitAll`.
   organization's role overlaid: an organization administrator holds
   tenant permissions inside their organization's tenants (union across
   scopes). `app:` — since the application registry (S3-01), resolved
-  through the application's owning tenant with the organization overlay
-  (organization-owned rows check the owning organization); creation-time
-  checks evaluate at the future owner tenant, so `app:applications:write`
-  authority is organization-level by construction. Application-scope
-  role memberships (INV-002) arrive with S3-02. Roles held in
-  DEACTIVATED organizations are excluded from
-  the snapshot, so deactivation strips effective permissions without
-  touching memberships.
+  through the application's owning tenant with the organization overlay;
+  organization-shared rows (S3-02, PRD 14 — null owning tenant) resolve
+  at the owning organization. Creation-time checks evaluate at the
+  future owner tenant for tenant-owned registrations and at the owning
+  organization for organization-shared ones, so
+  `app:applications:write` authority is organization-level by
+  construction. Roles held in DEACTIVATED organizations are excluded
+  from the snapshot, so deactivation strips effective permissions
+  without touching memberships.
 
 ## Opaque denials (PRD 12)
 

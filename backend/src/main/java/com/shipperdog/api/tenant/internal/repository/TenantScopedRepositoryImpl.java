@@ -1,6 +1,7 @@
 package com.shipperdog.api.tenant.internal.repository;
 
 import com.shipperdog.api.config.CursorPageable;
+import com.shipperdog.api.tenant.OrganizationScope;
 import com.shipperdog.api.tenant.TenantContext;
 import com.shipperdog.api.tenant.TenantIsolationException;
 import com.shipperdog.api.tenant.TenantScope;
@@ -91,6 +92,20 @@ import org.springframework.util.Assert;
  * repository, not only seam repositories; the enforcement paths apply
  * solely when the domain type implements {@link TenantScope}, so plain
  * repositories keep stock Spring Data behavior.
+ *
+ * <p><strong>Organization-scope mode (issue #14, S3-02, PRD 14; ADR-0002
+ * third amendment).</strong> A context bound with
+ * {@code TenantContext.beginOrganization} targets rows the organization
+ * itself owns ({@link com.shipperdog.api.tenant.OrganizationScope}
+ * entities with a null {@code tenantId} — organization-shared
+ * applications). The seam composes
+ * {@code tenantId IS NULL AND organizationId = :context} for every
+ * scoped operation in that mode and refuses to serve entities that are
+ * not {@code OrganizationScope}: organization-owned rows are reachable
+ * only through their organization's scope, exactly as tenant-owned rows
+ * are reachable only through their tenant's — INV-001 holds for both
+ * ownership modes by the same construction, and neither mode can read or
+ * write the other's rows.
  */
 @NoRepositoryBean
 @Transactional(readOnly = true)
@@ -99,6 +114,9 @@ public class TenantScopedRepositoryImpl<T, ID extends Serializable> extends Simp
 
     /** Discriminator path every {@link TenantScope} entity maps. */
     private static final String TENANT_ID_ATTRIBUTE = "tenantId";
+
+    /** Owning-organization path every {@link OrganizationScope} entity maps. */
+    private static final String ORGANIZATION_ID_ATTRIBUTE = "organizationId";
 
     /** Identity path of every entity served by the seam. */
     private static final String ID_ATTRIBUTE = "id";
@@ -463,17 +481,51 @@ public class TenantScopedRepositoryImpl<T, ID extends Serializable> extends Simp
     // -------------------------------------------------------------------------
 
     /**
-     * The write guard shared by every guarded shape: the entity must be
-     * a {@link TenantScope} row of the context's tenant, unless the
-     * audited platform-administrator override is active.
+     * The write guard shared by every guarded shape: the entity must
+     * belong to the context's scope — a {@link TenantScope} row of the
+     * context's tenant, or an {@link OrganizationScope} row of the
+     * context's organization with a null tenant — unless the audited
+     * platform-administrator override is active.
      */
     private static void assertTenantWrite(Object entity) {
         TenantContext context = TenantContext.require();
-        UUID tenantOfEntity = tenantIdOf(entity);
-        if (!context.crossTenantOverride() && !context.tenantId().equals(tenantOfEntity)) {
-            throw new TenantIsolationException("write refused: entity belongs to tenant " + tenantOfEntity
-                    + ", context is scoped to tenant " + context.tenantId());
+        if (!context.crossTenantOverride() && !writeMatchesScope(context, entity)) {
+            throw new TenantIsolationException("write refused: entity does not belong to the context's scope ("
+                    + scopeDescription(context)
+                    + "); entity tenant="
+                    + ((TenantScope) entity).tenantId()
+                    + ", entity organization="
+                    + (entity instanceof OrganizationScope organizationScoped
+                            ? organizationScoped.organizationId()
+                            : null)
+                    + ")");
         }
+    }
+
+    /**
+     * Whether the entity belongs to the context's owning dimension: a
+     * tenant-scope context owns the entity only when their tenants are
+     * equal; an organization-scope context (issue #14) owns it only when
+     * the entity is an {@link OrganizationScope} row of that organization
+     * with a null owning tenant. Every other combination — including an
+     * organization-owned row under a tenant scope, or any tenant-owned
+     * row under an organization scope — is out of scope.
+     */
+    private static boolean writeMatchesScope(TenantContext context, Object entity) {
+        if (context.organizationScoped()) {
+            return entity instanceof OrganizationScope organizationScoped
+                    && organizationScoped.tenantId() == null
+                    && context.organizationId().equals(organizationScoped.organizationId());
+        }
+        UUID tenantOfEntity = tenantIdOf(entity);
+        return context.tenantId().equals(tenantOfEntity);
+    }
+
+    /** The context's owning dimension, for refusal messages. */
+    private static String scopeDescription(TenantContext context) {
+        return context.organizationScoped()
+                ? "organization " + context.organizationId()
+                : "tenant " + context.tenantId();
     }
 
     /** The refusal every non-tenant-safe inherited operation raises. */
@@ -485,16 +537,31 @@ public class TenantScopedRepositoryImpl<T, ID extends Serializable> extends Simp
     }
 
     /**
-     * Composes the forced tenant predicate ahead of the caller's filter:
+     * Composes the forced scope predicate ahead of the caller's filter:
      * the seam's guarantee, applied identically to reads and existence
-     * checks regardless of what the filter asks for.
+     * checks regardless of what the filter asks for. Tenant-scope
+     * contexts compose {@code tenantId = :context}; organization-scope
+     * contexts (issue #14) compose
+     * {@code tenantId IS NULL AND organizationId = :context} and are
+     * served only for {@link OrganizationScope} entities — an
+     * organization-scope context over a purely tenant-owned entity is a
+     * scoping error and refuses rather than guessing.
      */
     private Specification<T> scoped(@Nullable Specification<T> filter) {
         TenantContext context = TenantContext.require();
+        if (context.organizationScoped() && !OrganizationScope.class.isAssignableFrom(getDomainClass())) {
+            throw new TenantIsolationException("organization-scope context cannot serve "
+                    + getDomainClass().getSimpleName()
+                    + ": only OrganizationScope rows can be organization-owned (ADR-0002 third amendment)");
+        }
         return (root, query, builder) -> {
-            Predicate tenantPredicate = builder.equal(root.get(TENANT_ID_ATTRIBUTE), context.tenantId());
+            Predicate scopePredicate = context.organizationScoped()
+                    ? builder.and(
+                            builder.isNull(root.get(TENANT_ID_ATTRIBUTE)),
+                            builder.equal(root.get(ORGANIZATION_ID_ATTRIBUTE), context.organizationId()))
+                    : builder.equal(root.get(TENANT_ID_ATTRIBUTE), context.tenantId());
             Predicate callerPredicate = filter == null ? null : filter.toPredicate(root, query, builder);
-            return callerPredicate == null ? tenantPredicate : builder.and(tenantPredicate, callerPredicate);
+            return callerPredicate == null ? scopePredicate : builder.and(scopePredicate, callerPredicate);
         };
     }
 

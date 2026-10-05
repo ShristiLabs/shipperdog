@@ -17,6 +17,7 @@ backend/src/main/resources/db/
     V7__tenant_lifecycle.sql
     V8__tenant_member_status.sql
     V9__application_registry.sql
+    V10__application_ownership_scope.sql
   seed/                 dev fixture, applied only when the seed location is active
     R__dev_seed.sql
 ```
@@ -122,6 +123,18 @@ backend/src/main/resources/db/
   `uq_applications_organization_bundle` /
   `uq_applications_organization_package` (partial unique indexes —
   issue #13 acceptance criterion 2).
+- `V10__application_ownership_scope.sql` (S3-02, issue #14) adds the
+  PRD 14 ownership discriminator: the `application_ownership_scope`
+  enum (`TENANT`/`ORGANIZATION`), the INV-002 pairing check
+  `ck_applications_ownership_scope_owner` (TENANT rows carry the
+  owning tenant, ORGANIZATION rows carry none), and the org-wide name
+  guard `uq_applications_organization_name`, which replaces V1's
+  per-scope `uq_applications_scope_name`: the registry's documented
+  name uniqueness is organization-wide (S3-01, error registry), and
+  the per-scope index silently under-enforced cross-scope races. The
+  replacement is a constraint tightening — expand-only in effect: no
+  data is dropped, and it fails loudly if an organization ever spans
+  a name across tenants (none does).
 
 ## Status and type columns
 

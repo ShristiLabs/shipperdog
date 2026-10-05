@@ -54,6 +54,55 @@ class TenantScopeExecutorImplTest {
     }
 
     @Test
+    void organizationScopeWorkRunsBoundToTheOrganizationAndUnbindsAfter() {
+        UUID orgId = UUID.randomUUID();
+        UUID actorId = UUID.randomUUID();
+
+        TenantContext seen = executor.inOrganizationScope(orgId, actorId, () -> TenantContext.require());
+
+        assertThat(seen.organizationId()).isEqualTo(orgId);
+        assertThat(seen.organizationScoped()).isTrue();
+        assertThat(seen.tenantId()).isNull();
+        assertThat(seen.crossTenantOverride()).isFalse();
+        assertThat(TenantContext.current()).isEmpty();
+        assertThat(published).isEmpty();
+    }
+
+    @Test
+    void organizationScopeRequiresBothIds() {
+        assertThatThrownBy(() -> executor.inOrganizationScope(null, UUID.randomUUID(), () -> "x"))
+                .isInstanceOf(TenantIsolationException.class)
+                .hasMessageContaining("organizationId and actorId");
+        assertThatThrownBy(() -> executor.inOrganizationScope(UUID.randomUUID(), null, () -> "x"))
+                .isInstanceOf(TenantIsolationException.class)
+                .hasMessageContaining("organizationId and actorId");
+    }
+
+    @Test
+    void organizationScopeRefusesToReplaceAnAlreadyBoundScope() {
+        TenantContext.begin(UUID.randomUUID(), UUID.randomUUID(), false);
+        assertThatThrownBy(() -> executor.inOrganizationScope(UUID.randomUUID(), UUID.randomUUID(), () -> "x"))
+                .isInstanceOf(TenantIsolationException.class)
+                .hasMessageContaining("refuses to re-scope");
+    }
+
+    @Test
+    void platformAdministeredOrganizationScopeIsAuditedWithTheOrganization() {
+        TenantScopeExecutorImpl platformExecutor =
+                new TenantScopeExecutorImpl(actorId -> true, new AuditLogger(published::add, Clock.systemUTC()));
+        UUID orgId = UUID.randomUUID();
+        UUID actorId = UUID.randomUUID();
+
+        platformExecutor.inOrganizationScope(orgId, actorId, () -> TenantContext.require());
+
+        assertThat(published).hasSize(1);
+        AuditEvent event = published.get(0);
+        assertThat(event.type()).isEqualTo(AuditEventType.CROSS_TENANT_ACCESS);
+        assertThat(event.orgId()).isEqualTo(orgId);
+        assertThat(event.userId()).isEqualTo(actorId);
+    }
+
+    @Test
     void anExplicitScopeRefusesToReplaceAnAlreadyBoundScope() {
         UUID outerTenant = UUID.randomUUID();
         UUID actorId = UUID.randomUUID();

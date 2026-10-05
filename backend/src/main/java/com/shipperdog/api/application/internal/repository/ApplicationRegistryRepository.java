@@ -2,19 +2,23 @@ package com.shipperdog.api.application.internal.repository;
 
 import com.shipperdog.api.application.ApplicationAccess;
 import com.shipperdog.api.application.internal.entity.ApplicationEntity;
+import com.shipperdog.api.application.internal.entity.ApplicationEntity.OwnershipScope;
 import com.shipperdog.api.tenant.CrossTenantByDesign;
+import java.time.Instant;
 import java.util.Optional;
 import java.util.UUID;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Modifying;
+import org.springframework.data.jpa.repository.Query;
+import org.springframework.data.repository.query.Param;
 
 /**
  * The organization-scope registry guard over {@code applications}
  * (issue #13): deliberately cross-tenant, explicitly marked
  * {@link CrossTenantByDesign} per ADR-0002 (second amendment).
  *
- * <p>Two sanctioned questions span tenants by the issue's own
- * definition, and both are answered here, review-critical and in one
- * place:
+ * <p>Three sanctioned operations span tenants by the issues' own
+ * definition, all declared here, review-critical and in one place:
  *
  * <ul>
  *   <li><strong>Ownership resolution</strong> (via {@link ApplicationAccess})
@@ -30,16 +34,26 @@ import org.springframework.data.jpa.repository.JpaRepository;
  *       org-role-granted only), so the probes reveal nothing the caller
  *       is not entitled to know at organization scope; they answer
  *       existence booleans, never rows.</li>
+ *   <li><strong>The ownership-scope transition</strong> (issue #14, S3-02)
+ *       — converting an application between TENANT and ORGANIZATION
+ *       ownership moves the row between scopes by definition: no single
+ *       scoped context can own both sides of the write, so the seam's
+ *       write guard must refuse it everywhere. The single declared,
+ *       id-parameterized transition below is the one sanctioned write,
+ *       called only from the service after its precondition checks and
+ *       audited as {@code APPLICATION_SCOPE_CHANGED} (ADR-0002 third
+ *       amendment).</li>
  * </ul>
  *
  * <p>Like every {@link CrossTenantByDesign} repository, this interface
- * uses only its own declared derived queries — the inherited
+ * uses only its own declared queries — the inherited
  * {@code JpaRepository} surface stays seam-enforced for
  * {@code TenantScope} entities (ADR-0002 amendment) and would refuse
- * without a bound context. This repository must never serve endpoint
- * data paths: reads and writes of application rows go through
- * {@link ApplicationScopedRepository}, the tenant-isolation seam. An
- * architecture test pairs this marker with the seam rule.
+ * without a bound context. Beyond the sanctioned transition above, this
+ * repository must never serve endpoint data paths: reads and writes of
+ * application rows go through {@link ApplicationScopedRepository}, the
+ * tenant-isolation seam. An architecture test pairs this marker with
+ * the seam rule.
  */
 @CrossTenantByDesign
 public interface ApplicationRegistryRepository extends JpaRepository<ApplicationEntity, UUID>, ApplicationAccess {
@@ -50,7 +64,25 @@ public interface ApplicationRegistryRepository extends JpaRepository<Application
      */
     Optional<ApplicationEntity> findApplicationById(UUID id);
 
-    /** Within-scope name guard (uq_applications_scope_name). */
+    /**
+     * The sanctioned ownership-scope transition (issue #14, AC3): moves
+     * one row between scopes — setting ORGANIZATION nulls the owning
+     * tenant, setting TENANT installs the new owner. Single-row by id,
+     * executed by {@code ApplicationService} only after its INV-002 and
+     * precondition checks, and audited as
+     * {@code APPLICATION_SCOPE_CHANGED}. Returns the rows moved (1, or 0
+     * when the application vanished concurrently).
+     */
+    @Modifying
+    @Query("update ApplicationEntity a set a.ownershipScope = :scope, a.tenantId = :tenantId, a.updatedAt = :updatedAt"
+            + " where a.id = :id")
+    int transitionScope(
+            @Param("id") UUID id,
+            @Param("scope") OwnershipScope scope,
+            @Param("tenantId") UUID tenantId,
+            @Param("updatedAt") Instant updatedAt);
+
+    /** Organization-wide name guard (uq_applications_organization_name, V10). */
     boolean existsByOrganizationIdAndName(UUID organizationId, String name);
 
     /** Name guard excluding the application being updated. */

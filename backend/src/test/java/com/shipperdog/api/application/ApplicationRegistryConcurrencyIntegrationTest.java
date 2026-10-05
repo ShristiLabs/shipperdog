@@ -124,6 +124,68 @@ class ApplicationRegistryConcurrencyIntegrationTest {
         assertThat(loser.body.get("code").asText()).isEqualTo("APPLICATION_NAME_TAKEN");
     }
 
+    @Test
+    void concurrentCrossTenantDuplicateNameYieldsOneCreateAndOneNamedConflict() throws Exception {
+        UUID orgId = createOrg("Race Cross Tenant Corp");
+        String token = loginOfOrgRoleIn(orgId, "race-x-tenant@example.com", "ORG_ADMIN");
+        UUID tenantA = createTenant(token, orgId, "Race XT A", "crm-race-xt-a");
+        UUID tenantB = createTenant(token, orgId, "Race XT B", "crm-race-xt-b");
+
+        // The same name from TWO DIFFERENT tenants of one organization:
+        // V1's per-scope name index admitted both racers silently; the
+        // V10 organization-wide index is the final authority for the
+        // documented org-wide guard (issue #14).
+        List<Recording> results = postConcurrently(
+                token,
+                app(tenantA, "Cross Tenant Racer", List.of("IOS"), "com.racext.a", null),
+                app(tenantB, "Cross Tenant Racer", List.of("IOS"), "com.racext.b", null));
+
+        assertThat(results.stream().map(r -> r.status).sorted().toList())
+                .as("exactly one registration wins across tenants; the loser gets the precise conflict")
+                .containsExactly(201, 409);
+        assertThat(results.stream()
+                        .filter(r -> r.status == 409)
+                        .findFirst()
+                        .orElseThrow()
+                        .body
+                        .get("code")
+                        .asText())
+                .isEqualTo("APPLICATION_NAME_TAKEN");
+        Integer rows = jdbc.queryForObject(
+                "SELECT count(*) FROM applications WHERE name = 'Cross Tenant Racer' AND organization_id = ?",
+                Integer.class,
+                orgId);
+        assertThat(rows).isEqualTo(1);
+    }
+
+    @Test
+    void concurrentCrossScopeDuplicateNameYieldsOneCreateAndOneNamedConflict() throws Exception {
+        UUID orgId = createOrg("Race Cross Scope Corp");
+        String token = loginOfOrgRoleIn(orgId, "race-x-scope@example.com", "ORG_ADMIN");
+        UUID tenantA = createTenant(token, orgId, "Race XS A", "crm-race-xs-a");
+
+        // A tenant-owned registration racing an organization-shared one
+        // on the same name: one ownership mode per name, organization-wide.
+        Map<String, Object> shared = new HashMap<>();
+        shared.put("ownershipScope", "ORGANIZATION");
+        shared.put("organizationId", orgId.toString());
+        shared.put("name", "Cross Scope Racer");
+        shared.put("bundleId", "com.racexs.shared");
+        shared.put("platforms", new ArrayList<>(List.of("IOS")));
+        List<Recording> results = postConcurrently(
+                token, app(tenantA, "Cross Scope Racer", List.of("IOS"), "com.racexs.tenant", null), shared);
+
+        assertThat(results.stream().map(r -> r.status).sorted().toList()).containsExactly(201, 409);
+        assertThat(results.stream()
+                        .filter(r -> r.status == 409)
+                        .findFirst()
+                        .orElseThrow()
+                        .body
+                        .get("code")
+                        .asText())
+                .isEqualTo("APPLICATION_NAME_TAKEN");
+    }
+
     // -----------------------------------------------------------------------
     // Platform set canonicalization (duplicates, case, whitespace, nulls)
     // -----------------------------------------------------------------------

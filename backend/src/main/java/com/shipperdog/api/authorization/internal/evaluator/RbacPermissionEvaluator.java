@@ -54,10 +54,12 @@ import org.springframework.web.context.request.ServletRequestAttributes;
  *       organization with the same union: a target typed
  *       {@code application} resolves the record's owner (tenant-owned
  *       rows check the tenant plus the owning-organization overlay;
- *       organization-owned rows check the owning organization), and a
- *       target typed {@code tenant} is the creation-time check at the
- *       future owner tenant. Application-scope role memberships
- *       (INV-002) arrive with S3-02 and extend this branch.</li>
+ *       organization-shared rows, S3-02/PRD 14, check the owning
+ *       organization), a target typed {@code tenant} is the
+ *       creation-time check at the future owner tenant, and a target
+ *       typed {@code organization} is the creation-time check at the
+ *       owning organization of an organization-shared
+ *       application.</li>
  * </ul>
  *
  * <p>Denials carry no HTTP detail (PRD 12): resource-scoped denials throw
@@ -170,13 +172,17 @@ public class RbacPermissionEvaluator implements PermissionEvaluator {
     }
 
     /**
-     * Application-scope resolution (issue #13, the documented contract of
-     * {@code app:} grants): through the application's owning tenant and
-     * organization, never a membership on the application itself — that
-     * vocabulary (INV-002) arrives with S3-02. {@code application}
-     * targets resolve the record's owner; {@code tenant} targets are the
-     * creation-time check at the future owner tenant. Unknown targets
-     * deny (concealment is added by the caller of this evaluator).
+     * Application-scope resolution (issue #13 + issue #14, the documented
+     * contract of {@code app:} grants): through the application's owning
+     * tenant and organization, never a membership on the application
+     * itself. {@code application} targets resolve the record's owner —
+     * tenant-owned rows check the tenant plus the owning-organization
+     * overlay, organization-shared rows (PRD 14, S3-02) check the owning
+     * organization; {@code tenant} targets are the creation-time check at
+     * the future owner tenant; {@code organization} targets are the
+     * creation-time check at the owning organization of an
+     * organization-shared application. Unknown targets deny (concealment
+     * is added by the caller of this evaluator).
      */
     private boolean appGrants(UserRolesSnapshot snapshot, UUID targetId, String targetType, Permission required) {
         if (targetId == null) {
@@ -192,6 +198,9 @@ public class RbacPermissionEvaluator implements PermissionEvaluator {
         }
         if ("tenant".equals(targetType)) {
             return tenantGrants(snapshot, targetId, required);
+        }
+        if ("organization".equals(targetType)) {
+            return orgGrants(snapshot, targetId, required);
         }
         return false;
     }
