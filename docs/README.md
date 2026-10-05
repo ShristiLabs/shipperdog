@@ -1,10 +1,17 @@
 # ShipperDog Developer Documentation
 
 Developer-facing documentation lives here. As stories land, this directory
-gains: API conventions (S1-08), observability setup (S1-07), and runbooks.
+gains: runbooks and deeper operational guides.
 
 Current contents:
 
+- [API conventions](api-conventions.md) — the single error envelope
+  (RFC 7807 problem+json + stable codes), opaque concealed-404 denials,
+  cursor pagination, Idempotency-Key contract, payload serialization
+  rules, and the generated OpenAPI contract with its CI breaking-change
+  gate (S1-08).
+- [Error code registry](error-codes.md) — every stable public error code,
+  its HTTP status and detail text (S1-08).
 - [Database migrations](database-migrations.md) — Flyway conventions, enum
   policy, seed fixture, and the forward-only rollback strategy (S1-02).
 - [Authentication](authentication.md) — identity module endpoints, token

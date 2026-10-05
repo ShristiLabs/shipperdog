@@ -74,7 +74,9 @@ class PrometheusMetricsIntegrationTest {
         registerInvitedUser(devToken, "metrics.bob@example.com");
         String bobToken = accessToken(login("metrics.bob@example.com", PASSWORD));
         assertThat(get("/api/v1/organizations/" + UUID.randomUUID(), devToken)).isEqualTo(404);
-        assertThat(get("/api/v1/organizations/" + UUID.randomUUID(), bobToken)).isEqualTo(403);
+        assertThat(get("/api/v1/organizations/" + UUID.randomUUID(), bobToken))
+                .as("denied decisions are concealed as 404 (issue #8) but still timed")
+                .isEqualTo(404);
 
         String scrape = client.get().uri("/actuator/prometheus").retrieve().body(String.class);
         assertThat(scrape).isNotNull();
@@ -106,7 +108,7 @@ class PrometheusMetricsIntegrationTest {
         registerInvitedUser(devToken, "timer.carol@example.com");
         String carolToken = accessToken(login("timer.carol@example.com", PASSWORD));
 
-        assertThat(get("/api/v1/organizations/" + organizationId, carolToken)).isEqualTo(403);
+        assertThat(get("/api/v1/organizations/" + organizationId, carolToken)).isEqualTo(404);
         assertThat(get("/api/v1/organizations/" + organizationId, devToken)).isEqualTo(200);
 
         Timer allowed = meters.find(MetricNames.AUTHORIZATION_DECISION_DURATION)

@@ -2,10 +2,10 @@ package com.shipperdog.api.organization.internal.repository;
 
 import com.shipperdog.api.organization.internal.entity.OrganizationEntity;
 import jakarta.persistence.LockModeType;
-import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
-import org.springframework.data.domain.Sort;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Lock;
 import org.springframework.data.jpa.repository.Query;
@@ -25,8 +25,11 @@ public interface OrganizationRepository extends JpaRepository<OrganizationEntity
     @Query("select o from OrganizationEntity o where o.id = :id")
     Optional<OrganizationEntity> findWithLockingById(@Param("id") UUID id);
 
-    /** Organizations the user belongs to, any role, oldest first. */
-    @Query("select o from OrganizationEntity o, OrganizationMemberEntity m "
-            + "where o.id = m.organizationId and m.userId = :userId")
-    List<OrganizationEntity> findAllForMember(@Param("userId") UUID userId, Sort sort);
+    /** Organizations the user belongs to, any role, oldest first, paged (issue #8). */
+    @Query(
+            value = "select o from OrganizationEntity o, OrganizationMemberEntity m "
+                    + "where o.id = m.organizationId and m.userId = :userId",
+            countQuery = "select count(o) from OrganizationEntity o, OrganizationMemberEntity m "
+                    + "where o.id = m.organizationId and m.userId = :userId")
+    Page<OrganizationEntity> findAllForMember(@Param("userId") UUID userId, Pageable pageable);
 }

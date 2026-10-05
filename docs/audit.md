@@ -33,10 +33,11 @@ transaction are persisted in that transaction; events outside one
 
 Every authenticated permission denial is captured automatically by the
 RBAC enforcement point as an `ACCESS_DENIED` event carrying the actor,
-the required permission, and the attempted method/URI — opaque 403s
-(see [authorization](authorization.md)) leave no HTTP trace, so the
-audit trail is the only record. Unauthenticated attempts are 401s at
-the filter chain and are not audited there.
+the required permission, and the attempted method/URI — opaque denials
+(concealed 404s and plain 403s alike; see
+[authorization](authorization.md)) leave no HTTP trace of what was
+denied, so the audit trail is the only record. Unauthenticated attempts
+are 401s at the filter chain and are not audited there.
 
 ## Event catalog
 
@@ -134,8 +135,9 @@ request carries it as the `correlation_id` attribute (see
 
 `GET /api/v1/audit` — platform administrators only
 (`platform:audit:read`; per the PRD 7.1 wildcard this is platform
-admins alone). Non-admins receive the opaque `403 {"error":"forbidden"}`
-and their attempt is audited. All filters are optional and conjunctive:
+admins alone). Non-admins receive an opaque `403` problem+json envelope
+(since S1-08; see [API conventions](api-conventions.md)) and their
+attempt is audited. All filters are optional and conjunctive:
 
 | Parameter | Type | Filters on |
 |---|---|---|
@@ -145,10 +147,11 @@ and their attempt is audited. All filters are optional and conjunctive:
 | `eventType` | `AuditEventType` | event kind |
 | `applicationId` / `versionId` / `artifactId` | UUID | entity reference |
 | `from` / `to` | ISO-8601 instant | `occurredAt`, inclusive |
-| `page` / `size` | int | pagination (`page` default 0; `size` default 50, capped at 100) |
+| `limit` / `cursor` | int / opaque token | pagination (`limit` default 50, 1..100, rejected outside; `cursor` from a prior `next_cursor`) |
 
 Results are newest-first, one page per response:
-`{events, page, size, totalElements, totalPages}` where each event
-carries the full catalog above with `detail`/`before`/`after` as raw
-JSON. Malformed filter values (non-UUID, unknown event type) fail fast
-with `400`.
+`{items, next_cursor}` where each event carries the full catalog above
+with `detail`/`before`/`after` as raw JSON, and `next_cursor` is
+present exactly when another page follows (the platform's cursor
+convention, S1-08). Malformed filter values (non-UUID, unknown event
+type) and out-of-range limits fail fast with `400` problem+json.

@@ -1,5 +1,7 @@
 package com.shipperdog.api.identity;
 
+import com.shipperdog.api.config.ListQuery;
+import com.shipperdog.api.config.PageResponse;
 import com.shipperdog.api.identity.internal.AuthException;
 import com.shipperdog.api.identity.internal.entity.PersonalAccessTokenEntity;
 import com.shipperdog.api.identity.internal.entity.UserEntity;
@@ -12,9 +14,9 @@ import com.shipperdog.api.organization.OrgRole;
 import com.shipperdog.api.organization.OrganizationAccess;
 import java.time.Duration;
 import java.time.Instant;
-import java.util.List;
 import java.util.Locale;
 import java.util.UUID;
+import org.springframework.data.domain.Page;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
@@ -26,6 +28,7 @@ import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestController;
 
@@ -168,10 +171,14 @@ public class AuthController {
 
     @GetMapping("/tokens")
     @PreAuthorize("isAuthenticated()")
-    List<PatResponse> listTokens(@AuthenticationPrincipal Object principal) {
-        return tokens.listPats(requireUserId(principal)).stream()
-                .map(PatResponse::from)
-                .toList();
+    PageResponse<PatResponse> listTokens(
+            @AuthenticationPrincipal Object principal,
+            @RequestParam(required = false) String limit,
+            @RequestParam(required = false) String cursor) {
+        ListQuery query = ListQuery.of(limit, cursor);
+        Page<PatResponse> page = tokens.listPats(requireUserId(principal), query.offset(), query.limit())
+                .map(PatResponse::from);
+        return PageResponse.of(page.getContent(), page.hasNext(), query.offset() + query.limit());
     }
 
     @DeleteMapping("/tokens/{id}")

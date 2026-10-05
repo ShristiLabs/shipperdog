@@ -2,6 +2,7 @@ package com.shipperdog.api.audit.internal.service;
 
 import com.shipperdog.api.audit.AuditEventType;
 import com.shipperdog.api.audit.internal.entity.AuditEventEntity;
+import com.shipperdog.api.config.CursorPageable;
 import jakarta.persistence.EntityManager;
 import jakarta.persistence.TypedQuery;
 import jakarta.persistence.criteria.CriteriaBuilder;
@@ -14,7 +15,6 @@ import java.util.List;
 import java.util.UUID;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageImpl;
-import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -32,11 +32,6 @@ import tools.jackson.databind.ObjectMapper;
 @Service
 public class AuditQueryService {
 
-    /** Hard cap so a compliance export cannot page the database to death. */
-    static final int MAX_PAGE_SIZE = 100;
-
-    private static final int DEFAULT_PAGE_SIZE = 50;
-
     private static final ObjectMapper MAPPER = new ObjectMapper();
 
     private final EntityManager entityManager;
@@ -47,7 +42,9 @@ public class AuditQueryService {
 
     /**
      * Conjunctive filters; every parameter optional. {@code from} and
-     * {@code to} bound {@code occurredAt} inclusively.
+     * {@code to} bound {@code occurredAt} inclusively. Paged by opaque
+     * cursor offsets (issue #8); the limit bounds are validated upstream by
+     * {@code ListQuery}.
      */
     @Transactional(readOnly = true)
     public Page<AuditEventView> search(
@@ -60,10 +57,9 @@ public class AuditQueryService {
             UUID artifactId,
             Instant from,
             Instant to,
-            int page,
-            int requestedSize) {
-        int size = requestedSize <= 0 ? DEFAULT_PAGE_SIZE : Math.min(requestedSize, MAX_PAGE_SIZE);
-        Pageable pageable = PageRequest.of(Math.max(page, 0), size);
+            long offset,
+            int limit) {
+        Pageable pageable = new CursorPageable((int) offset, limit);
 
         CriteriaBuilder builder = entityManager.getCriteriaBuilder();
 

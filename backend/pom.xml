@@ -23,6 +23,9 @@
     <palantir-java-format.version>2.101.0</palantir-java-format.version>
     <testcontainers.version>1.21.4</testcontainers.version>
     <bouncycastle.version>1.86</bouncycastle.version>
+    <!-- springdoc 3.x is the Spring Boot 4 line (issue #8); the starter
+         is generated at build time and published as a CI artifact. -->
+    <springdoc.version>3.1.1</springdoc.version>
   </properties>
 
   <dependencyManagement>
@@ -66,6 +69,16 @@
     <dependency>
       <groupId>org.springframework.boot</groupId>
       <artifactId>spring-boot-starter-actuator</artifactId>
+    </dependency>
+    <!-- OpenAPI 3 contract generation (issue #8): springdoc 3.x is the
+         Spring Boot 4 line; the api (non-UI) starter serves /v3/api-docs
+         which CI snapshots at build time as the published contract
+         artifact. Swagger UI is deliberately absent (minimal surface;
+         Dwara fronts production traffic). -->
+    <dependency>
+      <groupId>org.springdoc</groupId>
+      <artifactId>springdoc-openapi-starter-webmvc-api</artifactId>
+      <version>${springdoc.version}</version>
     </dependency>
     <!-- Observability baseline (issue #7): tracing through Micrometer
          observations bridged onto the OpenTelemetry SDK, so every HTTP

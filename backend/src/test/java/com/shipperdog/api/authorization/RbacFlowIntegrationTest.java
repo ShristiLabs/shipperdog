@@ -85,18 +85,21 @@ class RbacFlowIntegrationTest {
         String carolToken = accessToken(login("matrix.carol@example.com", PASSWORD));
 
         assertThat(get("/api/v1/organizations/" + orgId, bobToken))
-                .as("deny-by-default: DEVELOPER lacks org:organizations:read")
-                .isEqualTo(403);
+                .as("deny-by-default: DEVELOPER's denial is concealed as 404 (issue #8)")
+                .isEqualTo(404);
         assertThat(get("/api/v1/organizations/" + orgId + "/members", carolToken))
-                .as("ORG_MEMBER holds no catalog permissions")
-                .isEqualTo(403);
+                .as("ORG_MEMBER holds no catalog permissions; concealed as 404")
+                .isEqualTo(404);
         assertThat(get("/api/v1/organizations/" + orgId, null))
                 .as("unauthenticated callers get 401, not 403")
                 .isEqualTo(401);
 
         JsonNode members = getJson("/api/v1/organizations/" + orgId + "/members", aliceToken, 200);
-        assertThat(members.size()).isEqualTo(4);
-        assertThat(members.toString()).contains("alice@example.com", "DEVELOPER", "ORG_MEMBER");
+        assertThat(members.get("items").size()).isEqualTo(4);
+        assertThat(members.get("items").toString()).contains("alice@example.com", "DEVELOPER", "ORG_MEMBER");
+        assertThat(members.has("next_cursor"))
+                .as("single page exhausts the member list")
+                .isFalse();
 
         JsonNode changed = putJson(
                 "/api/v1/organizations/" + orgId + "/members/" + bobId + "/role",
@@ -133,15 +136,25 @@ class RbacFlowIntegrationTest {
         String oscarToken = accessToken(login("oscar@example.com", PASSWORD));
 
         assertThat(get("/api/v1/organizations/" + orgId, oscarToken))
-                .as("permission denial on an existing organization")
-                .isEqualTo(403);
+                .as("permission denial on an existing organization is concealed")
+                .isEqualTo(404);
         assertThat(get("/api/v1/organizations/" + UUID.randomUUID(), oscarToken))
                 .as("denial on an unknown organization is indistinguishable")
-                .isEqualTo(403);
+                .isEqualTo(404);
 
-        JsonNode body = getJson("/api/v1/organizations/" + orgId, oscarToken, 403);
-        assertThat(body.get("error").asText()).isEqualTo("forbidden");
-        assertThat(body.size()).as("no extra detail leaks in the denial body").isEqualTo(1);
+        JsonNode body = getJson("/api/v1/organizations/" + orgId, oscarToken, 404);
+        assertThat(body.get("status").asInt()).isEqualTo(404);
+        assertThat(body.get("code").asText()).isEqualTo("ORGANIZATION_NOT_FOUND");
+        assertThat(body.get("title").asText()).isEqualTo("Not Found");
+        assertThat(body.get("detail").asText()).isEqualTo("Resource not found.");
+        assertThat(body.get("trace_id").asText()).isNotBlank();
+        assertThat(body.has("error")).as("legacy error-key must be gone").isFalse();
+        // Byte-for-byte identical problem as a permitted caller's genuine
+        // miss: concealment and real 404s share one shape (issue #8, PRD 12).
+        JsonNode genuine = getJson("/api/v1/organizations/" + UUID.randomUUID(), devToken, 404);
+        assertThat(genuine.get("code").asText()).isEqualTo("ORGANIZATION_NOT_FOUND");
+        assertThat(genuine.get("detail").asText()).isEqualTo(body.get("detail").asText());
+        assertThat(genuine.get("title").asText()).isEqualTo(body.get("title").asText());
 
         assertThat(get("/api/v1/organizations/" + UUID.randomUUID(), devToken))
                 .as("permitted callers still learn existence (404)")
@@ -187,30 +200,30 @@ class RbacFlowIntegrationTest {
                 .as("platform administrators pass every check")
                 .isEqualTo(200);
         assertThat(get("/api/v1/tenants/" + tenantTwo + "/members", tedToken))
-                .as("tenant isolation: TENANT_ADMIN of one tenant cannot read another")
-                .isEqualTo(403);
+                .as("tenant isolation: cross-tenant denial is concealed as 404")
+                .isEqualTo(404);
         assertThat(get("/api/v1/tenants/" + tenantOne + "/members", tinaToken))
-                .as("TENANT_TESTER lacks tenant:members:read")
-                .isEqualTo(403);
+                .as("TENANT_TESTER lacks tenant:members:read; concealed as 404")
+                .isEqualTo(404);
 
         assertThat(put(
                         "/api/v1/tenants/" + tenantTwo + "/members/" + tinaId + "/role",
                         tedToken,
                         Map.of("role", "TENANT_TESTER")))
-                .as("tenant isolation: managing another tenant's members is denied")
-                .isEqualTo(403);
+                .as("tenant isolation: managing another tenant's members is denied (concealed 404)")
+                .isEqualTo(404);
         assertThat(put(
                         "/api/v1/organizations/" + orgId + "/members/" + tinaId + "/role",
                         tedToken,
                         Map.of("role", "ORG_ADMIN")))
-                .as("cross-role escalation: TENANT_ADMIN cannot assign organization roles")
-                .isEqualTo(403);
+                .as("cross-role escalation: TENANT_ADMIN cannot assign organization roles (concealed 404)")
+                .isEqualTo(404);
         assertThat(post("/api/v1/organizations", tedToken, Map.of("name", "Ted Corp")))
-                .as("platform-scoped permission is platform-admin only")
+                .as("target-less permission denial stays an opaque 403 (issue #8)")
                 .isEqualTo(403);
         assertThat(get("/api/v1/tenants/" + UUID.randomUUID() + "/members", tedToken))
                 .as("tenant denials are opaque too")
-                .isEqualTo(403);
+                .isEqualTo(404);
 
         assertThat(delete("/api/v1/tenants/" + tenantOne + "/members/" + tinaId, tedToken))
                 .isEqualTo(204);
@@ -239,8 +252,8 @@ class RbacFlowIntegrationTest {
                 200);
 
         assertThat(get("/api/v1/organizations/" + orgId, aliceAccess))
-                .as("role change takes effect on the live token immediately")
-                .isEqualTo(403);
+                .as("role change takes effect on the live token immediately (concealed 404)")
+                .isEqualTo(404);
         assertThat(refreshStatus(aliceRefresh))
                 .as("demotion revokes the refresh family")
                 .isEqualTo(401);
@@ -249,8 +262,8 @@ class RbacFlowIntegrationTest {
 
         String reLogin = accessToken(login("swift.alice@example.com", PASSWORD));
         assertThat(get("/api/v1/organizations/" + orgId, reLogin))
-                .as("re-login works but DEVELOPER still lacks org read")
-                .isEqualTo(403);
+                .as("re-login works but DEVELOPER still lacks org read (concealed 404)")
+                .isEqualTo(404);
 
         // Pure upgrade (ORG_MEMBER -> VIEWER): no revocation, session lives.
         String carolTokens = login("swift.carol@example.com", PASSWORD);
@@ -276,11 +289,11 @@ class RbacFlowIntegrationTest {
         String daveToken = accessToken(login("dave@example.com", PASSWORD));
 
         assertThat(get("/api/v1/organizations/" + orgOne, daveToken))
-                .as("member of org one: denied there")
-                .isEqualTo(403);
+                .as("member of org one: denied there (concealed 404)")
+                .isEqualTo(404);
         assertThat(get("/api/v1/organizations/" + orgTwo, daveToken))
-                .as("not a member of org two: denied there too")
-                .isEqualTo(403);
+                .as("not a member of org two: denied there too (concealed 404)")
+                .isEqualTo(404);
 
         // A tenant role grants inside the tenant even with a member-only
         // organization role (union of org and tenant scopes).
@@ -307,8 +320,8 @@ class RbacFlowIntegrationTest {
                 .as("org role grants at its own scope")
                 .isEqualTo(200);
         assertThat(get("/api/v1/organizations/" + orgOne, freshDaveToken))
-                .as("roles do not leak across organizations")
-                .isEqualTo(403);
+                .as("roles do not leak across organizations (concealed 404)")
+                .isEqualTo(404);
 
         // Deactivated organizations grant nothing. Eve keeps an ACTIVE
         // membership in org one so the deactivation login block does not
@@ -322,11 +335,11 @@ class RbacFlowIntegrationTest {
         putJson("/api/v1/organizations/" + orgThree, devToken, Map.of("status", "DEACTIVATED"), 200);
         String eveToken = accessToken(login("eve@example.com", PASSWORD));
         assertThat(get("/api/v1/organizations/" + orgThree, eveToken))
-                .as("roles in a DEACTIVATED organization grant nothing")
-                .isEqualTo(403);
+                .as("roles in a DEACTIVATED organization grant nothing (concealed 404)")
+                .isEqualTo(404);
         assertThat(get("/api/v1/organizations/" + orgOne, eveToken))
-                .as("the ACTIVE membership still evaluates by its own role")
-                .isEqualTo(403);
+                .as("the ACTIVE membership still evaluates by its own role (concealed 404)")
+                .isEqualTo(404);
     }
 
     @Test
@@ -395,8 +408,8 @@ class RbacFlowIntegrationTest {
                         "/api/v1/organizations/" + orgTwo + "/members/" + bobId + "/role",
                         aliceToken,
                         Map.of("role", "ORG_ADMIN")))
-                .as("ORG_ADMIN of one organization cannot assign roles in another")
-                .isEqualTo(403);
+                .as("ORG_ADMIN of one organization cannot assign roles in another (concealed 404)")
+                .isEqualTo(404);
         assertThat(post(
                         "/api/v1/auth/invitations",
                         aliceToken,
@@ -407,11 +420,11 @@ class RbacFlowIntegrationTest {
                                 orgTwo.toString(),
                                 "role",
                                 "ORG_ADMIN")))
-                .as("ORG_ADMIN of one organization cannot invite ORG_ADMIN into another")
-                .isEqualTo(403);
+                .as("ORG_ADMIN of one organization cannot invite ORG_ADMIN into another (concealed 404)")
+                .isEqualTo(404);
         assertThat(delete("/api/v1/organizations/" + orgTwo + "/members/" + bobId, aliceToken))
-                .as("ORG_ADMIN of one organization cannot remove members of another")
-                .isEqualTo(403);
+                .as("ORG_ADMIN of one organization cannot remove members of another (concealed 404)")
+                .isEqualTo(404);
         assertThat(get("/api/v1/organizations/" + orgOne + "/members", aliceToken))
                 .as("the same caller remains effective inside their own organization")
                 .isEqualTo(200);

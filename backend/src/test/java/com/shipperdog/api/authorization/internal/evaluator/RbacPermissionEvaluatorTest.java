@@ -1,8 +1,10 @@
 package com.shipperdog.api.authorization.internal.evaluator;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.shipperdog.api.audit.AuditLogger;
+import com.shipperdog.api.authorization.ConcealedResourceAccessDeniedException;
 import com.shipperdog.api.config.TraceAttributes;
 import com.shipperdog.api.organization.OrgRole;
 import com.shipperdog.api.tenant.TenantAccess;
@@ -24,8 +26,11 @@ import org.springframework.security.oauth2.jwt.Jwt;
  * fails closed on every malformed or out-of-scope input, grants only via
  * the documented matrix per scope, overlays the owning organization's
  * role for tenant checks (union across scopes), and keeps {@code app:}
- * permissions denied until application records exist (E3). Companion to
- * the end-to-end {@code RbacFlowIntegrationTest}, which exercises the
+ * permissions denied until application records exist (E3). Since issue #8
+ * an authenticated denial scoped to a target id throws
+ * {@link ConcealedResourceAccessDeniedException} (the concealed-404 rule,
+ * PRD 12); only target-less or malformed checks return false. Companion
+ * to the end-to-end {@code RbacFlowIntegrationTest}, which exercises the
  * same decisions through HTTP.
  */
 class RbacPermissionEvaluatorTest {
@@ -39,9 +44,10 @@ class RbacPermissionEvaluatorTest {
         assertThat(evaluator.hasPermission(unauthenticated, UUID.randomUUID(), "organization", "org:members:read"))
                 .as("unauthenticated callers are denied")
                 .isFalse();
-        assertThat(evaluator.hasPermission(stringPrincipal, UUID.randomUUID(), "organization", "org:members:read"))
-                .as("principals without a user id are denied")
-                .isFalse();
+        assertThatThrownBy(() ->
+                        evaluator.hasPermission(stringPrincipal, UUID.randomUUID(), "organization", "org:members:read"))
+                .as("an authenticated caller without a user id is still concealed on target-scoped checks")
+                .isInstanceOf(ConcealedResourceAccessDeniedException.class);
     }
 
     @Test
@@ -50,9 +56,9 @@ class RbacPermissionEvaluatorTest {
         Authentication auth = jwtAuth(userId);
         RbacPermissionEvaluator evaluator = evaluator(grants(snapshot(userId, false, Map.of(), Map.of())));
 
-        assertThat(evaluator.hasPermission(auth, UUID.randomUUID(), "organization", "made:up:code"))
-                .as("permissions outside the catalog are denied")
-                .isFalse();
+        assertThatThrownBy(() -> evaluator.hasPermission(auth, UUID.randomUUID(), "organization", "made:up:code"))
+                .as("permissions outside the catalog are denied (concealed)")
+                .isInstanceOf(ConcealedResourceAccessDeniedException.class);
         assertThat(evaluator.hasPermission(auth, null, "organization", "org:members:read"))
                 .as("missing target id is denied")
                 .isFalse();
@@ -90,12 +96,12 @@ class RbacPermissionEvaluatorTest {
         assertThat(evaluator.hasPermission(auth, orgOne, "organization", "org:members:read"))
                 .as("ORG_ADMIN holds org:members:read at their organization")
                 .isTrue();
-        assertThat(evaluator.hasPermission(auth, orgTwo, "organization", "org:members:read"))
-                .as("ORG_MEMBER holds no catalog permissions")
-                .isFalse();
-        assertThat(evaluator.hasPermission(auth, UUID.randomUUID(), "organization", "org:members:read"))
-                .as("roles never apply outside their organization")
-                .isFalse();
+        assertThatThrownBy(() -> evaluator.hasPermission(auth, orgTwo, "organization", "org:members:read"))
+                .as("ORG_MEMBER holds no catalog permissions (concealed denial)")
+                .isInstanceOf(ConcealedResourceAccessDeniedException.class);
+        assertThatThrownBy(() -> evaluator.hasPermission(auth, UUID.randomUUID(), "organization", "org:members:read"))
+                .as("roles never apply outside their organization (concealed denial)")
+                .isInstanceOf(ConcealedResourceAccessDeniedException.class);
     }
 
     @Test
@@ -114,9 +120,9 @@ class RbacPermissionEvaluatorTest {
 
         RbacPermissionEvaluator tenantTester = evaluator(grants(
                 new UserRolesSnapshot(userId, false, Map.of(), Map.of(tenant, TenantRole.TENANT_TESTER), ownedByOrg)));
-        assertThat(tenantTester.hasPermission(auth, tenant, "tenant", "tenant:members:read"))
-                .as("TENANT_TESTER lacks tenant:members:read")
-                .isFalse();
+        assertThatThrownBy(() -> tenantTester.hasPermission(auth, tenant, "tenant", "tenant:members:read"))
+                .as("TENANT_TESTER lacks tenant:members:read (concealed denial)")
+                .isInstanceOf(ConcealedResourceAccessDeniedException.class);
 
         RbacPermissionEvaluator orgOverlay = evaluator(grants(
                 new UserRolesSnapshot(userId, false, Map.of(owningOrg, OrgRole.ORG_ADMIN), Map.of(), ownedByOrg)));
@@ -126,15 +132,15 @@ class RbacPermissionEvaluatorTest {
 
         RbacPermissionEvaluator noGrantChannel = evaluator(
                 grants(new UserRolesSnapshot(userId, false, Map.of(owningOrg, OrgRole.VIEWER), Map.of(), ownedByOrg)));
-        assertThat(noGrantChannel.hasPermission(auth, tenant, "tenant", "tenant:members:read"))
-                .as("VIEWER in the owning organization grants nothing in the tenant")
-                .isFalse();
+        assertThatThrownBy(() -> noGrantChannel.hasPermission(auth, tenant, "tenant", "tenant:members:read"))
+                .as("VIEWER in the owning organization grants nothing in the tenant (concealed denial)")
+                .isInstanceOf(ConcealedResourceAccessDeniedException.class);
 
         RbacPermissionEvaluator unknownTenant =
                 evaluator(grants(new UserRolesSnapshot(userId, false, Map.of(), Map.of(), unknownTenants())));
-        assertThat(unknownTenant.hasPermission(auth, UUID.randomUUID(), "tenant", "tenant:members:read"))
-                .as("tenants without an owning organization fall back to membership only")
-                .isFalse();
+        assertThatThrownBy(() -> unknownTenant.hasPermission(auth, UUID.randomUUID(), "tenant", "tenant:members:read"))
+                .as("tenants without an owning organization fall back to membership only (concealed denial)")
+                .isInstanceOf(ConcealedResourceAccessDeniedException.class);
     }
 
     @Test
@@ -144,9 +150,10 @@ class RbacPermissionEvaluatorTest {
         RbacPermissionEvaluator evaluator =
                 evaluator(grants(snapshot(userId, false, Map.of(UUID.randomUUID(), OrgRole.VIEWER), Map.of())));
 
-        assertThat(evaluator.hasPermission(auth, UUID.randomUUID(), "application", "app:applications:read"))
-                .as("app: permissions stay denied even for roles that list them (E3 fail-closed)")
-                .isFalse();
+        assertThatThrownBy(
+                        () -> evaluator.hasPermission(auth, UUID.randomUUID(), "application", "app:applications:read"))
+                .as("app: permissions stay denied even for roles that list them (E3 fail-closed, concealed)")
+                .isInstanceOf(ConcealedResourceAccessDeniedException.class);
     }
 
     // ---------------------------------------------------------------------

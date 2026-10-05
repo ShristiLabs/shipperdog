@@ -3,6 +3,7 @@ package com.shipperdog.api.authorization.internal.evaluator;
 import com.shipperdog.api.audit.AuditEvent;
 import com.shipperdog.api.audit.AuditEventType;
 import com.shipperdog.api.audit.AuditLogger;
+import com.shipperdog.api.authorization.ConcealedResourceAccessDeniedException;
 import com.shipperdog.api.authorization.Permission;
 import com.shipperdog.api.authorization.RolePermissions;
 import com.shipperdog.api.config.MetricNames;
@@ -52,8 +53,11 @@ import org.springframework.web.context.request.ServletRequestAttributes;
  *       administrators still pass.</li>
  * </ul>
  *
- * <p>Denials carry no detail — the handler maps every denial to the same
- * opaque 403 (PRD 12).
+ * <p>Denials carry no HTTP detail (PRD 12): resource-scoped denials throw
+ * {@link ConcealedResourceAccessDeniedException} and render as the same
+ * 404-shaped envelope a genuine miss produces; target-less permission
+ * denials stay one opaque 403. The audit trail, not the response, carries
+ * the who/what.
  */
 @Component
 public class RbacPermissionEvaluator implements PermissionEvaluator {
@@ -107,6 +111,13 @@ public class RbacPermissionEvaluator implements PermissionEvaluator {
         }
         if (!allowed && authentication != null && authentication.isAuthenticated()) {
             userIdOf(authentication).ifPresent(actor -> recordDenial(actor, permission));
+            if (targetId instanceof UUID) {
+                // PRD 12 / issue #8: a denial on a specific resource must
+                // not reveal that the resource exists — render the same
+                // 404-shaped envelope a genuine miss produces. Target-less
+                // permission checks (creation rights) stay opaque 403s.
+                throw new ConcealedResourceAccessDeniedException(targetType);
+            }
         }
         return allowed;
     }

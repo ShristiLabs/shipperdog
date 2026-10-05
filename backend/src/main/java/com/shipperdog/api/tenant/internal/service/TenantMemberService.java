@@ -4,6 +4,7 @@ import com.shipperdog.api.audit.AuditEvent;
 import com.shipperdog.api.audit.AuditEventPublisher;
 import com.shipperdog.api.audit.AuditEventType;
 import com.shipperdog.api.authorization.RolePermissions;
+import com.shipperdog.api.config.CursorPageable;
 import com.shipperdog.api.identity.SessionRevocation;
 import com.shipperdog.api.identity.UserDirectory;
 import com.shipperdog.api.tenant.TenantAccess;
@@ -15,12 +16,12 @@ import com.shipperdog.api.tenant.internal.repository.TenantRepository;
 import java.time.Clock;
 import java.time.Instant;
 import java.util.LinkedHashMap;
-import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
 import java.util.function.Function;
 import java.util.stream.Collectors;
+import org.springframework.data.domain.Page;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -92,11 +93,12 @@ public class TenantMemberService implements TenantAccess {
     // Module API (TenantController)
     // -------------------------------------------------------------------------
 
-    /** Lists the tenant's members; caller permission is enforced at the controller. */
+    /** Lists the tenant's members, paged (issue #8); caller permission is enforced at the controller. */
     @Transactional(readOnly = true)
-    public List<MemberView> listMembers(UUID tenantId) {
+    public Page<MemberView> listMembers(UUID tenantId, long offset, int limit) {
         mustFindTenant(tenantId);
-        List<TenantMemberEntity> memberships = members.findByTenantIdOrderByCreatedAtAscIdAsc(tenantId);
+        Page<TenantMemberEntity> memberships =
+                members.findByTenantIdOrderByCreatedAtAscIdAsc(tenantId, new CursorPageable((int) offset, limit));
         Map<UUID, UserDirectory.UserSummary> users =
                 directory
                         .byIds(memberships.stream()
@@ -104,17 +106,15 @@ public class TenantMemberService implements TenantAccess {
                                 .toList())
                         .stream()
                         .collect(Collectors.toMap(UserDirectory.UserSummary::id, Function.identity()));
-        return memberships.stream()
-                .map(membership -> {
-                    UserDirectory.UserSummary user = users.get(membership.getUserId());
-                    return new MemberView(
-                            membership.getUserId(),
-                            user == null ? null : user.email(),
-                            user == null ? null : user.fullName(),
-                            membership.getRole(),
-                            membership.getCreatedAt());
-                })
-                .toList();
+        return memberships.map(membership -> {
+            UserDirectory.UserSummary user = users.get(membership.getUserId());
+            return new MemberView(
+                    membership.getUserId(),
+                    user == null ? null : user.email(),
+                    user == null ? null : user.fullName(),
+                    membership.getRole(),
+                    membership.getCreatedAt());
+        });
     }
 
     /**

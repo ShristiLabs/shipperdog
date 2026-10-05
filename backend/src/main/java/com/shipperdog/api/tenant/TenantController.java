@@ -1,10 +1,12 @@
 package com.shipperdog.api.tenant;
 
+import com.shipperdog.api.config.ListQuery;
+import com.shipperdog.api.config.PageResponse;
 import com.shipperdog.api.identity.AuthenticatedPrincipal;
 import com.shipperdog.api.tenant.internal.service.TenantMemberService;
-import java.util.List;
 import java.util.Locale;
 import java.util.UUID;
+import org.springframework.data.domain.Page;
 import org.springframework.http.HttpStatus;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
@@ -15,6 +17,7 @@ import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestController;
 
@@ -26,7 +29,8 @@ import org.springframework.web.bind.annotation.RestController;
  * enforcement point: tenant:members:read/manage is granted to the
  * tenant's administrators, to organization administrators of the owning
  * organization (union across scopes), and to platform administrators.
- * Denials are opaque 403s (PRD 12).
+ * Resource-scoped denials render as concealed 404s and member listing
+ * pages with the platform's cursor convention (PRD 12, issue #8).
  */
 @RestController
 @RequestMapping("/api/v1/tenants")
@@ -40,8 +44,14 @@ public class TenantController {
 
     @GetMapping("/{id}/members")
     @PreAuthorize("hasPermission(#id, 'tenant', 'tenant:members:read')")
-    List<TenantMemberService.MemberView> listMembers(@AuthenticationPrincipal Object principal, @PathVariable UUID id) {
-        return members.listMembers(id);
+    PageResponse<TenantMemberService.MemberView> listMembers(
+            @AuthenticationPrincipal Object principal,
+            @PathVariable UUID id,
+            @RequestParam(required = false) String limit,
+            @RequestParam(required = false) String cursor) {
+        ListQuery query = ListQuery.of(limit, cursor);
+        Page<TenantMemberService.MemberView> page = members.listMembers(id, query.offset(), query.limit());
+        return PageResponse.of(page.getContent(), page.hasNext(), query.offset() + query.limit());
     }
 
     @PutMapping("/{id}/members/{userId}/role")
