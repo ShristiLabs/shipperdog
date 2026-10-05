@@ -19,6 +19,7 @@ backend/src/main/resources/db/
     V9__application_registry.sql
     V10__application_ownership_scope.sql
     V11__tenant_application_authorization.sql
+    V12__version_management.sql
   seed/                 dev fixture, applied only when the seed location is active
     R__dev_seed.sql
 ```
@@ -149,6 +150,26 @@ backend/src/main/resources/db/
   reason lives in the audit trail (INV-007 philosophy). The owning
   organization is deliberately not denormalized; the application row
   stays the single source of truth.
+- `V12__version_management.sql` (S4-01, issue #17) completes the V1
+  `versions` table for the version layer: the owning-dimension
+  snapshot (`organization_id` NOT NULL with `REFERENCES
+  organizations`, nullable `tenant_id` with `REFERENCES tenants` —
+  the same shape and referential ties as `applications` itself) so
+  version rows are served by the tenant-isolation seam in both
+  ownership modes, backfilled from each version's application (a
+  no-op on the empty greenfield table but correct on any state); and
+  the normalized sort key `sort_key` — five-digit zero-padded
+  segments whose lexicographic order is exactly semver numeric order
+  (`10.0.0` after `9.9.9`). Checks pin both shapes at the database
+  (`ck_versions_version_name_semver` — numeric triple, segments
+  0..99999, no leading zeros; `ck_versions_sort_key_shape`), and the
+  seam predicates get `idx_versions_tenant_id` plus the partial
+  `idx_versions_organization_scope` for null-tenant rows. V1's
+  `uq_versions_application_version` stays the per-application
+  duplicate-name authority; the one-artifact-per-platform slot
+  constraint lands with E5's artifacts. When an application's
+  ownership scope transitions (S3-02), its version rows carry the
+  snapshot along in the same transaction.
 
 ## Status and type columns
 

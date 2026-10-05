@@ -236,6 +236,17 @@ class RbacPermissionEvaluatorTest {
                         ? Optional.of(new ApplicationAccess.Ownership(id, organizationId, tenantId))
                         : Optional.empty();
             }
+
+            @Override
+            public Optional<ApplicationAccess.ApplicationProfile> profileOf(UUID id) {
+                return ownershipOf(id)
+                        .map(ownership -> new ApplicationAccess.ApplicationProfile(
+                                ownership.applicationId(),
+                                ownership.organizationId(),
+                                ownership.tenantId(),
+                                List.of("IOS"),
+                                "ACTIVE"));
+            }
         };
     }
 
@@ -244,6 +255,11 @@ class RbacPermissionEvaluatorTest {
         return new ApplicationAccess() {
             @Override
             public Optional<ApplicationAccess.Ownership> ownershipOf(UUID id) {
+                return Optional.empty();
+            }
+
+            @Override
+            public Optional<ApplicationAccess.ApplicationProfile> profileOf(UUID id) {
                 return Optional.empty();
             }
         };

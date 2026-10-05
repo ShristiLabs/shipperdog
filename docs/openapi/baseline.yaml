@@ -629,6 +629,59 @@ paths:
       responses:
         "204":
           description: No Content
+  /api/v1/applications/{applicationId}/versions:
+    get:
+      tags:
+      - version-controller
+      operationId: list_3
+      parameters:
+      - name: applicationId
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - name: limit
+        in: query
+        required: false
+        schema:
+          type: string
+      - name: cursor
+        in: query
+        required: false
+        schema:
+          type: string
+      responses:
+        "200":
+          description: OK
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/PageResponseVersionView"
+    post:
+      tags:
+      - version-controller
+      operationId: create_3
+      parameters:
+      - name: applicationId
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateRequest"
+        required: true
+      responses:
+        "201":
+          description: Created
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/VersionDetail"
   /api/v1/applications/{id}:
     get:
       tags:
@@ -676,7 +729,7 @@ paths:
     get:
       tags:
       - tenant-applications-controller
-      operationId: list_3
+      operationId: list_4
       parameters:
       - name: id
         in: path
@@ -804,6 +857,7 @@ paths:
           - APPLICATION_SCOPE_CHANGED
           - APPLICATION_TENANT_AUTHORIZED
           - APPLICATION_TENANT_DEAUTHORIZED
+          - VERSION_CREATED
       - name: applicationId
         in: query
         required: false
@@ -855,7 +909,7 @@ paths:
     get:
       tags:
       - application-tenant-authorization-controller
-      operationId: list_4
+      operationId: list_5
       parameters:
       - name: id
         in: path
@@ -880,6 +934,31 @@ paths:
             '*/*':
               schema:
                 $ref: "#/components/schemas/PageResponseAuthorizationView"
+  /api/v1/applications/{applicationId}/versions/{versionId}:
+    get:
+      tags:
+      - version-controller
+      operationId: get_3
+      parameters:
+      - name: applicationId
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - name: versionId
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      responses:
+        "200":
+          description: OK
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/VersionDetail"
   /api/v1/tenants/{id}/members/{userId}:
     delete:
       tags:
@@ -1030,11 +1109,6 @@ components:
     JsonNode:
       type: object
       properties:
-        container:
-          type: boolean
-        textual:
-          type: boolean
-          deprecated: true
         nodeType:
           type: string
           enum:
@@ -1071,11 +1145,16 @@ components:
           type: boolean
         bigInteger:
           type: boolean
+        textual:
+          type: boolean
+          deprecated: true
         boolean:
           type: boolean
         binary:
           type: boolean
         floatingPointNumber:
+          type: boolean
+        container:
           type: boolean
         empty:
           type: boolean
@@ -1291,6 +1370,33 @@ components:
         revokedAt:
           type: string
           format: date-time
+    VersionDetail:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        applicationId:
+          type: string
+          format: uuid
+        versionName:
+          type: string
+        status:
+          type: string
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+        artifactsByPlatform:
+          type: object
+          additionalProperties:
+            type: array
+            items: {}
+        releaseHistory:
+          type: array
+          items: {}
     PageResponseTenantResponse:
       type: object
       properties:
@@ -1419,6 +1525,7 @@ components:
           - APPLICATION_SCOPE_CHANGED
           - APPLICATION_TENANT_AUTHORIZED
           - APPLICATION_TENANT_DEAUTHORIZED
+          - VERSION_CREATED
         occurredAt:
           type: string
           format: date-time
@@ -1475,3 +1582,36 @@ components:
             $ref: "#/components/schemas/AuthorizationView"
         next_cursor:
           type: string
+    PageResponseVersionView:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/VersionView"
+        next_cursor:
+          type: string
+    VersionView:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        applicationId:
+          type: string
+          format: uuid
+        versionName:
+          type: string
+        status:
+          type: string
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+        artifactsByPlatform:
+          type: object
+          additionalProperties:
+            type: array
+            items: {}

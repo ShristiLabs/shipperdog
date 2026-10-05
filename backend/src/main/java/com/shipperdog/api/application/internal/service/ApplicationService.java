@@ -15,6 +15,7 @@ import com.shipperdog.api.config.TraceAttributes;
 import com.shipperdog.api.organization.OrganizationAccess;
 import com.shipperdog.api.tenant.TenantAccess;
 import com.shipperdog.api.tenant.TenantScopeExecutor;
+import com.shipperdog.api.version.VersionAccess;
 import java.time.Clock;
 import java.time.Instant;
 import java.util.LinkedHashMap;
@@ -39,9 +40,9 @@ import org.springframework.transaction.annotation.Transactional;
  * ownership scope with its audited transitions. Applications are born
  * ACTIVE; ARCHIVED is the soft retirement state — archived applications
  * stay readable with their audit history and accept no new
- * versions/artifacts (that guard binds in E4/E5, which create versions
- * and artifacts; the reserved 409 APPLICATION_ARCHIVED is documented in
- * the error-code registry for them). The transition is reversible,
+ * versions/artifacts (the version guard binds since E4, issue #17,
+ * which emits the 409 APPLICATION_ARCHIVED reserved in issue #13; the
+ * artifact guard binds with E5). The transition is reversible,
  * mirroring the tenant lifecycle precedent.
  *
  * <p>Ownership scope (issue #14, PRD 14, INV-002): an application is
@@ -111,6 +112,7 @@ public class ApplicationService {
     private final TenantAccess tenants;
     private final OrganizationAccess organizations;
     private final TenantScopeExecutor scope;
+    private final VersionAccess versions;
     private final AuditEventPublisher audit;
     private final Clock clock;
     private final TraceAttributes trace;
@@ -123,6 +125,7 @@ public class ApplicationService {
             TenantAccess tenants,
             OrganizationAccess organizations,
             TenantScopeExecutor scope,
+            VersionAccess versions,
             AuditEventPublisher audit,
             Clock clock,
             TraceAttributes trace) {
@@ -133,6 +136,7 @@ public class ApplicationService {
         this.tenants = tenants;
         this.organizations = organizations;
         this.scope = scope;
+        this.versions = versions;
         this.audit = audit;
         this.clock = clock;
         this.trace = trace;
@@ -540,10 +544,15 @@ public class ApplicationService {
     /**
      * Executes the sanctioned transition (ADR-0002 third amendment) and
      * audits it as {@code APPLICATION_SCOPE_CHANGED} with before/after
-     * pairs. The write itself is the registry guard's single declared
+     * pairs (and, since issue #17, the count of versions carried along).
+     * The write itself is the registry guard's single declared
      * cross-scope update: the row moves between scopes, so the request's
      * bound scope (either mode) cannot own both sides, and the service
-     * has already run every precondition.
+     * has already run every precondition. Since versions exist (E4,
+     * issue #17), the application's version rows carry the same
+     * owning-dimension snapshot and move in the same transaction through
+     * the version module's sanctioned carry-along — a version left in
+     * the previous scope would strand outside the seam the routes bind.
      */
     private ApplicationView transitionScope(UUID actorId, ApplicationEntity application, ScopeTransition transition) {
         OwnershipScope before = application.getOwnershipScope();
@@ -553,9 +562,20 @@ public class ApplicationService {
         if (moved != 1) {
             throw notFound("application not found");
         }
+        // The application's versions carry the same owning-dimension
+        // snapshot (issue #17): they must move in lockstep with the row,
+        // or they strand in a scope the seam no longer serves for the
+        // application's routes — invisible to every later request. The
+        // version module's sanctioned carry-along update (the same
+        // cross-scope-write pattern as the transition itself) runs in
+        // this transaction; E5's artifacts anchor to versions, not to
+        // the application, so nothing else follows.
+        int versionsCarried =
+                versions.reassignOwnership(application.getId(), transition.tenantId(), Instant.now(clock));
         Map<String, String> detail = new LinkedHashMap<>();
         putChange(detail, "ownershipScope", before.name(), transition.to().name());
         putChange(detail, "tenantId", beforeTenantId, transition.tenantId());
+        detail.put("versionsCarried", String.valueOf(versionsCarried));
         audit(
                 AuditEventType.APPLICATION_SCOPE_CHANGED,
                 actorId,
