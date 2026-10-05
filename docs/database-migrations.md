@@ -18,6 +18,7 @@ backend/src/main/resources/db/
     V8__tenant_member_status.sql
     V9__application_registry.sql
     V10__application_ownership_scope.sql
+    V11__tenant_application_authorization.sql
   seed/                 dev fixture, applied only when the seed location is active
     R__dev_seed.sql
 ```
@@ -135,6 +136,19 @@ backend/src/main/resources/db/
   replacement is a constraint tightening — expand-only in effect: no
   data is dropped, and it fails loudly if an organization ever spans
   a name across tenants (none does).
+- `V11__tenant_application_authorization.sql` (S3-03, issue #15) adds the
+  PRD 15 distribution mapping: `tenant_application_authorizations`, one
+  retained row per application x tenant pair
+  (`uq_tenant_application_authorizations_pair` is the final authority on
+  concurrent grants), with its own `application_authorization_status`
+  vocabulary (`ACTIVE`/`REVOKED`, the V8 one-enum-per-surface precedent)
+  and the revocation-pairing check
+  `ck_tenant_application_authorizations_revocation` (ACTIVE rows carry no
+  revocation, REVOKED rows carry both stamps). Revocation is a status
+  flip, never a deletion — grant/revocation history with actor and
+  reason lives in the audit trail (INV-007 philosophy). The owning
+  organization is deliberately not denormalized; the application row
+  stays the single source of truth.
 
 ## Status and type columns
 

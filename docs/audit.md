@@ -73,12 +73,18 @@ organization (`ORGANIZATION_CREATED`, `ORGANIZATION_UPDATED`,
 `CROSS_TENANT_ACCESS` — a platform administrator entering a
 tenant-scoped route through the override, carrying actor, tenant, and
 method/URI; see [authorization](authorization.md)), application
-(`APPLICATION_CREATED`, `APPLICATION_UPDATED`, `APPLICATION_SCOPE_CHANGED`
-— registry registration, metadata edits, and the audited ownership-scope
+(`APPLICATION_CREATED`, `APPLICATION_UPDATED`,
+`APPLICATION_SCOPE_CHANGED`, `APPLICATION_TENANT_AUTHORIZED`,
+`APPLICATION_TENANT_DEAUTHORIZED`
+— registry registration, metadata edits, the audited ownership-scope
 transition carrying `ownershipScope.before/after` and
 `tenantId.before/after` (S3-02)
 and metadata/lifecycle edits, with identifier changes audited as
-before/after pairs because they affect artifact matching, S3-01), and
+before/after pairs because they affect artifact matching, S3-01, and
+the shared-application tenant authorization mapping's grant and
+revocation (S3-03) carrying the authorized tenant, the pair's
+resulting status, and the request's `reason` on the event's reason
+field), and
 platform (`ACCESS_DENIED`, S1-06).
 
 ## Persistence and transactional semantics

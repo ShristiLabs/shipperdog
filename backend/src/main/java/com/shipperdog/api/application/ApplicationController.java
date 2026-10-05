@@ -35,9 +35,10 @@ import org.springframework.web.bind.annotation.RestController;
  * (PRD 12) and errors use the problem+json envelope (issue #8).
  * Creation honors {@code Idempotency-Key}. The tenant-scoped listing
  * lives under {@code GET /api/v1/tenants/{id}/applications} (S2-03) and
- * shows tenant-owned applications (authorized-shared arrive with
- * S3-03); the console UI (S3-04), the authorized-tenant mapping
- * (S3-03), and versions (E4) are later stories.
+ * resolves effective visibility since S3-03 (tenant-owned plus
+ * authorized shared); the shared-application authorization mapping is
+ * {@link ApplicationTenantAuthorizationController} (S3-03). The console
+ * UI (S3-04) and versions (E4) are later stories.
  */
 @RestController
 @RequestMapping("/api/v1/applications")

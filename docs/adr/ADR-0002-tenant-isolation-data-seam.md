@@ -229,3 +229,49 @@ per-scope shape silently under-enforced cross-scope races — two tenants
 of one organization could concurrently register the same name with no
 index collision. The database is again the final authority for the
 documented semantics.
+
+## Fourth amendment (2026-10-05): the distribution-authorization mapping
+
+The tenant-application authorization mapping (issue #15, S3-03, PRD 15)
+made organization-shared distribution real: which tenants an
+organization's shared applications are authorized for is held as
+explicit grant rows (`tenant_application_authorizations`, V11 — one
+retained row per application x tenant pair, ACTIVE/REVOKED status
+flips, revocation never deletion). Two facts followed:
+
+1. **The mapping is authorization data served by a marked repository —
+   neither seam mode can hold it.** A grant row points from an
+   organization's distribution decision into one of its tenants; the
+   mapping's questions span tenants by definition (an organization's
+   authorized-tenant list, the ORGANIZATION-to-TENANT transition
+   precondition, "which shared applications may tenant T see?"). A
+   tenant-scoped context answers none of them (it sees exactly one
+   tenant), and the organization-scope predicate composes
+   `tenantId IS NULL` while grant rows carry the authorized tenant —
+   so `TenantApplicationAuthorizationRepository` is
+   `@CrossTenantByDesign` with declared queries only, the second
+   amendment's authorization-data pattern (role resolution's equal).
+   The entity implements neither `TenantScope` nor `OrganizationScope`:
+   the marker, not a shoehorned scope, carries the sanctioned-ness.
+   Application rows themselves never move: the mapping service loads
+   the application through the seam inside the route's bound scope
+   (the owning organization's, bound by the interceptor), so a foreign
+   application is the standard concealed miss before any mapping row
+   is touched.
+
+2. **Effective visibility is one declared union query on the registry
+   guard.** "Which applications does tenant T see?" resolves as
+   tenant-owned rows UNION shared rows carrying an ACTIVE grant for T —
+   one arm of that union is null-tenant organization rows that no
+   tenant-scoped query can ever match, so the resolution spans scopes
+   by definition and lives beside the registry's other sanctioned
+   questions (`findVisibleToTenant`). INV-001 holds inside the union by
+   construction: the owned arm is exactly `tenantId = T` and the shared
+   arm requires an ACTIVE row naming T — no other tenant's rows can
+   satisfy either. The portal/catalog listing
+   (`TenantApplicationService.listVisibleToTenant`) is the single
+   tested resolution point the E7 authorization chain and E8 consume;
+   nothing else re-derives visibility. Shared visibility stays opt-in
+   (INV-005): without an explicit grant the union degenerates to the
+   tenant's own rows, exactly the pre-S3-03 listing.
+

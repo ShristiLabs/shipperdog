@@ -111,32 +111,42 @@ Removal deletes the membership and revokes the member's refresh tokens
 (`status.before`/`status.after`, `sessionsRevoked`), and
 `TENANT_MEMBER_REMOVED`.
 
-## Applications (S2-03, S3-01, S3-02)
+## Applications (S2-03, S3-01, S3-02, S3-03)
 
-`GET /{id}/applications` returns the applications the tenant owns —
-the `applications.tenant_id` rows for that tenant, cursor-paginated
-and carrying the registry fields (platforms, identifiers,
-description, status, ownership scope since S3-01/S3-02), readable by
-both tenant roles (`tenant:applications:read`). The
-listing runs through the isolation seam, so rows of other tenants and
-organization-shared applications (null `tenant_id`) are invisible by
-construction. FR-002's "assign applications" write side arrived with
-the application registry: creation and management are S3-01
-(`POST`/`GET`/`PATCH /api/v1/applications`, organization-level
-`app:applications:write` authority — see
-[authorization](authorization.md)). Ownership scope (S3-02, PRD 14):
-an application is `TENANT`-owned — exactly one owning tenant — or
-`ORGANIZATION`-shared, owned by the organization itself, readable by
-organization roles org-wide and convertible both ways through an
-audited `APPLICATION_SCOPE_CHANGED` transition
+`GET /{id}/applications` returns the applications the tenant sees —
+since S3-03 this is the platform's single effective-visibility
+resolution: the tenant's owned applications (the
+`applications.tenant_id` rows for that tenant) plus the
+organization-shared applications the tenant is authorized for (an
+`ACTIVE` row in the `tenant_application_authorizations` mapping,
+PRD 15). Cursor-paginated, carrying the registry fields (platforms,
+identifiers, description, status, ownership scope since S3-01/S3-02),
+readable by both tenant roles (`tenant:applications:read`). Shared
+visibility is opt-in and never ambient (INV-005): before a grant the
+listing is exactly the tenant's own rows, de-authorization removes the
+application immediately, and the union query cannot cross tenants by
+construction (ADR-0002 fourth amendment). FR-002's "assign
+applications" write side arrived with the application registry:
+creation and management are S3-01 (`POST`/`GET`/`PATCH
+/api/v1/applications`, organization-level `app:applications:write`
+authority — see [authorization](authorization.md)). Ownership scope
+(S3-02, PRD 14): an application is `TENANT`-owned — exactly one owning
+tenant — or `ORGANIZATION`-shared, owned by the organization itself,
+readable by organization roles org-wide and convertible both ways
+through an audited `APPLICATION_SCOPE_CHANGED` transition
 (`PATCH /api/v1/applications/{id}` with `ownershipScope`; converting
-to TENANT names the new owner tenant and enforces the INV-002 checks).
-Shared applications — an application reachable from more than one
-tenant — arrive with S3-03 and will extend the tenant listing;
-distribution decides which tenants receive a shared application,
-never the other way around (PRD 14/15). A deactivated
-tenant keeps a readable listing (deactivation blocks new affiliations,
-never reads).
+to TENANT names the new owner tenant, enforces the INV-002 checks, and
+is blocked with `409 APPLICATION_AUTHORIZED_TENANTS_PRESENT` while any
+tenant holds an ACTIVE authorization — de-authorize first). Which
+tenants a shared application reaches is managed by the authorization
+mapping (S3-03): `POST`/`DELETE
+/api/v1/applications/{id}/tenants/{tenantId}` grant and revoke
+(soft, auditable, reason-carrying), `GET
+/api/v1/applications/{id}/tenants` lists the authorized tenants —
+organization-level authority only. Distribution decides which tenants
+receive a shared application, never the other way around (PRD 14/15).
+A deactivated tenant keeps a readable listing (deactivation blocks new
+affiliations, never reads).
 
 ## Isolation (S2-02, INV-001)
 

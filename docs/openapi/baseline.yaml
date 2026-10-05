@@ -546,6 +546,61 @@ paths:
             '*/*':
               schema:
                 $ref: "#/components/schemas/ApplicationView"
+  /api/v1/applications/{id}/tenants/{tenantId}:
+    post:
+      tags:
+      - application-tenant-authorization-controller
+      operationId: authorize
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - name: tenantId
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ReasonRequest"
+      responses:
+        "200":
+          description: OK
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/AuthorizationView"
+    delete:
+      tags:
+      - application-tenant-authorization-controller
+      operationId: deauthorize
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - name: tenantId
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ReasonRequest"
+      responses:
+        "204":
+          description: No Content
   /api/v1/applications/{id}:
     get:
       tags:
@@ -719,6 +774,8 @@ paths:
           - APPLICATION_CREATED
           - APPLICATION_UPDATED
           - APPLICATION_SCOPE_CHANGED
+          - APPLICATION_TENANT_AUTHORIZED
+          - APPLICATION_TENANT_DEAUTHORIZED
       - name: applicationId
         in: query
         required: false
@@ -766,6 +823,35 @@ paths:
             '*/*':
               schema:
                 $ref: "#/components/schemas/PageResponseAuditEventView"
+  /api/v1/applications/{id}/tenants:
+    get:
+      tags:
+      - application-tenant-authorization-controller
+      operationId: list_3
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - name: limit
+        in: query
+        required: false
+        schema:
+          type: string
+      - name: cursor
+        in: query
+        required: false
+        schema:
+          type: string
+      responses:
+        "200":
+          description: OK
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/PageResponseAuthorizationView"
   /api/v1/tenants/{id}/members/{userId}:
     delete:
       tags:
@@ -1149,6 +1235,34 @@ components:
         updatedAt:
           type: string
           format: date-time
+    ReasonRequest:
+      type: object
+      properties:
+        reason:
+          type: string
+    AuthorizationView:
+      type: object
+      properties:
+        applicationId:
+          type: string
+          format: uuid
+        tenantId:
+          type: string
+          format: uuid
+        status:
+          type: string
+        grantedBy:
+          type: string
+          format: uuid
+        grantedAt:
+          type: string
+          format: date-time
+        revokedBy:
+          type: string
+          format: uuid
+        revokedAt:
+          type: string
+          format: date-time
     PageResponseTenantResponse:
       type: object
       properties:
@@ -1275,6 +1389,8 @@ components:
           - APPLICATION_CREATED
           - APPLICATION_UPDATED
           - APPLICATION_SCOPE_CHANGED
+          - APPLICATION_TENANT_AUTHORIZED
+          - APPLICATION_TENANT_DEAUTHORIZED
         occurredAt:
           type: string
           format: date-time
@@ -1320,5 +1436,14 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/AuditEventView"
+        next_cursor:
+          type: string
+    PageResponseAuthorizationView:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/AuthorizationView"
         next_cursor:
           type: string

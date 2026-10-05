@@ -28,7 +28,11 @@ public class ApplicationException extends RuntimeException {
         PACKAGE_TAKEN(
                 HttpStatus.CONFLICT,
                 "APPLICATION_PACKAGE_TAKEN",
-                "The package name is already in use in the organization.");
+                "The package name is already in use in the organization."),
+        AUTHORIZED_TENANTS_PRESENT(
+                HttpStatus.CONFLICT,
+                "APPLICATION_AUTHORIZED_TENANTS_PRESENT",
+                "The application has authorized tenants; de-authorize them before converting ownership.");
 
         final HttpStatus httpStatus;
         final String code;

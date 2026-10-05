@@ -79,6 +79,7 @@ see [api-conventions.md](api-conventions.md)).
 | `APPLICATION_NAME_TAKEN` | 409 | The application name is already in use in the organization (both ownership scopes; organization-wide since V10). |
 | `APPLICATION_BUNDLE_TAKEN` | 409 | The bundle id is already in use in the organization. |
 | `APPLICATION_PACKAGE_TAKEN` | 409 | The package name is already in use in the organization. |
+| `APPLICATION_AUTHORIZED_TENANTS_PRESENT` | 409 | The application has authorized tenants; de-authorize them before converting ownership. (ORGANIZATION-to-TENANT scope transition while any tenant holds an ACTIVE authorization; the same concealed `APPLICATION_NOT_FOUND` answers an absent or already-revoked authorization on the mapping surface, S3-03) |
 
 Reserved, not yet emitted: `APPLICATION_ARCHIVED` (409 — version and
 artifact creation under an archived application, binding with E4/E5 per
