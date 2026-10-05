@@ -10,6 +10,7 @@ import com.shipperdog.api.identity.UserDirectory;
 import com.shipperdog.api.tenant.TenantAccess;
 import com.shipperdog.api.tenant.TenantException;
 import com.shipperdog.api.tenant.TenantRole;
+import com.shipperdog.api.tenant.internal.entity.TenantEntity;
 import com.shipperdog.api.tenant.internal.entity.TenantMemberEntity;
 import com.shipperdog.api.tenant.internal.repository.TenantMemberRepository;
 import com.shipperdog.api.tenant.internal.repository.TenantRepository;
@@ -26,16 +27,16 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 /**
- * Tenant membership and role assignment (issue #5). Tenant CRUD itself
- * arrives with E2 (issues #9-#12); this service is the RBAC surface the
- * issue needs: listing members, assigning TENANT_ADMIN/TENANT_TESTER
- * roles, and the cross-module {@link TenantAccess} queries the
- * authorization module's evaluator uses. Endpoint permissions
- * (tenant:members:*) are enforced at the controller; the service keeps
- * business rules only. There is deliberately no last-TENANT_ADMIN guard:
- * an organization administrator (or platform administrator) of the
- * owning organization can always reassign, so a tenant cannot be
- * orphaned.
+ * Tenant membership and role assignment (issue #5; tenant lifecycle
+ * itself lives in {@link TenantService} since issue #9). This service
+ * is the RBAC surface the issue needs: listing members, assigning
+ * TENANT_ADMIN/TENANT_TESTER roles, and the cross-module
+ * {@link TenantAccess} queries the authorization module's evaluator
+ * uses. Endpoint permissions (tenant:members:*) are enforced at the
+ * controller; the service keeps business rules only. There is
+ * deliberately no last-TENANT_ADMIN guard: an organization
+ * administrator (or platform administrator) of the owning organization
+ * can always reassign, so a tenant cannot be orphaned.
  */
 @Service
 public class TenantMemberService implements TenantAccess {
@@ -119,13 +120,17 @@ public class TenantMemberService implements TenantAccess {
 
     /**
      * Assigns (or changes) a member's tenant role. Assignment to a
-     * non-member creates the membership; tenant testers need not be
-     * organization members. A permission-losing change revokes the
-     * member's refresh tokens (issue #5, acceptance criterion 5).
+     * non-member creates the membership — blocked while the tenant is
+     * DEACTIVATED, the membership analog of "no new invitations" (issue
+     * #9, acceptance criterion 3); role changes of existing members stay
+     * possible so a deactivated tenant remains administrable. Tenant
+     * testers need not be organization members. A permission-losing
+     * change revokes the member's refresh tokens (issue #5, acceptance
+     * criterion 5).
      */
     @Transactional
     public MemberView assignRole(UUID tenantId, UUID targetUserId, TenantRole newRole, UUID actorId) {
-        mustFindTenant(tenantId);
+        TenantEntity tenant = mustFindTenant(tenantId);
         if (!directory.userExists(targetUserId)) {
             throw new TenantException(TenantException.Code.NOT_FOUND, "user not found");
         }
@@ -133,6 +138,10 @@ public class TenantMemberService implements TenantAccess {
                 members.findByTenantIdAndUserId(tenantId, targetUserId).orElse(null);
         boolean demotion;
         if (membership == null) {
+            if (tenant.getStatus() == TenantEntity.Status.DEACTIVATED) {
+                throw new TenantException(
+                        TenantException.Code.TENANT_DEACTIVATED, "cannot add members to a deactivated tenant");
+            }
             membership = new TenantMemberEntity(tenantId, targetUserId, newRole);
             demotion = false;
         } else {
@@ -182,8 +191,8 @@ public class TenantMemberService implements TenantAccess {
                         membership.getRole().name())));
     }
 
-    private void mustFindTenant(UUID tenantId) {
-        tenants.findById(tenantId)
+    private TenantEntity mustFindTenant(UUID tenantId) {
+        return tenants.findById(tenantId)
                 .orElseThrow(() -> new TenantException(TenantException.Code.NOT_FOUND, "tenant not found"));
     }
 

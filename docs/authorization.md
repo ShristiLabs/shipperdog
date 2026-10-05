@@ -39,7 +39,7 @@ permission:
 | Role | Permissions |
 |---|---|
 | PLATFORM_ADMIN | `*` (wildcard; the `users.platform_admin` flag, PRD 7.1) |
-| ORG_ADMIN | `org:organizations:read` `org:organizations:update` `org:idp-configs:read` `org:idp-configs:write` `org:members:read` `org:members:invite` `org:members:manage` `tenant:members:read` `tenant:members:manage` `tenant:applications:read` `app:applications:read` `app:applications:write` `app:versions:read` `app:releases:read` `app:tester-groups:manage` `app:feedback:read` |
+| ORG_ADMIN | `org:organizations:read` `org:organizations:update` `org:idp-configs:read` `org:idp-configs:write` `org:members:read` `org:members:invite` `org:members:manage` `org:tenants:create` `org:tenants:read` `tenant:tenants:read` `tenant:tenants:update` `tenant:members:read` `tenant:members:manage` `tenant:applications:read` `app:applications:read` `app:applications:write` `app:versions:read` `app:releases:read` `app:tester-groups:manage` `app:feedback:read` |
 | APP_OWNER | `app:applications:read` `app:applications:write` `app:versions:read` `app:versions:write` `app:artifacts:read` `app:releases:read` `app:releases:manage` `app:feedback:read` |
 | DEVELOPER | `app:artifacts:read` `app:artifacts:upload` `app:versions:read` `app:releases:read` |
 | QA_ENGINEER | `app:applications:read` `app:versions:read` `app:releases:read` `app:releases:approve-qa` `app:tester-groups:manage` `app:feedback:read` |
@@ -47,7 +47,7 @@ permission:
 | SECURITY_REVIEWER | `app:applications:read` `app:versions:read` `app:releases:read` `app:releases:approve-security` |
 | COMPLIANCE_REVIEWER | `app:applications:read` `app:versions:read` `app:releases:read` `app:releases:approve-compliance` |
 | VIEWER | `app:applications:read` `app:versions:read` `app:releases:read` |
-| TENANT_ADMIN | `tenant:members:read` `tenant:members:manage` `tenant:applications:read` |
+| TENANT_ADMIN | `tenant:tenants:read` `tenant:members:read` `tenant:members:manage` `tenant:applications:read` |
 | TENANT_TESTER | `tenant:applications:read` `tenant:applications:download` `tenant:feedback:create` |
 | ORG_MEMBER | (none — membership only; deny-by-default) |
 
@@ -117,6 +117,28 @@ never the HTTP response. Since S1-06 every authenticated denial is
 recorded there automatically as an `ACCESS_DENIED` event (see
 [audit](audit.md)).
 
+## Tenant lifecycle endpoints
+
+Tenant lifecycle (issue #9) is organization-level administration. An
+organization administrator manages every tenant their organization owns
+(creation and listing are checked against the owning organization; reads
+and updates against the tenant itself, where the owning organization's
+role overlays the caller's tenant role per the union rule). Tenant
+administrators can read their tenant but not change it.
+
+| Method | Path | Permission | Result |
+|---|---|---|---|
+| POST | `/api/v1/tenants` | `org:tenants:create` at the target `organizationId` (body) | `201` tenant view; `400` invalid name/externalId; `404` unknown organization; `409` `TENANT_NAME_TAKEN` or `TENANT_EXTERNAL_ID_TAKEN`; honors `Idempotency-Key` |
+| GET | `/api/v1/tenants?organizationId=...&status=...` | `org:tenants:read` at that organization | `200` tenants, cursor-paginated; `status` filter (`ACTIVE`/`DEACTIVATED`); `400` missing/invalid `organizationId` |
+| GET | `/api/v1/tenants/{id}` | `tenant:tenants:read` | `200` tenant view |
+| PUT | `/api/v1/tenants/{id}` | `tenant:tenants:update` | `200` tenant view; partial update (null fields unchanged); `400` invalid fields or status; `409` name/externalId taken |
+
+Deactivation is reversible (`ACTIVE` <-> `DEACTIVATED`) and blocks new
+memberships (`409 TENANT_DEACTIVATED`) while preserving all data; see
+[Tenants](tenants.md). Creation requests missing an `organizationId`
+are denied by the permission check before the body is read
+(authorization precedes validation platform-wide).
+
 ## Role-assignment endpoints
 
 | Method | Path | Permission | Result |
@@ -125,7 +147,7 @@ recorded there automatically as an `ACCESS_DENIED` event (see
 | PUT | `/api/v1/organizations/{id}/members/{userId}/role` | `org:members:manage` | `200` member view; `400` unknown role; `404` unknown organization/member; `409` `LAST_ORG_ADMIN` or `ORGANIZATION_DEACTIVATED` |
 | DELETE | `/api/v1/organizations/{id}/members/{userId}` | `org:members:manage` | `204`; same error contract; always revokes the member's sessions |
 | GET | `/api/v1/tenants/{id}/members` | `tenant:members:read` | `200` members with roles, cursor-paginated |
-| PUT | `/api/v1/tenants/{id}/members/{userId}/role` | `tenant:members:manage` | `200` member view; creates the membership when absent (`404` unknown user/tenant); `400` unknown role |
+| PUT | `/api/v1/tenants/{id}/members/{userId}/role` | `tenant:members:manage` | `200` member view; creates the membership when absent (`404` unknown user/tenant; `409` `TENANT_DEACTIVATED` while deactivated); `400` unknown role |
 | DELETE | `/api/v1/tenants/{id}/members/{userId}` | `tenant:members:manage` | `204`; `404` unknown tenant/member |
 
 Error responses use the platform's problem+json envelope with stable

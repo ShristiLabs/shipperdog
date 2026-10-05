@@ -65,3 +65,6 @@ see [api-conventions.md](api-conventions.md)).
 | `TENANT_NOT_FOUND` | 404 | Resource not found. (also the concealed-denial shape for tenants) |
 | `INVALID_REQUEST` | 400 | The request is invalid. |
 | `TENANT_MEMBER_EXISTS` | 409 | The user is already a member of the tenant. |
+| `TENANT_NAME_TAKEN` | 409 | The tenant name is already in use in the organization. |
+| `TENANT_EXTERNAL_ID_TAKEN` | 409 | The external id is already in use. |
+| `TENANT_DEACTIVATED` | 409 | The tenant is deactivated. |

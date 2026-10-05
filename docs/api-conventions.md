@@ -94,8 +94,8 @@ keeps its conjunctive filters; `page`/`size` are gone).
 ## Idempotency
 
 Designated POSTs honor the `Idempotency-Key` header (issue #8; artifact
-upload joins in S5-01 — the registry of designated endpoints starts with
-`POST /api/v1/organizations`):
+upload joins in S5-01 — the registry of designated endpoints is
+`POST /api/v1/organizations` and `POST /api/v1/tenants`):
 
 - Send a unique key per logical operation (a UUID is fine; 1..255 chars).
 - The first request executes and its outcome is stored for 24 hours,

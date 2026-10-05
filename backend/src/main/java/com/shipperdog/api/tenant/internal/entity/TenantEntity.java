@@ -14,14 +14,20 @@ import java.util.UUID;
 import org.hibernate.annotations.JdbcTypeCode;
 import org.hibernate.type.SqlTypes;
 
-/** Maps the {@code tenants} table (V1 baseline). Read-only until E2. */
+/** Maps the {@code tenants} table (V1 baseline; lifecycle since issue #9). */
 @Entity
 @Table(name = "tenants")
 public class TenantEntity {
 
+    /**
+     * Lifecycle per issue #9: ACTIVE is the only operating state,
+     * DEACTIVATED is the reversible off state (V7). V1's DISABLED label
+     * stays reserved-unused, mirroring the org_status precedent (V3).
+     */
     public enum Status {
         ACTIVE,
-        DISABLED
+        DISABLED,
+        DEACTIVATED
     }
 
     @Id
@@ -43,6 +49,14 @@ public class TenantEntity {
     private Instant updatedAt;
 
     protected TenantEntity() {}
+
+    /** New tenant (issue #9); status starts ACTIVE per the V1 default. */
+    public TenantEntity(UUID organizationId, String name, String externalId) {
+        this.organizationId = organizationId;
+        this.name = name;
+        this.externalId = externalId;
+        this.status = Status.ACTIVE;
+    }
 
     @PrePersist
     void onCreate() {
@@ -82,5 +96,17 @@ public class TenantEntity {
 
     public Instant getUpdatedAt() {
         return updatedAt;
+    }
+
+    public void setName(String name) {
+        this.name = name;
+    }
+
+    public void setExternalId(String externalId) {
+        this.externalId = externalId;
+    }
+
+    public void setStatus(Status status) {
+        this.status = status;
     }
 }

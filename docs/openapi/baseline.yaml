@@ -8,6 +8,49 @@ servers:
 - url: https://api.shipperdog.dev
   description: canonical API endpoint
 paths:
+  /api/v1/tenants/{id}:
+    get:
+      tags:
+      - tenant-controller
+      operationId: get
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      responses:
+        "200":
+          description: OK
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/TenantResponse"
+    put:
+      tags:
+      - tenant-controller
+      operationId: update
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateRequest"
+        required: true
+      responses:
+        "200":
+          description: OK
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/TenantResponse"
   /api/v1/tenants/{id}/members/{userId}/role:
     put:
       tags:
@@ -43,7 +86,7 @@ paths:
     get:
       tags:
       - organization-controller
-      operationId: get
+      operationId: get_1
       parameters:
       - name: id
         in: path
@@ -61,7 +104,7 @@ paths:
     put:
       tags:
       - organization-controller
-      operationId: update
+      operationId: update_1
       parameters:
       - name: id
         in: path
@@ -156,11 +199,62 @@ paths:
             '*/*':
               schema:
                 $ref: "#/components/schemas/IdpConfig"
+  /api/v1/tenants:
+    get:
+      tags:
+      - tenant-controller
+      operationId: list
+      parameters:
+      - name: organizationId
+        in: query
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - name: status
+        in: query
+        required: false
+        schema:
+          type: string
+      - name: limit
+        in: query
+        required: false
+        schema:
+          type: string
+      - name: cursor
+        in: query
+        required: false
+        schema:
+          type: string
+      responses:
+        "200":
+          description: OK
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/PageResponseTenantResponse"
+    post:
+      tags:
+      - tenant-controller
+      operationId: create
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateRequest"
+        required: true
+      responses:
+        "201":
+          description: Created
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/TenantResponse"
   /api/v1/organizations:
     get:
       tags:
       - organization-controller
-      operationId: list
+      operationId: list_1
       parameters:
       - name: limit
         in: query
@@ -182,7 +276,7 @@ paths:
     post:
       tags:
       - organization-controller
-      operationId: create
+      operationId: create_1
       requestBody:
         content:
           application/json:
@@ -469,6 +563,8 @@ paths:
           - ORG_IDP_CONFIGURED
           - ORG_MEMBER_ROLE_CHANGED
           - ORG_MEMBER_REMOVED
+          - TENANT_CREATED
+          - TENANT_UPDATED
           - TENANT_MEMBER_ROLE_CHANGED
           - TENANT_MEMBER_REMOVED
           - ACCESS_DENIED
@@ -578,6 +674,36 @@ paths:
           description: No Content
 components:
   schemas:
+    UpdateRequest:
+      type: object
+      properties:
+        name:
+          type: string
+        externalId:
+          type: string
+        status:
+          type: string
+    TenantResponse:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        organizationId:
+          type: string
+          format: uuid
+        name:
+          type: string
+        externalId:
+          type: string
+        status:
+          type: string
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
     RoleChangeRequest:
       type: object
       properties:
@@ -601,15 +727,6 @@ components:
         createdAt:
           type: string
           format: date-time
-    UpdateRequest:
-      type: object
-      properties:
-        name:
-          type: string
-        status:
-          type: string
-        externalId:
-          type: string
     OrganizationResponse:
       type: object
       properties:
@@ -638,6 +755,8 @@ components:
     JsonNode:
       type: object
       properties:
+        floatingPointNumber:
+          type: boolean
         nodeType:
           type: string
           enum:
@@ -683,8 +802,6 @@ components:
           type: boolean
         container:
           type: boolean
-        floatingPointNumber:
-          type: boolean
         empty:
           type: boolean
         array:
@@ -710,6 +827,9 @@ components:
     CreateRequest:
       type: object
       properties:
+        organizationId:
+          type: string
+          format: uuid
         name:
           type: string
         externalId:
@@ -826,6 +946,15 @@ components:
           format: uuid
         role:
           type: string
+    PageResponseTenantResponse:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/TenantResponse"
+        next_cursor:
+          type: string
     PageResponseMemberView:
       type: object
       properties:
@@ -923,6 +1052,8 @@ components:
           - ORG_IDP_CONFIGURED
           - ORG_MEMBER_ROLE_CHANGED
           - ORG_MEMBER_REMOVED
+          - TENANT_CREATED
+          - TENANT_UPDATED
           - TENANT_MEMBER_ROLE_CHANGED
           - TENANT_MEMBER_REMOVED
           - ACCESS_DENIED

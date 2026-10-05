@@ -15,7 +15,10 @@ public class TenantException extends RuntimeException {
     public enum Code {
         NOT_FOUND(HttpStatus.NOT_FOUND, "TENANT_NOT_FOUND", "Resource not found."),
         INVALID_REQUEST(HttpStatus.BAD_REQUEST, "INVALID_REQUEST", "The request is invalid."),
-        MEMBER_EXISTS(HttpStatus.CONFLICT, "TENANT_MEMBER_EXISTS", "The user is already a member of the tenant.");
+        MEMBER_EXISTS(HttpStatus.CONFLICT, "TENANT_MEMBER_EXISTS", "The user is already a member of the tenant."),
+        NAME_TAKEN(HttpStatus.CONFLICT, "TENANT_NAME_TAKEN", "The tenant name is already in use in the organization."),
+        EXTERNAL_ID_TAKEN(HttpStatus.CONFLICT, "TENANT_EXTERNAL_ID_TAKEN", "The external id is already in use."),
+        TENANT_DEACTIVATED(HttpStatus.CONFLICT, "TENANT_DEACTIVATED", "The tenant is deactivated.");
 
         final HttpStatus httpStatus;
         final String code;

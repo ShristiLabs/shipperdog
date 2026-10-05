@@ -44,8 +44,12 @@ public enum Permission {
     ORG_MEMBERS_READ("org:members:read"),
     ORG_MEMBERS_INVITE("org:members:invite"),
     ORG_MEMBERS_MANAGE("org:members:manage"),
+    ORG_TENANTS_CREATE("org:tenants:create"),
+    ORG_TENANTS_READ("org:tenants:read"),
 
     // tenant scope
+    TENANT_TENANTS_READ("tenant:tenants:read"),
+    TENANT_TENANTS_UPDATE("tenant:tenants:update"),
     TENANT_MEMBERS_READ("tenant:members:read"),
     TENANT_MEMBERS_MANAGE("tenant:members:manage"),
     TENANT_APPLICATIONS_READ("tenant:applications:read"),
