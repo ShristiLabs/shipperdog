@@ -304,3 +304,48 @@ no per-row data path; this amendment adds one read query of the same
 character as the union — an organization-wide question the seam cannot
 scope — and the doctrine is unchanged: every cross-scope question the
 product asks stays a declared, review-critical query in one place.
+
+## Sixth amendment (2026-10-05): versions join the seam through the ownership snapshot
+
+The version layer (issue #17, S4-01, PRD 8.4) made version rows real,
+and two facts followed from where versions sit: every version route is
+application-addressing (`/api/v1/applications/{id}/versions`), so the
+existing route interceptor already binds the application's owning scope
+— and the version rows themselves must be servable inside that scope.
+
+1. **Version rows carry their application's owning-dimension snapshot
+   and are served by the seam in both modes.** V12 adds
+   `organization_id` (NOT NULL, referencing organizations) and
+   `tenant_id` (nullable, referencing tenants) to the V1 `versions`
+   table — exactly the shape `applications` itself carries — and
+   `VersionEntity` implements `OrganizationScope` like the application
+   entity. A tenant-scope context serves the owning tenant's version
+   rows (`tenantId = :context`), an organization-scope context serves
+   the organization's null-tenant rows (`tenantId IS NULL AND
+   organizationId = :context`), and neither mode can reach the other's
+   rows — INV-001 for versions by the same construction as
+   applications, with reads and writes flowing only through
+   `VersionScopedRepository`. Creation copies the snapshot from the
+   application's profile (tuples, through the public
+   `ApplicationAccess` port), never from the caller, so the seam's
+   write guard is the final authority that a new row belongs to the
+   request's bound scope.
+
+2. **The ownership-scope transition carries versions along — the
+   sanctioned companion of the third amendment's transition.** An
+   application converting between TENANT and ORGANIZATION ownership
+   moves its version rows between scopes by definition: left behind,
+   they would strand in a scope the seam no longer binds for the
+   application's routes, invisible to every later request. The single
+   declared, application-parameterized update
+   (`VersionRegistryRepository.reassignOwnership`, on a
+   `@CrossTenantByDesign` guard of the same character as the registry
+   guard's `transitionScope`) runs inside the application module's
+   audited transition, in the same transaction, and the audit event
+   carries the count (`versionsCarried`). Creation guards the reverse
+   interleaving — a transition committing while a version insert is in
+   flight — with a post-flush ownership re-read that follows the same
+   sanctioned update; the residual commit-ordering window keeps the
+   seam's fail-closed guards as its authorities, so no interleaving
+   can produce an unscoped write. Artifacts (E5) anchor to versions,
+   not to applications, so nothing else follows the application row.

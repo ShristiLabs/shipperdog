@@ -163,4 +163,21 @@ public interface ApplicationRegistryRepository extends JpaRepository<Application
                 .map(application ->
                         new Ownership(application.getId(), application.getOrganizationId(), application.getTenantId()));
     }
+
+    /**
+     * Profile resolution for the version layer (issue #17): ownership
+     * plus the platform set and lifecycle status — tuples only, never
+     * the row, the same authorization-data character as ownership
+     * resolution.
+     */
+    @Override
+    default Optional<ApplicationProfile> profileOf(UUID applicationId) {
+        return findApplicationById(applicationId)
+                .map(application -> new ApplicationProfile(
+                        application.getId(),
+                        application.getOrganizationId(),
+                        application.getTenantId(),
+                        application.getPlatforms(),
+                        application.getStatus().name()));
+    }
 }

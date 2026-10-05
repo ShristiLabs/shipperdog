@@ -92,10 +92,12 @@ Applied today: `GET /api/v1/organizations`, `GET /api/v1/organizations/{id}/memb
 (S2-03), `GET /api/v1/audit` (which also
 keeps its conjunctive filters; `page`/`size` are gone), and
 `GET /api/v1/applications?organizationId=` (S3-04), the organization-wide
-registry listing for organization roles. The rest of the application
-registry's surface (S3-01) is item-addressed (POST/GET/PATCH under
-`/api/v1/applications`); a tenant's own view of applications stays the
-tenant-scoped listing.
+registry listing for organization roles, and
+`GET /api/v1/applications/{id}/versions` (S4-01), the per-application
+version listing ordered newest-first by the normalized semver sort key.
+The rest of the application registry's surface (S3-01) is item-addressed
+(POST/GET/PATCH under `/api/v1/applications`); a tenant's own view of
+applications stays the tenant-scoped listing.
 
 ## Idempotency
 
@@ -103,8 +105,8 @@ Designated POSTs honor the `Idempotency-Key` header (issue #8; artifact
 upload joins in S5-01 — the registry of designated endpoints is
 `POST /api/v1/organizations`, `POST /api/v1/tenants`,
 `POST /api/v1/tenants/{id}/members` (S2-03, idempotent even without the
-header for same-role duplicates), and `POST /api/v1/applications`
-(S3-01)):
+header for same-role duplicates), `POST /api/v1/applications`
+(S3-01), and `POST /api/v1/applications/{id}/versions` (S4-01)):
 
 - Send a unique key per logical operation (a UUID is fine; 1..255 chars).
 - The first request executes and its outcome is stored for 24 hours,

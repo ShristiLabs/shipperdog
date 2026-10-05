@@ -111,7 +111,7 @@ Removal deletes the membership and revokes the member's refresh tokens
 (`status.before`/`status.after`, `sessionsRevoked`), and
 `TENANT_MEMBER_REMOVED`.
 
-## Applications (S2-03, S3-01, S3-02, S3-03, S3-04)
+## Applications (S2-03, S3-01, S3-02, S3-03, S3-04, S4-01)
 
 The registry also has an organization-wide administration listing since
 S3-04: `GET /api/v1/applications?organizationId=` returns every
@@ -154,6 +154,18 @@ organization-level authority only. Distribution decides which tenants
 receive a shared application, never the other way around (PRD 14/15).
 A deactivated tenant keeps a readable listing (deactivation blocks new
 affiliations, never reads).
+
+Versions live under the application since S4-01 (`POST`/`GET
+/api/v1/applications/{id}/versions`, item reads under the same prefix):
+a logical version (semver-style name, born `DRAFT`, per-platform
+artifact slots empty until E5) inherits its application's visibility —
+the routes are application-addressing, so the owning scope the
+interceptor binds governs every version read and write (`app:versions:`
+permissions resolve through the owning tenant/organization; see
+[authorization](authorization.md)). An archived application accepts no
+new versions (`409 APPLICATION_ARCHIVED`) but keeps its existing
+versions readable, and the audited ownership-scope transition carries
+version rows along with their application (ADR-0002 sixth amendment).
 
 ## Isolation (S2-02, INV-001)
 

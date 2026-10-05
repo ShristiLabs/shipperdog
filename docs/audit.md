@@ -84,7 +84,11 @@ before/after pairs because they affect artifact matching, S3-01, and
 the shared-application tenant authorization mapping's grant and
 revocation (S3-03) carrying the authorized tenant, the pair's
 resulting status, and the request's `reason` on the event's reason
-field), and
+field), version (`VERSION_CREATED` — issue #17/S4-01: version
+creation under an application, carrying `versionName` and birth
+`status`; the ownership-scope transition also counts the versions it
+carries along as `versionsCarried` on `APPLICATION_SCOPE_CHANGED`),
+and
 platform (`ACCESS_DENIED`, S1-06).
 
 ## Persistence and transactional semantics

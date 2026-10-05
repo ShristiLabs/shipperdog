@@ -81,6 +81,16 @@ see [api-conventions.md](api-conventions.md)).
 | `APPLICATION_PACKAGE_TAKEN` | 409 | The package name is already in use in the organization. |
 | `APPLICATION_AUTHORIZED_TENANTS_PRESENT` | 409 | The application has authorized tenants; de-authorize them before converting ownership. (ORGANIZATION-to-TENANT scope transition while any tenant holds an ACTIVE authorization; the same concealed `APPLICATION_NOT_FOUND` answers an absent or already-revoked authorization on the mapping surface, S3-03) |
 
-Reserved, not yet emitted: `APPLICATION_ARCHIVED` (409 — version and
-artifact creation under an archived application, binding with E4/E5 per
-issue #13's acceptance criterion 4).
+Reserved, not yet emitted: `APPLICATION_ARCHIVED` for artifact creation
+(E5/S5-01). The code itself is live — version creation under an
+archived application emits it since S4-01 (see the version table
+below); issue #13 reserved it for exactly that surface.
+
+## Version (`VersionException.Code`)
+
+| Code | HTTP | Detail |
+|---|---|---|
+| `VERSION_NOT_FOUND` | 404 | Resource not found. (also the concealed-denial shape for unknown version ids; a denied or unknown application conceals as `APPLICATION_NOT_FOUND` through the permission check) |
+| `INVALID_REQUEST` | 400 | The request is invalid. |
+| `VERSION_NAME_TAKEN` | 409 | The version name is already in use for the application. (per application, `uq_versions_application_version` since V1; race-safe) |
+| `APPLICATION_ARCHIVED` | 409 | The application is archived; new versions cannot be added. (reserved in issue #13, emitted since S4-01; existing versions stay readable, and unarchiving resumes creation) |

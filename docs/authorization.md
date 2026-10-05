@@ -275,6 +275,9 @@ the tenant-scoped listing instead.
 | POST | `/api/v1/applications` | `app:applications:write` at the body's `tenantId` | `201` application view (born `ACTIVE`); `400` invalid platforms/identifiers; `409` `APPLICATION_NAME_TAKEN` / `APPLICATION_BUNDLE_TAKEN` / `APPLICATION_PACKAGE_TAKEN` / `APPLICATION_TENANT_DEACTIVATED`; `404` unknown tenant (concealed); honors `Idempotency-Key` |
 | GET | `/api/v1/applications/{id}` | `app:applications:read` at the application | `200` application view; `404` unknown or denied (concealed, identical envelope) |
 | PATCH | `/api/v1/applications/{id}` | `app:applications:write` at the application | `200` partial update (null fields unchanged); `400` invalid edits; `409` identifier/name conflicts; the reversible `ACTIVE`/`ARCHIVED` transition |
+| POST | `/api/v1/applications/{id}/versions` | `app:versions:write` at the application | `201` version view (born `DRAFT`, semver-style name, per-platform artifact slots empty until E5); `400` invalid name; `409` `VERSION_NAME_TAKEN` / `APPLICATION_ARCHIVED`; `404` unknown or denied application (concealed); honors `Idempotency-Key` (S4-01) |
+| GET | `/api/v1/applications/{id}/versions` | `app:versions:read` at the application | `200` limit/cursor page, newest first by the normalized semver sort key; `404` unknown or denied application (concealed) (S4-01) |
+| GET | `/api/v1/applications/{id}/versions/{versionId}` | `app:versions:read` at the application | `200` version detail with the empty release-history section (M2 fills it); `404` unknown version or application (concealed) (S4-01) |
 
 Identifier and lifecycle edits are audited (`APPLICATION_CREATED`,
 `APPLICATION_UPDATED`) with before/after pairs; see
@@ -295,7 +298,7 @@ role; `TOKEN_REVOKED` carries the machine-readable reason. See
 
 `UserRolesSnapshot` is the seam the ABAC engine (S14-04) extends with
 resource attributes; `app:` permissions bind to endpoints as their
-owning modules land (the registry since S3-01; E4 onward for the
-rest). The authorization engine series
+owning modules land (the registry since S3-01; `app:versions:read` and
+`app:versions:write` since S4-01; E5 onward for the rest). The authorization engine series
 (S7-01..S7-05) builds policy administration on this catalog without
 changing the enforcement point.
