@@ -18,7 +18,7 @@ module's public `OrganizationAccess` surface.
 | POST | `/register` | none (invitation token in body) | `201` user view; `400` INVALID_INVITATION / WEAK_PASSWORD; `409` EMAIL_TAKEN |
 | POST | `/refresh` | none (refresh token in body) | `200` rotated token pair; `401` INVALID_REFRESH_TOKEN |
 | POST | `/logout` | none (refresh token in body) | `204`; idempotent — revokes the token family |
-| GET | `/me` | access JWT or PAT | `200` current actor (`orgId` resolves live from the earliest ACTIVE membership, S1-04; `tenantId` null until E2) |
+| GET | `/me` | access JWT or PAT | `200` current actor (`orgId` resolves live from the earliest ACTIVE membership, S1-04; `tenantId` null until tenant assignments land, S2-03) |
 | POST | `/invitations` | access JWT or PAT | `201` with the raw invitation token (shown once); re-inviting an address revokes its previous pending invitation. Optional `organizationId` + `role` (any `org_role` value, default `ORG_MEMBER`) scope it to an organization: since S1-05 the inviter needs the `org:members:invite` permission there (organization administrators and platform administrators hold it) and target-scoped denials render as concealed `404`s (S1-08); `404` unknown organization, `400` invalid role or `role` without `organizationId`; accepting grants the membership with the recorded role |
 | POST | `/password-reset/request` | none | `202` always — known and unknown addresses are indistinguishable |
 | POST | `/password-reset/confirm` | none (token in body) | `204`; `400` INVALID_RESET_TOKEN (expired or already used) |
@@ -36,8 +36,8 @@ module's public `OrganizationAccess` surface.
   organization**. It is absent — never defaulted, never a deactivated
   organization's id — when the user has no active organization
   (org-less users, and members of only deactivated organizations, such
-  as exempt platform admins). `tenant_id` attaches with E2 once tenant
-  membership resolves. Since S1-05, tokens deliberately carry **no role
+  as exempt platform admins). `tenant_id` attaches once tenant
+  assignments land (S2-03) and tenant membership resolves. Since S1-05, tokens deliberately carry **no role
   claims**: the RBAC engine evaluates permissions against live database
   memberships on every request (see [authorization](authorization.md)),
   so role changes take effect immediately.
@@ -145,4 +145,4 @@ functional) by the `organization` module since S1-04. Identity touches
 organizations only through the `OrganizationAccess` interface (login
 block, `org_id` claim, invitation membership grants, role snapshots for
 the S1-05 RBAC engine — see [authorization](authorization.md));
-`tenant_id` claims arrive with E2.
+`tenant_id` claims arrive with S2-03.

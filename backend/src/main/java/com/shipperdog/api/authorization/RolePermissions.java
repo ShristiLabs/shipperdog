@@ -28,6 +28,8 @@ import java.util.Set;
  *                       org:idp-configs:read        org:idp-configs:write
  *                       org:members:read            org:members:invite
  *                       org:members:manage
+ *                       org:tenants:create          org:tenants:read
+ *                       tenant:tenants:read         tenant:tenants:update
  *                       tenant:members:read         tenant:members:manage
  *                       tenant:applications:read
  *                       app:applications:read/write app:versions:read
@@ -49,8 +51,8 @@ import java.util.Set;
  *                       app:releases:read           app:releases:approve-compliance
  * VIEWER                app:applications:read       app:versions:read
  *                       app:releases:read
- * TENANT_ADMIN          tenant:members:read         tenant:members:manage
- *                       tenant:applications:read
+ * TENANT_ADMIN          tenant:tenants:read         tenant:members:read
+ *                       tenant:members:manage       tenant:applications:read
  * TENANT_TESTER         tenant:applications:read    tenant:applications:download
  *                       tenant:feedback:create
  * ORG_MEMBER            (none — membership only; deny-by-default, PRD P3)
@@ -74,6 +76,10 @@ public final class RolePermissions {
             Permission.ORG_MEMBERS_READ,
             Permission.ORG_MEMBERS_INVITE,
             Permission.ORG_MEMBERS_MANAGE,
+            Permission.ORG_TENANTS_CREATE,
+            Permission.ORG_TENANTS_READ,
+            Permission.TENANT_TENANTS_READ,
+            Permission.TENANT_TENANTS_UPDATE,
             Permission.TENANT_MEMBERS_READ,
             Permission.TENANT_MEMBERS_MANAGE,
             Permission.TENANT_APPLICATIONS_READ,
@@ -154,7 +160,10 @@ public final class RolePermissions {
             ORG_MEMBER);
 
     private static final Set<Permission> TENANT_ADMIN = Set.of(
-            Permission.TENANT_MEMBERS_READ, Permission.TENANT_MEMBERS_MANAGE, Permission.TENANT_APPLICATIONS_READ);
+            Permission.TENANT_TENANTS_READ,
+            Permission.TENANT_MEMBERS_READ,
+            Permission.TENANT_MEMBERS_MANAGE,
+            Permission.TENANT_APPLICATIONS_READ);
 
     private static final Set<Permission> TENANT_TESTER = Set.of(
             Permission.TENANT_APPLICATIONS_READ,

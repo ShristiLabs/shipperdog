@@ -13,6 +13,8 @@ backend/src/main/resources/db/
     V3__organization_management.sql
     V4__rbac_roles.sql
     V5__audit_framework.sql
+    V6__api_conventions.sql
+    V7__tenant_lifecycle.sql
   seed/                 dev fixture, applied only when the seed location is active
     R__dev_seed.sql
 ```
@@ -100,6 +102,15 @@ backend/src/main/resources/db/
   legitimate). Production deployments should additionally `REVOKE
   UPDATE, DELETE` on the table from the runtime role (documented in
   the migration itself).
+- `V6__api_conventions.sql` (S1-08) creates the `idempotency_keys`
+  table backing the `Idempotency-Key` contract (SHA-256 hashed keys,
+  24 h retention, swept by expiry; deliberately no FK on
+  `principal_id`).
+- `V7__tenant_lifecycle.sql` (S2-01) adds the tenant lifecycle value:
+  `ALTER TYPE tenant_status ADD VALUE IF NOT EXISTS 'DEACTIVATED'`,
+  mirroring the `org_status` precedent (V3); V1's `DISABLED` label
+  stays reserved-unused. The `tenants` table itself is complete from
+  V1 — the story needed no column or constraint changes.
 
 ## Status and type columns
 
