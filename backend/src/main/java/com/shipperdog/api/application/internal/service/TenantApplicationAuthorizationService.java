@@ -62,6 +62,7 @@ public class TenantApplicationAuthorizationService {
 
     private final ApplicationScopedRepository applications;
     private final TenantApplicationAuthorizationRepository authorizations;
+    private final AuthorizationConflictResolver conflicts;
     private final TenantAccess tenants;
     private final AuditEventPublisher audit;
     private final Clock clock;
@@ -69,11 +70,13 @@ public class TenantApplicationAuthorizationService {
     TenantApplicationAuthorizationService(
             ApplicationScopedRepository applications,
             TenantApplicationAuthorizationRepository authorizations,
+            AuthorizationConflictResolver conflicts,
             TenantAccess tenants,
             AuditEventPublisher audit,
             Clock clock) {
         this.applications = applications;
         this.authorizations = authorizations;
+        this.conflicts = conflicts;
         this.tenants = tenants;
         this.audit = audit;
         this.clock = clock;
@@ -151,10 +154,14 @@ public class TenantApplicationAuthorizationService {
         } catch (DataIntegrityViolationException e) {
             // Lost the race on the pair's unique row: the winner's row
             // decides the outcome — idempotent success when already
-            // granted, otherwise the re-grant flip.
-            TenantApplicationAuthorizationEntity winner = authorizations
-                    .findByApplicationIdAndTenantId(applicationId, tenantId)
-                    .orElse(null);
+            // granted, otherwise the re-grant flip. The probe must run
+            // in a fresh transaction: this one is aborted (PostgreSQL),
+            // so a same-transaction re-read would die with "current
+            // transaction is aborted" and surface as a 500 instead of
+            // the idempotent resolution (the same discipline as the
+            // registry's ApplicationConflictResolver).
+            TenantApplicationAuthorizationEntity winner =
+                    conflicts.committedGrant(applicationId, tenantId).orElse(null);
             if (winner == null || winner.getStatus() != TenantApplicationAuthorizationEntity.Status.ACTIVE) {
                 throw e;
             }
