@@ -3,6 +3,7 @@ package com.shipperdog.api.config;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import java.util.List;
+import java.util.Map;
 import org.junit.jupiter.api.Test;
 import org.springframework.boot.context.properties.bind.Bindable;
 import org.springframework.boot.context.properties.bind.Binder;
@@ -32,6 +33,16 @@ class ApplicationConfigDocumentsTest {
             assertThat(binder.bind("management.endpoints.web.exposure.include", String.class)
                             .orElse(""))
                     .isEqualTo("health,info");
+            assertThat(binder.bind("management.tracing.sampling.probability", Double.class)
+                            .orElse(-1.0))
+                    .as("baseline samples every request (issue #7)")
+                    .isEqualTo(1.0);
+            assertThat(binder.bind(
+                                    "management.metrics.distribution.percentiles-histogram",
+                                    Bindable.mapOf(String.class, Boolean.class))
+                            .orElse(Map.of()))
+                    .as("HTTP latency histogram is on by default (issue #7)")
+                    .containsEntry("http.server.requests", true);
             assertThat(binder.bind("spring.flyway.locations", Bindable.listOf(String.class))
                             .orElse(List.of()))
                     .containsExactlyInAnyOrder("classpath:db/migration");

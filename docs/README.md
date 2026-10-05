@@ -18,6 +18,10 @@ Current contents:
 - [Audit logging](audit.md) — append-only audit trail, transactional
   persistence, redaction, correlation ids, and the admin query API
   (S1-06).
+- [Observability](observability.md) — tracing/metrics/logs baseline,
+  correlation model, `shipperdog_*` metric namespace, Prometheus +
+  Grafana local stack, and the management-port security posture
+  (S1-07).
 - [ADR-0001: Flyway with plain SQL migrations](adr/ADR-0001-flyway-schema-migrations.md)
 
 Start with the top-level README for local setup and CI.

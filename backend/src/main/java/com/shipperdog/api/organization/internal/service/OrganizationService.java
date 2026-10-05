@@ -4,6 +4,7 @@ import com.shipperdog.api.audit.AuditEvent;
 import com.shipperdog.api.audit.AuditEventPublisher;
 import com.shipperdog.api.audit.AuditEventType;
 import com.shipperdog.api.authorization.RolePermissions;
+import com.shipperdog.api.config.TraceAttributes;
 import com.shipperdog.api.identity.PlatformAdmins;
 import com.shipperdog.api.identity.SessionRevocation;
 import com.shipperdog.api.identity.UserDirectory;
@@ -71,6 +72,7 @@ public class OrganizationService implements OrganizationAccess {
     private final AuditEventPublisher audit;
     private final ObjectMapper mapper;
     private final Clock clock;
+    private final TraceAttributes trace;
 
     OrganizationService(
             OrganizationRepository organizations,
@@ -81,7 +83,8 @@ public class OrganizationService implements OrganizationAccess {
             UserDirectory directory,
             AuditEventPublisher audit,
             ObjectMapper mapper,
-            Clock clock) {
+            Clock clock,
+            TraceAttributes trace) {
         this.organizations = organizations;
         this.members = members;
         this.idpConfigs = idpConfigs;
@@ -91,6 +94,7 @@ public class OrganizationService implements OrganizationAccess {
         this.audit = audit;
         this.mapper = mapper;
         this.clock = clock;
+        this.trace = trace;
     }
 
     // -------------------------------------------------------------------------
@@ -191,6 +195,10 @@ public class OrganizationService implements OrganizationAccess {
             throw externalIdTaken();
         }
         members.save(new OrganizationMemberEntity(organization.getId(), actorId, OrgRole.ORG_ADMIN));
+        // The created id is only known here, after the insert — creation
+        // requests have no guarded target id for the evaluator to tag,
+        // so the service stamps the trace itself (issue #7).
+        trace.organization(organization.getId());
         Map<String, String> created = new LinkedHashMap<>();
         created.put("name", validatedName);
         if (validatedExternalId != null) {

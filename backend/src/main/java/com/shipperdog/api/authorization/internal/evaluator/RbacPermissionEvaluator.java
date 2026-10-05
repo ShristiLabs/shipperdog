@@ -5,9 +5,13 @@ import com.shipperdog.api.audit.AuditEventType;
 import com.shipperdog.api.audit.AuditLogger;
 import com.shipperdog.api.authorization.Permission;
 import com.shipperdog.api.authorization.RolePermissions;
+import com.shipperdog.api.config.MetricNames;
+import com.shipperdog.api.config.TraceAttributes;
 import com.shipperdog.api.identity.AuthenticatedPrincipal;
 import com.shipperdog.api.organization.OrgRole;
 import com.shipperdog.api.tenant.TenantRole;
+import io.micrometer.core.instrument.MeterRegistry;
+import io.micrometer.core.instrument.Timer;
 import java.io.Serializable;
 import java.util.LinkedHashMap;
 import java.util.Map;
@@ -56,10 +60,14 @@ public class RbacPermissionEvaluator implements PermissionEvaluator {
 
     private final RequestRoleGrants grants;
     private final AuditLogger audit;
+    private final MeterRegistry meters;
+    private final TraceAttributes trace;
 
-    RbacPermissionEvaluator(RequestRoleGrants grants, AuditLogger audit) {
+    RbacPermissionEvaluator(RequestRoleGrants grants, AuditLogger audit, MeterRegistry meters, TraceAttributes trace) {
         this.grants = grants;
         this.audit = audit;
+        this.meters = meters;
+        this.trace = trace;
     }
 
     @Override
@@ -72,7 +80,31 @@ public class RbacPermissionEvaluator implements PermissionEvaluator {
     @Override
     public boolean hasPermission(
             Authentication authentication, Serializable targetId, String targetType, Object permission) {
-        boolean allowed = decide(authentication, targetId, permission);
+        // Entity context for the request's trace (issue #7): the guarded
+        // target is exactly the organization/tenant the request operates
+        // on, so the span carries it without every controller repeating
+        // itself. Ids only, never names (PRD section 28).
+        if (targetId instanceof UUID id) {
+            if ("organization".equals(targetType)) {
+                trace.organization(id);
+            } else if ("tenant".equals(targetType)) {
+                trace.tenant(id);
+            }
+        }
+        // SLO measurability from day one (PRD sections 28 and 42):
+        // authorization_decision_duration, tagged by outcome so the
+        // under-100 ms target is observable per decision path. Only the
+        // decision itself is timed — the denial's audit write happens
+        // after the clock stops so it cannot skew the SLO signal.
+        boolean allowed = false;
+        Timer.Sample sample = Timer.start(meters);
+        try {
+            allowed = decide(authentication, targetId, permission);
+        } finally {
+            sample.stop(Timer.builder(MetricNames.AUTHORIZATION_DECISION_DURATION)
+                    .tag("outcome", allowed ? "allow" : "deny")
+                    .register(meters));
+        }
         if (!allowed && authentication != null && authentication.isAuthenticated()) {
             userIdOf(authentication).ifPresent(actor -> recordDenial(actor, permission));
         }

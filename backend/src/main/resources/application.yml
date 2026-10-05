@@ -45,6 +45,17 @@ management:
   endpoint:
     health:
       show-details: ${MANAGEMENT_HEALTH_SHOW_DETAILS:never}
+  tracing:
+    sampling:
+      # Baseline samples every request (issue #7, AC1); operators dial
+      # this down with TRACING_SAMPLING_PROBABILITY once volume grows.
+      probability: ${TRACING_SAMPLING_PROBABILITY:1.0}
+  metrics:
+    distribution:
+      percentiles-histogram:
+        # Histogram buckets for the HTTP server timer so latency SLOs
+        # (PRD section 42) are computable in Prometheus (p95 et al).
+        "[http.server.requests]": ${MANAGEMENT_METRICS_HTTP_HISTOGRAM:true}
 
 ---
 

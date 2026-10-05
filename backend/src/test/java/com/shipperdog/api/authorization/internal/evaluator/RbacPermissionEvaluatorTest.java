@@ -3,9 +3,12 @@ package com.shipperdog.api.authorization.internal.evaluator;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import com.shipperdog.api.audit.AuditLogger;
+import com.shipperdog.api.config.TraceAttributes;
 import com.shipperdog.api.organization.OrgRole;
 import com.shipperdog.api.tenant.TenantAccess;
 import com.shipperdog.api.tenant.TenantRole;
+import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
+import io.micrometer.observation.ObservationRegistry;
 import java.time.Clock;
 import java.util.List;
 import java.util.Map;
@@ -150,9 +153,13 @@ class RbacPermissionEvaluatorTest {
     // Fixtures
     // ---------------------------------------------------------------------
 
-    /** Evaluator under test; audit emission goes to a no-op publisher. */
+    /** Evaluator under test; audit emission and tracing are no-ops. */
     private static RbacPermissionEvaluator evaluator(RequestRoleGrants grants) {
-        return new RbacPermissionEvaluator(grants, new AuditLogger(event -> {}, Clock.systemUTC()));
+        return new RbacPermissionEvaluator(
+                grants,
+                new AuditLogger(event -> {}, Clock.systemUTC()),
+                new SimpleMeterRegistry(),
+                new TraceAttributes(ObservationRegistry.NOOP));
     }
 
     private static Authentication jwtAuth(UUID userId) {
