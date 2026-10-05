@@ -3,10 +3,13 @@ package com.shipperdog.api.application.internal.repository;
 import com.shipperdog.api.application.ApplicationAccess;
 import com.shipperdog.api.application.internal.entity.ApplicationEntity;
 import com.shipperdog.api.application.internal.entity.ApplicationEntity.OwnershipScope;
+import com.shipperdog.api.application.internal.entity.TenantApplicationAuthorizationEntity;
 import com.shipperdog.api.tenant.CrossTenantByDesign;
 import java.time.Instant;
 import java.util.Optional;
 import java.util.UUID;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
@@ -43,6 +46,15 @@ import org.springframework.data.repository.query.Param;
  *       called only from the service after its precondition checks and
  *       audited as {@code APPLICATION_SCOPE_CHANGED} (ADR-0002 third
  *       amendment).</li>
+ *   <li><strong>Effective-visibility resolution</strong> (issue #15,
+ *       S3-03, PRD 15) — "which applications may tenant T see?" is
+ *       tenant-owned rows UNION shared rows the tenant is authorized
+ *       for: it spans the tenants of one organization by definition (one
+ *       arm of the union is null-tenant organization rows, invisible to
+ *       any tenant-scoped query). The declared union query below serves
+ *       the portal/catalog listing and is the single resolution point
+ *       E7/E8 reuse; it answers through the mapping's ACTIVE grants
+ *       only, so an unauthorized tenant learns nothing.</li>
  * </ul>
  *
  * <p>Like every {@link CrossTenantByDesign} repository, this interface
@@ -84,6 +96,26 @@ public interface ApplicationRegistryRepository extends JpaRepository<Application
 
     /** Organization-wide name guard (uq_applications_organization_name, V10). */
     boolean existsByOrganizationIdAndName(UUID organizationId, String name);
+
+    /**
+     * The effective-visibility resolution (issue #15, AC4, PRD 15): the
+     * applications of one organization visible to the tenant — its
+     * tenant-owned rows plus the organization-shared rows carrying an
+     * ACTIVE authorization for the tenant. The single query behind the
+     * portal/catalog listing (reused by E7/E8); platform listing order
+     * (createdAt ASC, id ASC) is pinned in the query so pagination is
+     * deterministic without the seam's default-sort machinery.
+     */
+    @Query("select a from ApplicationEntity a where a.organizationId = :organizationId and (a.tenantId = :tenantId"
+            + " or (a.ownershipScope = :sharedScope and a.id in (select m.applicationId"
+            + " from TenantApplicationAuthorizationEntity m where m.tenantId = :tenantId"
+            + " and m.status = :authorizedStatus))) order by a.createdAt asc, a.id asc")
+    Page<ApplicationEntity> findVisibleToTenant(
+            @Param("organizationId") UUID organizationId,
+            @Param("tenantId") UUID tenantId,
+            @Param("sharedScope") OwnershipScope sharedScope,
+            @Param("authorizedStatus") TenantApplicationAuthorizationEntity.Status authorizedStatus,
+            Pageable pageable);
 
     /** Name guard excluding the application being updated. */
     boolean existsByOrganizationIdAndNameAndIdNot(UUID organizationId, String name, UUID id);

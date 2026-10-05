@@ -101,7 +101,14 @@ password-reset pair) matched by the security chain's `permitAll`.
   future owner tenant for tenant-owned registrations and at the owning
   organization for organization-shared ones, so
   `app:applications:write` authority is organization-level by
-  construction. Roles held in DEACTIVATED organizations are excluded
+  construction. The shared-application tenant authorization mapping
+  (S3-03, PRD 15) rides the same authority: `POST`/`DELETE`/`GET
+  /api/v1/applications/{id}/tenants` checks
+  `app:applications:write`/`read` at the application — organization
+  roles only, so an authorized tenant can never widen its own
+  visibility, and the mapping is one input layer of the E7
+  authorization chain (PRD 11/12) rather than a second permission
+  engine. Roles held in DEACTIVATED organizations are excluded
   from the snapshot, so deactivation strips effective permissions
   without touching memberships.
 

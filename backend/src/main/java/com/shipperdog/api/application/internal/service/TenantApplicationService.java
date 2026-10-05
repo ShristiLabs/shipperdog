@@ -1,7 +1,9 @@
 package com.shipperdog.api.application.internal.service;
 
 import com.shipperdog.api.application.internal.entity.ApplicationEntity;
-import com.shipperdog.api.application.internal.repository.ApplicationScopedRepository;
+import com.shipperdog.api.application.internal.entity.ApplicationEntity.OwnershipScope;
+import com.shipperdog.api.application.internal.entity.TenantApplicationAuthorizationEntity;
+import com.shipperdog.api.application.internal.repository.ApplicationRegistryRepository;
 import com.shipperdog.api.config.CursorPageable;
 import com.shipperdog.api.tenant.TenantAccess;
 import com.shipperdog.api.tenant.TenantException;
@@ -9,56 +11,72 @@ import java.time.Instant;
 import java.util.List;
 import java.util.UUID;
 import org.springframework.data.domain.Page;
-import org.springframework.data.jpa.domain.Specification;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 /**
- * The tenant-owned application listing (issue #11, FR-002 "assign
- * applications" read side): which applications a tenant holds. The
- * listing runs through the tenant-scoped seam (issue #10), so it is
- * filtered to the request's tenant context by construction — rows of
- * other tenants and organization-shared rows (null tenant, PRD 14)
- * can never appear: tenant users see tenant-owned applications, and
- * the authorized-shared arm (issue #14 AC4) arrives with S3-03's
- * authorization mapping, which this query is the declared point to
- * extend. The write side (creating applications and converting
- * ownership scope) is the registry surface (S3-01/S3-02).
+ * The tenant application listing (issue #11, FR-002 "assign applications"
+ * read side): which applications a tenant holds. Since S3-03 (issue #15,
+ * AC4) this is the platform's single <strong>effective-visibility
+ * resolution</strong>: a tenant sees an application exactly when the
+ * application is tenant-owned by it OR organization-shared and carrying
+ * an ACTIVE authorization for it (PRD 15 — distribution decides, never
+ * the other way around). The union query lives on the registry guard
+ * (ADR-0002 fourth amendment: one arm of the union is null-tenant
+ * organization rows, invisible to any tenant-scoped query), and THIS
+ * method is the one tested resolution point the portal/catalog uses —
+ * the E7 authorization chain (PRD 11/12) and E8 consume it rather than
+ * re-deriving visibility. The write side (grant/revoke of the mapping)
+ * is {@link TenantApplicationAuthorizationService}; application
+ * management itself is the registry surface (S3-01/S3-02).
+ *
+ * <p>Visibility is opt-in by construction (INV-001/INV-005): a shared
+ * application is absent from every tenant's listing until an
+ * organization administrator or application owner explicitly authorizes
+ * that tenant, and de-authorization removes it immediately — the
+ * resolution reads the mapping's status, so no stale grant survives a
+ * revocation.
  */
 @Service
 public class TenantApplicationService {
 
-    private final ApplicationScopedRepository applications;
+    private final ApplicationRegistryRepository registry;
     private final TenantAccess tenants;
 
-    TenantApplicationService(ApplicationScopedRepository applications, TenantAccess tenants) {
-        this.applications = applications;
+    TenantApplicationService(ApplicationRegistryRepository registry, TenantAccess tenants) {
+        this.registry = registry;
         this.tenants = tenants;
     }
 
     /**
-     * Lists the tenant-owned applications, paged (issue #8). Caller
+     * The effective-visibility listing (issue #15, AC4): the
+     * applications visible to the tenant — its tenant-owned applications
+     * plus the organization-shared applications the tenant is authorized
+     * for (ACTIVE grants only; revoked grants never resolve). Caller
      * permission (tenant:applications:read — tenant administrators,
      * tenant testers, and the owning organization's administrators) is
      * enforced at the controller; an unknown tenant is the module's
      * standard miss for the platform administrators who can reach here.
      */
     @Transactional(readOnly = true)
-    public Page<ApplicationView> listTenantOwned(UUID tenantId, long offset, int limit) {
-        if (tenants.owningOrganizationId(tenantId).isEmpty()) {
-            throw new TenantException(TenantException.Code.NOT_FOUND, "tenant not found");
-        }
-        return applications
-                .findAllScoped(Specification.unrestricted(), new CursorPageable((int) offset, limit))
+    public Page<ApplicationView> listVisibleToTenant(UUID tenantId, long offset, int limit) {
+        UUID organizationId = tenants.owningOrganizationId(tenantId).orElseThrow(() -> notFoundTenant());
+        return registry.findVisibleToTenant(
+                        organizationId,
+                        tenantId,
+                        OwnershipScope.ORGANIZATION,
+                        TenantApplicationAuthorizationEntity.Status.ACTIVE,
+                        new CursorPageable(offset, limit))
                 .map(ApplicationView::from);
     }
 
     /**
-     * Application view for tenant administrators and testers; the
-     * ownership discriminator (org-owned vs tenant-owned) is not part
-     * of this surface — everything listed is tenant-owned by
-     * construction. Carries the registry fields (description,
-     * platforms) since S3-01.
+     * Application view for tenant administrators and testers; both arms
+     * of the resolution share it. The ownership discriminator
+     * (org-owned vs tenant-owned) is not part of this surface — the
+     * tenant sees the application either way, and the registry view
+     * (S3-01) carries the discriminator for organization roles. Carries
+     * the registry fields (description, platforms) since S3-01.
      */
     public record ApplicationView(
             UUID id,
@@ -83,5 +101,9 @@ public class TenantApplicationService {
                     application.getCreatedAt(),
                     application.getUpdatedAt());
         }
+    }
+
+    private static TenantException notFoundTenant() {
+        return new TenantException(TenantException.Code.NOT_FOUND, "tenant not found");
     }
 }

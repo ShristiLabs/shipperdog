@@ -3,8 +3,10 @@ package com.shipperdog.api.application.internal.service;
 import com.shipperdog.api.application.ApplicationException;
 import com.shipperdog.api.application.internal.entity.ApplicationEntity;
 import com.shipperdog.api.application.internal.entity.ApplicationEntity.OwnershipScope;
+import com.shipperdog.api.application.internal.entity.TenantApplicationAuthorizationEntity;
 import com.shipperdog.api.application.internal.repository.ApplicationRegistryRepository;
 import com.shipperdog.api.application.internal.repository.ApplicationScopedRepository;
+import com.shipperdog.api.application.internal.repository.TenantApplicationAuthorizationRepository;
 import com.shipperdog.api.audit.AuditEvent;
 import com.shipperdog.api.audit.AuditEventPublisher;
 import com.shipperdog.api.audit.AuditEventType;
@@ -58,12 +60,11 @@ import org.springframework.transaction.annotation.Transactional;
  * row between scopes by definition, so no scoped context can own both
  * sides (ADR-0002 third amendment). Preconditions: converting
  * ORGANIZATION to TENANT requires a valid, affiliated, active target
- * tenant (INV-002 service check), and is blocked while tenants are
- * authorized on the shared application — no authorization mapping
- * exists in M1 (S3-03 delivers it), so the declared precondition point
- * below is where S3-03 adds that check; converting TENANT to
- * ORGANIZATION requires zero distributions — none can exist until M2's
- * release targets, at the same declared point.
+ * tenant (INV-002 service check) and zero ACTIVE tenant authorizations
+ * (S3-03's mapping; de-authorize first — a converted application would
+ * strand grants that reference a scope the row no longer has);
+ * converting TENANT to ORGANIZATION requires zero distributions — none
+ * can exist until M2's release targets, at the same declared point.
  *
  * <p>Authorization (evaluated at the controller): {@code app:} grants
  * resolve through the owning tenant/organization union — creation
@@ -103,6 +104,7 @@ public class ApplicationService {
 
     private final ApplicationScopedRepository applications;
     private final ApplicationRegistryRepository registry;
+    private final TenantApplicationAuthorizationRepository authorizations;
     private final ApplicationConflictResolver conflicts;
     private final TenantAccess tenants;
     private final OrganizationAccess organizations;
@@ -114,6 +116,7 @@ public class ApplicationService {
     ApplicationService(
             ApplicationScopedRepository applications,
             ApplicationRegistryRepository registry,
+            TenantApplicationAuthorizationRepository authorizations,
             ApplicationConflictResolver conflicts,
             TenantAccess tenants,
             OrganizationAccess organizations,
@@ -123,6 +126,7 @@ public class ApplicationService {
             TraceAttributes trace) {
         this.applications = applications;
         this.registry = registry;
+        this.authorizations = authorizations;
         this.conflicts = conflicts;
         this.tenants = tenants;
         this.organizations = organizations;
@@ -456,10 +460,10 @@ public class ApplicationService {
      *       belong to the application's organization (a foreign
      *       organization's tenant is the same miss as an unknown id),
      *       and accept new affiliations. Precondition: blocked while
-     *       tenants are authorized on the shared application — no
-     *       authorization mapping exists in M1 (S3-03 delivers it);
-     *       this method is the declared single point where that check
-     *       binds.</li>
+     *       any tenant holds an ACTIVE authorization on the shared
+     *       application (S3-03's mapping — {@code 409
+     *       APPLICATION_AUTHORIZED_TENANTS_PRESENT}); revoked history
+     *       grants nothing and does not block.</li>
      *   <li>TENANT to ORGANIZATION carries no tenant. Precondition:
      *       zero distributions — none can exist until M2's release
      *       targets; the same declared point.</li>
@@ -490,16 +494,23 @@ public class ApplicationService {
             if (!tenants.acceptsNewAffiliations(targetTenantId)) {
                 throw new ApplicationException(ApplicationException.Code.TENANT_DEACTIVATED, "tenant is deactivated");
             }
-            // Precondition (AC3): no tenant may be authorized on the
-            // shared application. S3-03's authorization mapping does not
-            // exist in M1, so nothing can be authorized yet; that story
-            // binds its check here.
+            // Precondition (issue #14 AC3, bound since S3-03): no tenant
+            // may hold an ACTIVE authorization on the shared
+            // application — a converted application would strand grants
+            // that reference a scope the row no longer has. Revoked
+            // history does not block (it grants nothing).
+            if (authorizations.existsByApplicationIdAndStatus(
+                    application.getId(), TenantApplicationAuthorizationEntity.Status.ACTIVE)) {
+                throw new ApplicationException(
+                        ApplicationException.Code.AUTHORIZED_TENANTS_PRESENT,
+                        "the application has authorized tenants; de-authorize them before converting ownership");
+            }
             return new ScopeTransition(OwnershipScope.TENANT, targetTenantId);
         }
         if (targetTenantId != null) {
             throw invalid("tenantId is not valid when converting to ORGANIZATION ownership");
         }
-        // Precondition (AC3): zero distributions may anchor the
+        // Precondition (issue #14 AC3): zero distributions may anchor the
         // application to its tenant. M2's release targets do not exist
         // in M1; that story binds its check here.
         return new ScopeTransition(OwnershipScope.ORGANIZATION, null);
