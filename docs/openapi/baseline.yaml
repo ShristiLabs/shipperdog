@@ -230,6 +230,37 @@ paths:
             '*/*':
               schema:
                 $ref: "#/components/schemas/IdpConfig"
+  /api/v1/applications/{applicationId}/versions/{versionId}/tags:
+    put:
+      tags:
+      - version-controller
+      operationId: replaceTags
+      parameters:
+      - name: applicationId
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - name: versionId
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ReplaceTagsRequest"
+        required: true
+      responses:
+        "200":
+          description: OK
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/TagsView"
   /api/v1/tenants:
     get:
       tags:
@@ -641,6 +672,11 @@ paths:
         schema:
           type: string
           format: uuid
+      - name: tag
+        in: query
+        required: false
+        schema:
+          type: string
       - name: limit
         in: query
         required: false
@@ -858,6 +894,7 @@ paths:
           - APPLICATION_TENANT_AUTHORIZED
           - APPLICATION_TENANT_DEAUTHORIZED
           - VERSION_CREATED
+          - VERSION_TAGS_CHANGED
       - name: applicationId
         in: query
         required: false
@@ -1178,6 +1215,25 @@ components:
         updatedAt:
           type: string
           format: date-time
+    ReplaceTagsRequest:
+      type: object
+      description: "The version's entire tag list, replacing any previous set (empty\
+        \ clears it). Values are trimmed and uppercased by the server. Reserved vocabulary\
+        \ (suggested, not enforced): QA, UAT, BETA, PILOT, STABLE, PRODUCTION, LEGACY.\
+        \ Arbitrary custom tags are first-class: 1..50 characters of letters, digits,\
+        \ underscore, or hyphen. At most 20 distinct tags per version."
+      properties:
+        tags:
+          type: array
+          items:
+            type: string
+    TagsView:
+      type: object
+      properties:
+        tags:
+          type: array
+          items:
+            type: string
     CreateRequest:
       type: object
       properties:
@@ -1383,6 +1439,10 @@ components:
           type: string
         status:
           type: string
+        tags:
+          type: array
+          items:
+            type: string
         createdAt:
           type: string
           format: date-time
@@ -1526,6 +1586,7 @@ components:
           - APPLICATION_TENANT_AUTHORIZED
           - APPLICATION_TENANT_DEAUTHORIZED
           - VERSION_CREATED
+          - VERSION_TAGS_CHANGED
         occurredAt:
           type: string
           format: date-time
@@ -1604,6 +1665,10 @@ components:
           type: string
         status:
           type: string
+        tags:
+          type: array
+          items:
+            type: string
         createdAt:
           type: string
           format: date-time

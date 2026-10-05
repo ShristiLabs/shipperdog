@@ -349,3 +349,21 @@ existing route interceptor already binds the application's owning scope
    seam's fail-closed guards as its authorities, so no interleaving
    can produce an unscoped write. Artifacts (E5) anchor to versions,
    not to applications, so nothing else follows the application row.
+
+## Seventh amendment (2026-10-05): version tags, the first landed child of a seam-served version
+
+The sixth amendment anticipated children anchoring to versions through
+its artifacts note; the tag junction (issue #18, S4-02, FR-009) is the
+first one to land, and it exercises that standing rather than changing
+any seam rule. `version_tags` (V13) is a pure `(version_id, tag)`
+junction: **the table carries no owning-dimension snapshot and is
+served by no seam repository** — every data path resolves the version
+through `VersionScopedRepository` inside the request's bound scope
+first, then reads or writes only that version's tag rows, and the
+listing's tag filter is a subquery composed with (never instead of)
+the seam's forced scope predicate. Isolation stays enforced at the
+parent the tags hang off, exactly as the sixth amendment's artifacts
+clause describes. The replace-set's per-version advisory lock lives
+on the child repository precisely because the seam forbids declared
+methods on scoped repositories — a serialization point is not a data
+path, so it needs no seam standing of its own.

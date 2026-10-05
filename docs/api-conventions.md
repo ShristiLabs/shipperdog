@@ -94,7 +94,11 @@ keeps its conjunctive filters; `page`/`size` are gone), and
 `GET /api/v1/applications?organizationId=` (S3-04), the organization-wide
 registry listing for organization roles, and
 `GET /api/v1/applications/{id}/versions` (S4-01), the per-application
-version listing ordered newest-first by the normalized semver sort key.
+version listing ordered newest-first by the normalized semver sort key —
+its optional conjunctive `tag` filter (S4-02) narrows the page to
+versions carrying that tag; the value is validated and case-normalized
+to the stored UPPER form server-side, and malformed values are a `400`
+`INVALID_REQUEST` like any other bad parameter.
 The rest of the application registry's surface (S3-01) is item-addressed
 (POST/GET/PATCH under `/api/v1/applications`); a tenant's own view of
 applications stays the tenant-scoped listing.

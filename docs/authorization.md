@@ -276,8 +276,9 @@ the tenant-scoped listing instead.
 | GET | `/api/v1/applications/{id}` | `app:applications:read` at the application | `200` application view; `404` unknown or denied (concealed, identical envelope) |
 | PATCH | `/api/v1/applications/{id}` | `app:applications:write` at the application | `200` partial update (null fields unchanged); `400` invalid edits; `409` identifier/name conflicts; the reversible `ACTIVE`/`ARCHIVED` transition |
 | POST | `/api/v1/applications/{id}/versions` | `app:versions:write` at the application | `201` version view (born `DRAFT`, semver-style name, per-platform artifact slots empty until E5); `400` invalid name; `409` `VERSION_NAME_TAKEN` / `APPLICATION_ARCHIVED`; `404` unknown or denied application (concealed); honors `Idempotency-Key` (S4-01) |
-| GET | `/api/v1/applications/{id}/versions` | `app:versions:read` at the application | `200` limit/cursor page, newest first by the normalized semver sort key; `404` unknown or denied application (concealed) (S4-01) |
+| GET | `/api/v1/applications/{id}/versions` | `app:versions:read` at the application | `200` limit/cursor page, newest first by the normalized semver sort key, optional conjunctive `tag` filter (S4-02); `404` unknown or denied application (concealed) (S4-01) |
 | GET | `/api/v1/applications/{id}/versions/{versionId}` | `app:versions:read` at the application | `200` version detail with the empty release-history section (M2 fills it); `404` unknown version or application (concealed) (S4-01) |
+| PUT | `/api/v1/applications/{id}/versions/{versionId}/tags` | `app:versions:write` at the application | `200` tags view (replace-set: trimmed, UPPER-normalized, deduplicated, at most 20 distinct values; empty clears; inherently idempotent, no `Idempotency-Key`); `400` `INVALID_REQUEST` on malformed tags or over-cap sets; `404` unknown version or application (concealed); a real change is audited `VERSION_TAGS_CHANGED` (S4-02) |
 
 Identifier and lifecycle edits are audited (`APPLICATION_CREATED`,
 `APPLICATION_UPDATED`) with before/after pairs; see

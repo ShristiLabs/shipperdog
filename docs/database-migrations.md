@@ -20,6 +20,7 @@ backend/src/main/resources/db/
     V10__application_ownership_scope.sql
     V11__tenant_application_authorization.sql
     V12__version_management.sql
+    V13__version_tags.sql
   seed/                 dev fixture, applied only when the seed location is active
     R__dev_seed.sql
 ```
@@ -170,6 +171,22 @@ backend/src/main/resources/db/
   constraint lands with E5's artifacts. When an application's
   ownership scope transitions (S3-02), its version rows carry the
   snapshot along in the same transaction.
+- `V13__version_tags.sql` (S4-02, issue #18) creates the `version_tags`
+  junction the story's technical note specifies — `(version_id, tag)`,
+  no tag metadata in M1 — as a composite-primary-key table over its
+  foreign keys (the junction convention above). The primary key is the
+  duplicate authority the service's insert-if-absent composes with
+  (`ON CONFLICT DO NOTHING`, the idempotency-claim precedent);
+  `ck_version_tags_tag_shape` pins the public vocabulary at the
+  database (UPPER normalization — only `A-Z` survive the pattern — 1
+  to 50 characters, letter/digit first then letters, digits,
+  underscore, hyphen; the reserved FR-009 words and arbitrary custom
+  tags alike fit); `idx_version_tags_tag` serves the tag-first
+  lookups (the listing filter's subquery today, the organization-wide
+  tag questions of S7-02 later). The rows carry no owning-dimension
+  snapshot: they are children of the seam-scoped version (ADR-0002
+  seventh amendment). Timestamps are database-defaulted on insert and
+  rows are never updated — a replace-set deletes and inserts.
 
 ## Status and type columns
 

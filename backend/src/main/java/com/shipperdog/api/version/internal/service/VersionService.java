@@ -8,14 +8,22 @@ import com.shipperdog.api.config.CursorPageable;
 import com.shipperdog.api.config.TraceAttributes;
 import com.shipperdog.api.version.VersionException;
 import com.shipperdog.api.version.internal.entity.VersionEntity;
+import com.shipperdog.api.version.internal.entity.VersionTagEntity;
 import com.shipperdog.api.version.internal.repository.VersionRegistryRepository;
 import com.shipperdog.api.version.internal.repository.VersionScopedRepository;
+import com.shipperdog.api.version.internal.repository.VersionTagRepository;
+import jakarta.persistence.criteria.Root;
+import jakarta.persistence.criteria.Subquery;
 import java.time.Clock;
 import java.time.Instant;
+import java.util.Collection;
 import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Set;
+import java.util.TreeSet;
 import java.util.UUID;
 import java.util.regex.Pattern;
 import org.springframework.dao.DataIntegrityViolationException;
@@ -37,6 +45,14 @@ import org.springframework.transaction.annotation.Transactional;
  * per-platform artifact slots stay empty until E5 uploads binaries
  * (S5-01) — the slot list per platform of the application is exactly
  * the "grouped by platform" surface the issue asks for.
+ *
+ * <p>Tags (issue #18, S4-02, FR-009): a version carries an arbitrary
+ * set of case-normalized UPPER tags — the targeting primitive S7-02's
+ * tag-based grants and policy rules later consume. Tag rows are plain
+ * children of the seam-scoped version (V13): they are read and written
+ * only after the version resolves inside the bound scope, and the
+ * replace-set reconciliation is race-free by construction (targeted
+ * deletes, insert-if-absent claims).
  *
  * <p>Tenant isolation (INV-001, ADR-0002): the route interceptor binds
  * the application's owning scope for application-addressing routes (the
@@ -77,12 +93,31 @@ public class VersionService {
     /** Segment width of the normalized sort key (0..99999 zero-padded). */
     private static final int SORT_SEGMENT_WIDTH = 5;
 
+    /**
+     * The tag vocabulary (issue #18 AC1, FR-009): case-normalized UPPER,
+     * one to fifty characters — a letter or digit first, then letters,
+     * digits, underscore, or hyphen. The reserved words (QA, UAT, BETA,
+     * PILOT, STABLE, PRODUCTION, LEGACY) are suggestions surfaced in the
+     * OpenAPI description, never the enforced options (AC3); the V13
+     * {@code ck_version_tags_tag_shape} pins the same shape at the
+     * database.
+     */
+    private static final Pattern TAG_PATTERN = Pattern.compile("^[A-Z0-9][A-Z0-9_-]{0,49}$");
+
+    /**
+     * The per-version tag cap (issue #18): tags are a targeting
+     * vocabulary, not a free-form label dump — twenty distinct values is
+     * far beyond any real cohort and bounds the join rows per version.
+     */
+    private static final int MAX_TAGS_PER_VERSION = 20;
+
     /** Newest first: sort key descending, id descending as the tiebreak. */
     private static final Sort NEWEST_FIRST =
             Sort.by(Sort.Direction.DESC, "sortKey").and(Sort.by(Sort.Direction.DESC, "id"));
 
     private final VersionScopedRepository versions;
     private final VersionRegistryRepository registry;
+    private final VersionTagRepository tags;
     private final ApplicationAccess applications;
     private final AuditEventPublisher audit;
     private final Clock clock;
@@ -91,12 +126,14 @@ public class VersionService {
     VersionService(
             VersionScopedRepository versions,
             VersionRegistryRepository registry,
+            VersionTagRepository tags,
             ApplicationAccess applications,
             AuditEventPublisher audit,
             Clock clock,
             TraceAttributes trace) {
         this.versions = versions;
         this.registry = registry;
+        this.tags = tags;
         this.applications = applications;
         this.audit = audit;
         this.clock = clock;
@@ -159,7 +196,7 @@ public class VersionService {
                 saved.getTenantId(),
                 applicationId,
                 detail);
-        return detailOf(saved, application.platforms());
+        return detailOf(saved, application.platforms(), Set.of());
     }
 
     // -------------------------------------------------------------------------
@@ -169,82 +206,174 @@ public class VersionService {
     /**
      * The per-application listing (AC2): newest first by the normalized
      * semver key, standard limit/cursor pagination, every item carrying
-     * its artifact slots grouped by platform (empty until E5).
+     * its tags (issue #18, sorted UPPER) and its artifact slots grouped
+     * by platform (empty until E5). The optional {@code tag} filter
+     * (issue #18 AC2) narrows the list to versions carrying that tag —
+     * case-insensitive, normalized to the stored UPPER form before the
+     * query, composed with the same scope and ordering.
      */
     @Transactional(readOnly = true)
-    public Page<VersionView> list(UUID applicationId, long offset, int limit) {
+    public Page<VersionView> list(UUID applicationId, String tag, long offset, int limit) {
         ApplicationAccess.ApplicationProfile application = profileOf(applicationId);
-        Page<VersionEntity> found =
-                versions.findAllScoped(ofApplication(applicationId), new CursorPageable(offset, limit, NEWEST_FIRST));
-        return found.map(version -> viewOf(version, application.platforms()));
+        String normalizedTag = normalizedTagFilter(tag);
+        Specification<VersionEntity> scope = ofApplication(applicationId);
+        if (normalizedTag != null) {
+            scope = scope.and(hasTag(normalizedTag));
+        }
+        Page<VersionEntity> found = versions.findAllScoped(scope, new CursorPageable(offset, limit, NEWEST_FIRST));
+        Map<UUID, Set<String>> tagsByVersion = tagsOfVersions(
+                found.getContent().stream().map(VersionEntity::getId).toList());
+        return found.map(version ->
+                viewOf(version, application.platforms(), tagsByVersion.getOrDefault(version.getId(), Set.of())));
     }
 
     /**
-     * The version detail (AC2 + AC4): artifact slots grouped by platform
-     * (empty in M1) and the release-history section (PRD 8.6 "a version
-     * can exist without being released" — releases are M2, so the
-     * section exists and is empty). A version id that does not belong
-     * to the addressed application is the standard concealed miss,
-     * indistinguishable from an unknown id.
+     * The version detail (AC2 + AC4): tags (issue #18), artifact slots
+     * grouped by platform (empty in M1) and the release-history section
+     * (PRD 8.6 "a version can exist without being released" — releases
+     * are M2, so the section exists and is empty). A version id that
+     * does not belong to the addressed application is the standard
+     * concealed miss, indistinguishable from an unknown id.
      */
     @Transactional(readOnly = true)
     public VersionDetail get(UUID applicationId, UUID versionId) {
-        VersionEntity version = versions.findScoped(versionId)
-                .orElseThrow(() -> new VersionException(VersionException.Code.NOT_FOUND, "version not found"));
-        if (!version.getApplicationId().equals(applicationId)) {
-            throw new VersionException(VersionException.Code.NOT_FOUND, "version not found");
-        }
-        return detailOf(version, profileOf(applicationId).platforms());
+        VersionEntity version = scopedVersionOf(applicationId, versionId);
+        return detailOf(version, profileOf(applicationId).platforms(), tagsOfVersion(version.getId()));
     }
+
+    // -------------------------------------------------------------------------
+    // Tags (issue #18, S4-02, FR-009)
+    // -------------------------------------------------------------------------
+
+    /**
+     * Replaces the version's tag set (issue #18 AC1/AC4): the request
+     * list is trimmed, case-normalized to UPPER, deduplicated, and
+     * validated against the tag vocabulary; the stored set is then
+     * reconciled — tags no longer requested are removed, tags newly
+     * requested are claimed — so a PUT is naturally idempotent and the
+     * empty list clears the set. Only the join rows change: INV-004
+     * freezes a version's binaries, and a tag is not a binary — the
+     * version row itself (name, status, timestamps) is never written by
+     * this path.
+     *
+     * <p>Concurrent replace-sets on one version are serialized by the
+     * transaction-scoped advisory lock taken the moment the version
+     * resolves ({@link VersionTagRepository#lockVersionTagMutations}):
+     * the second writer blocks until the first commits, then reconciles
+     * against the committed baseline — last writer's set wins exactly,
+     * never a union of the two (insert-if-absent alone would merge
+     * them), and two writers sending the same set collapse to a single
+     * audit event. Within a serialized writer the reconciliation is
+     * race-free by construction: the removal is a targeted delete
+     * (absent rows are a no-op) and each claim is an insert-if-absent
+     * whose conflict target is the composite primary key, so no
+     * constraint violation ever surfaces to a caller.
+     *
+     * <p>A real change is audited as {@code VERSION_TAGS_CHANGED} with
+     * the added and removed lists in the detail (comma-joined; the
+     * vocabulary carries no commas); a PUT that changes nothing writes
+     * no audit event and no rows — one event per real transition, the
+     * authorization-flip precedent. The version is resolved scoped
+     * first: a version id of another application (or another scope) is
+     * the standard concealed miss.
+     */
+    @Transactional
+    public TagsView replaceTags(UUID actorId, UUID applicationId, UUID versionId, List<String> request) {
+        VersionEntity version = scopedVersionOf(applicationId, versionId);
+        tags.lockVersionTagMutations(version.getId());
+        Set<String> requested = normalizeTags(request);
+        Set<String> before = tagsOfVersion(version.getId());
+        Set<String> removed = new TreeSet<>(before);
+        removed.removeAll(requested);
+        Set<String> added = new TreeSet<>(requested);
+        added.removeAll(before);
+        if (!removed.isEmpty()) {
+            tags.removeTags(version.getId(), removed);
+        }
+        for (String tag : added) {
+            tags.insertTagIfAbsent(version.getId(), tag);
+        }
+        Set<String> after = tagsOfVersion(version.getId());
+        if (!added.isEmpty() || !removed.isEmpty()) {
+            trace.application(applicationId);
+            Map<String, String> detail = new LinkedHashMap<>();
+            detail.put("versionName", version.getVersionName());
+            if (!added.isEmpty()) {
+                detail.put("added", String.join(",", added));
+            }
+            if (!removed.isEmpty()) {
+                detail.put("removed", String.join(",", removed));
+            }
+            audit(
+                    AuditEventType.VERSION_TAGS_CHANGED,
+                    actorId,
+                    version.getOrganizationId(),
+                    version.getTenantId(),
+                    applicationId,
+                    detail);
+        }
+        return new TagsView(List.copyOf(after));
+    }
+
+    /** The replace response: the version's resulting tags, sorted UPPER. */
+    public record TagsView(List<String> tags) {}
 
     // -------------------------------------------------------------------------
     // Views
     // -------------------------------------------------------------------------
 
     /**
-     * The list-item view: registry fields plus the per-platform artifact
-     * slots. The slot value is a list because the platform grouping is
-     * the shape E5 fills (one artifact per platform per version, the
-     * story's technical note); it is empty in M1.
+     * The list-item view: registry fields plus the version's tags
+     * (issue #18, sorted UPPER) and the per-platform artifact slots. The
+     * slot value is a list because the platform grouping is the shape E5
+     * fills (one artifact per platform per version, the story's
+     * technical note); it is empty in M1.
      */
     public record VersionView(
             UUID id,
             UUID applicationId,
             String versionName,
             String status,
+            List<String> tags,
             Instant createdAt,
             Instant updatedAt,
             Map<String, List<Object>> artifactsByPlatform) {
 
-        static VersionView from(VersionEntity version, List<String> platforms) {
+        static VersionView from(VersionEntity version, List<String> platforms, Set<String> tags) {
             return new VersionView(
                     version.getId(),
                     version.getApplicationId(),
                     version.getVersionName(),
                     version.getStatus().name(),
+                    List.copyOf(tags),
                     version.getCreatedAt(),
                     version.getUpdatedAt(),
                     emptySlots(platforms));
         }
     }
 
-    /** The detail view: the list-item shape plus the release history (AC4). */
+    /**
+     * The detail view: the list-item shape plus the release history
+     * (AC4).
+     */
     public record VersionDetail(
             UUID id,
             UUID applicationId,
             String versionName,
             String status,
+            List<String> tags,
             Instant createdAt,
             Instant updatedAt,
             Map<String, List<Object>> artifactsByPlatform,
             List<Object> releaseHistory) {
 
-        static VersionDetail from(VersionEntity version, List<String> platforms) {
+        static VersionDetail from(VersionEntity version, List<String> platforms, Set<String> tags) {
             return new VersionDetail(
                     version.getId(),
                     version.getApplicationId(),
                     version.getVersionName(),
                     version.getStatus().name(),
+                    List.copyOf(tags),
                     version.getCreatedAt(),
                     version.getUpdatedAt(),
                     emptySlots(platforms),
@@ -275,8 +404,107 @@ public class VersionService {
         return (root, query, builder) -> builder.equal(root.get("applicationId"), applicationId);
     }
 
+    /**
+     * Versions carrying the normalized tag (issue #18 AC2): a subquery
+     * over the tag join rows, composed with the seam's scope on the
+     * outer version — the filter never widens the bound scope, it only
+     * narrows the versions inside it (tags are children of the scoped
+     * parent, V13).
+     */
+    private static Specification<VersionEntity> hasTag(String tag) {
+        return (root, query, builder) -> {
+            Subquery<UUID> tagged = query.subquery(UUID.class);
+            Root<VersionTagEntity> tagRow = tagged.from(VersionTagEntity.class);
+            tagged.select(tagRow.get("versionId")).where(builder.equal(tagRow.get("tag"), tag));
+            return builder.in(root.get("id")).value(tagged);
+        };
+    }
+
     private static Specification<VersionEntity> versionNameIs(String versionName) {
         return (root, query, builder) -> builder.equal(root.get("versionName"), versionName);
+    }
+
+    /**
+     * The version resolved scoped (the seam's bound scope) and verified
+     * against the addressed application: any version id that is unknown,
+     * out of scope, or belonging to a different application is the
+     * standard concealed miss.
+     */
+    private VersionEntity scopedVersionOf(UUID applicationId, UUID versionId) {
+        VersionEntity version = versions.findScoped(versionId)
+                .orElseThrow(() -> new VersionException(VersionException.Code.NOT_FOUND, "version not found"));
+        if (!version.getApplicationId().equals(applicationId)) {
+            throw new VersionException(VersionException.Code.NOT_FOUND, "version not found");
+        }
+        return version;
+    }
+
+    /** The version's tags, sorted UPPER (one query; the join rows of one parent). */
+    private Set<String> tagsOfVersion(UUID versionId) {
+        return tagsOfVersions(List.of(versionId)).getOrDefault(versionId, Set.of());
+    }
+
+    /**
+     * The tags of many versions in one query: the listing page's bulk
+     * read, so a page costs one tag query regardless of page size (no
+     * per-version fan-out).
+     */
+    private Map<UUID, Set<String>> tagsOfVersions(Collection<UUID> versionIds) {
+        Map<UUID, Set<String>> byVersion = new LinkedHashMap<>();
+        if (versionIds.isEmpty()) {
+            return byVersion;
+        }
+        for (VersionTagEntity row : tags.findByVersionIdIn(versionIds)) {
+            byVersion.computeIfAbsent(row.getVersionId(), id -> new TreeSet<>()).add(row.getTag());
+        }
+        return byVersion;
+    }
+
+    /**
+     * Normalizes and validates a whole request list (issue #18 AC1):
+     * trim, UPPER, drop duplicates after normalization, enforce the
+     * vocabulary and the per-version cap. Null elements and blank values
+     * are rejections, not silent drops — a client sending them is
+     * broken, not unlucky.
+     */
+    private static Set<String> normalizeTags(List<String> request) {
+        if (request == null) {
+            throw invalid("tags is required");
+        }
+        Set<String> normalized = new TreeSet<>();
+        for (String raw : request) {
+            normalized.add(normalizeTag(raw, "tags"));
+        }
+        if (normalized.size() > MAX_TAGS_PER_VERSION) {
+            throw invalid("at most " + MAX_TAGS_PER_VERSION + " tags per version");
+        }
+        return normalized;
+    }
+
+    /** The {@code tag} list filter of AC2: same normalization, same rules. */
+    private static String normalizedTagFilter(String tag) {
+        if (tag == null) {
+            return null;
+        }
+        return normalizeTag(tag, "tag filter");
+    }
+
+    /**
+     * One tag value, trimmed and case-normalized to UPPER (AC1), then
+     * validated against the vocabulary the database CHECK pins — the
+     * service answers the common case with the precise message; the V13
+     * constraint is the authority for any non-service writer.
+     */
+    private static String normalizeTag(String raw, String field) {
+        if (raw == null || raw.isBlank()) {
+            throw invalid(field + " must not contain empty values");
+        }
+        String tag = raw.trim().toUpperCase(Locale.ROOT);
+        if (!TAG_PATTERN.matcher(tag).matches()) {
+            throw invalid(field + " values are 1..50 characters of letters, digits, underscore, or hyphen"
+                    + " (uppercased; e.g. BETA or INTERNAL_PILOT)");
+        }
+        return tag;
     }
 
     /**
@@ -304,12 +532,12 @@ public class VersionService {
         return slots;
     }
 
-    private VersionView viewOf(VersionEntity version, List<String> platforms) {
-        return VersionView.from(version, platforms);
+    private VersionView viewOf(VersionEntity version, List<String> platforms, Set<String> tags) {
+        return VersionView.from(version, platforms, tags);
     }
 
-    private VersionDetail detailOf(VersionEntity version, List<String> platforms) {
-        return VersionDetail.from(version, platforms);
+    private VersionDetail detailOf(VersionEntity version, List<String> platforms, Set<String> tags) {
+        return VersionDetail.from(version, platforms, tags);
     }
 
     /** Trims and validates against the semver-style triple vocabulary. */
