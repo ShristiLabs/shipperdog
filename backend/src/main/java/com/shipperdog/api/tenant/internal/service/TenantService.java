@@ -51,6 +51,7 @@ public class TenantService {
 
     private final TenantRepository tenants;
     private final OrganizationAccess organizations;
+    private final TenantConflictResolver conflicts;
     private final AuditEventPublisher audit;
     private final Clock clock;
     private final TraceAttributes trace;
@@ -58,11 +59,13 @@ public class TenantService {
     TenantService(
             TenantRepository tenants,
             OrganizationAccess organizations,
+            TenantConflictResolver conflicts,
             AuditEventPublisher audit,
             Clock clock,
             TraceAttributes trace) {
         this.tenants = tenants;
         this.organizations = organizations;
+        this.conflicts = conflicts;
         this.audit = audit;
         this.clock = clock;
         this.trace = trace;
@@ -95,8 +98,14 @@ public class TenantService {
         TenantEntity tenant;
         try {
             tenant = tenants.save(new TenantEntity(organizationId, validatedName, validatedExternalId));
+            // Push the insert to the database inside the guard so a lost
+            // uniqueness race translates here, not at commit (issue #13
+            // race discipline; UUID ids mean save() alone defers the SQL).
+            tenants.flush();
         } catch (DataIntegrityViolationException e) {
-            throw conflictFor(organizationId, validatedName);
+            // Fresh-transaction re-derivation: the racing transaction is
+            // aborted and cannot answer probes (PostgreSQL).
+            throw conflicts.insertConflict(organizationId, validatedName);
         }
         // The created id is only known here, after the insert (issue #7
         // convention); the request's trace already carries the owning
@@ -171,8 +180,13 @@ public class TenantService {
         }
         try {
             tenant = tenants.save(tenant);
+            // Same race discipline as creation: the constraints speak at
+            // the database inside the guard, translated here for precise
+            // codes, and the re-derivation runs on a fresh transaction.
+            tenants.flush();
         } catch (DataIntegrityViolationException e) {
-            throw updateConflictFor(tenant.getOrganizationId(), tenantId, tenant.getName(), tenant.getExternalId());
+            throw conflicts.updateConflict(
+                    tenant.getOrganizationId(), tenantId, tenant.getName(), tenant.getExternalId());
         }
         audit(
                 AuditEventType.TENANT_UPDATED,
@@ -191,38 +205,6 @@ public class TenantService {
     private TenantEntity mustFind(UUID tenantId) {
         return tenants.findById(tenantId)
                 .orElseThrow(() -> new TenantException(TenantException.Code.NOT_FOUND, "tenant not found"));
-    }
-
-    /**
-     * Re-derives which uniqueness constraint a concurrent insert/update
-     * violated, without parsing driver messages: whichever guard now
-     * conflicts loses. The constraint itself remains the final authority.
-     */
-    private TenantException conflictFor(UUID organizationId, String name) {
-        if (tenants.existsByOrganizationIdAndName(organizationId, name)) {
-            return nameTaken();
-        }
-        return externalIdTaken();
-    }
-
-    /**
-     * Update-path variant: the external-id guard is checked first with
-     * self-exclusion, because an unchanged name trivially still exists
-     * in the organization (the tenant itself holds it) and would
-     * mislabel an external-id race as a name conflict (review finding
-     * on issue #9).
-     */
-    private TenantException updateConflictFor(UUID organizationId, UUID tenantId, String name, String externalId) {
-        boolean externalTaken = tenants.findByExternalId(externalId)
-                .filter(other -> !other.getId().equals(tenantId))
-                .isPresent();
-        if (externalTaken) {
-            return externalIdTaken();
-        }
-        if (tenants.existsByOrganizationIdAndName(organizationId, name)) {
-            return nameTaken();
-        }
-        return externalIdTaken();
     }
 
     private static TenantException nameTaken() {
