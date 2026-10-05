@@ -3,6 +3,8 @@ import { AuthProvider } from "./auth/AuthContext";
 import { RequireAuth } from "./auth/RequireAuth";
 import { ToastProvider } from "./components/ToastContext";
 import ConsoleLayout from "./layout/ConsoleLayout";
+import ApplicationDetailPage from "./pages/ApplicationDetailPage";
+import ApplicationsPage from "./pages/ApplicationsPage";
 import LoginPage from "./pages/LoginPage";
 import TenantMembersPage from "./pages/TenantMembersPage";
 import TenantsPage from "./pages/TenantsPage";
@@ -24,6 +26,8 @@ export default function App() {
             <Route index element={<Navigate to="/tenants" replace />} />
             <Route path="tenants" element={<TenantsPage />} />
             <Route path="tenants/:tenantId/members" element={<TenantMembersPage />} />
+            <Route path="applications" element={<ApplicationsPage />} />
+            <Route path="applications/:applicationId" element={<ApplicationDetailPage />} />
           </Route>
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>

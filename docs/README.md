@@ -25,11 +25,14 @@ Current contents:
 - [Tenants](tenants.md) — tenant lifecycle under an organization,
   identifier uniqueness, deactivation semantics, tenant isolation
   semantics, member management with the suspension switch, and the
-  tenant-owned applications listing (S2-01, S2-02, S2-03).
-- [Admin console](frontend.md) — the React/MUI console (S2-04): stack
-  and structure, the shared API client (problem+json, correlation ids,
-  cursor pagination), token storage and silent refresh, role-aware
-  navigation probes, CI gate, and local development.
+  applications surface (tenant effective-visibility listing, registry,
+  ownership scopes, shared-app authorization, org-wide administration
+  listing) (S2-01, S2-02, S2-03, S3-01 through S3-04).
+- [Admin console](frontend.md) — the React/MUI console (S2-04, S3-04):
+  stack and structure, the shared API client (problem+json, correlation
+  ids, cursor pagination), token storage and silent refresh, role-aware
+  navigation probes, screens including the application console, CI
+  gate, and local development.
 - [Audit logging](audit.md) — append-only audit trail, transactional
   persistence, redaction, correlation ids, and the admin query API
   (S1-06).

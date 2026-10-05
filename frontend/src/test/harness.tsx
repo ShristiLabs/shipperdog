@@ -42,11 +42,20 @@ export function seedSession(user: SignedInUser = {}): void {
   });
 }
 
+export interface SequencedResponse {
+  status: number;
+  body?: unknown;
+}
+
 export interface Route {
   method: string;
   url: string;
   status: number;
   body?: unknown;
+  /** Ordered responses when the route matches repeatedly (cursor
+   * paging): the Nth match answers sequence[N-1]; the last entry
+   * repeats once the sequence is exhausted. */
+  sequence?: SequencedResponse[];
 }
 
 let routeTable: Route[] = [];
@@ -55,6 +64,7 @@ export const unmatchedRequests: string[] = [];
 export function installFetchRouter(routes: Route[]): void {
   routeTable = [...routes];
   unmatchedRequests.length = 0;
+  const hits = new Map<Route, number>();
   vi.stubGlobal(
     "fetch",
     vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
@@ -63,8 +73,13 @@ export function installFetchRouter(routes: Route[]): void {
       const method = (init?.method ?? "GET").toUpperCase();
       for (const route of routeTable) {
         if (route.method === method && path === route.url) {
-          return new Response(route.body === undefined ? null : JSON.stringify(route.body), {
-            status: route.status,
+          const seen = hits.get(route) ?? 0;
+          hits.set(route, seen + 1);
+          const response = route.sequence
+            ? route.sequence[Math.min(seen, route.sequence.length - 1)]!
+            : route;
+          return new Response(response.body === undefined ? null : JSON.stringify(response.body), {
+            status: response.status,
             headers: { "Content-Type": "application/problem+json" },
           });
         }

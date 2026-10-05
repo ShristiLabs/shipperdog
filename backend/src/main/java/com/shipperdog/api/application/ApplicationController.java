@@ -2,9 +2,12 @@ package com.shipperdog.api.application;
 
 import com.shipperdog.api.application.internal.service.ApplicationService;
 import com.shipperdog.api.config.Idempotent;
+import com.shipperdog.api.config.ListQuery;
+import com.shipperdog.api.config.PageResponse;
 import com.shipperdog.api.identity.AuthenticatedPrincipal;
 import java.util.List;
 import java.util.UUID;
+import org.springframework.data.domain.Page;
 import org.springframework.http.HttpStatus;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
@@ -15,6 +18,7 @@ import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestController;
 
@@ -36,9 +40,11 @@ import org.springframework.web.bind.annotation.RestController;
  * Creation honors {@code Idempotency-Key}. The tenant-scoped listing
  * lives under {@code GET /api/v1/tenants/{id}/applications} (S2-03) and
  * resolves effective visibility since S3-03 (tenant-owned plus
- * authorized shared); the shared-application authorization mapping is
- * {@link ApplicationTenantAuthorizationController} (S3-03). The console
- * UI (S3-04) and versions (E4) are later stories.
+ * authorized shared); the organization-wide administration listing
+ * ({@code GET /api/v1/applications?organizationId=...}) is S3-04's
+ * console reachability surface. The shared-application authorization
+ * mapping is {@link ApplicationTenantAuthorizationController} (S3-03).
+ * Versions (E4) are later stories.
  */
 @RestController
 @RequestMapping("/api/v1/applications")
@@ -73,6 +79,28 @@ public class ApplicationController {
     @PreAuthorize("hasPermission(#id, 'application', 'app:applications:read')")
     ApplicationService.ApplicationView get(@AuthenticationPrincipal Object principal, @PathVariable UUID id) {
         return applications.get(id);
+    }
+
+    /**
+     * The organization-wide registry listing (issue #16, S3-04): every
+     * application of the organization in both ownership scopes — the
+     * console's administration surface, and the reachability path to a
+     * shared application before its first tenant authorization (every
+     * effective-visibility listing hides it until granted, PRD 15).
+     * Organization-addressed read for organization roles; denials
+     * conceal as the standard 404 envelope (PRD 12).
+     */
+    @GetMapping
+    @PreAuthorize("hasPermission(#organizationId, 'organization', 'app:applications:read')")
+    PageResponse<ApplicationService.ApplicationView> list(
+            @AuthenticationPrincipal Object principal,
+            @RequestParam UUID organizationId,
+            @RequestParam(required = false) String limit,
+            @RequestParam(required = false) String cursor) {
+        ListQuery query = ListQuery.of(limit, cursor);
+        Page<ApplicationService.ApplicationView> page =
+                applications.listByOrganization(organizationId, query.offset(), query.limit());
+        return PageResponse.of(page.getContent(), page.hasNext(), query.offset() + query.limit());
     }
 
     @PatchMapping("/{id}")
