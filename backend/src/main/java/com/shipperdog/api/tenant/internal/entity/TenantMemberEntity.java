@@ -1,6 +1,7 @@
 package com.shipperdog.api.tenant.internal.entity;
 
 import com.shipperdog.api.tenant.TenantRole;
+import com.shipperdog.api.tenant.TenantScope;
 import jakarta.persistence.Entity;
 import jakarta.persistence.EnumType;
 import jakarta.persistence.Enumerated;
@@ -15,10 +16,15 @@ import java.util.UUID;
 import org.hibernate.annotations.JdbcTypeCode;
 import org.hibernate.type.SqlTypes;
 
-/** Maps the {@code tenant_members} table (V4 migration). */
+/**
+ * Maps the {@code tenant_members} table (V4 migration). Tenant-scoped
+ * data (issue #10): endpoint access flows through the scoped repository
+ * seam, which filters by the request's tenant context by construction;
+ * only the authorization engine's role resolution reads across tenants.
+ */
 @Entity
 @Table(name = "tenant_members")
-public class TenantMemberEntity {
+public class TenantMemberEntity implements TenantScope {
 
     @Id
     @GeneratedValue(strategy = GenerationType.UUID)
@@ -61,6 +67,11 @@ public class TenantMemberEntity {
     }
 
     public UUID getTenantId() {
+        return tenantId;
+    }
+
+    @Override
+    public UUID tenantId() {
         return tenantId;
     }
 

@@ -23,8 +23,8 @@ Current contents:
 - [Organizations](organizations.md) — organization lifecycle, settings,
   and membership surface (S1-04, extended by S1-05).
 - [Tenants](tenants.md) — tenant lifecycle under an organization,
-  identifier uniqueness, deactivation semantics, and isolation
-  groundwork (S2-01).
+  identifier uniqueness, deactivation semantics, and tenant isolation
+  semantics (S2-01, S2-02).
 - [Audit logging](audit.md) — append-only audit trail, transactional
   persistence, redaction, correlation ids, and the admin query API
   (S1-06).
@@ -33,5 +33,6 @@ Current contents:
   Grafana local stack, and the management-port security posture
   (S1-07).
 - [ADR-0001: Flyway with plain SQL migrations](adr/ADR-0001-flyway-schema-migrations.md)
+- [ADR-0002: Predicate-injection repository seam for tenant isolation](adr/ADR-0002-tenant-isolation-data-seam.md)
 
 Start with the top-level README for local setup and CI.

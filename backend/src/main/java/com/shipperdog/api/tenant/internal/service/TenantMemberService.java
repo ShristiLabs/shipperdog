@@ -13,6 +13,7 @@ import com.shipperdog.api.tenant.TenantRole;
 import com.shipperdog.api.tenant.internal.entity.TenantEntity;
 import com.shipperdog.api.tenant.internal.entity.TenantMemberEntity;
 import com.shipperdog.api.tenant.internal.repository.TenantMemberRepository;
+import com.shipperdog.api.tenant.internal.repository.TenantMemberScopedRepository;
 import com.shipperdog.api.tenant.internal.repository.TenantRepository;
 import java.time.Clock;
 import java.time.Instant;
@@ -23,6 +24,7 @@ import java.util.UUID;
 import java.util.function.Function;
 import java.util.stream.Collectors;
 import org.springframework.data.domain.Page;
+import org.springframework.data.jpa.domain.Specification;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -43,6 +45,7 @@ public class TenantMemberService implements TenantAccess {
 
     private final TenantRepository tenants;
     private final TenantMemberRepository members;
+    private final TenantMemberScopedRepository scopedMembers;
     private final UserDirectory directory;
     private final SessionRevocation sessions;
     private final AuditEventPublisher audit;
@@ -51,12 +54,14 @@ public class TenantMemberService implements TenantAccess {
     TenantMemberService(
             TenantRepository tenants,
             TenantMemberRepository members,
+            TenantMemberScopedRepository scopedMembers,
             UserDirectory directory,
             SessionRevocation sessions,
             AuditEventPublisher audit,
             Clock clock) {
         this.tenants = tenants;
         this.members = members;
+        this.scopedMembers = scopedMembers;
         this.directory = directory;
         this.sessions = sessions;
         this.audit = audit;
@@ -94,12 +99,18 @@ public class TenantMemberService implements TenantAccess {
     // Module API (TenantController)
     // -------------------------------------------------------------------------
 
-    /** Lists the tenant's members, paged (issue #8); caller permission is enforced at the controller. */
+    /**
+     * Lists the tenant's members, paged (issue #8); caller permission is
+     * enforced at the controller. The query runs through the
+     * tenant-scoped seam (issue #10): the request's tenant context, not
+     * an argument, decides which tenant's rows are visible, and the seam
+     * applies the platform listing order.
+     */
     @Transactional(readOnly = true)
     public Page<MemberView> listMembers(UUID tenantId, long offset, int limit) {
         mustFindTenant(tenantId);
         Page<TenantMemberEntity> memberships =
-                members.findByTenantIdOrderByCreatedAtAscIdAsc(tenantId, new CursorPageable((int) offset, limit));
+                scopedMembers.findAllScoped(Specification.unrestricted(), new CursorPageable((int) offset, limit));
         Map<UUID, UserDirectory.UserSummary> users =
                 directory
                         .byIds(memberships.stream()
@@ -135,7 +146,7 @@ public class TenantMemberService implements TenantAccess {
             throw new TenantException(TenantException.Code.NOT_FOUND, "user not found");
         }
         TenantMemberEntity membership =
-                members.findByTenantIdAndUserId(tenantId, targetUserId).orElse(null);
+                scopedMembers.findOneScoped(userEquals(targetUserId)).orElse(null);
         boolean demotion;
         if (membership == null) {
             if (tenant.getStatus() == TenantEntity.Status.DEACTIVATED) {
@@ -150,7 +161,7 @@ public class TenantMemberService implements TenantAccess {
                     !RolePermissions.lostOnTenantRoleChange(previous, newRole).isEmpty();
             membership.setRole(newRole);
         }
-        members.save(membership);
+        scopedMembers.saveScoped(membership);
         if (demotion) {
             sessions.revokeRefreshTokens(targetUserId, "role_demoted");
         }
@@ -173,9 +184,10 @@ public class TenantMemberService implements TenantAccess {
     @Transactional
     public void removeMember(UUID tenantId, UUID targetUserId, UUID actorId) {
         mustFindTenant(tenantId);
-        TenantMemberEntity membership = members.findByTenantIdAndUserId(tenantId, targetUserId)
+        TenantMemberEntity membership = scopedMembers
+                .findOneScoped(userEquals(targetUserId))
                 .orElseThrow(() -> new TenantException(TenantException.Code.NOT_FOUND, "member not found"));
-        members.delete(membership);
+        scopedMembers.delete(membership);
         sessions.revokeRefreshTokens(targetUserId, "membership_removed");
         audit.publish(new AuditEvent(
                 AuditEventType.TENANT_MEMBER_REMOVED,
@@ -194,6 +206,11 @@ public class TenantMemberService implements TenantAccess {
     private TenantEntity mustFindTenant(UUID tenantId) {
         return tenants.findById(tenantId)
                 .orElseThrow(() -> new TenantException(TenantException.Code.NOT_FOUND, "tenant not found"));
+    }
+
+    /** Membership-by-user condition, composed with the seam's tenant predicate. */
+    private static Specification<TenantMemberEntity> userEquals(UUID userId) {
+        return (root, query, builder) -> builder.equal(root.get("userId"), userId);
     }
 
     /** Tenant member view; display fields are null when returned from an assignment. */
