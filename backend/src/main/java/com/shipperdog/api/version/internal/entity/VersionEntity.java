@@ -44,11 +44,23 @@ import org.hibernate.type.SqlTypes;
 @Table(name = "versions")
 public class VersionEntity implements OrganizationScope {
 
-    /** Lifecycle vocabulary of the V1 baseline {@code version_status}. */
+    /**
+     * Lifecycle vocabulary of the V1 baseline {@code version_status}
+     * plus the V14 {@code REVOKED} value. DRAFT is the birth state;
+     * ACTIVE is reserved for the M2 release activation (no M1
+     * transition endpoint — the reserved-unused discipline of the V1
+     * DISABLED application label); ARCHIVED is the soft terminal state
+     * (S4-03: read-only, out of the default listing, still fully
+     * readable); REVOKED is the strongest terminal state (S4-03:
+     * distribution revoked — new downloads blocked, history preserved,
+     * INV-006). Both terminals are final; history is permanent (PRD
+     * P5), so no state ever deletes anything.
+     */
     public enum Status {
         DRAFT,
         ACTIVE,
-        ARCHIVED
+        ARCHIVED,
+        REVOKED
     }
 
     @Id

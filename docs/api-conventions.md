@@ -98,7 +98,18 @@ version listing ordered newest-first by the normalized semver sort key —
 its optional conjunctive `tag` filter (S4-02) narrows the page to
 versions carrying that tag; the value is validated and case-normalized
 to the stored UPPER form server-side, and malformed values are a `400`
-`INVALID_REQUEST` like any other bad parameter.
+`INVALID_REQUEST` like any other bad parameter. The listing's default
+window is the working set (`DRAFT` and the M2-reserved `ACTIVE`);
+the terminal lifecycle states are history, not the working surface;
+they return with the optional `include` filter (S4-03) — the
+comma-separated values `archived` and `revoked` (case-insensitive,
+whitespace-tolerant, composable with `tag` and each other; a typo like
+`include=archvied` is a `400` rather than a silently narrowed
+nothing). Action-style lifecycle verbs are POST sub-resources
+(`.../{versionId}/archive`, `.../{versionId}/revoke-distribution`)
+rather than PATCH-with-status, because revoke carries a required
+reason body and FR-008 names both operations; they take no
+`Idempotency-Key` — the terminal state itself is the replay answer.
 The rest of the application registry's surface (S3-01) is item-addressed
 (POST/GET/PATCH under `/api/v1/applications`); a tenant's own view of
 applications stays the tenant-scoped listing.

@@ -95,7 +95,17 @@ event and no rows). Concurrent replaces of one version are serialized
 by a per-version advisory lock inside the mutation's transaction, so
 the trail records one event per real transition, last writer's set
 winning; the ownership-scope transition also counts the versions it
-carries along as `versionsCarried` on `APPLICATION_SCOPE_CHANGED`),
+carries along as `versionsCarried` on `APPLICATION_SCOPE_CHANGED`;
+`VERSION_ARCHIVED` — issue #19/S4-03: the archive transition,
+carrying `versionName`, `fromStatus`, and `toStatus`; and
+`VERSION_DISTRIBUTION_REVOKED` — issue #19/S4-03: the
+revoke-distribution takedown, carrying `versionName`, `fromStatus`,
+`toStatus`, and the mandatory `reason` (FR-024: the takedown explains
+itself in the trail, and the same reason rides the version's
+`version_status_history` timeline row). One event per real
+transition: the lifecycle commits through a database compare-and-set,
+so concurrent transitions never double-commit — a repeat or a
+forbidden direction answers the precise 409 and writes nothing),
 and
 platform (`ACCESS_DENIED`, S1-06).
 
