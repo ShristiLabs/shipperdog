@@ -1,0 +1,17 @@
+# Local Prometheus for the shipperdog observability baseline (issue #7).
+# Scrapes the API's internal management port (compose sets
+# MANAGEMENT_SERVER_PORT=8081), which is never published beyond the host.
+
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+
+scrape_configs:
+  - job_name: prometheus
+    static_configs:
+      - targets: ["localhost:9090"]
+
+  - job_name: api
+    metrics_path: /actuator/prometheus
+    static_configs:
+      - targets: ["api:8081"]

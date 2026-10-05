@@ -35,15 +35,25 @@ docker compose up
 ```
 
 This starts PostgreSQL 17, Redis 8, a GCS emulator (fsouza/fake-gcs-server),
-and the API. Defaults are baked in; to override them, copy `.env.example` to
-`.env` and edit.
+the API, and the observability stack (Prometheus + Grafana, S1-07). Defaults
+are baked in; to override them, copy `.env.example` to `.env` and edit.
 
-Verify the API:
+Verify the API (management endpoints live on the internal port, published
+loopback-only — never on the public API port):
 
 ```bash
-curl http://localhost:8080/actuator/health
+curl http://localhost:8081/actuator/health
 # {"status":"UP","groups":["liveness","readiness"]}
 ```
+
+Local observability UIs (loopback-only):
+
+- Grafana dashboards: http://localhost:3000 (admin/admin by default)
+- Prometheus targets: http://localhost:9090
+- Metrics scrape: http://localhost:8081/actuator/prometheus
+
+See [docs/observability.md](docs/observability.md) for the correlation
+model, the `shipperdog_*` metric namespace, and the env-var surface.
 
 The dev profile seeds a bootstrap admin (`dev@shipperdog.local` /
 `shipperdog-dev-admin`, local only — see `docs/authentication.md`):
@@ -95,8 +105,11 @@ and `.env.example`):
 | `AUTH_LOCKOUT_DURATION` | Lockout duration | `PT15M` |
 | `AUTH_PASSWORD_RESET_TTL` | Password-reset token lifetime | `PT30M` |
 | `AUTH_INVITATION_TTL` | Registration invitation lifetime | `P3D` |
-| `MANAGEMENT_ENDPOINTS_EXPOSE` | Actuator endpoints exposed | `health,info` |
+| `MANAGEMENT_ENDPOINTS_EXPOSE` | Actuator endpoints exposed | `health,info` (compose: `health,info,prometheus`) |
 | `MANAGEMENT_HEALTH_SHOW_DETAILS` | Health detail visibility | `never` |
+| `MANAGEMENT_SERVER_PORT` | Internal management port (compose sets `8081`) | unset = API port |
+| `TRACING_SAMPLING_PROBABILITY` | Trace head-sampling probability | `1.0` |
+| `LOGGING_STRUCTURED_FORMAT_CONSOLE` | Structured log format (compose: `logstash`) | plain text |
 
 The API refuses to start without `AUTH_JWT_SECRET`. Production supplies a
 high-entropy value from its secret manager; local development uses the

@@ -13,5 +13,7 @@ RUN useradd --system --uid 1001 --shell /usr/sbin/nologin appuser
 USER appuser
 COPY --from=build /workspace/target/*.jar app.jar
 ENV JAVA_TOOL_OPTIONS="-XX:MaxRAMPercentage=75.0"
-EXPOSE 8080
+# 8080 serves the API; 8081 is the internal management port used by the
+# local observability stack (issue #7) when MANAGEMENT_SERVER_PORT is set.
+EXPOSE 8080 8081
 ENTRYPOINT ["java", "-jar", "/app/app.jar"]

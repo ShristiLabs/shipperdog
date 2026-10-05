@@ -126,7 +126,9 @@ malformed is discarded and replaced with a fresh UUID. The id is
 echoed on every response, placed in the SLF4J MDC under
 `correlationId` (the log pattern renders it as `[<id>]` on every
 line), attached to audit events during enrichment, and cleared after
-the request. Traces join the same id with S1-07.
+the request. Traces join the same id since S1-07: every span of the
+request carries it as the `correlation_id` attribute (see
+[observability](observability.md)).
 
 ## Querying the trail
 

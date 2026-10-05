@@ -30,6 +30,18 @@ public class SecurityConfig {
                 .authorizeHttpRequests(
                         auth -> auth.requestMatchers("/actuator/health", "/actuator/health/**", "/actuator/info")
                                 .permitAll()
+                                // Metrics scrape endpoint (issue #7): served
+                                // only where the operator puts it. The local
+                                // stack moves all management endpoints to a
+                                // separate management port (MANAGEMENT_SERVER_PORT)
+                                // that is never published beyond the host /
+                                // compose network, so the endpoint is internal
+                                // by construction; on the API port it exists
+                                // only when an operator explicitly adds it to
+                                // MANAGEMENT_ENDPOINTS_EXPOSE, who then owns
+                                // protecting it upstream.
+                                .requestMatchers("/actuator/prometheus")
+                                .permitAll()
                                 .anyRequest()
                                 .authenticated())
                 .formLogin(AbstractHttpConfigurer::disable)
