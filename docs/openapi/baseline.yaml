@@ -51,6 +51,37 @@ paths:
             '*/*':
               schema:
                 $ref: "#/components/schemas/TenantResponse"
+  /api/v1/tenants/{id}/members/{userId}/status:
+    put:
+      tags:
+      - tenant-controller
+      operationId: changeMemberStatus
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - name: userId
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/StatusChangeRequest"
+        required: true
+      responses:
+        "200":
+          description: OK
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/MemberView"
   /api/v1/tenants/{id}/members/{userId}/role:
     put:
       tags:
@@ -250,6 +281,59 @@ paths:
             '*/*':
               schema:
                 $ref: "#/components/schemas/TenantResponse"
+  /api/v1/tenants/{id}/members:
+    get:
+      tags:
+      - tenant-controller
+      operationId: listMembers
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - name: limit
+        in: query
+        required: false
+        schema:
+          type: string
+      - name: cursor
+        in: query
+        required: false
+        schema:
+          type: string
+      responses:
+        "200":
+          description: OK
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/PageResponseMemberView"
+    post:
+      tags:
+      - tenant-controller
+      operationId: addMember
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/MemberAddRequest"
+        required: true
+      responses:
+        "200":
+          description: OK
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/MemberView"
   /api/v1/organizations:
     get:
       tags:
@@ -444,11 +528,11 @@ paths:
             '*/*':
               schema:
                 $ref: "#/components/schemas/InvitationResponse"
-  /api/v1/tenants/{id}/members:
+  /api/v1/tenants/{id}/applications:
     get:
       tags:
-      - tenant-controller
-      operationId: listMembers
+      - tenant-applications-controller
+      operationId: list_2
       parameters:
       - name: id
         in: path
@@ -472,7 +556,7 @@ paths:
           content:
             '*/*':
               schema:
-                $ref: "#/components/schemas/PageResponseMemberView"
+                $ref: "#/components/schemas/PageResponseApplicationView"
   /api/v1/organizations/{id}/members:
     get:
       tags:
@@ -565,7 +649,9 @@ paths:
           - ORG_MEMBER_REMOVED
           - TENANT_CREATED
           - TENANT_UPDATED
+          - TENANT_MEMBER_ADDED
           - TENANT_MEMBER_ROLE_CHANGED
+          - TENANT_MEMBER_STATUS_CHANGED
           - TENANT_MEMBER_REMOVED
           - CROSS_TENANT_ACCESS
           - ACCESS_DENIED
@@ -705,10 +791,10 @@ components:
         updatedAt:
           type: string
           format: date-time
-    RoleChangeRequest:
+    StatusChangeRequest:
       type: object
       properties:
-        role:
+        status:
           type: string
     MemberView:
       type: object
@@ -725,9 +811,19 @@ components:
           enum:
           - TENANT_ADMIN
           - TENANT_TESTER
+        status:
+          type: string
+          enum:
+          - ACTIVE
+          - SUSPENDED
         createdAt:
           type: string
           format: date-time
+    RoleChangeRequest:
+      type: object
+      properties:
+        role:
+          type: string
     OrganizationResponse:
       type: object
       properties:
@@ -756,6 +852,8 @@ components:
     JsonNode:
       type: object
       properties:
+        container:
+          type: boolean
         nodeType:
           type: string
           enum:
@@ -801,8 +899,6 @@ components:
           type: boolean
         floatingPointNumber:
           type: boolean
-        container:
-          type: boolean
         empty:
           type: boolean
         array:
@@ -834,6 +930,14 @@ components:
         name:
           type: string
         externalId:
+          type: string
+    MemberAddRequest:
+      type: object
+      properties:
+        userId:
+          type: string
+          format: uuid
+        role:
           type: string
     CreatePatRequest:
       type: object
@@ -965,6 +1069,35 @@ components:
             $ref: "#/components/schemas/MemberView"
         next_cursor:
           type: string
+    ApplicationView:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+        bundleId:
+          type: string
+        packageName:
+          type: string
+        status:
+          type: string
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+    PageResponseApplicationView:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/ApplicationView"
+        next_cursor:
+          type: string
     PageResponseOrganizationResponse:
       type: object
       properties:
@@ -1055,7 +1188,9 @@ components:
           - ORG_MEMBER_REMOVED
           - TENANT_CREATED
           - TENANT_UPDATED
+          - TENANT_MEMBER_ADDED
           - TENANT_MEMBER_ROLE_CHANGED
+          - TENANT_MEMBER_STATUS_CHANGED
           - TENANT_MEMBER_REMOVED
           - CROSS_TENANT_ACCESS
           - ACCESS_DENIED

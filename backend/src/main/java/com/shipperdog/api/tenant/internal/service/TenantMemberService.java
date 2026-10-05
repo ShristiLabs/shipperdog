@@ -18,11 +18,13 @@ import com.shipperdog.api.tenant.internal.repository.TenantRepository;
 import java.time.Clock;
 import java.time.Instant;
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
 import java.util.function.Function;
 import java.util.stream.Collectors;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.data.domain.Page;
 import org.springframework.data.jpa.domain.Specification;
 import org.springframework.stereotype.Service;
@@ -30,15 +32,25 @@ import org.springframework.transaction.annotation.Transactional;
 
 /**
  * Tenant membership and role assignment (issue #5; tenant lifecycle
- * itself lives in {@link TenantService} since issue #9). This service
- * is the RBAC surface the issue needs: listing members, assigning
- * TENANT_ADMIN/TENANT_TESTER roles, and the cross-module
+ * itself lives in {@link TenantService} since issue #9; assignment and
+ * the membership status switch arrive with issue #11). This service
+ * is the RBAC surface the issues need: listing members, adding members
+ * with a tenant role, assigning TENANT_ADMIN/TENANT_TESTER roles,
+ * suspending/reactivating memberships, and the cross-module
  * {@link TenantAccess} queries the authorization module's evaluator
  * uses. Endpoint permissions (tenant:members:*) are enforced at the
  * controller; the service keeps business rules only. There is
  * deliberately no last-TENANT_ADMIN guard: an organization
  * administrator (or platform administrator) of the owning organization
  * can always reassign, so a tenant cannot be orphaned.
+ *
+ * <p>The membership status switch (issue #11 technical notes): access
+ * needs both switches on — the user account (identity refuses disabled
+ * accounts at login and token refresh) and the membership row (only
+ * ACTIVE memberships resolve to roles in the {@link TenantAccess}
+ * surface). Suspension therefore strips the member's effective tenant
+ * permissions at the next permission evaluation and ends their
+ * sessions at the next token refresh, without deleting anything.
  */
 @Service
 public class TenantMemberService implements TenantAccess {
@@ -76,6 +88,7 @@ public class TenantMemberService implements TenantAccess {
     @Transactional(readOnly = true)
     public Map<UUID, TenantRole> membershipsOf(UUID userId) {
         return members.findByUserId(userId).stream()
+                .filter(membership -> membership.getStatus() == TenantMemberEntity.Status.ACTIVE)
                 .collect(Collectors.toMap(
                         TenantMemberEntity::getTenantId,
                         TenantMemberEntity::getRole,
@@ -86,7 +99,9 @@ public class TenantMemberService implements TenantAccess {
     @Override
     @Transactional(readOnly = true)
     public Optional<TenantRole> roleInTenant(UUID tenantId, UUID userId) {
-        return members.findByTenantIdAndUserId(tenantId, userId).map(TenantMemberEntity::getRole);
+        return members.findByTenantIdAndUserId(tenantId, userId)
+                .filter(membership -> membership.getStatus() == TenantMemberEntity.Status.ACTIVE)
+                .map(TenantMemberEntity::getRole);
     }
 
     @Override
@@ -125,8 +140,116 @@ public class TenantMemberService implements TenantAccess {
                     user == null ? null : user.email(),
                     user == null ? null : user.fullName(),
                     membership.getRole(),
+                    membership.getStatus(),
                     membership.getCreatedAt());
         });
+    }
+
+    /**
+     * Assigns a user to the tenant with a tenant role (issue #11,
+     * acceptance criterion 1): the membership is born ACTIVE. A
+     * duplicate assignment with the same role is idempotent — the
+     * existing membership is returned unchanged and nothing is written
+     * or audited (no change happened); a duplicate with a different
+     * role is {@code 409 TENANT_MEMBER_EXISTS} (role changes belong to
+     * {@link #assignRole}). Adding any member to a DEACTIVATED tenant
+     * is blocked (the affiliation rule carried from issue #9). The
+     * unique constraint is the final authority on races.
+     */
+    @Transactional
+    public MemberAssignment addMember(UUID tenantId, UUID targetUserId, TenantRole role, UUID actorId) {
+        TenantEntity tenant = mustFindTenant(tenantId);
+        if (!directory.userExists(targetUserId)) {
+            throw new TenantException(TenantException.Code.NOT_FOUND, "user not found");
+        }
+        TenantMemberEntity existing =
+                scopedMembers.findOneScoped(userEquals(targetUserId)).orElse(null);
+        if (existing != null) {
+            if (existing.getRole() == role) {
+                return new MemberAssignment(viewOf(tenantId, existing), false);
+            }
+            throw new TenantException(
+                    TenantException.Code.MEMBER_EXISTS, "user is already a member with a different role");
+        }
+        if (tenant.getStatus() == TenantEntity.Status.DEACTIVATED) {
+            throw new TenantException(
+                    TenantException.Code.TENANT_DEACTIVATED, "cannot add members to a deactivated tenant");
+        }
+        TenantMemberEntity membership = new TenantMemberEntity(tenantId, targetUserId, role);
+        try {
+            scopedMembers.saveScoped(membership);
+        } catch (DataIntegrityViolationException e) {
+            // Lost race on uq_tenant_members_tenant_user: the winner's
+            // row decides between the idempotent and conflict paths.
+            TenantMemberEntity winner =
+                    scopedMembers.findOneScoped(userEquals(targetUserId)).orElse(null);
+            if (winner != null && winner.getRole() == role) {
+                return new MemberAssignment(viewOf(tenantId, winner), false);
+            }
+            throw new TenantException(
+                    TenantException.Code.MEMBER_EXISTS, "user is already a member with a different role");
+        }
+        audit.publish(new AuditEvent(
+                AuditEventType.TENANT_MEMBER_ADDED,
+                Instant.now(clock),
+                actorId,
+                null,
+                tenantId,
+                true,
+                Map.of(
+                        "userId",
+                        targetUserId.toString(),
+                        "role",
+                        role.name(),
+                        "status",
+                        membership.getStatus().name())));
+        return new MemberAssignment(viewOf(tenantId, membership), true);
+    }
+
+    /**
+     * Suspends or reactivates a membership (issue #11 technical notes:
+     * the membership switch, independent of the user account switch).
+     * Suspending revokes the member's refresh tokens — their tenant
+     * context ends at the next token refresh at the latest, and the
+     * live role resolution stops granting the tenant role immediately.
+     * Both transitions stay possible on a DEACTIVATED tenant: an
+     * existing membership is not a new affiliation, and a deactivated
+     * tenant remains administrable (issue #9/#10 decisions). A no-op
+     * request returns the current view and is audited with equal
+     * before/after, mirroring tenant updates.
+     */
+    @Transactional
+    public MemberView changeMemberStatus(
+            UUID tenantId, UUID targetUserId, TenantMemberEntity.Status target, UUID actorId) {
+        mustFindTenant(tenantId);
+        TenantMemberEntity membership = scopedMembers
+                .findOneScoped(userEquals(targetUserId))
+                .orElseThrow(() -> new TenantException(TenantException.Code.NOT_FOUND, "member not found"));
+        TenantMemberEntity.Status before = membership.getStatus();
+        boolean suspended =
+                before != TenantMemberEntity.Status.SUSPENDED && target == TenantMemberEntity.Status.SUSPENDED;
+        membership.setStatus(target);
+        scopedMembers.saveScoped(membership);
+        if (suspended) {
+            sessions.revokeRefreshTokens(targetUserId, "membership_suspended");
+        }
+        audit.publish(new AuditEvent(
+                AuditEventType.TENANT_MEMBER_STATUS_CHANGED,
+                Instant.now(clock),
+                actorId,
+                null,
+                tenantId,
+                true,
+                Map.of(
+                        "userId",
+                        targetUserId.toString(),
+                        "status.before",
+                        before.name(),
+                        "status.after",
+                        target.name(),
+                        "sessionsRevoked",
+                        Boolean.toString(suspended))));
+        return viewOf(tenantId, membership);
     }
 
     /**
@@ -177,7 +300,7 @@ public class TenantMemberService implements TenantAccess {
                 tenantId,
                 true,
                 Map.copyOf(detail)));
-        return new MemberView(targetUserId, null, null, newRole, membership.getCreatedAt());
+        return viewOf(tenantId, membership);
     }
 
     /** Removes a tenant membership; removal always revokes the member's refresh tokens. */
@@ -213,6 +336,33 @@ public class TenantMemberService implements TenantAccess {
         return (root, query, builder) -> builder.equal(root.get("userId"), userId);
     }
 
-    /** Tenant member view; display fields are null when returned from an assignment. */
-    public record MemberView(UUID userId, String email, String fullName, TenantRole role, Instant createdAt) {}
+    /** Resolves the member's display fields for a returned view. */
+    private MemberView viewOf(UUID tenantId, TenantMemberEntity membership) {
+        UserDirectory.UserSummary user = directory.byIds(List.of(membership.getUserId())).stream()
+                .findFirst()
+                .orElse(null);
+        return new MemberView(
+                membership.getUserId(),
+                user == null ? null : user.email(),
+                user == null ? null : user.fullName(),
+                membership.getRole(),
+                membership.getStatus(),
+                membership.getCreatedAt());
+    }
+
+    /**
+     * Tenant member view (issue #11: carries the membership status
+     * switch); display fields are null when the directory has no
+     * summary.
+     */
+    public record MemberView(
+            UUID userId,
+            String email,
+            String fullName,
+            TenantRole role,
+            TenantMemberEntity.Status status,
+            Instant createdAt) {}
+
+    /** Assignment outcome: the member view and whether a row was created. */
+    public record MemberAssignment(MemberView view, boolean created) {}
 }

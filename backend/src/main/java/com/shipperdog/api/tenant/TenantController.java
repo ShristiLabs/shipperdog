@@ -5,6 +5,7 @@ import com.shipperdog.api.config.ListQuery;
 import com.shipperdog.api.config.PageResponse;
 import com.shipperdog.api.identity.AuthenticatedPrincipal;
 import com.shipperdog.api.tenant.internal.entity.TenantEntity;
+import com.shipperdog.api.tenant.internal.entity.TenantMemberEntity;
 import com.shipperdog.api.tenant.internal.service.TenantMemberService;
 import com.shipperdog.api.tenant.internal.service.TenantService;
 import java.time.Instant;
@@ -12,6 +13,7 @@ import java.util.Locale;
 import java.util.UUID;
 import org.springframework.data.domain.Page;
 import org.springframework.http.HttpStatus;
+import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.security.oauth2.jwt.Jwt;
@@ -27,13 +29,18 @@ import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestController;
 
 /**
- * Tenant API: lifecycle (issue #9) and membership (issue #5). Lifecycle
- * — creation under an organization, organization-scoped listing with a
- * status filter, and partial update including the reversible
- * ACTIVE/DEACTIVATED transition — is organization-level administration:
- * org:tenants:create/read on the owning organization,
+ * Tenant API: lifecycle (issue #9) and membership (issues #5 and #11).
+ * Lifecycle — creation under an organization, organization-scoped
+ * listing with a status filter, and partial update including the
+ * reversible ACTIVE/DEACTIVATED transition — is organization-level
+ * administration: org:tenants:create/read on the owning organization,
  * tenant:tenants:read/update on the tenant (tenant administrators hold
- * read only). Permissions are declared with {@code @PreAuthorize} and
+ * read only). Membership — adding members with a tenant role
+ * (idempotent duplicates), role changes, the reversible
+ * suspension/reactivation switch, and removal — is
+ * tenant:members:manage (tenant administrators and the owning
+ * organization's administrators). Permissions are declared with
+ * {@code @PreAuthorize} and
  * enforced by the authorization module's evaluator as the single
  * enforcement point; resource-scoped denials render as concealed 404s
  * (PRD 12, issue #8). Listing pages with the platform's cursor
@@ -103,6 +110,20 @@ public class TenantController {
         return PageResponse.of(page.getContent(), page.hasNext(), query.offset() + query.limit());
     }
 
+    @PostMapping("/{id}/members")
+    @Idempotent
+    @PreAuthorize("hasPermission(#id, 'tenant', 'tenant:members:manage')")
+    ResponseEntity<TenantMemberService.MemberView> addMember(
+            @AuthenticationPrincipal Object principal, @PathVariable UUID id, @RequestBody MemberAddRequest request) {
+        if (request.userId() == null) {
+            throw new TenantException(TenantException.Code.INVALID_REQUEST, "userId is required");
+        }
+        TenantMemberService.MemberAssignment assignment =
+                members.addMember(id, request.userId(), parseRole(request.role()), requireUserId(principal));
+        return ResponseEntity.status(assignment.created() ? HttpStatus.CREATED : HttpStatus.OK)
+                .body(assignment.view());
+    }
+
     @PutMapping("/{id}/members/{userId}/role")
     @PreAuthorize("hasPermission(#id, 'tenant', 'tenant:members:manage')")
     TenantMemberService.MemberView assignRole(
@@ -111,6 +132,16 @@ public class TenantController {
             @PathVariable UUID userId,
             @RequestBody RoleChangeRequest request) {
         return members.assignRole(id, userId, parseRole(request.role()), requireUserId(principal));
+    }
+
+    @PutMapping("/{id}/members/{userId}/status")
+    @PreAuthorize("hasPermission(#id, 'tenant', 'tenant:members:manage')")
+    TenantMemberService.MemberView changeMemberStatus(
+            @AuthenticationPrincipal Object principal,
+            @PathVariable UUID id,
+            @PathVariable UUID userId,
+            @RequestBody StatusChangeRequest request) {
+        return members.changeMemberStatus(id, userId, parseMemberStatus(request.status()), requireUserId(principal));
     }
 
     @DeleteMapping("/{id}/members/{userId}")
@@ -141,8 +172,26 @@ public class TenantController {
         }
     }
 
+    private static TenantMemberEntity.Status parseMemberStatus(String status) {
+        if (status == null) {
+            throw new TenantException(TenantException.Code.INVALID_REQUEST, "status is required");
+        }
+        try {
+            return TenantMemberEntity.Status.valueOf(status.trim().toUpperCase(Locale.ROOT));
+        } catch (IllegalArgumentException e) {
+            throw new TenantException(
+                    TenantException.Code.INVALID_REQUEST, "status must be ACTIVE or SUSPENDED: " + status.trim());
+        }
+    }
+
+    /** Member assignment body (issue #11): who joins, and with which role. */
+    public record MemberAddRequest(UUID userId, String role) {}
+
     /** Target role for a tenant member assignment (issue #5). */
     public record RoleChangeRequest(String role) {}
+
+    /** Membership status transition body (issue #11): ACTIVE or SUSPENDED. */
+    public record StatusChangeRequest(String status) {}
 
     /** Tenant creation body (issue #9); the tenant is born ACTIVE. */
     public record CreateRequest(UUID organizationId, String name, String externalId) {}

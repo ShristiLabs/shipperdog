@@ -22,7 +22,9 @@ Three vocabularies feed one matrix:
 - **Tenant roles** (`tenant_role`, V4): `TENANT_ADMIN`, `TENANT_TESTER`.
   Memberships live in `tenant_members` and are independent of
   organization membership — tenant testers (PRD 7.8) need not belong to
-  the owning organization.
+  the owning organization. Since S2-03 each membership also carries a
+  status (`ACTIVE`/`SUSPENDED`, V8): only ACTIVE memberships grant the
+  role (see [Membership suspension](#guards-and-side-effects)).
 
 `ORG_MEMBER` is plain membership and deliberately holds no permissions:
 a fresh member can do nothing until granted a functional role
@@ -195,9 +197,12 @@ are denied by the permission check before the body is read
 | GET | `/api/v1/organizations/{id}/members` | `org:members:read` | `200` members with roles and display fields, cursor-paginated |
 | PUT | `/api/v1/organizations/{id}/members/{userId}/role` | `org:members:manage` | `200` member view; `400` unknown role; `404` unknown organization/member; `409` `LAST_ORG_ADMIN` or `ORGANIZATION_DEACTIVATED` |
 | DELETE | `/api/v1/organizations/{id}/members/{userId}` | `org:members:manage` | `204`; same error contract; always revokes the member's sessions |
-| GET | `/api/v1/tenants/{id}/members` | `tenant:members:read` | `200` members with roles, cursor-paginated |
+| GET | `/api/v1/tenants/{id}/members` | `tenant:members:read` | `200` members with roles and membership status, cursor-paginated |
+| POST | `/api/v1/tenants/{id}/members` | `tenant:members:manage` | `201` member view (born `ACTIVE`); same-role duplicate is idempotent `200` (no write, no audit); `409 TENANT_MEMBER_EXISTS` on a different-role duplicate; `409 TENANT_DEACTIVATED` while deactivated; `404` unknown user/tenant; `400` missing/unknown role; honors `Idempotency-Key` |
 | PUT | `/api/v1/tenants/{id}/members/{userId}/role` | `tenant:members:manage` | `200` member view; creates the membership when absent (`404` unknown user/tenant; `409` `TENANT_DEACTIVATED` while deactivated); `400` unknown role |
+| PUT | `/api/v1/tenants/{id}/members/{userId}/status` | `tenant:members:manage` | `200` member view; `ACTIVE`/`SUSPENDED` transition (suspending revokes sessions); `404` unknown tenant/member; `400` invalid status |
 | DELETE | `/api/v1/tenants/{id}/members/{userId}` | `tenant:members:manage` | `204`; `404` unknown tenant/member |
+| GET | `/api/v1/tenants/{id}/applications` | `tenant:applications:read` | `200` the tenant's own applications, cursor-paginated (S2-03; management is E3) |
 
 Error responses use the platform's problem+json envelope with stable
 codes (see the [error code registry](error-codes.md)).
@@ -220,7 +225,16 @@ Guards and side effects:
   member's refresh tokens are revoked immediately (`TOKEN_REVOKED`
   audit event, reason `role_demoted`) so the change takes effect on
   their next session at the latest. Pure upgrades revoke nothing.
-  Membership removal always revokes (reason `membership_removed`).
+  Membership removal always revokes (reason `membership_removed`), and
+  suspending a tenant membership revokes too (reason
+  `membership_suspended`); reactivation revokes nothing.
+- **Membership suspension (S2-03).** A tenant membership carries its
+  own status (`tenant_members.status`, V8) independent of the user
+  account status — access needs both switches on. Only `ACTIVE`
+  memberships resolve to tenant roles in the live snapshot, so a
+  suspended member loses tenant permissions on the next request, and
+  the organization overlay (the owning organization's roles) is
+  untouched by suspension.
 - **Disabled accounts.** A `DISABLED` user cannot refresh (the refresh
   family is revoked on the attempt) and cannot use PATs — existing
   sessions do not outlive the disable.
@@ -228,9 +242,11 @@ Guards and side effects:
 ## Audit events
 
 `ORG_MEMBER_ROLE_CHANGED` and `TENANT_MEMBER_ROLE_CHANGED` carry
-`role.before`/`role.after` and `sessionsRevoked`; `ORG_MEMBER_REMOVED`
-and `TENANT_MEMBER_REMOVED` carry the removed role; `TOKEN_REVOKED`
-carries the machine-readable reason. See
+`role.before`/`role.after` and `sessionsRevoked`; `TENANT_MEMBER_ADDED`
+carries the assigned role and birth status; `TENANT_MEMBER_STATUS_CHANGED`
+carries `status.before`/`status.after` and `sessionsRevoked`;
+`ORG_MEMBER_REMOVED` and `TENANT_MEMBER_REMOVED` carry the removed
+role; `TOKEN_REVOKED` carries the machine-readable reason. See
 [authentication](authentication.md) for the identity-side events.
 
 ## Extension path

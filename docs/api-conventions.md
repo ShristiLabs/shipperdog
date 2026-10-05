@@ -88,14 +88,17 @@ Every list endpoint accepts `limit` and `cursor` and returns one shape:
   return raw `List` responses.
 
 Applied today: `GET /api/v1/organizations`, `GET /api/v1/organizations/{id}/members`,
-`GET /api/v1/tenants/{id}/members`, `GET /api/v1/audit` (which also
+`GET /api/v1/tenants/{id}/members`, `GET /api/v1/tenants/{id}/applications`
+(S2-03), and `GET /api/v1/audit` (which also
 keeps its conjunctive filters; `page`/`size` are gone).
 
 ## Idempotency
 
 Designated POSTs honor the `Idempotency-Key` header (issue #8; artifact
 upload joins in S5-01 — the registry of designated endpoints is
-`POST /api/v1/organizations` and `POST /api/v1/tenants`):
+`POST /api/v1/organizations`, `POST /api/v1/tenants`, and
+`POST /api/v1/tenants/{id}/members` (S2-03), the latter being
+idempotent even without the header for same-role duplicates):
 
 - Send a unique key per logical operation (a UUID is fine; 1..255 chars).
 - The first request executes and its outcome is stored for 24 hours,
