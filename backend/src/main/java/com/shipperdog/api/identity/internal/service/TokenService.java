@@ -3,6 +3,7 @@ package com.shipperdog.api.identity.internal.service;
 import com.shipperdog.api.audit.AuditEvent;
 import com.shipperdog.api.audit.AuditEventPublisher;
 import com.shipperdog.api.audit.AuditEventType;
+import com.shipperdog.api.config.CursorPageable;
 import com.shipperdog.api.identity.AuthenticatedPrincipal;
 import com.shipperdog.api.identity.SessionRevocation;
 import com.shipperdog.api.identity.internal.AuthException;
@@ -21,6 +22,7 @@ import java.time.Instant;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
+import org.springframework.data.domain.Page;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.oauth2.jose.jws.MacAlgorithm;
@@ -192,8 +194,8 @@ public class TokenService implements SessionRevocation {
         return new CreatedPat(entity.getId(), name.trim(), entity.getTokenPrefix(), raw, expiresAt);
     }
 
-    public List<PersonalAccessTokenEntity> listPats(UUID userId) {
-        return pats.findByUserIdOrderByCreatedAtDesc(userId);
+    public Page<PersonalAccessTokenEntity> listPats(UUID userId, long offset, int limit) {
+        return pats.findByUserIdOrderByCreatedAtDesc(userId, new CursorPageable(offset, limit));
     }
 
     public void revokePat(UUID userId, UUID patId) {

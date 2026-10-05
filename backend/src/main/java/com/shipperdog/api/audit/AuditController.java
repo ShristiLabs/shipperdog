@@ -2,8 +2,9 @@ package com.shipperdog.api.audit;
 
 import com.shipperdog.api.audit.internal.service.AuditQueryService;
 import com.shipperdog.api.audit.internal.service.AuditQueryService.AuditEventView;
+import com.shipperdog.api.config.ListQuery;
+import com.shipperdog.api.config.PageResponse;
 import java.time.Instant;
-import java.util.List;
 import java.util.UUID;
 import org.springframework.data.domain.Page;
 import org.springframework.security.access.prepost.PreAuthorize;
@@ -23,8 +24,8 @@ import org.springframework.web.bind.annotation.RestController;
  * (tenancy context), entity references ({@code applicationId} /
  * {@code versionId} / {@code artifactId} plus {@code eventType} for the
  * "what"), and {@code from} / {@code to} for the time range. All filters
- * are conjunctive and optional; results are newest-first and paginated
- * ({@code page}, {@code size}, size capped at 100).
+ * are conjunctive and optional; results are newest-first and paged with
+ * the platform's {@code limit}/{@code cursor} convention (issue #8).
  */
 @RestController
 @RequestMapping("/api/v1/audit")
@@ -38,7 +39,7 @@ public class AuditController {
 
     @GetMapping
     @PreAuthorize("hasPermission(null, 'audit', 'platform:audit:read')")
-    AuditQueryResponse search(
+    PageResponse<AuditEventView> search(
             @RequestParam(required = false) UUID actor,
             @RequestParam(required = false) UUID organization,
             @RequestParam(required = false) UUID tenant,
@@ -48,18 +49,21 @@ public class AuditController {
             @RequestParam(required = false) UUID artifactId,
             @RequestParam(required = false) Instant from,
             @RequestParam(required = false) Instant to,
-            @RequestParam(defaultValue = "0") int page,
-            @RequestParam(defaultValue = "50") int size) {
+            @RequestParam(required = false) String limit,
+            @RequestParam(required = false) String cursor) {
+        ListQuery query = ListQuery.of(limit, cursor);
         Page<AuditEventView> result = audit.search(
-                actor, organization, tenant, eventType, applicationId, versionId, artifactId, from, to, page, size);
-        return new AuditQueryResponse(
-                result.getContent(),
-                result.getNumber(),
-                result.getSize(),
-                result.getTotalElements(),
-                result.getTotalPages());
+                actor,
+                organization,
+                tenant,
+                eventType,
+                applicationId,
+                versionId,
+                artifactId,
+                from,
+                to,
+                query.offset(),
+                query.limit());
+        return PageResponse.of(result.getContent(), result.hasNext(), query.offset() + query.limit());
     }
-
-    /** One page of the audit trail. */
-    record AuditQueryResponse(List<AuditEventView> events, int page, int size, long totalElements, int totalPages) {}
 }

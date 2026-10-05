@@ -11,18 +11,20 @@ see [authorization](authorization.md) for the matrix and semantics.
 
 | Method | Path | Permission | Result |
 |---|---|---|---|
-| POST | `/` | `platform:organizations:create` | `201` organization; the creator becomes its first `ORG_ADMIN`. `409 external_id_taken` on a duplicate external id |
-| GET | `/` | authenticated | `200` — platform administrators see every organization, everyone sees only their own memberships |
+| POST | `/` | `platform:organizations:create` | `201` organization; the creator becomes its first `ORG_ADMIN`. `409 EXTERNAL_ID_TAKEN` on a duplicate external id. Honors `Idempotency-Key` (S1-08; the designated idempotent endpoint until artifact upload arrives) |
+| GET | `/` | authenticated | `200` — platform administrators see every organization, everyone sees only their own memberships; cursor-paginated (`limit`/`cursor`, S1-08) |
 | GET | `/{id}` | `org:organizations:read` at `{id}` | `200` organization view |
 | PUT | `/{id}` | `org:organizations:update` at `{id}` | `200`; partial update — null fields unchanged. `name` and `status` (`ACTIVE`/`DEACTIVATED`) for permission holders; `externalId` additionally requires a platform administrator (billing/CRM mapping) |
 | GET | `/{id}/idp-config` | `org:idp-configs:read` at `{id}` | `200` stored record or `404 not_configured` |
 | PUT | `/{id}/idp-config` | `org:idp-configs:write` at `{id}` | `200` upserted record (S14 placeholder, not yet functional) |
-| GET | `/{id}/members` | `org:members:read` at `{id}` | `200` members with roles and display fields |
+| GET | `/{id}/members` | `org:members:read` at `{id}` | `200` members with roles and display fields, cursor-paginated (S1-08) |
 | PUT | `/{id}/members/{userId}/role` | `org:members:manage` at `{id}` | role assignment — guards and revocation in [authorization](authorization.md) |
 | DELETE | `/{id}/members/{userId}` | `org:members:manage` at `{id}` | membership removal — same |
 
-Unknown organizations are `404` for permitted callers; permission
-denials are opaque `403`s (PRD 12).
+Unknown organizations are `404` for permitted callers; since S1-08
+target-scoped permission denials render as concealed `404`s with the same
+shape (PRD 12), and all errors use the problem+json envelope (see
+[API conventions](api-conventions.md)).
 
 ## Lifecycle semantics
 
@@ -33,7 +35,7 @@ denials are opaque `403`s (PRD 12).
   nothing, and members whose organizations are all deactivated cannot
   log in or refresh (platform administrators exempt — see
   [authentication](authentication.md)). Member management on a
-  deactivated organization is refused (`409 organization_deactivated`).
+  deactivated organization is refused (`409 ORGANIZATION_DEACTIVATED`).
 - Membership changes, role assignment, and the last-admin guard are
   documented with the RBAC surface in [authorization](authorization.md).
 - Every mutation emits an audit event (`ORGANIZATION_CREATED`,

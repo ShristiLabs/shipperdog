@@ -24,3 +24,25 @@ jobs:
 
       - name: Build, format-check, and test
         run: mvn -B -ntp verify
+
+      # Issue #8: the OpenAPI contract is generated from code by the
+      # export test during verify; publish it so consumers (frontend,
+      # CLI, CI) can wire against the exact served contract.
+      - name: Publish generated OpenAPI spec
+        uses: actions/upload-artifact@v4
+        with:
+          name: openapi-spec
+          path: backend/target/openapi.yaml
+          if-no-files-found: error
+
+      # Breaking-change gate (issue #8): diff the freshly generated spec
+      # against the committed baseline. A breaking change must be a
+      # conscious re-baseline in the same PR, never an accident.
+      - name: Check OpenAPI contract for breaking changes
+        working-directory: .
+        env:
+          OASDIFF_VERSION: '1.33.0'
+        run: |
+          curl -sSL "https://github.com/oasdiff/oasdiff/releases/download/v${OASDIFF_VERSION}/oasdiff_${OASDIFF_VERSION}_linux_amd64.tar.gz" \
+            | tar -xz -C /usr/local/bin oasdiff
+          oasdiff breaking docs/openapi/baseline.yaml backend/target/openapi.yaml

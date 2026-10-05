@@ -14,16 +14,16 @@ module's public `OrganizationAccess` surface.
 
 | Method | Path | Auth | Result |
 |---|---|---|---|
-| POST | `/login` | none | `200` with `{accessToken, refreshToken, tokenType, expiresInSeconds}`; any failure is a uniform `401 invalid_credentials` |
-| POST | `/register` | none (invitation token in body) | `201` user view; `400` invalid_invitation / weak_password; `409` email_taken |
-| POST | `/refresh` | none (refresh token in body) | `200` rotated token pair; `401` invalid_refresh_token |
+| POST | `/login` | none | `200` with `{accessToken, refreshToken, tokenType, expiresInSeconds}`; any failure is a uniform `401` problem+json with code `INVALID_CREDENTIALS` (see [API conventions](api-conventions.md)) |
+| POST | `/register` | none (invitation token in body) | `201` user view; `400` INVALID_INVITATION / WEAK_PASSWORD; `409` EMAIL_TAKEN |
+| POST | `/refresh` | none (refresh token in body) | `200` rotated token pair; `401` INVALID_REFRESH_TOKEN |
 | POST | `/logout` | none (refresh token in body) | `204`; idempotent — revokes the token family |
 | GET | `/me` | access JWT or PAT | `200` current actor (`orgId` resolves live from the earliest ACTIVE membership, S1-04; `tenantId` null until E2) |
-| POST | `/invitations` | access JWT or PAT | `201` with the raw invitation token (shown once); re-inviting an address revokes its previous pending invitation. Optional `organizationId` + `role` (any `org_role` value, default `ORG_MEMBER`) scope it to an organization: since S1-05 the inviter needs the `org:members:invite` permission there (organization administrators and platform administrators hold it) and denials are opaque `403`s; `404` unknown organization, `400` invalid role or `role` without `organizationId`; accepting grants the membership with the recorded role |
+| POST | `/invitations` | access JWT or PAT | `201` with the raw invitation token (shown once); re-inviting an address revokes its previous pending invitation. Optional `organizationId` + `role` (any `org_role` value, default `ORG_MEMBER`) scope it to an organization: since S1-05 the inviter needs the `org:members:invite` permission there (organization administrators and platform administrators hold it) and target-scoped denials render as concealed `404`s (S1-08); `404` unknown organization, `400` invalid role or `role` without `organizationId`; accepting grants the membership with the recorded role |
 | POST | `/password-reset/request` | none | `202` always — known and unknown addresses are indistinguishable |
-| POST | `/password-reset/confirm` | none (token in body) | `204`; `400` invalid_reset_token (expired or already used) |
+| POST | `/password-reset/confirm` | none (token in body) | `204`; `400` INVALID_RESET_TOKEN (expired or already used) |
 | POST | `/tokens` | access JWT or PAT | `201` with the raw PAT (shown once); optional `expiresInSeconds` |
-| GET | `/tokens` | access JWT or PAT | `200` PAT metadata (prefix only, never the secret) |
+| GET | `/tokens` | access JWT or PAT | `200` PAT metadata (prefix only, never the secret), cursor-paginated (S1-08) |
 | DELETE | `/tokens/{id}` | access JWT or PAT | `204`; `404` when the PAT belongs to another user |
 
 ## Token semantics

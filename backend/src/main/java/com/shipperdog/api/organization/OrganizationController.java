@@ -1,12 +1,15 @@
 package com.shipperdog.api.organization;
 
+import com.shipperdog.api.config.Idempotent;
+import com.shipperdog.api.config.ListQuery;
+import com.shipperdog.api.config.PageResponse;
 import com.shipperdog.api.identity.AuthenticatedPrincipal;
 import com.shipperdog.api.organization.internal.entity.OrganizationEntity;
 import com.shipperdog.api.organization.internal.service.OrganizationService;
 import java.time.Instant;
-import java.util.List;
 import java.util.Locale;
 import java.util.UUID;
+import org.springframework.data.domain.Page;
 import org.springframework.http.HttpStatus;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
@@ -18,19 +21,23 @@ import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestController;
 import tools.jackson.databind.JsonNode;
 
 /**
- * Organization management API (issues #4 and #5, PRD 19): creation
+ * Organization management API (issues #4, #5 and #8, PRD 19): creation
  * (platform:organizations:create; creator becomes Organization Admin),
  * admin-gated read/update of settings and status, the stored
  * identity-provider configuration record (S14 placeholder), and member
  * listing/role assignment (org:members:*). Since S1-05 every endpoint
  * declares its required permission with {@code @PreAuthorize}; the
  * authorization module's evaluator is the single enforcement point, and
- * denials are opaque 403s (PRD 12).
+ * resource-scoped denials render as concealed 404s (PRD 12, issue #8).
+ * List endpoints page with the platform's {@code limit}/{@code cursor}
+ * convention and creation honors {@code Idempotency-Key} (issue #8) —
+ * this controller is the demo surface of each convention.
  */
 @RestController
 @RequestMapping("/api/v1/organizations")
@@ -44,6 +51,7 @@ public class OrganizationController {
 
     @PostMapping
     @ResponseStatus(HttpStatus.CREATED)
+    @Idempotent
     @PreAuthorize("hasPermission(null, 'organization', 'platform:organizations:create')")
     OrganizationResponse create(@AuthenticationPrincipal Object principal, @RequestBody CreateRequest request) {
         return OrganizationResponse.from(
@@ -52,10 +60,15 @@ public class OrganizationController {
 
     @GetMapping
     @PreAuthorize("isAuthenticated()")
-    List<OrganizationResponse> list(@AuthenticationPrincipal Object principal) {
-        return organizations.list(requireUserId(principal)).stream()
-                .map(OrganizationResponse::from)
-                .toList();
+    PageResponse<OrganizationResponse> list(
+            @AuthenticationPrincipal Object principal,
+            @RequestParam(required = false) String limit,
+            @RequestParam(required = false) String cursor) {
+        ListQuery query = ListQuery.of(limit, cursor);
+        Page<OrganizationResponse> page = organizations
+                .list(requireUserId(principal), query.offset(), query.limit())
+                .map(OrganizationResponse::from);
+        return PageResponse.of(page.getContent(), page.hasNext(), query.offset() + query.limit());
     }
 
     @GetMapping("/{id}")
@@ -87,8 +100,14 @@ public class OrganizationController {
 
     @GetMapping("/{id}/members")
     @PreAuthorize("hasPermission(#id, 'organization', 'org:members:read')")
-    List<OrganizationService.MemberView> listMembers(@AuthenticationPrincipal Object principal, @PathVariable UUID id) {
-        return organizations.listMembers(id);
+    PageResponse<OrganizationService.MemberView> listMembers(
+            @AuthenticationPrincipal Object principal,
+            @PathVariable UUID id,
+            @RequestParam(required = false) String limit,
+            @RequestParam(required = false) String cursor) {
+        ListQuery query = ListQuery.of(limit, cursor);
+        Page<OrganizationService.MemberView> page = organizations.listMembers(id, query.offset(), query.limit());
+        return PageResponse.of(page.getContent(), page.hasNext(), query.offset() + query.limit());
     }
 
     @PutMapping("/{id}/members/{userId}/role")

@@ -5,11 +5,13 @@ import com.shipperdog.api.tenant.internal.entity.TenantMemberEntity;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
 
 public interface TenantMemberRepository extends JpaRepository<TenantMemberEntity, UUID> {
 
-    List<TenantMemberEntity> findByTenantIdOrderByCreatedAtAscIdAsc(UUID tenantId);
+    Page<TenantMemberEntity> findByTenantIdOrderByCreatedAtAscIdAsc(UUID tenantId, Pageable pageable);
 
     Optional<TenantMemberEntity> findByTenantIdAndUserId(UUID tenantId, UUID userId);
 

@@ -203,8 +203,11 @@ class AuditFrameworkIntegrationTest {
                 .formatted(actor, tenant, Instant.now().minus(1, ChronoUnit.HOURS));
         JsonNode page = getJson(uri, accessToken(), 200);
 
-        assertThat(page.get("totalElements").asInt()).isEqualTo(1);
-        JsonNode event = page.get("events").get(0);
+        assertThat(page.get("items").size()).isEqualTo(1);
+        assertThat(page.hasNonNull("next_cursor"))
+                .as("a single match is the last page")
+                .isFalse();
+        JsonNode event = page.get("items").get(0);
         assertThat(event.get("eventType").asText()).isEqualTo("TENANT_MEMBER_REMOVED");
         assertThat(event.get("tenantId").asText()).isEqualTo(tenant.toString());
         assertThat(event.get("occurredAt").asText())
@@ -235,10 +238,10 @@ class AuditFrameworkIntegrationTest {
                 getJson("/api/v1/audit?organization=%s&tenant=%s".formatted(organization, tenant), accessToken(), 200);
         JsonNode orgOnly = getJson("/api/v1/audit?organization=" + organization, accessToken(), 200);
 
-        assertThat(both.get("totalElements").asInt())
+        assertThat(both.get("items").isEmpty())
                 .as("no event is both organization- and tenant-scoped; combined filters match nothing")
-                .isZero();
-        assertThat(orgOnly.get("totalElements").asInt())
+                .isTrue();
+        assertThat(orgOnly.get("items").size())
                 .as("control: the organization filter alone matches the seeded event")
                 .isEqualTo(1);
     }
@@ -251,7 +254,7 @@ class AuditFrameworkIntegrationTest {
     }
 
     @Test
-    void adminQueryOrdersNewestFirstAndCapsPageSize() {
+    void adminQueryOrdersNewestFirstAndRejectsUnboundedLimits() {
         publish(
                 AuditEventType.TOKEN_ISSUED,
                 UUID.randomUUID(),
@@ -259,10 +262,13 @@ class AuditFrameworkIntegrationTest {
                 Instant.now().minus(5, ChronoUnit.MINUTES));
         publish(AuditEventType.TOKEN_ISSUED, UUID.randomUUID(), null, Instant.now());
 
-        JsonNode page = getJson("/api/v1/audit?size=500", accessToken(), 200);
+        // No unbounded queries (issue #8): limits above the hard cap are
+        // rejected, never silently clamped.
+        JsonNode rejected = getJson("/api/v1/audit?limit=500", accessToken(), 400);
+        assertThat(rejected.get("code").asText()).isEqualTo("INVALID_REQUEST");
 
-        assertThat(page.get("size").asInt()).as("page size is capped at 100").isEqualTo(100);
-        JsonNode events = page.get("events");
+        JsonNode page = getJson("/api/v1/audit?limit=100", accessToken(), 200);
+        JsonNode events = page.get("items");
         assertThat(events.size()).isLessThanOrEqualTo(100);
         for (int i = 1; i < events.size(); i++) {
             assertThat(Instant.parse(events.get(i - 1).get("occurredAt").asText()))
@@ -272,17 +278,15 @@ class AuditFrameworkIntegrationTest {
         }
     }
 
-    /** Negative pages clamp to zero and a non-positive size falls back. */
+    /** Cursor paging: garbage cursors and malformed limits are 400s. */
     @Test
-    void paginationClampsNegativePageAndAppliesDefaultSize() {
-        JsonNode page = getJson("/api/v1/audit?page=-5&size=0", accessToken(), 200);
-
-        assertThat(page.get("page").asInt())
-                .as("negative page indices clamp to the first page")
-                .isZero();
-        assertThat(page.get("size").asInt())
-                .as("a non-positive size falls back to the default")
-                .isEqualTo(50);
+    void paginationRejectsInvalidCursorsAndLimits() {
+        JsonNode badCursor = getJson("/api/v1/audit?cursor=%%%.not-a-cursor", accessToken(), 400);
+        assertThat(badCursor.get("code").asText()).isEqualTo("INVALID_CURSOR");
+        JsonNode badLimit = getJson("/api/v1/audit?limit=zero", accessToken(), 400);
+        assertThat(badLimit.get("code").asText()).isEqualTo("INVALID_REQUEST");
+        JsonNode zeroLimit = getJson("/api/v1/audit?limit=0", accessToken(), 400);
+        assertThat(zeroLimit.get("code").asText()).isEqualTo("INVALID_REQUEST");
     }
 
     @Test
@@ -298,8 +302,13 @@ class AuditFrameworkIntegrationTest {
                 .headers(headers -> authorize(headers, viewerToken))
                 .exchange((request, response) -> {
                     assertThat(response.getStatusCode().value()).isEqualTo(403);
-                    String body = new String(response.getBody().readAllBytes());
-                    assertThat(body).isEqualTo("{\"error\":\"forbidden\"}");
+                    JsonNode body = mapper.readTree(
+                            new String(response.getBody().readAllBytes(), java.nio.charset.StandardCharsets.UTF_8));
+                    assertThat(body.get("code").asText()).isEqualTo("FORBIDDEN");
+                    assertThat(body.get("status").asInt()).isEqualTo(403);
+                    assertThat(body.has("error"))
+                            .as("legacy error-key must be gone")
+                            .isFalse();
                     return 403;
                 });
 
@@ -368,7 +377,7 @@ class AuditFrameworkIntegrationTest {
     }
 
     private JsonNode findEventByMarker(JsonNode page, UUID marker) {
-        for (JsonNode event : page.get("events")) {
+        for (JsonNode event : page.get("items")) {
             if (event.get("detail").hasNonNull("marker")
                     && marker.toString()
                             .equals(event.get("detail").get("marker").asText())) {

@@ -3,20 +3,19 @@ package com.shipperdog.api.config;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.core.annotation.Order;
-import org.springframework.http.HttpStatus;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.annotation.web.configuration.EnableWebSecurity;
 import org.springframework.security.config.annotation.web.configurers.AbstractHttpConfigurer;
 import org.springframework.security.config.http.SessionCreationPolicy;
 import org.springframework.security.web.SecurityFilterChain;
-import org.springframework.security.web.authentication.HttpStatusEntryPoint;
 
 /**
  * Baseline security posture for everything outside {@code /api/v1/**}
  * (which gets its own chain from the identity module, see
  * {@code IdentitySecurityConfig}): only infrastructure probe surfaces are
  * public, everything else requires authentication. Business endpoints get
- * their authorization rules in their own stories.
+ * their authorization rules in their own stories. Denials render in the
+ * single error envelope via {@link ProblemJsonSecurityHandlers} (issue #8).
  */
 @Configuration
 @EnableWebSecurity
@@ -24,7 +23,8 @@ public class SecurityConfig {
 
     @Bean
     @Order(2)
-    SecurityFilterChain securityFilterChain(HttpSecurity http) throws Exception {
+    SecurityFilterChain securityFilterChain(HttpSecurity http, ProblemJsonSecurityHandlers problemHandlers)
+            throws Exception {
         http.csrf(AbstractHttpConfigurer::disable)
                 .sessionManagement(sessions -> sessions.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
                 .authorizeHttpRequests(
@@ -42,12 +42,22 @@ public class SecurityConfig {
                                 // protecting it upstream.
                                 .requestMatchers("/actuator/prometheus")
                                 .permitAll()
+                                // OpenAPI contract endpoints (issue #8): the
+                                // generated spec is public by design — CI
+                                // publishes it as an artifact for frontend,
+                                // CLI, and consumers, it carries no secrets,
+                                // and Dwara can restrict the surface in
+                                // production if the operator prefers. The
+                                // bare and .yaml paths sit outside the
+                                // /v3/api-docs/** prefix pattern.
+                                .requestMatchers("/v3/api-docs", "/v3/api-docs.yaml", "/v3/api-docs/**")
+                                .permitAll()
                                 .anyRequest()
                                 .authenticated())
                 .formLogin(AbstractHttpConfigurer::disable)
                 .httpBasic(AbstractHttpConfigurer::disable)
                 .exceptionHandling(handling ->
-                        handling.authenticationEntryPoint(new HttpStatusEntryPoint(HttpStatus.UNAUTHORIZED)));
+                        handling.authenticationEntryPoint(problemHandlers).accessDeniedHandler(problemHandlers));
         return http.build();
     }
 }

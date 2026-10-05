@@ -1,0 +1,975 @@
+openapi: 3.1.0
+info:
+  title: ShipperDog API
+  description: Enterprise mobile-app beta distribution and release platform (PRD section
+    19).
+  version: 0.1.0
+servers:
+- url: https://api.shipperdog.dev
+  description: canonical API endpoint
+paths:
+  /api/v1/tenants/{id}/members/{userId}/role:
+    put:
+      tags:
+      - tenant-controller
+      operationId: assignRole
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - name: userId
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RoleChangeRequest"
+        required: true
+      responses:
+        "200":
+          description: OK
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/MemberView"
+  /api/v1/organizations/{id}:
+    get:
+      tags:
+      - organization-controller
+      operationId: get
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      responses:
+        "200":
+          description: OK
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/OrganizationResponse"
+    put:
+      tags:
+      - organization-controller
+      operationId: update
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateRequest"
+        required: true
+      responses:
+        "200":
+          description: OK
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/OrganizationResponse"
+  /api/v1/organizations/{id}/members/{userId}/role:
+    put:
+      tags:
+      - organization-controller
+      operationId: changeMemberRole
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - name: userId
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RoleChangeRequest"
+        required: true
+      responses:
+        "200":
+          description: OK
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/MemberView"
+  /api/v1/organizations/{id}/idp-config:
+    get:
+      tags:
+      - organization-controller
+      operationId: getIdpConfig
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      responses:
+        "200":
+          description: OK
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/IdpConfig"
+    put:
+      tags:
+      - organization-controller
+      operationId: updateIdpConfig
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/IdpConfigRequest"
+        required: true
+      responses:
+        "200":
+          description: OK
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/IdpConfig"
+  /api/v1/organizations:
+    get:
+      tags:
+      - organization-controller
+      operationId: list
+      parameters:
+      - name: limit
+        in: query
+        required: false
+        schema:
+          type: string
+      - name: cursor
+        in: query
+        required: false
+        schema:
+          type: string
+      responses:
+        "200":
+          description: OK
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/PageResponseOrganizationResponse"
+    post:
+      tags:
+      - organization-controller
+      operationId: create
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateRequest"
+        required: true
+      responses:
+        "201":
+          description: Created
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/OrganizationResponse"
+  /api/v1/auth/tokens:
+    get:
+      tags:
+      - auth-controller
+      operationId: listTokens
+      parameters:
+      - name: limit
+        in: query
+        required: false
+        schema:
+          type: string
+      - name: cursor
+        in: query
+        required: false
+        schema:
+          type: string
+      responses:
+        "200":
+          description: OK
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/PageResponsePatResponse"
+    post:
+      tags:
+      - auth-controller
+      operationId: createToken
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreatePatRequest"
+        required: true
+      responses:
+        "201":
+          description: Created
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/CreatedPatResponse"
+  /api/v1/auth/register:
+    post:
+      tags:
+      - auth-controller
+      operationId: register
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RegisterRequest"
+        required: true
+      responses:
+        "201":
+          description: Created
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/UserResponse"
+  /api/v1/auth/refresh:
+    post:
+      tags:
+      - auth-controller
+      operationId: refresh
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RefreshRequest"
+        required: true
+      responses:
+        "200":
+          description: OK
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/TokenPairResponse"
+  /api/v1/auth/password-reset/request:
+    post:
+      tags:
+      - auth-controller
+      operationId: requestPasswordReset
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PasswordResetRequest"
+        required: true
+      responses:
+        "202":
+          description: Accepted
+  /api/v1/auth/password-reset/confirm:
+    post:
+      tags:
+      - auth-controller
+      operationId: confirmPasswordReset
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PasswordResetConfirmRequest"
+        required: true
+      responses:
+        "204":
+          description: No Content
+  /api/v1/auth/logout:
+    post:
+      tags:
+      - auth-controller
+      operationId: logout
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/LogoutRequest"
+        required: true
+      responses:
+        "204":
+          description: No Content
+  /api/v1/auth/login:
+    post:
+      tags:
+      - auth-controller
+      operationId: login
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/LoginRequest"
+        required: true
+      responses:
+        "200":
+          description: OK
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/TokenPairResponse"
+  /api/v1/auth/invitations:
+    post:
+      tags:
+      - auth-controller
+      operationId: createInvitation
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateInvitationRequest"
+        required: true
+      responses:
+        "201":
+          description: Created
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/InvitationResponse"
+  /api/v1/tenants/{id}/members:
+    get:
+      tags:
+      - tenant-controller
+      operationId: listMembers
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - name: limit
+        in: query
+        required: false
+        schema:
+          type: string
+      - name: cursor
+        in: query
+        required: false
+        schema:
+          type: string
+      responses:
+        "200":
+          description: OK
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/PageResponseMemberView"
+  /api/v1/organizations/{id}/members:
+    get:
+      tags:
+      - organization-controller
+      operationId: listMembers_1
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - name: limit
+        in: query
+        required: false
+        schema:
+          type: string
+      - name: cursor
+        in: query
+        required: false
+        schema:
+          type: string
+      responses:
+        "200":
+          description: OK
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/PageResponseMemberView"
+  /api/v1/auth/me:
+    get:
+      tags:
+      - auth-controller
+      operationId: me
+      responses:
+        "200":
+          description: OK
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/MeResponse"
+  /api/v1/audit:
+    get:
+      tags:
+      - audit-controller
+      operationId: search
+      parameters:
+      - name: actor
+        in: query
+        required: false
+        schema:
+          type: string
+          format: uuid
+      - name: organization
+        in: query
+        required: false
+        schema:
+          type: string
+          format: uuid
+      - name: tenant
+        in: query
+        required: false
+        schema:
+          type: string
+          format: uuid
+      - name: eventType
+        in: query
+        required: false
+        schema:
+          type: string
+          enum:
+          - USER_REGISTERED
+          - INVITATION_CREATED
+          - LOGIN_SUCCESS
+          - LOGIN_FAILURE
+          - USER_LOCKED_OUT
+          - PASSWORD_RESET_REQUESTED
+          - PASSWORD_RESET_COMPLETED
+          - TOKEN_ISSUED
+          - TOKEN_REFRESHED
+          - TOKEN_REVOKED
+          - TOKEN_REUSE_DETECTED
+          - PAT_CREATED
+          - PAT_REVOKED
+          - ORGANIZATION_CREATED
+          - ORGANIZATION_UPDATED
+          - ORG_MEMBER_ADDED
+          - ORG_IDP_CONFIGURED
+          - ORG_MEMBER_ROLE_CHANGED
+          - ORG_MEMBER_REMOVED
+          - TENANT_MEMBER_ROLE_CHANGED
+          - TENANT_MEMBER_REMOVED
+          - ACCESS_DENIED
+      - name: applicationId
+        in: query
+        required: false
+        schema:
+          type: string
+          format: uuid
+      - name: versionId
+        in: query
+        required: false
+        schema:
+          type: string
+          format: uuid
+      - name: artifactId
+        in: query
+        required: false
+        schema:
+          type: string
+          format: uuid
+      - name: from
+        in: query
+        required: false
+        schema:
+          type: string
+          format: date-time
+      - name: to
+        in: query
+        required: false
+        schema:
+          type: string
+          format: date-time
+      - name: limit
+        in: query
+        required: false
+        schema:
+          type: string
+      - name: cursor
+        in: query
+        required: false
+        schema:
+          type: string
+      responses:
+        "200":
+          description: OK
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/PageResponseAuditEventView"
+  /api/v1/tenants/{id}/members/{userId}:
+    delete:
+      tags:
+      - tenant-controller
+      operationId: removeMember
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - name: userId
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      responses:
+        "204":
+          description: No Content
+  /api/v1/organizations/{id}/members/{userId}:
+    delete:
+      tags:
+      - organization-controller
+      operationId: removeMember_1
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - name: userId
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      responses:
+        "204":
+          description: No Content
+  /api/v1/auth/tokens/{id}:
+    delete:
+      tags:
+      - auth-controller
+      operationId: revokeToken
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      responses:
+        "204":
+          description: No Content
+components:
+  schemas:
+    RoleChangeRequest:
+      type: object
+      properties:
+        role:
+          type: string
+    MemberView:
+      type: object
+      properties:
+        userId:
+          type: string
+          format: uuid
+        email:
+          type: string
+        fullName:
+          type: string
+        role:
+          type: string
+          enum:
+          - TENANT_ADMIN
+          - TENANT_TESTER
+        createdAt:
+          type: string
+          format: date-time
+    UpdateRequest:
+      type: object
+      properties:
+        name:
+          type: string
+        status:
+          type: string
+        externalId:
+          type: string
+    OrganizationResponse:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+        status:
+          type: string
+        externalId:
+          type: string
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+    IdpConfigRequest:
+      type: object
+      properties:
+        providerType:
+          type: string
+        config:
+          $ref: "#/components/schemas/JsonNode"
+    JsonNode:
+      type: object
+      properties:
+        nodeType:
+          type: string
+          enum:
+          - ARRAY
+          - BINARY
+          - BOOLEAN
+          - MISSING
+          - "NULL"
+          - NUMBER
+          - OBJECT
+          - POJO
+          - STRING
+        string:
+          type: boolean
+        integralNumber:
+          type: boolean
+        missingNode:
+          type: boolean
+        valueNode:
+          type: boolean
+        pojo:
+          type: boolean
+        number:
+          type: boolean
+        short:
+          type: boolean
+        int:
+          type: boolean
+        long:
+          type: boolean
+        double:
+          type: boolean
+        bigDecimal:
+          type: boolean
+        bigInteger:
+          type: boolean
+        textual:
+          type: boolean
+          deprecated: true
+        boolean:
+          type: boolean
+        binary:
+          type: boolean
+        container:
+          type: boolean
+        floatingPointNumber:
+          type: boolean
+        empty:
+          type: boolean
+        array:
+          type: boolean
+        "null":
+          type: boolean
+        object:
+          type: boolean
+        float:
+          type: boolean
+        embeddedValue:
+          type: boolean
+    IdpConfig:
+      type: object
+      properties:
+        providerType:
+          type: string
+        config:
+          $ref: "#/components/schemas/JsonNode"
+        updatedAt:
+          type: string
+          format: date-time
+    CreateRequest:
+      type: object
+      properties:
+        name:
+          type: string
+        externalId:
+          type: string
+    CreatePatRequest:
+      type: object
+      properties:
+        name:
+          type: string
+        expiresInSeconds:
+          type: integer
+          format: int64
+    CreatedPatResponse:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+        tokenPrefix:
+          type: string
+        token:
+          type: string
+        expiresAt:
+          type: string
+          format: date-time
+    RegisterRequest:
+      type: object
+      properties:
+        invitationToken:
+          type: string
+        email:
+          type: string
+        password:
+          type: string
+        fullName:
+          type: string
+    UserResponse:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        email:
+          type: string
+        fullName:
+          type: string
+        status:
+          type: string
+    RefreshRequest:
+      type: object
+      properties:
+        refreshToken:
+          type: string
+    TokenPairResponse:
+      type: object
+      properties:
+        accessToken:
+          type: string
+        refreshToken:
+          type: string
+        tokenType:
+          type: string
+        expiresInSeconds:
+          type: integer
+          format: int64
+    PasswordResetRequest:
+      type: object
+      properties:
+        email:
+          type: string
+    PasswordResetConfirmRequest:
+      type: object
+      properties:
+        token:
+          type: string
+        newPassword:
+          type: string
+    LogoutRequest:
+      type: object
+      properties:
+        refreshToken:
+          type: string
+    LoginRequest:
+      type: object
+      properties:
+        email:
+          type: string
+        password:
+          type: string
+    CreateInvitationRequest:
+      type: object
+      properties:
+        email:
+          type: string
+        organizationId:
+          type: string
+          format: uuid
+        role:
+          type: string
+    InvitationResponse:
+      type: object
+      properties:
+        email:
+          type: string
+        invitationToken:
+          type: string
+        expiresAt:
+          type: string
+          format: date-time
+        organizationId:
+          type: string
+          format: uuid
+        role:
+          type: string
+    PageResponseMemberView:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/MemberView"
+        next_cursor:
+          type: string
+    PageResponseOrganizationResponse:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/OrganizationResponse"
+        next_cursor:
+          type: string
+    PageResponsePatResponse:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/PatResponse"
+        next_cursor:
+          type: string
+    PatResponse:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+        tokenPrefix:
+          type: string
+        createdAt:
+          type: string
+          format: date-time
+        lastUsedAt:
+          type: string
+          format: date-time
+        expiresAt:
+          type: string
+          format: date-time
+        revokedAt:
+          type: string
+          format: date-time
+    MeResponse:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        email:
+          type: string
+        fullName:
+          type: string
+        status:
+          type: string
+        orgId:
+          type: string
+          format: uuid
+        tenantId:
+          type: string
+          format: uuid
+        authenticatedVia:
+          type: string
+    AuditEventView:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        eventType:
+          type: string
+          enum:
+          - USER_REGISTERED
+          - INVITATION_CREATED
+          - LOGIN_SUCCESS
+          - LOGIN_FAILURE
+          - USER_LOCKED_OUT
+          - PASSWORD_RESET_REQUESTED
+          - PASSWORD_RESET_COMPLETED
+          - TOKEN_ISSUED
+          - TOKEN_REFRESHED
+          - TOKEN_REVOKED
+          - TOKEN_REUSE_DETECTED
+          - PAT_CREATED
+          - PAT_REVOKED
+          - ORGANIZATION_CREATED
+          - ORGANIZATION_UPDATED
+          - ORG_MEMBER_ADDED
+          - ORG_IDP_CONFIGURED
+          - ORG_MEMBER_ROLE_CHANGED
+          - ORG_MEMBER_REMOVED
+          - TENANT_MEMBER_ROLE_CHANGED
+          - TENANT_MEMBER_REMOVED
+          - ACCESS_DENIED
+        occurredAt:
+          type: string
+          format: date-time
+        createdAt:
+          type: string
+          format: date-time
+        userId:
+          type: string
+          format: uuid
+        orgId:
+          type: string
+          format: uuid
+        tenantId:
+          type: string
+          format: uuid
+        applicationId:
+          type: string
+          format: uuid
+        versionId:
+          type: string
+          format: uuid
+        artifactId:
+          type: string
+          format: uuid
+        ipAddress:
+          type: string
+        correlationId:
+          type: string
+        reason:
+          type: string
+        success:
+          type: boolean
+        detail:
+          $ref: "#/components/schemas/JsonNode"
+        before:
+          $ref: "#/components/schemas/JsonNode"
+        after:
+          $ref: "#/components/schemas/JsonNode"
+    PageResponseAuditEventView:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/AuditEventView"
+        next_cursor:
+          type: string

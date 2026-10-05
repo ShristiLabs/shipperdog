@@ -4,6 +4,7 @@ import com.shipperdog.api.audit.AuditEvent;
 import com.shipperdog.api.audit.AuditEventPublisher;
 import com.shipperdog.api.audit.AuditEventType;
 import com.shipperdog.api.authorization.RolePermissions;
+import com.shipperdog.api.config.CursorPageable;
 import com.shipperdog.api.config.TraceAttributes;
 import com.shipperdog.api.identity.PlatformAdmins;
 import com.shipperdog.api.identity.SessionRevocation;
@@ -20,7 +21,6 @@ import com.shipperdog.api.organization.internal.repository.OrganizationRepositor
 import java.time.Clock;
 import java.time.Instant;
 import java.util.LinkedHashMap;
-import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
@@ -28,6 +28,7 @@ import java.util.function.Function;
 import java.util.stream.Collectors;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.dao.DataIntegrityViolationException;
+import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.domain.Sort;
@@ -214,13 +215,15 @@ public class OrganizationService implements OrganizationAccess {
         return mustFind(organizationId);
     }
 
-    /** Platform admins see every organization; members see their own. */
+    /** Platform admins see every organization; members see their own. Paged (issue #8). */
     @Transactional(readOnly = true)
-    public List<OrganizationEntity> list(UUID actorId) {
+    public Page<OrganizationEntity> list(UUID actorId, long offset, int limit) {
+        Pageable pageable =
+                new CursorPageable((int) offset, limit, Sort.by("createdAt").ascending());
         if (platformAdmins.isPlatformAdmin(actorId)) {
-            return organizations.findAll(Sort.by("createdAt").ascending());
+            return organizations.findAll(pageable);
         }
-        return organizations.findAllForMember(actorId, Sort.by("createdAt").ascending());
+        return organizations.findAllForMember(actorId, pageable);
     }
 
     /**
@@ -316,14 +319,15 @@ public class OrganizationService implements OrganizationAccess {
 
     /**
      * Lists the organization's members with their roles; display fields
-     * resolve through the identity module's {@link UserDirectory}.
-     * Caller permission (org:members:read) is enforced at the controller.
+     * resolve through the identity module's {@link UserDirectory}. Paged
+     * (issue #8). Caller permission (org:members:read) is enforced at the
+     * controller.
      */
     @Transactional(readOnly = true)
-    public List<MemberView> listMembers(UUID organizationId) {
+    public Page<MemberView> listMembers(UUID organizationId, long offset, int limit) {
         mustFind(organizationId);
-        List<OrganizationMemberEntity> memberships =
-                members.findByOrganizationIdOrderByCreatedAtAscIdAsc(organizationId);
+        Page<OrganizationMemberEntity> memberships = members.findByOrganizationIdOrderByCreatedAtAscIdAsc(
+                organizationId, new CursorPageable((int) offset, limit));
         Map<UUID, UserDirectory.UserSummary> users =
                 directory
                         .byIds(memberships.stream()
@@ -331,17 +335,15 @@ public class OrganizationService implements OrganizationAccess {
                                 .toList())
                         .stream()
                         .collect(Collectors.toMap(UserDirectory.UserSummary::id, Function.identity()));
-        return memberships.stream()
-                .map(membership -> {
-                    UserDirectory.UserSummary user = users.get(membership.getUserId());
-                    return new MemberView(
-                            membership.getUserId(),
-                            user == null ? null : user.email(),
-                            user == null ? null : user.fullName(),
-                            membership.getRole(),
-                            membership.getCreatedAt());
-                })
-                .toList();
+        return memberships.map(membership -> {
+            UserDirectory.UserSummary user = users.get(membership.getUserId());
+            return new MemberView(
+                    membership.getUserId(),
+                    user == null ? null : user.email(),
+                    user == null ? null : user.fullName(),
+                    membership.getRole(),
+                    membership.getCreatedAt());
+        });
     }
 
     /**

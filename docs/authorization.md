@@ -97,25 +97,39 @@ password-reset pair) matched by the security chain's `permitAll`.
 
 ## Opaque denials (PRD 12)
 
-Every permission denial maps to the same body — `403 {"error":"forbidden"}` —
-with no hint about which permission was missing or whether the target
-resource exists. A denied caller cannot distinguish an existing
-organization from an unknown id; a permitted caller still learns
-existence through ordinary `404`s. Denial detail (who/what) belongs to
-the audit trail, never the HTTP response. Since S1-06 every
-authenticated denial is recorded there automatically as an
-`ACCESS_DENIED` event (see [audit](audit.md)).
+Since S1-08 denials render through the platform's single error envelope
+(RFC 7807 problem+json with a stable `code` and the request's
+`trace_id` — see [API conventions](api-conventions.md)) under one rule:
+
+- **Resource-scoped denials are concealed as `404`.** When a
+  `hasPermission(#id, ...)` check fails for an authenticated caller, the
+  response is byte-for-byte what a genuine not-found for that resource
+  type produces (`ORGANIZATION_NOT_FOUND` / `TENANT_NOT_FOUND`, title
+  `Not Found`, detail `Resource not found.`). A denied caller cannot
+  distinguish an existing organization from an unknown id; a permitted
+  caller still learns existence through ordinary `404`s.
+- **Target-less denials stay opaque `403`s** (`FORBIDDEN`, no detail
+  about which permission was missing) — e.g. creation rights the caller
+  does not hold anywhere.
+
+Denial detail (who/what/which permission) belongs to the audit trail,
+never the HTTP response. Since S1-06 every authenticated denial is
+recorded there automatically as an `ACCESS_DENIED` event (see
+[audit](audit.md)).
 
 ## Role-assignment endpoints
 
 | Method | Path | Permission | Result |
 |---|---|---|---|
-| GET | `/api/v1/organizations/{id}/members` | `org:members:read` | `200` members with roles and display fields |
-| PUT | `/api/v1/organizations/{id}/members/{userId}/role` | `org:members:manage` | `200` member view; `400` unknown role; `404` unknown organization/member; `409` `last_org_admin` or deactivated organization |
+| GET | `/api/v1/organizations/{id}/members` | `org:members:read` | `200` members with roles and display fields, cursor-paginated |
+| PUT | `/api/v1/organizations/{id}/members/{userId}/role` | `org:members:manage` | `200` member view; `400` unknown role; `404` unknown organization/member; `409` `LAST_ORG_ADMIN` or `ORGANIZATION_DEACTIVATED` |
 | DELETE | `/api/v1/organizations/{id}/members/{userId}` | `org:members:manage` | `204`; same error contract; always revokes the member's sessions |
-| GET | `/api/v1/tenants/{id}/members` | `tenant:members:read` | `200` members with roles |
+| GET | `/api/v1/tenants/{id}/members` | `tenant:members:read` | `200` members with roles, cursor-paginated |
 | PUT | `/api/v1/tenants/{id}/members/{userId}/role` | `tenant:members:manage` | `200` member view; creates the membership when absent (`404` unknown user/tenant); `400` unknown role |
 | DELETE | `/api/v1/tenants/{id}/members/{userId}` | `tenant:members:manage` | `204`; `404` unknown tenant/member |
+
+Error responses use the platform's problem+json envelope with stable
+codes (see the [error code registry](error-codes.md)).
 
 Organization-scoped invitations (`POST /api/v1/auth/invitations` with
 `organizationId`) require `org:members:invite` at that organization and

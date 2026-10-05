@@ -1,5 +1,6 @@
 package com.shipperdog.api.identity;
 
+import com.shipperdog.api.config.ProblemJsonSecurityHandlers;
 import com.shipperdog.api.identity.internal.crypto.SecureTokens;
 import com.shipperdog.api.identity.internal.service.TokenService;
 import com.shipperdog.api.identity.internal.web.PatAuthenticationFilter;
@@ -10,7 +11,6 @@ import org.springframework.core.annotation.Order;
 import org.springframework.core.convert.converter.Converter;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpMethod;
-import org.springframework.http.HttpStatus;
 import org.springframework.security.authentication.AbstractAuthenticationToken;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.annotation.web.configurers.AbstractHttpConfigurer;
@@ -23,7 +23,6 @@ import org.springframework.security.oauth2.server.resource.web.BearerTokenResolv
 import org.springframework.security.oauth2.server.resource.web.DefaultBearerTokenResolver;
 import org.springframework.security.oauth2.server.resource.web.authentication.BearerTokenAuthenticationFilter;
 import org.springframework.security.web.SecurityFilterChain;
-import org.springframework.security.web.authentication.HttpStatusEntryPoint;
 
 /**
  * Security chain for the API surface ({@code /api/v1/**}): stateless,
@@ -39,7 +38,8 @@ public class IdentitySecurityConfig {
 
     @Bean
     @Order(1)
-    SecurityFilterChain apiSecurityFilterChain(HttpSecurity http, JwtDecoder jwtDecoder, TokenService tokens)
+    SecurityFilterChain apiSecurityFilterChain(
+            HttpSecurity http, JwtDecoder jwtDecoder, TokenService tokens, ProblemJsonSecurityHandlers problemHandlers)
             throws Exception {
         PatAuthenticationFilter patFilter = new PatAuthenticationFilter(tokens);
         http.securityMatcher("/api/v1/**")
@@ -65,7 +65,7 @@ public class IdentitySecurityConfig {
                 .oauth2ResourceServer(oauth2 -> oauth2.bearerTokenResolver(patAwareBearerTokenResolver())
                         .jwt(jwt -> jwt.decoder(jwtDecoder).jwtAuthenticationConverter(accessTokenOnly())))
                 .exceptionHandling(handling ->
-                        handling.authenticationEntryPoint(new HttpStatusEntryPoint(HttpStatus.UNAUTHORIZED)));
+                        handling.authenticationEntryPoint(problemHandlers).accessDeniedHandler(problemHandlers));
         return http.build();
     }
 

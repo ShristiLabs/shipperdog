@@ -158,11 +158,14 @@ class AuthFlowIntegrationTest {
         assertThat(rawPat).startsWith((String) rows.get(0).get("token_prefix"));
 
         JsonNode list = get("/api/v1/auth/tokens", devAccessToken, 200, JsonNode.class);
-        assertThat(list.size()).isEqualTo(1);
-        assertThat(list.get(0).has("token"))
+        assertThat(list.get("items").size()).isEqualTo(1);
+        assertThat(list.hasNonNull("next_cursor"))
+                .as("one token is the last page")
+                .isFalse();
+        assertThat(list.get("items").get(0).has("token"))
                 .as("listings never contain the raw token")
                 .isFalse();
-        assertThat(list.get(0).get("name").asText()).isEqualTo("ci-token");
+        assertThat(list.get("items").get(0).get("name").asText()).isEqualTo("ci-token");
 
         client.delete()
                 .uri("/api/v1/auth/tokens/" + created.get("id").asText())

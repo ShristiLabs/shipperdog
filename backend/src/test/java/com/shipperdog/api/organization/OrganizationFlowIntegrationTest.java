@@ -107,8 +107,8 @@ class OrganizationFlowIntegrationTest {
         assertThat(statusOf(client.get()
                         .uri("/api/v1/organizations/" + orgId)
                         .header("Authorization", "Bearer " + plainToken)))
-                .as("GET is admin-gated (AC2)")
-                .isEqualTo(403);
+                .as("GET is admin-gated (AC2); the denial is concealed as 404 (issue #8)")
+                .isEqualTo(404);
         assertThat(statusOf(client.get()
                         .uri("/api/v1/organizations/" + UUID.randomUUID())
                         .header("Authorization", "Bearer " + devToken)))
@@ -196,8 +196,8 @@ class OrganizationFlowIntegrationTest {
                                 "email", "frank@example.com",
                                 "organizationId", orgId.toString(),
                                 "role", "ORG_ADMIN"))))
-                .as("non-admins may not invite into an organization")
-                .isEqualTo(403);
+                .as("non-admins may not invite into an organization (concealed 404, issue #8)")
+                .isEqualTo(404);
         assertThat(statusOf(client.post()
                         .uri("/api/v1/auth/invitations")
                         .header("Authorization", "Bearer " + devToken)
@@ -293,7 +293,7 @@ class OrganizationFlowIntegrationTest {
                         .uri("/api/v1/organizations/" + orgId)
                         .header("Authorization", "Bearer " + adminToken)
                         .body(Map.of("externalId", "crm-eta-2"))))
-                .as("externalId changes are platform-admin only")
+                .as("externalId changes are platform-admin only (opaque 403)")
                 .isEqualTo(403);
         JsonNode updated = put(devToken, "/api/v1/organizations/" + orgId, Map.of("externalId", "crm-eta-2"), 200);
         assertThat(updated.get("externalId").asText()).isEqualTo("crm-eta-2");
@@ -331,13 +331,13 @@ class OrganizationFlowIntegrationTest {
         String memberToken = registerOrglessUser("kate@example.com");
 
         JsonNode memberList = get(memberToken, "/api/v1/organizations", 200);
-        assertThat(memberList.isEmpty())
+        assertThat(memberList.get("items").isEmpty())
                 .as("orgless users see no organizations")
                 .isTrue();
 
         createOrganization(devToken, "Kappa Member Org");
         JsonNode platformList = get(devToken, "/api/v1/organizations", 200);
-        assertThat(platformList.size()).isGreaterThanOrEqualTo(2);
+        assertThat(platformList.get("items").size()).isGreaterThanOrEqualTo(2);
     }
 
     // ---------------------------------------------------------------------

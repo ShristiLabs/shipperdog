@@ -16,6 +16,7 @@ import java.util.UUID;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionTemplate;
 
 /**
  * Email/password login with failed-attempt lockout. Every outcome emits an
@@ -43,6 +44,7 @@ public class AuthService {
     private final LoginFailureRecorder failures;
     private final AuditEventPublisher audit;
     private final OrganizationAccess organizations;
+    private final TransactionTemplate transactions;
 
     AuthService(
             UserRepository users,
@@ -51,7 +53,8 @@ public class AuthService {
             TokenService tokens,
             LoginFailureRecorder failures,
             AuditEventPublisher audit,
-            OrganizationAccess organizations) {
+            OrganizationAccess organizations,
+            TransactionTemplate transactions) {
         this.users = users;
         this.passwordEncoder = passwordEncoder;
         this.clock = clock;
@@ -59,9 +62,20 @@ public class AuthService {
         this.failures = failures;
         this.audit = audit;
         this.organizations = organizations;
+        this.transactions = transactions;
     }
 
-    @Transactional
+    /**
+     * Deliberately NOT transactional as a whole (issue #8 audit fix): every
+     * failure branch throws, and under a wrapping transaction the
+     * BEFORE_COMMIT audit sink's LOGIN_FAILURE row would be rolled back
+     * with the (empty) work of the request — the event was logged but never
+     * persisted (S1-07 follow-up). Without the outer transaction each
+     * failure-path publish falls back to an immediate, independently
+     * committed insert. The success path alone is atomic, via
+     * {@link TransactionTemplate}: counter reset, token issuance, and the
+     * LOGIN_SUCCESS event commit together.
+     */
     public TokenService.IssuedTokens login(String rawEmail, String password) {
         String email = normalizeEmail(rawEmail);
         Optional<UserEntity> found = users.findByEmail(email);
@@ -87,7 +101,7 @@ public class AuthService {
             throw invalidCredentials();
         }
         if (!passwordEncoder.matches(candidate, user.getPasswordHash())) {
-            // REQUIRES_NEW: the counter must survive the rollback this throw causes.
+            // REQUIRES_NEW: the counter must survive this throw.
             failures.registerFailure(user.getId());
             audit(AuditEventType.LOGIN_FAILURE, user.getId(), "invalid_credentials");
             throw invalidCredentials();
@@ -100,13 +114,15 @@ public class AuthService {
             throw invalidCredentials();
         }
 
-        user.setFailedLoginAttempts(0);
-        user.setLockedUntil(null);
-        user.setLastLoginAt(now);
-        users.save(user);
-        TokenService.IssuedTokens issued = tokens.issueForLogin(user);
-        audit.publish(new AuditEvent(AuditEventType.LOGIN_SUCCESS, now, user.getId(), null, null, true, Map.of()));
-        return issued;
+        return transactions.execute(status -> {
+            user.setFailedLoginAttempts(0);
+            user.setLockedUntil(null);
+            user.setLastLoginAt(now);
+            users.save(user);
+            TokenService.IssuedTokens issued = tokens.issueForLogin(user);
+            audit.publish(new AuditEvent(AuditEventType.LOGIN_SUCCESS, now, user.getId(), null, null, true, Map.of()));
+            return issued;
+        });
     }
 
     @Transactional

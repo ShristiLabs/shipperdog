@@ -110,6 +110,9 @@ and `.env.example`):
 | `MANAGEMENT_SERVER_PORT` | Internal management port (compose sets `8081`) | unset = API port |
 | `TRACING_SAMPLING_PROBABILITY` | Trace head-sampling probability | `1.0` |
 | `LOGGING_STRUCTURED_FORMAT_CONSOLE` | Structured log format (compose: `logstash`) | plain text |
+| `OPENAPI_SERVER_URL` | Advertised server URL in the generated OpenAPI spec | `https://api.shipperdog.dev` |
+| `OPENAPI_INFO_VERSION` | Version string in the generated OpenAPI spec | `0.1.0` |
+| `SPRINGDOC_API_DOCS_ENABLED` | Serving of `/v3/api-docs` endpoints | `true` |
 
 The API refuses to start without `AUTH_JWT_SECRET`. Production supplies a
 high-entropy value from its secret manager; local development uses the
@@ -118,7 +121,12 @@ compose default, which is local-only exactly like the database password.
 ## CI
 
 `.github/workflows/ci.yml` runs `mvn verify` (format check, build, tests)
-on every pull request and on pushes to `main`.
+on every pull request and on pushes to `main`. Since S1-08 the build also
+exports the generated OpenAPI contract (`backend/target/openapi.yaml`,
+published as the `openapi-spec` artifact) and diffs it against the
+committed baseline `docs/openapi/baseline.yaml` with oasdiff — a breaking
+API change fails the check until the baseline is consciously re-committed
+in the same PR (see [docs/api-conventions.md](docs/api-conventions.md)).
 
 Merge blocking: branch protection on `main` — requiring the
 `backend-ci / build-and-test` status check and pull requests for all
