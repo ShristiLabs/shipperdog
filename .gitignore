@@ -7,6 +7,12 @@ PRD.md
 backend/target/
 *.class
 
+# Frontend (Node)
+frontend/node_modules/
+frontend/dist/
+frontend/coverage/
+frontend/*.tsbuildinfo
+
 # Environment (secrets never belong in the repo)
 .env
 

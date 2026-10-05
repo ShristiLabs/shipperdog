@@ -1,0 +1,60 @@
+/** Role-aware navigation (issue #12, PRD §26): sections render only
+ * when the probed endpoint permits the caller, and org-less users get
+ * the notice instead of unusable sections. */
+import { cleanup, screen } from "@testing-library/react";
+import { afterEach, describe, expect, it } from "vitest";
+import ConsoleLayout from "./ConsoleLayout";
+import { installFetchRouter, renderConsole, seedSession } from "../test/harness";
+
+afterEach(() => {
+  cleanup();
+  vi.unstubAllGlobals();
+});
+
+describe("ConsoleLayout role-aware navigation", () => {
+  it("shows the Tenants section when the probe endpoint answers 200", async () => {
+    installFetchRouter([
+      {
+        method: "GET",
+        url: "/api/v1/tenants",
+        status: 200,
+        body: { items: [] },
+      },
+    ]);
+    seedSession();
+    renderConsole(<ConsoleLayout />, { route: "/" });
+
+    expect(await screen.findByTestId("nav-tenants")).toBeInTheDocument();
+    expect(screen.getByTestId("console-user")).toHaveTextContent("dev@shipperdog.local");
+  });
+
+  it("hides the Tenants section when the probe is denied (concealed 404)", async () => {
+    installFetchRouter([
+      {
+        method: "GET",
+        url: "/api/v1/tenants",
+        status: 404,
+        body: {
+          title: "Not Found",
+          status: 404,
+          code: "ORGANIZATION_NOT_FOUND",
+          detail: "Resource not found.",
+        },
+      },
+    ]);
+    seedSession();
+    renderConsole(<ConsoleLayout />, { route: "/" });
+
+    expect(await screen.findByText(/do not have permission/i)).toBeInTheDocument();
+    expect(screen.queryByTestId("nav-tenants")).not.toBeInTheDocument();
+  });
+
+  it("shows the organization notice for users without an organization", async () => {
+    installFetchRouter([]);
+    seedSession({ orgId: null });
+    renderConsole(<ConsoleLayout />, { route: "/" });
+
+    expect(await screen.findByText(/no active organization membership/i)).toBeInTheDocument();
+    expect(screen.queryByTestId("nav-tenants")).not.toBeInTheDocument();
+  });
+});
