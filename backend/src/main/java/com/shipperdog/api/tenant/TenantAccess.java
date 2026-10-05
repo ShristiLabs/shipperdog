@@ -20,4 +20,11 @@ public interface TenantAccess {
 
     /** The organization that owns the tenant, or empty when unknown. */
     Optional<UUID> owningOrganizationId(UUID tenantId);
+
+    /**
+     * Whether the tenant accepts NEW affiliations — members (since S2-03)
+     * and applications (S3-01). Deactivation blocks new affiliations
+     * only: existing data stays readable and administrable (issue #9).
+     */
+    boolean acceptsNewAffiliations(UUID tenantId);
 }

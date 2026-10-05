@@ -72,8 +72,11 @@ organization (`ORGANIZATION_CREATED`, `ORGANIZATION_UPDATED`,
 `TENANT_MEMBER_STATUS_CHANGED`, `TENANT_MEMBER_REMOVED`,
 `CROSS_TENANT_ACCESS` — a platform administrator entering a
 tenant-scoped route through the override, carrying actor, tenant, and
-method/URI; see [authorization](authorization.md)), and platform
-(`ACCESS_DENIED`, S1-06).
+method/URI; see [authorization](authorization.md)), application
+(`APPLICATION_CREATED`, `APPLICATION_UPDATED` — registry registration
+and metadata/lifecycle edits, with identifier changes audited as
+before/after pairs because they affect artifact matching, S3-01), and
+platform (`ACCESS_DENIED`, S1-06).
 
 ## Persistence and transactional semantics
 

@@ -267,7 +267,7 @@ class TenantApplicationsIntegrationTest {
 
     private UUID insertApplication(UUID organizationId, UUID tenantId, String name) {
         jdbc.update(
-                "INSERT INTO applications (organization_id, tenant_id, name) VALUES (?, ?, ?)",
+                "INSERT INTO applications (organization_id, tenant_id, name, platforms) VALUES (?, ?, ?, '{IOS}')",
                 organizationId,
                 tenantId,
                 name);

@@ -132,3 +132,49 @@ Two guards keep the policy complete against future drift:
   subinterface (invisible to the derived-query rule) yet run without
   the tenant predicate. The rule was proven to fire on a violating
   interface.
+
+## Second amendment (2026-10-05): the application registry's organization-scope guard
+
+The application registry (issue #13, S3-01) introduced the first
+cross-tenant surface outside the authorization engine:
+`ApplicationRegistryRepository`, marked `@CrossTenantByDesign`. Two of
+the story's own questions span tenants by definition and have no
+tenant-scoped meaning:
+
+1. **Ownership resolution** — the RBAC evaluator's `app:` branch and the
+   route-context binding must answer "which organization and tenant own
+   this application?" before any tenant context exists. This is
+   authorization data in the same sense as role resolution, and it is
+   served through the application module's public `ApplicationAccess`
+   port (ownership tuples only, never rows).
+2. **Organization-wide uniqueness guards** — issue #13's acceptance
+   criterion 2 makes bundle id / package name unique per
+   organization+platform, so the pre-checks and the post-race
+   re-derivation necessarily span the tenants of one organization. They
+   answer existence booleans, never rows, and every creator of an
+   application holds an organization-level role
+   (`app:applications:write` is org-role-granted only), so the probes
+   reveal nothing the caller is not entitled to know at organization
+   scope.
+
+The sanctioned-surface rule therefore reads: repositories over
+`TenantScope` entities extend the seam, or are marked
+`@CrossTenantByDesign` with a javadoc justification — the authorization
+engine's role resolution and, since S3-01, registry guards whose
+question is organization-scoped by the issue's own definition. Marker
+carriers must never serve endpoint data paths: application rows are
+read and written only through the seam
+(`ApplicationScopedRepository`), whose inherited-surface policy above
+is unchanged.
+
+Creation also needed a sanctioned way to establish a scope when the
+target tenant arrives in the request body (`POST /api/v1/applications`)
+and no route interceptor can bind it from the path:
+`TenantScopeExecutor` (tenant module) establishes the scope at the
+point of use — establish-only (it refuses when any context is already
+bound, so the route interceptors always win on tenant-addressing
+routes), derives the platform-admin override from
+`users.platform_admin` exactly like the interceptor, and audits every
+platform-administered execution as `CROSS_TENANT_ACCESS`. It is the
+same binding authority, reviewable in one place, and doubles as the
+background-job entry point the original decision anticipated.

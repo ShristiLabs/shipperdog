@@ -65,6 +65,7 @@ public class AuthorizationExceptionHandler {
         return switch (targetType == null ? "" : targetType) {
             case "organization" -> "ORGANIZATION_NOT_FOUND";
             case "tenant" -> "TENANT_NOT_FOUND";
+            case "application" -> "APPLICATION_NOT_FOUND";
             default -> ApiError.NOT_FOUND.name();
         };
     }

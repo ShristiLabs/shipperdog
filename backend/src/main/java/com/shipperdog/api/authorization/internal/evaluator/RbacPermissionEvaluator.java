@@ -1,5 +1,6 @@
 package com.shipperdog.api.authorization.internal.evaluator;
 
+import com.shipperdog.api.application.ApplicationAccess;
 import com.shipperdog.api.audit.AuditEvent;
 import com.shipperdog.api.audit.AuditEventType;
 import com.shipperdog.api.audit.AuditLogger;
@@ -48,9 +49,15 @@ import org.springframework.web.context.request.ServletRequestAttributes;
  *       the owning organization's role overlaid (union across scopes,
  *       acceptance criterion 4): an organization administrator holds
  *       tenant permissions inside their organization's tenants.</li>
- *   <li>{@code app:} — denied fail-closed until application records are
- *       manageable (E3) and ownership resolution exists; platform
- *       administrators still pass.</li>
+ *   <li>{@code app:} — since application records are manageable (E3,
+ *       issue #13), resolved through the application's owning tenant /
+ *       organization with the same union: a target typed
+ *       {@code application} resolves the record's owner (tenant-owned
+ *       rows check the tenant plus the owning-organization overlay;
+ *       organization-owned rows check the owning organization), and a
+ *       target typed {@code tenant} is the creation-time check at the
+ *       future owner tenant. Application-scope role memberships
+ *       (INV-002) arrive with S3-02 and extend this branch.</li>
  * </ul>
  *
  * <p>Denials carry no HTTP detail (PRD 12): resource-scoped denials throw
@@ -63,12 +70,19 @@ import org.springframework.web.context.request.ServletRequestAttributes;
 public class RbacPermissionEvaluator implements PermissionEvaluator {
 
     private final RequestRoleGrants grants;
+    private final ApplicationAccess applications;
     private final AuditLogger audit;
     private final MeterRegistry meters;
     private final TraceAttributes trace;
 
-    RbacPermissionEvaluator(RequestRoleGrants grants, AuditLogger audit, MeterRegistry meters, TraceAttributes trace) {
+    RbacPermissionEvaluator(
+            RequestRoleGrants grants,
+            ApplicationAccess applications,
+            AuditLogger audit,
+            MeterRegistry meters,
+            TraceAttributes trace) {
         this.grants = grants;
+        this.applications = applications;
         this.audit = audit;
         this.meters = meters;
         this.trace = trace;
@@ -93,6 +107,8 @@ public class RbacPermissionEvaluator implements PermissionEvaluator {
                 trace.organization(id);
             } else if ("tenant".equals(targetType)) {
                 trace.tenant(id);
+            } else if ("application".equals(targetType)) {
+                trace.application(id);
             }
         }
         // SLO measurability from day one (PRD sections 28 and 42):
@@ -103,7 +119,7 @@ public class RbacPermissionEvaluator implements PermissionEvaluator {
         boolean allowed = false;
         Timer.Sample sample = Timer.start(meters);
         try {
-            allowed = decide(authentication, targetId, permission);
+            allowed = decide(authentication, targetId, targetType, permission);
         } finally {
             sample.stop(Timer.builder(MetricNames.AUTHORIZATION_DECISION_DURATION)
                     .tag("outcome", allowed ? "allow" : "deny")
@@ -122,7 +138,7 @@ public class RbacPermissionEvaluator implements PermissionEvaluator {
         return allowed;
     }
 
-    private boolean decide(Authentication authentication, Serializable targetId, Object permission) {
+    private boolean decide(Authentication authentication, Serializable targetId, String targetType, Object permission) {
         if (authentication == null || !authentication.isAuthenticated()) {
             return false;
         }
@@ -148,8 +164,36 @@ public class RbacPermissionEvaluator implements PermissionEvaluator {
             case "platform" -> false; // only the platform wildcard above
             case "org" -> scopeId != null && orgGrants(snapshot, scopeId, required);
             case "tenant" -> scopeId != null && tenantGrants(snapshot, scopeId, required);
-            default -> false; // app scope: fail-closed until E3
+            case "app" -> appGrants(snapshot, scopeId, targetType, required);
+            default -> false;
         };
+    }
+
+    /**
+     * Application-scope resolution (issue #13, the documented contract of
+     * {@code app:} grants): through the application's owning tenant and
+     * organization, never a membership on the application itself — that
+     * vocabulary (INV-002) arrives with S3-02. {@code application}
+     * targets resolve the record's owner; {@code tenant} targets are the
+     * creation-time check at the future owner tenant. Unknown targets
+     * deny (concealment is added by the caller of this evaluator).
+     */
+    private boolean appGrants(UserRolesSnapshot snapshot, UUID targetId, String targetType, Permission required) {
+        if (targetId == null) {
+            return false;
+        }
+        if ("application".equals(targetType)) {
+            return applications
+                    .ownershipOf(targetId)
+                    .map(ownership -> ownership.tenantId() != null
+                            ? tenantGrants(snapshot, ownership.tenantId(), required)
+                            : orgGrants(snapshot, ownership.organizationId(), required))
+                    .orElse(false);
+        }
+        if ("tenant".equals(targetType)) {
+            return tenantGrants(snapshot, targetId, required);
+        }
+        return false;
     }
 
     /**

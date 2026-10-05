@@ -20,12 +20,13 @@ import java.util.Optional;
  *       target tenant ({@code tenant_members.role}), with organization
  *       administrators of the owning organization overlaid (union of roles
  *       across scopes, acceptance criterion 4).</li>
- *   <li>{@code app:} — application-scoped actions; declared now so
- *       upcoming modules (E3 onward) bind endpoints to catalog codes
- *       instead of inventing strings. Enforcement resolves an
- *       application's owning tenant/organization once those modules
- *       exist; until then no endpoint requires an {@code app:}
- *       permission and the evaluator denies them fail-closed.</li>
+ *   <li>{@code app:} — application-scoped actions; enforced since the
+ *       application registry (E3, issue #13) by resolving the
+ *       application's owning tenant/organization (creation-time checks
+ *       evaluate at the future owner tenant). The first bound endpoints
+ *       are {@code app:applications:read} and
+ *       {@code app:applications:write}; later modules (E4 onward) bind
+ *       the rest as their surfaces arrive.</li>
  * </ul>
  *
  * <p>Values are never removed once an endpoint has required them; new
@@ -56,7 +57,7 @@ public enum Permission {
     TENANT_APPLICATIONS_DOWNLOAD("tenant:applications:download"),
     TENANT_FEEDBACK_CREATE("tenant:feedback:create"),
 
-    // app scope (declared for E3+ endpoints; none enforced yet)
+    // app scope (enforced from E3 / issue #13 onward)
     APP_APPLICATIONS_READ("app:applications:read"),
     APP_APPLICATIONS_WRITE("app:applications:write"),
     APP_VERSIONS_READ("app:versions:read"),

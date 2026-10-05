@@ -6,6 +6,7 @@ import com.shipperdog.api.config.CursorPageable;
 import com.shipperdog.api.tenant.TenantAccess;
 import com.shipperdog.api.tenant.TenantException;
 import java.time.Instant;
+import java.util.List;
 import java.util.UUID;
 import org.springframework.data.domain.Page;
 import org.springframework.data.jpa.domain.Specification;
@@ -54,11 +55,14 @@ public class TenantApplicationService {
      * Application view for tenant administrators and testers; the
      * ownership discriminator (org-owned vs tenant-owned) is not part
      * of this surface — everything listed is tenant-owned by
-     * construction.
+     * construction. Carries the registry fields (description,
+     * platforms) since S3-01.
      */
     public record ApplicationView(
             UUID id,
             String name,
+            String description,
+            List<String> platforms,
             String bundleId,
             String packageName,
             String status,
@@ -69,6 +73,8 @@ public class TenantApplicationService {
             return new ApplicationView(
                     application.getId(),
                     application.getName(),
+                    application.getDescription(),
+                    application.getPlatforms(),
                     application.getBundleId(),
                     application.getPackageName(),
                     application.getStatus().name(),

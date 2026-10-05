@@ -3,6 +3,7 @@ package com.shipperdog.api.authorization.internal.evaluator;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
+import com.shipperdog.api.application.ApplicationAccess;
 import com.shipperdog.api.audit.AuditLogger;
 import com.shipperdog.api.authorization.ConcealedResourceAccessDeniedException;
 import com.shipperdog.api.config.TraceAttributes;
@@ -25,9 +26,10 @@ import org.springframework.security.oauth2.jwt.Jwt;
  * Unit coverage of the single enforcement point (issue #5): the evaluator
  * fails closed on every malformed or out-of-scope input, grants only via
  * the documented matrix per scope, overlays the owning organization's
- * role for tenant checks (union across scopes), and keeps {@code app:}
- * permissions denied until application records exist (E3). Since issue #8
- * an authenticated denial scoped to a target id throws
+ * role for tenant checks (union across scopes), and — since the
+ * application registry (issue #13, E3) — resolves {@code app:} grants
+ * through the application's owning tenant/organization the same way.
+ * Since issue #8 an authenticated denial scoped to a target id throws
  * {@link ConcealedResourceAccessDeniedException} (the concealed-404 rule,
  * PRD 12); only target-less or malformed checks return false. Companion
  * to the end-to-end {@code RbacFlowIntegrationTest}, which exercises the
@@ -144,15 +146,65 @@ class RbacPermissionEvaluatorTest {
     }
 
     @Test
-    void appScopeFailsClosedUntilApplicationRecordsExist() {
+    void appScopeResolvesThroughTheOwningTenantOrganizationUnion() {
+        UUID userId = UUID.randomUUID();
+        UUID owningOrg = UUID.randomUUID();
+        UUID tenant = UUID.randomUUID();
+        UUID application = UUID.randomUUID();
+        Authentication auth = jwtAuth(userId);
+        TenantAccess ownedByOrg = owningOrg(tenant, owningOrg);
+
+        // VIEWER lists app:applications:read (issue #5 matrix): granted at
+        // the owning organization of a tenant-owned application (E3, issue #13).
+        RbacPermissionEvaluator orgViewer = evaluator(
+                applications(application, owningOrg, tenant),
+                grants(new UserRolesSnapshot(userId, false, Map.of(owningOrg, OrgRole.VIEWER), Map.of(), ownedByOrg)));
+        assertThat(orgViewer.hasPermission(auth, application, "application", "app:applications:read"))
+                .as("an owning-organization VIEWER reads the application")
+                .isTrue();
+
+        // WRITE is not in VIEWER's set: concealed denial on the application target.
+        assertThatThrownBy(() -> orgViewer.hasPermission(auth, application, "application", "app:applications:write"))
+                .as("read-only org roles cannot manage the application (concealed denial)")
+                .isInstanceOf(ConcealedResourceAccessDeniedException.class);
+
+        // TENANT_ADMIN does not list app: permissions: the tenant role alone
+        // grants nothing at application scope.
+        RbacPermissionEvaluator tenantAdmin = evaluator(
+                applications(application, owningOrg, tenant),
+                grants(new UserRolesSnapshot(
+                        userId, false, Map.of(), Map.of(tenant, TenantRole.TENANT_ADMIN), ownedByOrg)));
+        assertThatThrownBy(() -> tenantAdmin.hasPermission(auth, application, "application", "app:applications:read"))
+                .as("tenant roles use the tenant-scoped listing, not app: grants (concealed denial)")
+                .isInstanceOf(ConcealedResourceAccessDeniedException.class);
+
+        // Creation-time check at the future owner tenant: the org overlay
+        // carries ORG_ADMIN's app:applications:write into the tenant target.
+        RbacPermissionEvaluator orgAdmin = evaluator(
+                unknownApplications(),
+                grants(new UserRolesSnapshot(
+                        userId, false, Map.of(owningOrg, OrgRole.ORG_ADMIN), Map.of(), ownedByOrg)));
+        assertThat(orgAdmin.hasPermission(auth, tenant, "tenant", "app:applications:write"))
+                .as("an owning-organization administrator may register applications in the tenant")
+                .isTrue();
+        assertThatThrownBy(() -> tenantAdmin.hasPermission(auth, tenant, "tenant", "app:applications:write"))
+                .as("tenant administrators do not hold creation rights (concealed denial)")
+                .isInstanceOf(ConcealedResourceAccessDeniedException.class);
+    }
+
+    @Test
+    void appScopeFailsClosedOnUnknownApplicationsAndMalformedTargets() {
         UUID userId = UUID.randomUUID();
         Authentication auth = jwtAuth(userId);
         RbacPermissionEvaluator evaluator =
-                evaluator(grants(snapshot(userId, false, Map.of(UUID.randomUUID(), OrgRole.VIEWER), Map.of())));
+                evaluator(unknownApplications(), grants(snapshot(userId, false, Map.of(), Map.of())));
 
         assertThatThrownBy(
                         () -> evaluator.hasPermission(auth, UUID.randomUUID(), "application", "app:applications:read"))
-                .as("app: permissions stay denied even for roles that list them (E3 fail-closed, concealed)")
+                .as("unknown applications deny concealed, like every scoped miss")
+                .isInstanceOf(ConcealedResourceAccessDeniedException.class);
+        assertThatThrownBy(() -> evaluator.hasPermission(auth, UUID.randomUUID(), "team", "app:applications:read"))
+                .as("unrecognized target types deny concealed too (any target-scoped id conceals)")
                 .isInstanceOf(ConcealedResourceAccessDeniedException.class);
     }
 
@@ -162,11 +214,39 @@ class RbacPermissionEvaluatorTest {
 
     /** Evaluator under test; audit emission and tracing are no-ops. */
     private static RbacPermissionEvaluator evaluator(RequestRoleGrants grants) {
+        return evaluator(unknownApplications(), grants);
+    }
+
+    /** Evaluator under test with an application registry stub. */
+    private static RbacPermissionEvaluator evaluator(ApplicationAccess applications, RequestRoleGrants grants) {
         return new RbacPermissionEvaluator(
                 grants,
+                applications,
                 new AuditLogger(event -> {}, Clock.systemUTC()),
                 new SimpleMeterRegistry(),
                 new TraceAttributes(ObservationRegistry.NOOP));
+    }
+
+    /** Registry stub resolving exactly one tenant-owned application. */
+    private static ApplicationAccess applications(UUID applicationId, UUID organizationId, UUID tenantId) {
+        return new ApplicationAccess() {
+            @Override
+            public Optional<ApplicationAccess.Ownership> ownershipOf(UUID id) {
+                return id.equals(applicationId)
+                        ? Optional.of(new ApplicationAccess.Ownership(id, organizationId, tenantId))
+                        : Optional.empty();
+            }
+        };
+    }
+
+    /** Registry stub resolving nothing. */
+    private static ApplicationAccess unknownApplications() {
+        return new ApplicationAccess() {
+            @Override
+            public Optional<ApplicationAccess.Ownership> ownershipOf(UUID id) {
+                return Optional.empty();
+            }
+        };
     }
 
     private static Authentication jwtAuth(UUID userId) {
@@ -210,6 +290,11 @@ class RbacPermissionEvaluatorTest {
             public Optional<UUID> owningOrganizationId(UUID tenantId) {
                 return Optional.empty();
             }
+
+            @Override
+            public boolean acceptsNewAffiliations(UUID tenantId) {
+                return false;
+            }
         };
     }
 
@@ -228,6 +313,11 @@ class RbacPermissionEvaluatorTest {
             @Override
             public Optional<UUID> owningOrganizationId(UUID tenant) {
                 return tenant.equals(tenantId) ? Optional.of(organizationId) : Optional.empty();
+            }
+
+            @Override
+            public boolean acceptsNewAffiliations(UUID tenant) {
+                return tenant.equals(tenantId);
             }
         };
     }

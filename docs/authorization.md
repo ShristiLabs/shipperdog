@@ -73,9 +73,10 @@ password-reset pair) matched by the security chain's `permitAll`.
 - **Deny-by-default.** Unauthenticated or unrecognized principals,
   unknown permission codes, and malformed target ids all evaluate to
   deny. A permission no role holds is simply a permission nobody has;
-  the `app:` scope is additionally fail-closed for everyone but
-  platform administrators until application records are manageable
-  (E3), even for roles that list `app:` permissions in the matrix.
+  the `app:` scope was fail-closed for everyone but platform
+  administrators until application records became manageable — it is
+  enforced since the application registry (S3-01, issue #13), with
+  grants resolving through the owning tenant/organization.
 - **Live roles, not token claims.** Roles resolve from database
   memberships on the request's first check. Role changes therefore
   apply to existing access tokens immediately — stricter than the
@@ -93,7 +94,13 @@ password-reset pair) matched by the security chain's `permitAll`.
   organization. `tenant:` — the caller's tenant role, with the owning
   organization's role overlaid: an organization administrator holds
   tenant permissions inside their organization's tenants (union across
-  scopes). Roles held in DEACTIVATED organizations are excluded from
+  scopes). `app:` — since the application registry (S3-01), resolved
+  through the application's owning tenant with the organization overlay
+  (organization-owned rows check the owning organization); creation-time
+  checks evaluate at the future owner tenant, so `app:applications:write`
+  authority is organization-level by construction. Application-scope
+  role memberships (INV-002) arrive with S3-02. Roles held in
+  DEACTIVATED organizations are excluded from
   the snapshot, so deactivation strips effective permissions without
   touching memberships.
 
@@ -161,12 +168,20 @@ written inside it belongs to that tenant** (INV-001, PRD 26):
   stay scoped to the route's tenant even for platform administrators;
   the override authorizes administrative cross-tenant writes.
 
-When applications, versions, artifacts, testers, and tester groups get
-JPA entities (E3+), their entities implement `TenantScope` and their
-repositories extend the seam — isolation is inherited by construction,
-not re-implemented per module. The mechanism decision (predicate
-injection over a Hibernate session filter) and its trade-offs are
-recorded in [ADR-0002](adr/ADR-0002-tenant-isolation-data-seam.md).
+Applications have ridden the seam since their tenant-scoped listing
+(S2-03), and the registry (S3-01) adds two sanctioned cross-tenant
+surfaces recorded in ADR-0002's second amendment: the
+`@CrossTenantByDesign` registry guard (ownership resolution and
+organization-wide uniqueness booleans — never endpoint data paths) and
+the `TenantScopeExecutor` that establishes the tenant context for
+creation routes and background jobs (establish-only; the route
+interceptors always win). When versions, artifacts, testers, and tester
+groups get JPA entities (E4+), their entities implement `TenantScope`
+and their repositories extend the seam — isolation is inherited by
+construction, not re-implemented per module. The mechanism decision
+(predicate injection over a Hibernate session filter) and its
+trade-offs are recorded in
+[ADR-0002](adr/ADR-0002-tenant-isolation-data-seam.md).
 
 ## Tenant lifecycle endpoints
 
@@ -202,7 +217,7 @@ are denied by the permission check before the body is read
 | PUT | `/api/v1/tenants/{id}/members/{userId}/role` | `tenant:members:manage` | `200` member view; creates the membership when absent (`404` unknown user/tenant; `409` `TENANT_DEACTIVATED` while deactivated); `400` unknown role |
 | PUT | `/api/v1/tenants/{id}/members/{userId}/status` | `tenant:members:manage` | `200` member view; `ACTIVE`/`SUSPENDED` transition (suspending revokes sessions); `404` unknown tenant/member; `400` invalid status |
 | DELETE | `/api/v1/tenants/{id}/members/{userId}` | `tenant:members:manage` | `204`; `404` unknown tenant/member |
-| GET | `/api/v1/tenants/{id}/applications` | `tenant:applications:read` | `200` the tenant's own applications, cursor-paginated (S2-03; management is E3) |
+| GET | `/api/v1/tenants/{id}/applications` | `tenant:applications:read` | `200` the tenant's own applications, cursor-paginated (S2-03; registry management is S3-01) |
 
 Error responses use the platform's problem+json envelope with stable
 codes (see the [error code registry](error-codes.md)).
@@ -239,6 +254,25 @@ Guards and side effects:
   family is revoked on the attempt) and cannot use PATs — existing
   sessions do not outlive the disable.
 
+## Application registry endpoints (S3-01)
+
+Application registry management (issue #13) is organization-level
+authority: `app:applications:write` is granted only to organization
+roles (`ORG_ADMIN`, `APP_OWNER`), and the creation check evaluates at
+the future owner tenant, so tenant roles reach applications through
+the tenant-scoped listing instead.
+
+| Method | Path | Permission | Result |
+|---|---|---|---|
+| POST | `/api/v1/applications` | `app:applications:write` at the body's `tenantId` | `201` application view (born `ACTIVE`); `400` invalid platforms/identifiers; `409` `APPLICATION_NAME_TAKEN` / `APPLICATION_BUNDLE_TAKEN` / `APPLICATION_PACKAGE_TAKEN` / `APPLICATION_TENANT_DEACTIVATED`; `404` unknown tenant (concealed); honors `Idempotency-Key` |
+| GET | `/api/v1/applications/{id}` | `app:applications:read` at the application | `200` application view; `404` unknown or denied (concealed, identical envelope) |
+| PATCH | `/api/v1/applications/{id}` | `app:applications:write` at the application | `200` partial update (null fields unchanged); `400` invalid edits; `409` identifier/name conflicts; the reversible `ACTIVE`/`ARCHIVED` transition |
+
+Identifier and lifecycle edits are audited (`APPLICATION_CREATED`,
+`APPLICATION_UPDATED`) with before/after pairs; see
+[error codes](error-codes.md) for the full application table and
+[API conventions](api-conventions.md) for the idempotency registry.
+
 ## Audit events
 
 `ORG_MEMBER_ROLE_CHANGED` and `TENANT_MEMBER_ROLE_CHANGED` carry
@@ -253,6 +287,7 @@ role; `TOKEN_REVOKED` carries the machine-readable reason. See
 
 `UserRolesSnapshot` is the seam the ABAC engine (S14-04) extends with
 resource attributes; `app:` permissions bind to endpoints as their
-owning modules land (E3 onward). The authorization engine series
+owning modules land (the registry since S3-01; E4 onward for the
+rest). The authorization engine series
 (S7-01..S7-05) builds policy administration on this catalog without
 changing the enforcement point.

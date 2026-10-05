@@ -51,11 +51,13 @@ VALUES
      '10000000-0000-4000-8000-000000000001', 'Contoso', 'demo-contoso')
 ON CONFLICT (id) DO NOTHING;
 
-INSERT INTO applications (id, organization_id, tenant_id, name, bundle_id, package_name)
+INSERT INTO applications (id, organization_id, tenant_id, name, description, platforms, bundle_id, package_name)
 VALUES ('10000000-0000-4000-8000-000000000004',
         '10000000-0000-4000-8000-000000000001',
         '10000000-0000-4000-8000-000000000002',
         'Banking',
+        'The demo banking application',
+        '{IOS,ANDROID}',
         'com.shipperdog.demo.banking',
         'com.shipperdog.demo.banking')
 ON CONFLICT (id) DO NOTHING;
