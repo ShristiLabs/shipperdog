@@ -275,3 +275,32 @@ flips, revocation never deletion). Two facts followed:
    (INV-005): without an explicit grant the union degenerates to the
    tenant's own rows, exactly the pre-S3-03 listing.
 
+## Fifth amendment (2026-10-05): the organization-wide registry listing
+
+The application console story (issue #16, S3-04) exposed a reachability
+gap the fourth amendment created by design: a shared application with
+zero ACTIVE grants is invisible to every effective-visibility listing
+(PRD 15 — distribution decides, INV-005), and the registry offered no
+other listing — so after registration the organization roles who must
+grant the first authorization could no longer reach the application
+through any API surface. The console's administration listing
+(`GET /api/v1/applications?organizationId=...`) closes the gap and is
+a declared query on the registry guard
+(`findByOrganizationIdOrderByCreatedAtAscIdAsc`), for the same reason
+the union query is: "every application of organization O, both
+ownership scopes" is organization-addressed by definition, and neither
+seam mode can answer it whole (tenant mode sees one tenant's rows;
+organization mode composes `tenantId IS NULL` and would hide the
+tenant-owned arm entirely).
+
+INV-001 holds by the query's own predicate — `organizationId = :org`
+with no tenant predicate at all — and the caller's authority to ask is
+checked before it runs: `app:applications:read` at the organization
+target, granted only to organization roles (the evaluator
+conceal-denies tenant-only actors and foreign organizations as
+`ORGANIZATION_NOT_FOUND`, so the listing leaks nothing about another
+organization's registry). The marker carrier still serves no write and
+no per-row data path; this amendment adds one read query of the same
+character as the union — an organization-wide question the seam cannot
+scope — and the doctrine is unchanged: every cross-scope question the
+product asks stays a declared, review-critical query in one place.

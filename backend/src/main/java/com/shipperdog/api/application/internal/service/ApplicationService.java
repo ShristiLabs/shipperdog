@@ -10,6 +10,7 @@ import com.shipperdog.api.application.internal.repository.TenantApplicationAutho
 import com.shipperdog.api.audit.AuditEvent;
 import com.shipperdog.api.audit.AuditEventPublisher;
 import com.shipperdog.api.audit.AuditEventType;
+import com.shipperdog.api.config.CursorPageable;
 import com.shipperdog.api.config.TraceAttributes;
 import com.shipperdog.api.organization.OrganizationAccess;
 import com.shipperdog.api.tenant.TenantAccess;
@@ -26,6 +27,7 @@ import java.util.Set;
 import java.util.UUID;
 import java.util.regex.Pattern;
 import org.springframework.dao.DataIntegrityViolationException;
+import org.springframework.data.domain.Page;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -286,6 +288,25 @@ public class ApplicationService {
     @Transactional(readOnly = true)
     public ApplicationView get(UUID applicationId) {
         return ApplicationView.from(load(applicationId));
+    }
+
+    /**
+     * The organization-wide registry listing (issue #16, S3-04): every
+     * application of the organization in both ownership scopes — the
+     * administration surface the console renders. It exists because a
+     * shared application with zero tenant authorizations is invisible to
+     * every effective-visibility listing by construction (PRD 15:
+     * distribution decides), so the registry must offer organization
+     * roles their own reachability into it. Caller permission
+     * (app:applications:read at the organization) is enforced at the
+     * controller; the declared guard query (ADR-0002 fifth amendment)
+     * is organization-addressed, so the seam cannot serve it in either
+     * mode.
+     */
+    @Transactional(readOnly = true)
+    public Page<ApplicationView> listByOrganization(UUID organizationId, long offset, int limit) {
+        return registry.findByOrganizationIdOrderByCreatedAtAscIdAsc(organizationId, new CursorPageable(offset, limit))
+                .map(ApplicationView::from);
     }
 
     // -------------------------------------------------------------------------

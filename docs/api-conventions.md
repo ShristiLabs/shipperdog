@@ -89,10 +89,13 @@ Every list endpoint accepts `limit` and `cursor` and returns one shape:
 
 Applied today: `GET /api/v1/organizations`, `GET /api/v1/organizations/{id}/members`,
 `GET /api/v1/tenants/{id}/members`, `GET /api/v1/tenants/{id}/applications`
-(S2-03), and `GET /api/v1/audit` (which also
-keeps its conjunctive filters; `page`/`size` are gone). The application
+(S2-03), `GET /api/v1/audit` (which also
+keeps its conjunctive filters; `page`/`size` are gone), and
+`GET /api/v1/applications?organizationId=` (S3-04), the organization-wide
+registry listing for organization roles. The rest of the application
 registry's surface (S3-01) is item-addressed (POST/GET/PATCH under
-`/api/v1/applications`); its list surface is the tenant-scoped listing.
+`/api/v1/applications`); a tenant's own view of applications stays the
+tenant-scoped listing.
 
 ## Idempotency
 

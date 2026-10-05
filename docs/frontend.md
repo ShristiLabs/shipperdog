@@ -1,11 +1,13 @@
-# Admin Console (S2-04)
+# Admin Console (S2-04, S3-04)
 
 The admin console is the React single-page application in `frontend/`
 (PRD §21 stack): React 19, TypeScript (strict), MUI 9 with MUI X Data
 Grid, React Query 5, React Router 7, built with Vite 7. S2-04 delivers
 the scaffold plus tenant administration — list, create, edit,
 deactivate, and member management — and the conventions every later
-console story (E3 onward) reuses.
+console story (E3 onward) reuses. S3-04 adds the application console on
+those conventions: the registry listing, create/edit, the shared-app
+authorization screen, and the reversible archive.
 
 ## Running locally
 
@@ -25,14 +27,21 @@ console story (E3 onward) reuses.
 ```
 frontend/src/
   api/          client.ts (fetch wrapper), problem.ts (RFC 7807
-                decoding), auth.ts, tenants.ts, organizations.ts
+                decoding), auth.ts, tenants.ts, organizations.ts,
+                applications.ts (registry + shared-app authorization)
   auth/         tokenStore.ts, AuthContext.tsx, RequireAuth.tsx
   components/   ToastContext.tsx (error toast convention)
-  hooks/        usePermission.ts (role-aware navigation probes)
+  hooks/        usePermission.ts (role-aware navigation probes),
+                useOrganizationDirectory.ts (walks org tenants/members
+                rosters across cursor pages for pickers and name maps)
   layout/       ConsoleLayout.tsx (app bar + nav drawer)
-  pages/        LoginPage, TenantsPage, TenantMembersPage, tenantRules
+  pages/        LoginPage, TenantsPage, TenantMembersPage, tenantRules,
+                ApplicationsPage, ApplicationDetailPage,
+                ApplicationDialog (create/edit form),
+                applicationRules (client mirrors of field rules)
   test/         harness.tsx (providers + fetch router), setup.ts
-frontend/e2e/   console-verify.mjs (Playwright smoke vs compose stack)
+frontend/e2e/   console-verify.mjs, applications-verify.mjs
+                (Playwright smokes vs compose stack)
 ```
 
 ## Conventions fixed by this scaffold
@@ -95,14 +104,37 @@ allowed.
   dialog offering the organization roster for pickup plus a raw user-id
   entry for tenant testers outside the organization; the role picker is
   fixed to the M1 roles (Tenant Admin, Tenant Tester).
+- **Applications** (`/applications`, S3-04): two views of one registry
+  behind a scope toggle. "All applications" is the organization-wide
+  administration listing (`GET /api/v1/applications?organizationId=`,
+  both ownership scopes — the only surface that reaches a shared
+  application before its first tenant authorization); "By tenant"
+  resolves a tenant's effective visibility (owned plus authorized
+  shared). Client-side search over the loaded cursor pages, Load more,
+  and a register dialog whose rules mirror the API (`applicationRules`:
+  name 1-200, description max 2000, per-platform reverse-DNS
+  identifiers required exactly when their platform is chosen).
+- **Application detail** (`/applications/:id`, S3-04): metadata with the
+  validated edit dialog — the ownership-scope transition is audited
+  server-side and sent only when the scope actually changes — a
+  reversible archive behind a confirmation naming the application, and,
+  for shared applications only, the authorized-tenants screen: grant
+  with an optional reason (1-500), revoke the same way, grantedBy
+  resolved through the organization roster where possible (raw UUID
+  otherwise — no user-name port exists yet). Versions and artifacts
+  render honest empty states until E4/E5; mutations invalidate the
+  `["applications"]` query-key prefix, which covers both listing views
+  and per-application reads.
 
 ## CI and verification
 
 `frontend-ci` (`.github/workflows/frontend-ci.yml`) gates every PR:
 lint, strict-typecheck build, Vitest — one Node 22 job, about a minute.
 Browser verification is a Playwright smoke against the compose stack
-(`frontend/e2e/console-verify.mjs`, run instructions in its header);
-it is intentionally outside CI because it needs the full stack.
+(`frontend/e2e/console-verify.mjs` and, since S3-04,
+`frontend/e2e/applications-verify.mjs`; run instructions in each
+header); it is intentionally outside CI because it needs the full
+stack.
 
 ## Decisions
 

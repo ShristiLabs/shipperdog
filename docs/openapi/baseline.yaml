@@ -529,6 +529,34 @@ paths:
               schema:
                 $ref: "#/components/schemas/InvitationResponse"
   /api/v1/applications:
+    get:
+      tags:
+      - application-controller
+      operationId: list_2
+      parameters:
+      - name: organizationId
+        in: query
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - name: limit
+        in: query
+        required: false
+        schema:
+          type: string
+      - name: cursor
+        in: query
+        required: false
+        schema:
+          type: string
+      responses:
+        "200":
+          description: OK
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/PageResponseApplicationView"
     post:
       tags:
       - application-controller
@@ -648,7 +676,7 @@ paths:
     get:
       tags:
       - tenant-applications-controller
-      operationId: list_2
+      operationId: list_3
       parameters:
       - name: id
         in: path
@@ -827,7 +855,7 @@ paths:
     get:
       tags:
       - application-tenant-authorization-controller
-      operationId: list_3
+      operationId: list_4
       parameters:
       - name: id
         in: path
@@ -1002,6 +1030,11 @@ components:
     JsonNode:
       type: object
       properties:
+        container:
+          type: boolean
+        textual:
+          type: boolean
+          deprecated: true
         nodeType:
           type: string
           enum:
@@ -1038,14 +1071,9 @@ components:
           type: boolean
         bigInteger:
           type: boolean
-        textual:
-          type: boolean
-          deprecated: true
         boolean:
           type: boolean
         binary:
-          type: boolean
-        container:
           type: boolean
         floatingPointNumber:
           type: boolean

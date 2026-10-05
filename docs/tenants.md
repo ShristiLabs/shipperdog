@@ -111,8 +111,15 @@ Removal deletes the membership and revokes the member's refresh tokens
 (`status.before`/`status.after`, `sessionsRevoked`), and
 `TENANT_MEMBER_REMOVED`.
 
-## Applications (S2-03, S3-01, S3-02, S3-03)
+## Applications (S2-03, S3-01, S3-02, S3-03, S3-04)
 
+The registry also has an organization-wide administration listing since
+S3-04: `GET /api/v1/applications?organizationId=` returns every
+application of the organization in both ownership scopes
+(`app:applications:read` at the organization; cursor-paginated) — the
+console's surface, and the only reachability path to a shared
+application before its first tenant authorization, which every
+effective-visibility listing hides by construction.
 `GET /{id}/applications` returns the applications the tenant sees —
 since S3-03 this is the platform's single effective-visibility
 resolution: the tenant's owned applications (the

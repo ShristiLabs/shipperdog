@@ -6,6 +6,7 @@
  * to show). Users without an active organization see a notice instead
  * of admin sections they could never load.
  */
+import AppsIcon from "@mui/icons-material/Apps";
 import BusinessIcon from "@mui/icons-material/Business";
 import LogoutIcon from "@mui/icons-material/Logout";
 import {
@@ -26,6 +27,7 @@ import {
 import { NavLink, Outlet, useNavigate } from "react-router-dom";
 import { useAuth } from "../auth/AuthContext";
 import { usePermission } from "../hooks/usePermission";
+import { listApplications } from "../api/applications";
 import { listTenants } from "../api/tenants";
 
 const DRAWER_WIDTH = 240;
@@ -38,6 +40,17 @@ export default function ConsoleLayout() {
   const tenantsNav = usePermission(
     `tenants:${orgId ?? "none"}`,
     () => listTenants({ organizationId: orgId as string, limit: 1 }),
+    orgId !== null,
+  );
+
+  // The Applications section probes the organization-wide registry
+  // listing it loads first (issue #16): organization roles with
+  // app:applications:read see it; tenant-only actors are conceal-denied
+  // and the section hides. Per-application reads and every write stay
+  // server-enforced regardless.
+  const applicationsNav = usePermission(
+    `applications:${orgId ?? "none"}`,
+    () => listApplications({ organizationId: orgId as string, limit: 1 }),
     orgId !== null,
   );
 
@@ -97,6 +110,21 @@ export default function ConsoleLayout() {
               You do not have permission to administer tenants.
             </Alert>
           )}
+          {orgId !== null && applicationsNav.allowed ? (
+            <List>
+              <ListItemButton
+                component={NavLink}
+                to="/applications"
+                data-testid="nav-applications"
+                sx={{ "&.active": { backgroundColor: "action.selected" } }}
+              >
+                <ListItemIcon>
+                  <AppsIcon />
+                </ListItemIcon>
+                <ListItemText primary="Applications" />
+              </ListItemButton>
+            </List>
+          ) : null}
           <Divider />
         </Box>
       </Drawer>

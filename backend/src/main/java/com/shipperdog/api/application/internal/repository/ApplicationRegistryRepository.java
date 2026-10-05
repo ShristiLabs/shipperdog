@@ -55,6 +55,18 @@ import org.springframework.data.repository.query.Param;
  *       the portal/catalog listing and is the single resolution point
  *       E7/E8 reuse; it answers through the mapping's ACTIVE grants
  *       only, so an unauthorized tenant learns nothing.</li>
+ *   <li><strong>The organization-wide registry listing</strong> (issue
+ *       #16, S3-04) — "every application of organization O, regardless
+ *       of ownership scope" is organization-addressed by definition:
+ *       the seam can answer neither arm of the whole (tenant mode sees
+ *       one tenant's rows, organization mode composes tenant-id-null
+ *       rows only), so the administration listing the console needs —
+ *       the surface that reaches a shared application before its first
+ *       tenant authorization, when every effective-visibility listing
+ *       cannot — is a declared query here. Caller permission
+ *       ({@code app:applications:read} at the organization) is enforced
+ *       at the controller; denials conceal (ADR-0002 fifth amendment,
+ *       same character as the union above).</li>
  * </ul>
  *
  * <p>Like every {@link CrossTenantByDesign} repository, this interface
@@ -116,6 +128,18 @@ public interface ApplicationRegistryRepository extends JpaRepository<Application
             @Param("sharedScope") OwnershipScope sharedScope,
             @Param("authorizedStatus") TenantApplicationAuthorizationEntity.Status authorizedStatus,
             Pageable pageable);
+
+    /**
+     * The organization-wide registry listing (issue #16, S3-04): every
+     * application of the organization in both ownership scopes, pinned
+     * platform listing order (createdAt ASC, id ASC) so cursors stay
+     * deterministic. Reachability surface for the console — a shared
+     * application with zero grants is invisible to every
+     * effective-visibility listing by construction (PRD 15: distribution
+     * decides), so the administration listing must exist before the
+     * first grant.
+     */
+    Page<ApplicationEntity> findByOrganizationIdOrderByCreatedAtAscIdAsc(UUID organizationId, Pageable pageable);
 
     /** Name guard excluding the application being updated. */
     boolean existsByOrganizationIdAndNameAndIdNot(UUID organizationId, String name, UUID id);

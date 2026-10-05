@@ -28,6 +28,48 @@ describe("ConsoleLayout role-aware navigation", () => {
     expect(screen.getByTestId("console-user")).toHaveTextContent("dev@shipperdog.local");
   });
 
+  it("shows the Applications section when the registry listing probe answers 200", async () => {
+    installFetchRouter([
+      {
+        method: "GET",
+        url: "/api/v1/applications",
+        status: 200,
+        body: { items: [] },
+      },
+    ]);
+    seedSession();
+    renderConsole(<ConsoleLayout />, { route: "/" });
+
+    expect(await screen.findByTestId("nav-applications")).toBeInTheDocument();
+  });
+
+  it("hides the Applications section when the probe is conceal-denied", async () => {
+    installFetchRouter([
+      {
+        method: "GET",
+        url: "/api/v1/tenants",
+        status: 200,
+        body: { items: [] },
+      },
+      {
+        method: "GET",
+        url: "/api/v1/applications",
+        status: 404,
+        body: {
+          title: "Not Found",
+          status: 404,
+          code: "ORGANIZATION_NOT_FOUND",
+          detail: "Resource not found.",
+        },
+      },
+    ]);
+    seedSession();
+    renderConsole(<ConsoleLayout />, { route: "/" });
+
+    await screen.findByTestId("nav-tenants");
+    expect(screen.queryByTestId("nav-applications")).not.toBeInTheDocument();
+  });
+
   it("hides the Tenants section when the probe is denied (concealed 404)", async () => {
     installFetchRouter([
       {
