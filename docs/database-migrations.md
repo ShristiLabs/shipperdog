@@ -15,6 +15,7 @@ backend/src/main/resources/db/
     V5__audit_framework.sql
     V6__api_conventions.sql
     V7__tenant_lifecycle.sql
+    V8__tenant_member_status.sql
   seed/                 dev fixture, applied only when the seed location is active
     R__dev_seed.sql
 ```

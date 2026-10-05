@@ -23,8 +23,9 @@ Current contents:
 - [Organizations](organizations.md) — organization lifecycle, settings,
   and membership surface (S1-04, extended by S1-05).
 - [Tenants](tenants.md) — tenant lifecycle under an organization,
-  identifier uniqueness, deactivation semantics, and tenant isolation
-  semantics (S2-01, S2-02).
+  identifier uniqueness, deactivation semantics, tenant isolation
+  semantics, member management with the suspension switch, and the
+  tenant-owned applications listing (S2-01, S2-02, S2-03).
 - [Audit logging](audit.md) — append-only audit trail, transactional
   persistence, redaction, correlation ids, and the admin query API
   (S1-06).

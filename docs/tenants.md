@@ -4,7 +4,8 @@ Tenants are the customer/business entities that make ShipperDog
 multi-tenant (PRD 8.2): every tenant belongs to exactly one
 organization, and the organization's administrators manage the tenant
 lifecycle. A tenant is never a user (PRD 8.2/8.8) — it has no login
-surface and no identity coupling; testers and users arrive in S2-03.
+surface and no identity coupling. Members (users holding tenant roles)
+arrived with S2-03; tester records themselves arrive with S6.
 Implemented by the `tenant` module
 (`backend/src/main/java/com/shipperdog/api/tenant`). Permissions
 referenced below are enforced by the single RBAC enforcement point —
@@ -18,6 +19,12 @@ see [authorization](authorization.md) for the matrix and semantics.
 | GET | `/?organizationId=...&status=...` | `org:tenants:read` at that organization | `200` the organization's tenants, cursor-paginated (`limit`/`cursor`); optional `status` filter (`ACTIVE`/`DEACTIVATED`); `400` missing/invalid `organizationId` |
 | GET | `/{id}` | `tenant:tenants:read` at `{id}` | `200` tenant view |
 | PUT | `/{id}` | `tenant:tenants:update` at `{id}` | `200`; partial update — null fields unchanged (`name`, `externalId`, `status`); `400` invalid values; `409` name/externalId taken |
+| GET | `/{id}/members` | `tenant:members:read` at `{id}` | `200` the tenant's roster with roles and membership status, cursor-paginated (S2-03) |
+| POST | `/{id}/members` | `tenant:members:manage` at `{id}` | `201` member view (born `ACTIVE`); same-role duplicate idempotent `200`; `409 TENANT_MEMBER_EXISTS` (different role) / `TENANT_DEACTIVATED`; `404` unknown user/tenant. Honors `Idempotency-Key` (S2-03) |
+| PUT | `/{id}/members/{userId}/role` | `tenant:members:manage` at `{id}` | `200`; creates the membership when absent (blocked while deactivated) |
+| PUT | `/{id}/members/{userId}/status` | `tenant:members:manage` at `{id}` | `200`; `ACTIVE`/`SUSPENDED` transition — suspending revokes the member's refresh tokens (S2-03) |
+| DELETE | `/{id}/members/{userId}` | `tenant:members:manage` at `{id}` | `204`; removal revokes the member's refresh tokens |
+| GET | `/{id}/applications` | `tenant:applications:read` at `{id}` | `200` the tenant's own applications, cursor-paginated (S2-03) |
 
 Tenant administrators hold `tenant:tenants:read` on their own tenant
 but not `tenant:tenants:update` — the lifecycle is organization-level
@@ -55,7 +62,7 @@ on the constraint is the final authority — no driver-message parsing).
   - **reversible** — `PUT /{id}` with `"status": "ACTIVE"` restores it;
   - **blocks new affiliations** — adding a membership to a deactivated
     tenant is `409 TENANT_DEACTIVATED` (the membership analog of "no
-    new invitations"); tester invitations (S2-03) and distributions
+    new invitations"); tester invitations (S6-01) and distributions
     (S7) check the same state when they arrive;
   - **preserves everything** — no cascade, no deletion; existing
     members, applications, and data remain intact and readable
@@ -64,6 +71,57 @@ on the constraint is the final authority — no driver-message parsing).
   created attributes, `TENANT_UPDATED` with `field.before`/`field.after`
   pairs for each changed field — carrying actor, organization, and
   tenant ids (see [audit logging](audit.md)).
+
+## Members (S2-03)
+
+Tenant members are org users holding a tenant role (`TENANT_ADMIN` or
+`TENANT_TESTER`; tenant testers need not belong to the owning
+organization). `POST /{id}/members` assigns a user with a role —
+memberships are born `ACTIVE`, a same-role duplicate assignment is
+idempotent (`200`, no second row, no audit — nothing changed), and a
+different-role duplicate is `409 TENANT_MEMBER_EXISTS` (role changes
+belong to the role endpoint). Assignment to a deactivated tenant is
+blocked like every new affiliation.
+
+Every membership carries its own status, independent of the user
+account status — **both switches must be on for access** (issue #11
+technical notes):
+
+- the **account switch** lives with identity (disabled accounts cannot
+  log in or refresh);
+- the **membership switch** (`tenant_members.status`, V8) is
+  `ACTIVE`/`SUSPENDED`. Only ACTIVE memberships resolve to tenant
+  roles, so a suspended member loses tenant permissions on their next
+  request; suspending also revokes their refresh tokens
+  (`membership_suspended`), so their tenant context ends at the next
+  token refresh at the latest. Suspension is reversible (reactivation
+  revokes nothing), keeps the row, and never touches the owning
+  organization's roles — the org overlay survives suspension.
+
+Member management is administrators-only: `tenant:members:manage`
+(tenant administrators and the owning organization's administrators).
+Tenant testers hold no member permissions at all — their read surface
+is the applications listing; even the roster is concealed from them.
+Removal deletes the membership and revokes the member's refresh tokens
+(`membership_removed`). Every change is audited:
+`TENANT_MEMBER_ADDED` (role + birth status),
+`TENANT_MEMBER_ROLE_CHANGED`, `TENANT_MEMBER_STATUS_CHANGED`
+(`status.before`/`status.after`, `sessionsRevoked`), and
+`TENANT_MEMBER_REMOVED`.
+
+## Applications (S2-03)
+
+`GET /{id}/applications` returns the applications the tenant owns —
+the `applications.tenant_id` rows for that tenant, cursor-paginated,
+readable by both tenant roles (`tenant:applications:read`). The
+listing runs through the isolation seam, so rows of other tenants and
+organization-owned applications (null `tenant_id`) are invisible by
+construction. FR-002's "assign applications" write side arrives with
+the application registry (E3: creation S3-01, ownership scope S3-02);
+shared applications — an application reachable from more than one
+tenant — arrive with S3-03 and will extend this surface. A deactivated
+tenant keeps a readable listing (deactivation blocks new affiliations,
+never reads).
 
 ## Isolation (S2-02, INV-001)
 
@@ -96,7 +154,7 @@ Deactivation blocks **new** affiliations only; a deactivated tenant
 stays administrable so it can be inspected and reactivated:
 
 - member listings stay readable to the tenant's administrators;
-- role changes and membership removals stay possible for
-  administrators of the owning organization;
+- role changes, suspension/reactivation, and membership removals stay
+  possible for administrators of the owning organization;
 - data-layer isolation is identical in every lifecycle state — the seam
   filters by tenant context regardless of status.

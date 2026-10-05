@@ -17,14 +17,26 @@ import org.hibernate.annotations.JdbcTypeCode;
 import org.hibernate.type.SqlTypes;
 
 /**
- * Maps the {@code tenant_members} table (V4 migration). Tenant-scoped
- * data (issue #10): endpoint access flows through the scoped repository
- * seam, which filters by the request's tenant context by construction;
- * only the authorization engine's role resolution reads across tenants.
+ * Maps the {@code tenant_members} table (V4 migration; the status switch
+ * arrives with V8, issue #11). Tenant-scoped data (issue #10): endpoint
+ * access flows through the scoped repository seam, which filters by the
+ * request's tenant context by construction; only the authorization
+ * engine's role resolution reads across tenants.
  */
 @Entity
 @Table(name = "tenant_members")
 public class TenantMemberEntity implements TenantScope {
+
+    /**
+     * The membership switch (issue #11): a member whose membership is
+     * SUSPENDED holds no tenant role, independent of their user account
+     * status — access needs both switches on. Suspension is reversible
+     * and keeps the row, so the roster stays complete.
+     */
+    public enum Status {
+        ACTIVE,
+        SUSPENDED
+    }
 
     @Id
     @GeneratedValue(strategy = GenerationType.UUID)
@@ -38,6 +50,10 @@ public class TenantMemberEntity implements TenantScope {
     @JdbcTypeCode(SqlTypes.NAMED_ENUM)
     private TenantRole role;
 
+    @Enumerated(EnumType.STRING)
+    @JdbcTypeCode(SqlTypes.NAMED_ENUM)
+    private Status status;
+
     private Instant createdAt;
 
     private Instant updatedAt;
@@ -48,6 +64,7 @@ public class TenantMemberEntity implements TenantScope {
         this.tenantId = tenantId;
         this.userId = userId;
         this.role = role;
+        this.status = Status.ACTIVE;
     }
 
     @PrePersist
@@ -85,6 +102,14 @@ public class TenantMemberEntity implements TenantScope {
 
     public void setRole(TenantRole role) {
         this.role = role;
+    }
+
+    public Status getStatus() {
+        return status;
+    }
+
+    public void setStatus(Status status) {
+        this.status = status;
     }
 
     public Instant getCreatedAt() {

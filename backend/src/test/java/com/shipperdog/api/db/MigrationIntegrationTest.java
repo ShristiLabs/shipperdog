@@ -178,6 +178,28 @@ class MigrationIntegrationTest {
         assertThat(tenantRoles).containsExactlyInAnyOrder("TENANT_ADMIN", "TENANT_TESTER");
     }
 
+    /** V8 (issue #11): the membership status switch. */
+    @Test
+    void tenantMemberStatusSwitchExists() {
+        List<String> memberStates = jdbc.queryForList(
+                "SELECT e.enumlabel FROM pg_enum e "
+                        + "JOIN pg_type t ON t.oid = e.enumtypid WHERE t.typname = 'tenant_member_status'",
+                String.class);
+        assertThat(memberStates).containsExactlyInAnyOrder("ACTIVE", "SUSPENDED");
+
+        List<Map<String, Object>> column =
+                jdbc.queryForList("SELECT column_name, is_nullable, column_default FROM information_schema.columns "
+                        + "WHERE table_schema = 'public' AND table_name = 'tenant_members' "
+                        + "AND column_name = 'status'");
+        assertThat(column).hasSize(1);
+        assertThat(column.getFirst().get("is_nullable"))
+                .as("membership status is mandatory")
+                .isEqualTo("NO");
+        assertThat(String.valueOf(column.getFirst().get("column_default")))
+                .as("memberships before V8 (and new ones) default to ACTIVE")
+                .contains("ACTIVE");
+    }
+
     @Test
     void statusColumnsAreBackedByEnumTypes() {
         List<String> releaseStates = jdbc.queryForList(
