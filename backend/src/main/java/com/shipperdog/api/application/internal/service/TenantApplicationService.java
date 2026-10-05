@@ -18,10 +18,12 @@ import org.springframework.transaction.annotation.Transactional;
  * applications" read side): which applications a tenant holds. The
  * listing runs through the tenant-scoped seam (issue #10), so it is
  * filtered to the request's tenant context by construction — rows of
- * other tenants and organization-owned rows (null tenant) can never
- * appear. Shared applications (assigned from outside the tenant)
- * arrive with S3-03 and will extend this surface; the write side
- * (creating applications and assigning ownership) is E3 (S3-01/S3-02).
+ * other tenants and organization-shared rows (null tenant, PRD 14)
+ * can never appear: tenant users see tenant-owned applications, and
+ * the authorized-shared arm (issue #14 AC4) arrives with S3-03's
+ * authorization mapping, which this query is the declared point to
+ * extend. The write side (creating applications and converting
+ * ownership scope) is the registry surface (S3-01/S3-02).
  */
 @Service
 public class TenantApplicationService {

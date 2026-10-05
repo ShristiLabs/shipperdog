@@ -266,10 +266,15 @@ class TenantApplicationsIntegrationTest {
     // ---------------------------------------------------------------------
 
     private UUID insertApplication(UUID organizationId, UUID tenantId, String name) {
+        // A null tenant means the organization-shared ownership mode
+        // (issue #14); a tenant means tenant-owned.
+        String scope = tenantId == null ? "ORGANIZATION" : "TENANT";
         jdbc.update(
-                "INSERT INTO applications (organization_id, tenant_id, name, platforms) VALUES (?, ?, ?, '{IOS}')",
+                "INSERT INTO applications (organization_id, tenant_id, ownership_scope, name, platforms)"
+                        + " VALUES (?, ?, CAST(? AS application_ownership_scope), ?, '{IOS}')",
                 organizationId,
                 tenantId,
+                scope,
                 name);
         return jdbc.queryForObject(
                 "SELECT id FROM applications WHERE organization_id = ? AND name = ?", UUID.class, organizationId, name);

@@ -1,6 +1,6 @@
 package com.shipperdog.api.application.internal.entity;
 
-import com.shipperdog.api.tenant.TenantScope;
+import com.shipperdog.api.tenant.OrganizationScope;
 import jakarta.persistence.Entity;
 import jakarta.persistence.EnumType;
 import jakarta.persistence.Enumerated;
@@ -19,21 +19,26 @@ import org.hibernate.type.SqlTypes;
 
 /**
  * Maps the {@code applications} table (V1 baseline + the V9 registry
- * columns: {@code description}, {@code platforms}). Tenant-owned
- * applications carry {@code tenantId}; organization-owned applications
- * leave it null — the ownership discriminator arrives with S3-02, and
- * until then the write surface (S3-01) creates tenant-owned rows only.
- * Tenant-scoped data (issue #10): the seam filters by the request's
- * tenant context, so an organization-owned row (null tenant) can never
- * match a context and is invisible to tenant-scoped access by
- * construction. Identifier semantics (S3-01): {@code bundleId} is the
- * iOS platform identifier and {@code packageName} the Android one
- * (PRD 13), each required exactly when its platform is chosen and
- * unique per organization (V9 partial unique indexes).
+ * columns + the V10 ownership discriminator). The ownership scope
+ * (issue #14, S3-02, PRD 14) is exactly one of: {@code TENANT} — the
+ * application belongs to one tenant and carries its {@code tenantId} —
+ * or {@code ORGANIZATION} — the application is shared at organization
+ * level with a null tenant and no owner, and which tenants receive it
+ * is decided by authorization (S3-03), never the other way around. The
+ * pairing is pinned by {@code ck_applications_ownership_scope_owner}
+ * (INV-002). The entity implements {@link OrganizationScope}: under an
+ * organization-scope context the seam serves organization-owned rows of
+ * that organization only, exactly as tenant-owned rows are served under
+ * their tenant's context (ADR-0002 third amendment). Identifier
+ * semantics (S3-01): {@code bundleId} is the iOS platform identifier
+ * and {@code packageName} the Android one (PRD 13), each required
+ * exactly when its platform is chosen and unique per organization (V9
+ * partial unique indexes; the name guard is organization-wide since
+ * V10).
  */
 @Entity
 @Table(name = "applications")
-public class ApplicationEntity implements TenantScope {
+public class ApplicationEntity implements OrganizationScope {
 
     /** Lifecycle vocabulary of the V1 baseline {@code application_status}. */
     public enum Status {
@@ -52,6 +57,17 @@ public class ApplicationEntity implements TenantScope {
         ANDROID
     }
 
+    /**
+     * The ownership vocabulary of PRD 14 (issue #14, V10 native enum
+     * {@code application_ownership_scope}): TENANT rows carry exactly one
+     * owning tenant, ORGANIZATION rows are shared at organization level
+     * with a null tenant.
+     */
+    public enum OwnershipScope {
+        TENANT,
+        ORGANIZATION
+    }
+
     @Id
     @GeneratedValue(strategy = GenerationType.UUID)
     private UUID id;
@@ -59,6 +75,10 @@ public class ApplicationEntity implements TenantScope {
     private UUID organizationId;
 
     private UUID tenantId;
+
+    @Enumerated(EnumType.STRING)
+    @JdbcTypeCode(SqlTypes.NAMED_ENUM)
+    private OwnershipScope ownershipScope;
 
     private String name;
 
@@ -82,12 +102,15 @@ public class ApplicationEntity implements TenantScope {
     protected ApplicationEntity() {}
 
     /**
-     * A new tenant-owned application (S3-01): born ACTIVE under the
-     * tenant's owning organization with at least one platform and the
-     * identifiers its platforms demand.
+     * A new application (S3-01/S3-02): born ACTIVE with at least one
+     * platform and the identifiers its platforms demand. TENANT scope
+     * carries the owning tenant under its owning organization;
+     * ORGANIZATION scope carries a null tenant — the database CHECK
+     * (INV-002) is the pairing's final authority.
      */
     public ApplicationEntity(
             UUID organizationId,
+            OwnershipScope ownershipScope,
             UUID tenantId,
             String name,
             String description,
@@ -95,6 +118,7 @@ public class ApplicationEntity implements TenantScope {
             String bundleId,
             String packageName) {
         this.organizationId = organizationId;
+        this.ownershipScope = ownershipScope;
         this.tenantId = tenantId;
         this.name = name;
         this.description = description;
@@ -124,6 +148,11 @@ public class ApplicationEntity implements TenantScope {
         return organizationId;
     }
 
+    @Override
+    public UUID organizationId() {
+        return organizationId;
+    }
+
     public UUID getTenantId() {
         return tenantId;
     }
@@ -131,6 +160,11 @@ public class ApplicationEntity implements TenantScope {
     @Override
     public UUID tenantId() {
         return tenantId;
+    }
+
+    /** The ownership mode (PRD 14); never null once persisted. */
+    public OwnershipScope getOwnershipScope() {
+        return ownershipScope;
     }
 
     public String getName() {

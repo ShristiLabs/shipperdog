@@ -51,10 +51,13 @@ VALUES
      '10000000-0000-4000-8000-000000000001', 'Contoso', 'demo-contoso')
 ON CONFLICT (id) DO NOTHING;
 
-INSERT INTO applications (id, organization_id, tenant_id, name, description, platforms, bundle_id, package_name)
+-- The demo application is tenant-owned (Acme's Banking app; the
+-- ORGANIZATION-shared mode of PRD 14/S3-02 is exercised by tests).
+INSERT INTO applications (id, organization_id, tenant_id, ownership_scope, name, description, platforms, bundle_id, package_name)
 VALUES ('10000000-0000-4000-8000-000000000004',
         '10000000-0000-4000-8000-000000000001',
         '10000000-0000-4000-8000-000000000002',
+        'TENANT',
         'Banking',
         'The demo banking application',
         '{IOS,ANDROID}',

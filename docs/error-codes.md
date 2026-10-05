@@ -75,8 +75,8 @@ see [api-conventions.md](api-conventions.md)).
 |---|---|---|
 | `APPLICATION_NOT_FOUND` | 404 | Resource not found. (also the concealed-denial shape for applications) |
 | `INVALID_REQUEST` | 400 | The request is invalid. |
-| `APPLICATION_TENANT_DEACTIVATED` | 409 | The owning tenant is deactivated. (registration only; reads and edits of existing applications continue) |
-| `APPLICATION_NAME_TAKEN` | 409 | The application name is already in use in the organization. |
+| `APPLICATION_TENANT_DEACTIVATED` | 409 | The owning tenant is deactivated. (registration and ORGANIZATION-to-TENANT scope transitions naming it; reads and edits of existing applications continue) |
+| `APPLICATION_NAME_TAKEN` | 409 | The application name is already in use in the organization (both ownership scopes; organization-wide since V10). |
 | `APPLICATION_BUNDLE_TAKEN` | 409 | The bundle id is already in use in the organization. |
 | `APPLICATION_PACKAGE_TAKEN` | 409 | The package name is already in use in the organization. |
 

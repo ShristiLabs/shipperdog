@@ -139,9 +139,17 @@ class TenantIsolationArchTest {
                 .should()
                 .callMethod(TenantContext.class, "begin", java.util.UUID.class, java.util.UUID.class, boolean.class)
                 .orShould()
+                .callMethod(
+                        TenantContext.class,
+                        "beginOrganization",
+                        java.util.UUID.class,
+                        java.util.UUID.class,
+                        boolean.class)
+                .orShould()
                 .callMethod(TenantContext.class, "end")
                 .because("re-scoping the tenant context mid-request would defeat the seam (issue #10); "
-                        + "context population belongs to the tenant module")
+                        + "context population belongs to the tenant module — both the tenant-scope and "
+                        + "organization-scope bindings (issue #14)")
                 .check(CLASSES);
     }
 

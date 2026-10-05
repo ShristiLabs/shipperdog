@@ -33,10 +33,12 @@ import org.springframework.web.servlet.HandlerInterceptor;
  * context on every outcome, so the thread-local never outlives the
  * request.
  *
- * <p>Unknown applications and organization-owned applications (null
- * owner tenant — none exist until S3-02) bind nothing: the permission
- * check conceal-denies the former and the read path stays on the seam
- * for the latter's owning story.
+ * <p>Unknown applications bind nothing: the permission check
+ * conceal-denies them. Organization-owned applications (null owner
+ * tenant, S3-02/PRD 14) bind the owning organization's scope instead of
+ * a tenant's — the seam's organization-scope mode serves those rows for
+ * the rest of the request, and the same fail-closed and audit rules
+ * apply (ADR-0002 third amendment).
  */
 public class ApplicationTenantContextInterceptor implements HandlerInterceptor {
 
@@ -71,15 +73,33 @@ public class ApplicationTenantContextInterceptor implements HandlerInterceptor {
         }
         UUID applicationId = UUID.fromString(route.group(1));
         Optional<ApplicationAccess.Ownership> ownership = applications.ownershipOf(applicationId);
-        if (ownership.isEmpty() || ownership.get().tenantId() == null) {
-            // Unknown application, or the organization-owned mode that
-            // arrives with S3-02: nothing to scope to. The permission
-            // check conceal-denies unknown ids; org-owned reads are
-            // S3-02's surface.
+        if (ownership.isEmpty()) {
+            // Unknown application: nothing to scope to, and the
+            // permission check conceal-denies it.
+            return true;
+        }
+        boolean platformAdmin = platformAdmins.isPlatformAdmin(actor);
+        // Bind last: if anything above threw, preHandle never completed
+        // and Spring skips afterCompletion for this interceptor, so no
+        // context may exist yet — a leaked thread-local on a pooled
+        // thread would mis-scope the next request.
+        if (ownership.get().tenantId() == null) {
+            // Organization-owned (S3-02, PRD 14): scope to the owning
+            // organization; the seam serves null-tenant rows of that
+            // organization only.
+            if (platformAdmin) {
+                audit.record(AuditEvent.builder(AuditEventType.CROSS_TENANT_ACCESS)
+                        .userId(actor)
+                        .orgId(ownership.get().organizationId())
+                        .applicationId(applicationId)
+                        .success(true)
+                        .detail(detailOf(request))
+                        .build());
+            }
+            TenantContext.beginOrganization(ownership.get().organizationId(), actor, platformAdmin);
             return true;
         }
         UUID tenantId = ownership.get().tenantId();
-        boolean platformAdmin = platformAdmins.isPlatformAdmin(actor);
         if (platformAdmin) {
             audit.record(AuditEvent.builder(AuditEventType.CROSS_TENANT_ACCESS)
                     .userId(actor)
@@ -89,10 +109,6 @@ public class ApplicationTenantContextInterceptor implements HandlerInterceptor {
                     .detail(detailOf(request))
                     .build());
         }
-        // Bind last: if anything above threw, preHandle never completed
-        // and Spring skips afterCompletion for this interceptor, so no
-        // context may exist yet — a leaked thread-local on a pooled
-        // thread would mis-scope the next request.
         TenantContext.begin(tenantId, actor, platformAdmin);
         return true;
     }

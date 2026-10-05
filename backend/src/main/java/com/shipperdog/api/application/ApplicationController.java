@@ -19,19 +19,25 @@ import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestController;
 
 /**
- * The application registry API (issue #13, S3-01, FR-003): registration
- * of tenant-owned applications with their platform set and per-platform
+ * The application registry API (issues #13 + #14, S3-01/S3-02, FR-003):
+ * registration of applications with their platform set and per-platform
  * identifiers, reads, and partial update carrying the reversible
- * ACTIVE/ARCHIVED lifecycle. {@code app:} permissions resolve through
- * the application's owning tenant/organization union (creation checks
- * {@code app:applications:write} at the future owner tenant, so every
- * creator holds an organization-level role); resource-scoped denials
- * render as concealed 404s (PRD 12) and errors use the problem+json
- * envelope (issue #8). Creation honors {@code Idempotency-Key}. The
- * tenant-scoped listing lives under
- * {@code GET /api/v1/tenants/{id}/applications} (S2-03) and stays this
- * story's list surface; ownership scope (S3-02), shared applications
- * (S3-03), the console UI (S3-04), and versions (E4) are later stories.
+ * ACTIVE/ARCHIVED lifecycle and — since S3-02 (PRD 14) — the ownership
+ * scope and its audited transitions. An application is born TENANT-owned
+ * (the default; the owning organization is derived from the owner
+ * tenant) or ORGANIZATION-shared (the owning organization is stated and
+ * no tenant is). {@code app:} permissions resolve through the owning
+ * tenant/organization union (creation checks
+ * {@code app:applications:write} at the future owner tenant for
+ * TENANT-owned registrations and at the owning organization for
+ * ORGANIZATION-shared ones — every creator holds an organization-level
+ * role either way); resource-scoped denials render as concealed 404s
+ * (PRD 12) and errors use the problem+json envelope (issue #8).
+ * Creation honors {@code Idempotency-Key}. The tenant-scoped listing
+ * lives under {@code GET /api/v1/tenants/{id}/applications} (S2-03) and
+ * shows tenant-owned applications (authorized-shared arrive with
+ * S3-03); the console UI (S3-04), the authorized-tenant mapping
+ * (S3-03), and versions (E4) are later stories.
  */
 @RestController
 @RequestMapping("/api/v1/applications")
@@ -46,12 +52,15 @@ public class ApplicationController {
     @PostMapping
     @ResponseStatus(HttpStatus.CREATED)
     @Idempotent
-    @PreAuthorize("hasPermission(#request.tenantId(), 'tenant', 'app:applications:write')")
+    @PreAuthorize("hasPermission(#request.tenantId() != null ? #request.tenantId() : #request.organizationId(),"
+            + " #request.tenantId() != null ? 'tenant' : 'organization', 'app:applications:write')")
     ApplicationService.ApplicationView create(
             @AuthenticationPrincipal Object principal, @RequestBody CreateRequest request) {
         return applications.create(
                 requireUserId(principal),
+                request.ownershipScope(),
                 request.tenantId(),
+                request.organizationId(),
                 request.name(),
                 request.description(),
                 request.platforms(),
@@ -77,7 +86,9 @@ public class ApplicationController {
                 request.platforms(),
                 request.bundleId(),
                 request.packageName(),
-                request.status());
+                request.status(),
+                request.ownershipScope(),
+                request.tenantId());
     }
 
     private static UUID requireUserId(Object principal) {
@@ -91,13 +102,18 @@ public class ApplicationController {
     }
 
     /**
-     * Registration body (issue #13): the future owner tenant, the name,
-     * an optional description, the platform set (at least one of
-     * IOS/ANDROID), and the chosen platforms' identifiers — bundleId
-     * exactly when IOS is chosen, packageName exactly when ANDROID is.
+     * Registration body (issues #13 + #14): the ownership scope
+     * ({@code TENANT} default or {@code ORGANIZATION}), the owner — the
+     * future owner tenant for TENANT scope, the owning organization for
+     * ORGANIZATION scope — the name, an optional description, the
+     * platform set (at least one of IOS/ANDROID), and the chosen
+     * platforms' identifiers: bundleId exactly when IOS is chosen,
+     * packageName exactly when ANDROID is.
      */
     public record CreateRequest(
+            String ownershipScope,
             UUID tenantId,
+            UUID organizationId,
             String name,
             String description,
             List<String> platforms,
@@ -107,6 +123,11 @@ public class ApplicationController {
     /**
      * Partial update: null fields are left unchanged; an empty
      * description clears it; removing a platform retires its identifier.
+     * A changed {@code ownershipScope} requests the audited scope
+     * transition (issue #14): converting to TENANT requires the new
+     * owner {@code tenantId}, converting to ORGANIZATION requires none;
+     * a {@code tenantId} without a scope change is rejected
+     * (re-owning between tenants is not a registry operation).
      */
     public record UpdateRequest(
             String name,
@@ -114,5 +135,7 @@ public class ApplicationController {
             List<String> platforms,
             String bundleId,
             String packageName,
-            String status) {}
+            String status,
+            String ownershipScope,
+            UUID tenantId) {}
 }
