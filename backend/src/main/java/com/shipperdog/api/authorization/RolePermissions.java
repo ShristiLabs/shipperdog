@@ -58,11 +58,11 @@ import java.util.Set;
  * ORG_MEMBER            (none — membership only; deny-by-default, PRD P3)
  * </pre>
  *
- * <p>{@code app:} permissions are declared for the modules that own those
- * resources (E3 onward); no current endpoint requires one. {@code app:}
- * grants evaluate through the application's owning tenant/organization
- * once application records are manageable (E3); until then the evaluator
- * denies them fail-closed except for platform administrators.
+ * <p>{@code app:} permissions are live since the application registry
+ * (E3, issue #13): grants evaluate through the application's owning
+ * tenant/organization (the union above), and creation-time checks
+ * evaluate at the future owner tenant — application-scope role
+ * memberships (INV-002) extend this with S3-02.
  */
 public final class RolePermissions {
 

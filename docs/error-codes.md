@@ -68,3 +68,18 @@ see [api-conventions.md](api-conventions.md)).
 | `TENANT_NAME_TAKEN` | 409 | The tenant name is already in use in the organization. |
 | `TENANT_EXTERNAL_ID_TAKEN` | 409 | The external id is already in use. |
 | `TENANT_DEACTIVATED` | 409 | The tenant is deactivated. |
+
+## Application (`ApplicationException.Code`)
+
+| Code | HTTP | Detail |
+|---|---|---|
+| `APPLICATION_NOT_FOUND` | 404 | Resource not found. (also the concealed-denial shape for applications) |
+| `INVALID_REQUEST` | 400 | The request is invalid. |
+| `APPLICATION_TENANT_DEACTIVATED` | 409 | The owning tenant is deactivated. (registration only; reads and edits of existing applications continue) |
+| `APPLICATION_NAME_TAKEN` | 409 | The application name is already in use in the organization. |
+| `APPLICATION_BUNDLE_TAKEN` | 409 | The bundle id is already in use in the organization. |
+| `APPLICATION_PACKAGE_TAKEN` | 409 | The package name is already in use in the organization. |
+
+Reserved, not yet emitted: `APPLICATION_ARCHIVED` (409 — version and
+artifact creation under an archived application, binding with E4/E5 per
+issue #13's acceptance criterion 4).

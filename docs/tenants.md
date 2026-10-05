@@ -111,16 +111,21 @@ Removal deletes the membership and revokes the member's refresh tokens
 (`status.before`/`status.after`, `sessionsRevoked`), and
 `TENANT_MEMBER_REMOVED`.
 
-## Applications (S2-03)
+## Applications (S2-03, S3-01)
 
 `GET /{id}/applications` returns the applications the tenant owns —
-the `applications.tenant_id` rows for that tenant, cursor-paginated,
-readable by both tenant roles (`tenant:applications:read`). The
+the `applications.tenant_id` rows for that tenant, cursor-paginated
+and carrying the registry fields (platforms, identifiers,
+description, status since S3-01), readable by both tenant roles
+(`tenant:applications:read`). The
 listing runs through the isolation seam, so rows of other tenants and
 organization-owned applications (null `tenant_id`) are invisible by
-construction. FR-002's "assign applications" write side arrives with
-the application registry (E3: creation S3-01, ownership scope S3-02);
-shared applications — an application reachable from more than one
+construction. FR-002's "assign applications" write side arrived with
+the application registry: creation and management are S3-01
+(`POST`/`GET`/`PATCH /api/v1/applications`, organization-level
+`app:applications:write` authority — see
+[authorization](authorization.md)); ownership scope is S3-02.
+Shared applications — an application reachable from more than one
 tenant — arrive with S3-03 and will extend this surface. A deactivated
 tenant keeps a readable listing (deactivation blocks new affiliations,
 never reads).

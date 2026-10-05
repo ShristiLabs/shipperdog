@@ -16,6 +16,7 @@ backend/src/main/resources/db/
     V6__api_conventions.sql
     V7__tenant_lifecycle.sql
     V8__tenant_member_status.sql
+    V9__application_registry.sql
   seed/                 dev fixture, applied only when the seed location is active
     R__dev_seed.sql
 ```
@@ -112,6 +113,15 @@ backend/src/main/resources/db/
   mirroring the `org_status` precedent (V3); V1's `DISABLED` label
   stays reserved-unused. The `tenants` table itself is complete from
   V1 — the story needed no column or constraint changes.
+- `V9__application_registry.sql` (S3-01) extends `applications` with
+  `description` and `platforms` (checked `varchar(30)[]`, at least one
+  platform, vocabulary IOS/ANDROID — the array keeps Hibernate's
+  mapping and `ddl-auto: validate` green; the native `platform_type`
+  enum stays reserved for E5's singular `artifacts.platform`), plus
+  the organization-scoped identifier guards
+  `uq_applications_organization_bundle` /
+  `uq_applications_organization_package` (partial unique indexes —
+  issue #13 acceptance criterion 2).
 
 ## Status and type columns
 

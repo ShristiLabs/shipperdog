@@ -110,6 +110,14 @@ public class TenantMemberService implements TenantAccess {
         return tenants.findById(tenantId).map(tenant -> tenant.getOrganizationId());
     }
 
+    @Override
+    @Transactional(readOnly = true)
+    public boolean acceptsNewAffiliations(UUID tenantId) {
+        return tenants.findById(tenantId)
+                .map(tenant -> tenant.getStatus() == TenantEntity.Status.ACTIVE)
+                .orElse(false);
+    }
+
     // -------------------------------------------------------------------------
     // Module API (TenantController)
     // -------------------------------------------------------------------------
