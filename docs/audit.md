@@ -68,7 +68,10 @@ integrate the framework. Current vocabulary: identity
 organization (`ORGANIZATION_CREATED`, `ORGANIZATION_UPDATED`,
 `ORG_MEMBER_ADDED`, `ORG_IDP_CONFIGURED`, `ORG_MEMBER_ROLE_CHANGED`,
 `ORG_MEMBER_REMOVED`), tenant (`TENANT_CREATED`, `TENANT_UPDATED`,
-`TENANT_MEMBER_ROLE_CHANGED`, `TENANT_MEMBER_REMOVED`), and platform
+`TENANT_MEMBER_ROLE_CHANGED`, `TENANT_MEMBER_REMOVED`,
+`CROSS_TENANT_ACCESS` — a platform administrator entering a
+tenant-scoped route through the override, carrying actor, tenant, and
+method/URI; see [authorization](authorization.md)), and platform
 (`ACCESS_DENIED`, S1-06).
 
 ## Persistence and transactional semantics

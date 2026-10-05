@@ -567,6 +567,7 @@ paths:
           - TENANT_UPDATED
           - TENANT_MEMBER_ROLE_CHANGED
           - TENANT_MEMBER_REMOVED
+          - CROSS_TENANT_ACCESS
           - ACCESS_DENIED
       - name: applicationId
         in: query
@@ -755,8 +756,6 @@ components:
     JsonNode:
       type: object
       properties:
-        floatingPointNumber:
-          type: boolean
         nodeType:
           type: string
           enum:
@@ -799,6 +798,8 @@ components:
         boolean:
           type: boolean
         binary:
+          type: boolean
+        floatingPointNumber:
           type: boolean
         container:
           type: boolean
@@ -1056,6 +1057,7 @@ components:
           - TENANT_UPDATED
           - TENANT_MEMBER_ROLE_CHANGED
           - TENANT_MEMBER_REMOVED
+          - CROSS_TENANT_ACCESS
           - ACCESS_DENIED
         occurredAt:
           type: string

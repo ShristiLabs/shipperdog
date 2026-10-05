@@ -65,11 +65,38 @@ on the constraint is the final authority — no driver-message parsing).
   pairs for each changed field — carrying actor, organization, and
   tenant ids (see [audit logging](audit.md)).
 
-## Isolation groundwork (for S2-02)
+## Isolation (S2-02, INV-001)
 
-Every tenant query in this story is organization-scoped by construction
-(`findByOrganizationId...`); cross-organization leakage is structurally
-impossible from the lifecycle surface. Cross-tenant read enforcement
-(INV-001: tenant A cannot access tenant B's data) is S2-02's scope; the
-authorization evaluator already resolves tenant ownership for its
-union rule, which S2-02 builds on.
+Tenant isolation is enforced in two layers, so no endpoint or future
+query can leak cross-tenant data:
+
+- **Endpoint layer** (since S1-05): every tenant-scoped route carries a
+  `@PreAuthorize` target check; callers without a role in the tenant
+  (or its owning organization) receive the concealed `404` — identical
+  shape to an unknown tenant.
+- **Data layer** (S2-02): the request's tenant context filters every
+  tenant-scoped query at the repository seam — `tenantId = context` is
+  composed into the query by construction, a query without a context
+  fails closed, and cross-tenant writes are refused. The inherited
+  `JpaRepository` surface is enforced or refused the same way, guarded
+  by a reflective completeness test against Spring Data upgrades
+  (ADR-0002 amendment). See
+  [authorization](authorization.md) and
+  [ADR-0002](adr/ADR-0002-tenant-isolation-data-seam.md).
+
+Platform administrators may operate on any tenant (PRD 7.1); since
+S2-02 that override is explicit and audited: every platform-admin
+request on a tenant-scoped route records a `CROSS_TENANT_ACCESS` audit
+event (actor, tenant, method/URI). Organization roles can never take
+this path.
+
+### Deactivated tenants (recorded decisions)
+
+Deactivation blocks **new** affiliations only; a deactivated tenant
+stays administrable so it can be inspected and reactivated:
+
+- member listings stay readable to the tenant's administrators;
+- role changes and membership removals stay possible for
+  administrators of the owning organization;
+- data-layer isolation is identical in every lifecycle state — the seam
+  filters by tenant context regardless of status.

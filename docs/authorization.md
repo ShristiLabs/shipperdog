@@ -117,6 +117,55 @@ never the HTTP response. Since S1-06 every authenticated denial is
 recorded there automatically as an `ACCESS_DENIED` event (see
 [audit](audit.md)).
 
+## Tenant isolation at the data layer (S2-02)
+
+Endpoint checks decide **who may enter a tenant-scoped route**; since
+S2-02 a second, structural layer guarantees that **everything read or
+written inside it belongs to that tenant** (INV-001, PRD 26):
+
+- The web layer binds a request-scoped `TenantContext` (thread-local)
+  for `/api/v1/tenants/{id}` routes: target tenant, actor, and the
+  platform-admin override flag. It is cleared when the request
+  completes.
+- Repositories over tenant-scoped entities extend
+  `TenantScopedRepository`, whose base class composes an index-backed
+  `tenantId = context` predicate into **every** query — reads,
+  existence checks, and writes — so no caller can span tenants. A query
+  without a bound context throws instead of running (fail-closed), and
+  a write targeting another tenant is refused. Cross-tenant fetches by
+  id surface as empty results, which the services render as the same
+  opaque `404` a genuine miss produces (PRD 12).
+- The seam is mandatory: architecture tests reject a repository over a
+  `TenantScope` entity that bypasses it (the only exemption,
+  `@CrossTenantByDesign`, marks the authorization engine's role
+  resolution — membership queries that are cross-tenant by design and
+  never serve endpoint data), reject derived query methods on seam
+  repositories, ban raw `EntityManager`/`Session` usage outside
+  repository packages, and reject unscoped Spring Data query interfaces
+  (`JpaSpecificationExecutor`, `RevisionRepository`) on seam
+  repositories.
+- The inherited `JpaRepository` surface is policy, not a bypass: the
+  base class overrides all of it — id-based reads behave scoped (a
+  foreign id reads as a genuine miss), writes and single-entity deletes
+  are tenant-verified, and every operation without a tenant-safe
+  meaning (bulk deletes, unparameterized listings, lazy proxies,
+  `Example` queries) refuses — with a reflective completeness guard
+  that fails the build when a Spring Data upgrade adds operations the
+  seam does not account for (ADR-0002 amendment).
+- The **platform-admin override** is explicit, audited, and closed to
+  organization roles: it is set only from `users.platform_admin`, and
+  every platform-admin request on a tenant-scoped route records a
+  `CROSS_TENANT_ACCESS` audit event (actor, tenant, method/URI). Reads
+  stay scoped to the route's tenant even for platform administrators;
+  the override authorizes administrative cross-tenant writes.
+
+When applications, versions, artifacts, testers, and tester groups get
+JPA entities (E3+), their entities implement `TenantScope` and their
+repositories extend the seam — isolation is inherited by construction,
+not re-implemented per module. The mechanism decision (predicate
+injection over a Hibernate session filter) and its trade-offs are
+recorded in [ADR-0002](adr/ADR-0002-tenant-isolation-data-seam.md).
+
 ## Tenant lifecycle endpoints
 
 Tenant lifecycle (issue #9) is organization-level administration. An
