@@ -81,6 +81,17 @@ REVOKED <------------- removal (DELETE; row RETAINED, never deleted)
   transaction (the #26/#27 race discipline — this story applied it to
   `TenantMemberService.addMember` too, fixing the dead in-transaction
   catch that 500'd lost member-add races).
+- **Deactivation cascade (S6-04, issue #29)**: deactivating the TESTER
+  (`PUT /api/v1/testers/{id}/status` with `DISABLED` — see
+  [testers](testers.md)) suspends every ACTIVE membership of that
+  tester in the same transaction, audited per row as
+  `TENANT_TESTER_MEMBERSHIP_STATUS_CHANGED` with
+  `cascade=tester_deactivated` and the mandatory reason. Rows are
+  flipped, never deleted or REVOKED (INV-007): already-SUSPENDED
+  rows stay SUSPENDED and REVOKED history rides through untouched.
+  Reactivating the tester restores NOTHING automatically — each
+  membership waits for its per-tenant re-enable (`PUT status` with
+  `ACTIVE`) or re-link.
 
 ## Endpoints
 

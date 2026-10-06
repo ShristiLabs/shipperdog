@@ -223,6 +223,62 @@ public class TenantTesterMembershipService implements TenantTesterMembershipAcce
     }
 
     // -------------------------------------------------------------------------
+    // Deactivation cascade (S6-04)
+    // -------------------------------------------------------------------------
+
+    /**
+     * The tester-deactivation cascade (issue #29, S6-04): suspends every
+     * ACTIVE membership of the tester, in the CALLER's transaction so the
+     * person-record flip and the cascade commit atomically (a deactivated
+     * tester with live ACTIVE memberships would be an inconsistent
+     * intermediate). Runs through the cross-tenant catalog's sanctioned
+     * bulk flip on purpose: the cascade is an organization-grain
+     * lifecycle act spanning the organization's tenants, so no single
+     * tenant context can scope it (the tenants-of-tester precedent).
+     *
+     * <p>Suspension, never removal: INV-007 keeps every row — REVOKED
+     * history stays REVOKED, already-SUSPENDED rows stay SUSPENDED — so
+     * the audit evidence of what the tester had remains queryable, and
+     * reactivation restores nothing silently (each membership is
+     * re-enabled manually per tenant, the documented S6-04 default).
+     * Returns the number of rows flipped; the caller carries the count
+     * into the deactivation audit event. Each flipped row is audited
+     * from the pre-update read; a concurrent link that slips between
+     * read and flip lands in the returned count and stays audited by
+     * its own creation event (its membership is not effective anyway —
+     * the person record is DISABLED).
+     */
+    public int suspendForTesterDeactivation(UUID actorId, UUID testerId, String reason) {
+        List<TenantTesterMembershipEntity> activeRows =
+                catalog.findByTesterIdOrderByCreatedAtAscTenantIdAsc(testerId).stream()
+                        .filter(membership -> membership.getStatus() == TenantTesterMembershipEntity.Status.ACTIVE)
+                        .toList();
+        int flipped = activeRows.isEmpty()
+                ? 0
+                : catalog.suspendActiveByTesterId(
+                        testerId,
+                        TenantTesterMembershipEntity.Status.ACTIVE,
+                        TenantTesterMembershipEntity.Status.SUSPENDED,
+                        Instant.now(clock));
+        for (TenantTesterMembershipEntity membership : activeRows) {
+            Map<String, String> detail = new LinkedHashMap<>(membershipDetail(
+                    membership,
+                    TenantTesterMembershipEntity.Status.ACTIVE,
+                    TenantTesterMembershipEntity.Status.SUSPENDED));
+            detail.put("cascade", "tester_deactivated");
+            detail.put("reason", reason);
+            audit.publish(AuditEvent.builder(AuditEventType.TENANT_TESTER_MEMBERSHIP_STATUS_CHANGED)
+                    .userId(actorId)
+                    .tenantId(membership.getTenantId())
+                    .occurredAt(Instant.now(clock))
+                    .success(true)
+                    .detail(detail)
+                    .build());
+        }
+        return flipped;
+    }
+
+    // -------------------------------------------------------------------------
     // Reads
     // -------------------------------------------------------------------------
 

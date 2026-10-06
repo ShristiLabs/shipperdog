@@ -1539,6 +1539,8 @@ paths:
           - TESTER_INVITED
           - TESTER_ACTIVATED
           - TESTER_STATUS_CHANGED
+          - TESTER_DEACTIVATED
+          - TESTER_REACTIVATED
           - TESTER_GROUP_CREATED
           - TESTER_GROUP_UPDATED
           - TESTER_GROUP_DELETED
@@ -1783,6 +1785,8 @@ components:
       properties:
         status:
           type: string
+        reason:
+          type: string
     TesterResponse:
       type: object
       properties:
@@ -1940,6 +1944,12 @@ components:
     JsonNode:
       type: object
       properties:
+        string:
+          type: boolean
+        floatingPointNumber:
+          type: boolean
+        valueNode:
+          type: boolean
         nodeType:
           type: string
           enum:
@@ -1952,17 +1962,11 @@ components:
           - OBJECT
           - POJO
           - STRING
-        string:
-          type: boolean
-        integralNumber:
-          type: boolean
         missingNode:
-          type: boolean
-        valueNode:
           type: boolean
         pojo:
           type: boolean
-        number:
+        integralNumber:
           type: boolean
         short:
           type: boolean
@@ -1983,9 +1987,9 @@ components:
           type: boolean
         binary:
           type: boolean
-        floatingPointNumber:
-          type: boolean
         container:
+          type: boolean
+        number:
           type: boolean
         empty:
           type: boolean
@@ -2728,6 +2732,8 @@ components:
           - TESTER_INVITED
           - TESTER_ACTIVATED
           - TESTER_STATUS_CHANGED
+          - TESTER_DEACTIVATED
+          - TESTER_REACTIVATED
           - TESTER_GROUP_CREATED
           - TESTER_GROUP_UPDATED
           - TESTER_GROUP_DELETED

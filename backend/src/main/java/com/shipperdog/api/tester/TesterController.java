@@ -27,10 +27,12 @@ import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestController;
 
 /**
- * Tester onboarding and lifecycle API (issue #26, S6-01, FR-010):
- * organization administrators invite testers by email, the invitee
- * self-onboards through the platform registration endpoint, and the
- * INVITED/ACTIVE/SUSPENDED lifecycle is enforced and audited. The
+ * Tester onboarding and lifecycle API (issues #26/#29, S6-01/S6-04,
+ * FR-010): organization administrators invite testers by email, the
+ * invitee self-onboards through the platform registration endpoint,
+ * and the INVITED/ACTIVE/SUSPENDED/DISABLED lifecycle is enforced and
+ * audited — DISABLED being S6-04's deactivation/revocation posture
+ * (mandatory reason, membership cascade, session kill). The
  * once-shown invitation token (plus its ready-made accept URL) is
  * returned to the inviting administrator — email transport is the
  * notification seam's business (S12), and the S1-03 dev-mode delivery
@@ -94,7 +96,8 @@ public class TesterController {
             @PathVariable UUID id,
             @RequestBody StatusChangeRequest request) {
         return TesterResponse.from(
-                testers.changeStatus(requireUserId(principal), id, parseStatus(request.status())), null);
+                testers.changeStatus(requireUserId(principal), id, parseStatus(request.status()), request.reason()),
+                null);
     }
 
     private static UUID requireUserId(Object principal) {
@@ -121,8 +124,13 @@ public class TesterController {
     /** Creation request: the tester person record fields (issue #26). */
     public record CreateRequest(UUID organizationId, String email, String fullName) {}
 
-    /** Status change request: ACTIVE or SUSPENDED (lifecycle rules in service). */
-    public record StatusChangeRequest(String status) {}
+    /**
+     * Status change request: ACTIVE, SUSPENDED, or DISABLED (lifecycle
+     * rules in service). {@code reason} is mandatory for DISABLED — the
+     * deactivation audit trail — and optional (recorded when present)
+     * elsewhere.
+     */
+    public record StatusChangeRequest(String status, String reason) {}
 
     /**
      * Tester view. On the created paths the response also carries the

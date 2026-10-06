@@ -25,8 +25,9 @@ import org.springframework.transaction.support.TransactionTemplate;
  * dummy digest for unknown addresses) so response timing does not reveal
  * whether an address is registered. Since S1-04, users whose every
  * organization is DEACTIVATED are refused (uniform 401, distinct audit
- * reason) unless they are platform administrators. Since S6-01, users whose
- * tester record is SUSPENDED are refused the same way.
+ * reason) unless they are platform administrators. Since S6-01/S6-04,
+ * users whose tester record is SUSPENDED or DEACTIVATED are refused
+ * the same way.
  */
 @Service
 public class AuthService {
@@ -118,12 +119,15 @@ public class AuthService {
             audit(AuditEventType.LOGIN_FAILURE, user.getId(), "organization_deactivated");
             throw invalidCredentials();
         }
-        if (!user.isPlatformAdmin() && testerAccounts.loginBlockedFor(user.getId())) {
-            // S6-01: a SUSPENDED tester may not log in; the same uniform
-            // 401 and the same platform-admin exemption as the
-            // deactivated-organization block above.
-            audit(AuditEventType.LOGIN_FAILURE, user.getId(), "tester_suspended");
-            throw invalidCredentials();
+        if (!user.isPlatformAdmin()) {
+            // S6-01/S6-04: a SUSPENDED or DEACTIVATED (DISABLED) tester
+            // may not log in; the same uniform 401 and the same
+            // platform-admin exemption as the deactivated-organization
+            // block above (the block kind reaches the audit trail only).
+            testerAccounts.loginBlockFor(user.getId()).ifPresent(block -> {
+                audit(AuditEventType.LOGIN_FAILURE, user.getId(), block.auditReason());
+                throw invalidCredentials();
+            });
         }
 
         return transactions.execute(status -> {

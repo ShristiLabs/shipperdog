@@ -48,12 +48,14 @@ Current contents:
 - [Audit logging](audit.md) — append-only audit trail, transactional
   persistence, redaction, correlation ids, and the admin query API
   (S1-06).
-- [Testers](testers.md) — tester onboarding and invitations (S6-01):
-  organization-scoped tester records, the reused invitation machinery
-  with the 7-day single-use token, accept flow through registration,
-  the INVITED/ACTIVE/SUSPENDED lifecycle with login/refresh/PAT
-  suspension, email delivery through the notification seam, and
-  TESTER_* configuration.
+- [Testers](testers.md) — tester onboarding and invitations (S6-01)
+  and lifecycle revocation (S6-04): organization-scoped tester
+  records, the reused invitation machinery with the 7-day single-use
+  token, accept flow through registration, the
+  INVITED/ACTIVE/SUSPENDED/DISABLED lifecycle with login/refresh/PAT
+  enforcement, deactivation with mandatory reason, membership cascade,
+  session kill and the revocation latency SLA, email delivery through
+  the notification seam, and TESTER_* configuration.
 - [Tester groups](tester-groups.md) — tenant-scoped tester collections
   (S6-02): group CRUD on the isolation seam, idempotent membership
   add/remove over the composite-PK junction, default-group seeding on

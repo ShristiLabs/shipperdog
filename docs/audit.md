@@ -144,7 +144,12 @@ minted (create or re-invite, `reinvited=true` distinguishing the
 latter), carrying the `email` and `testerId` entity reference;
 `TESTER_ACTIVATED` — issue #26/S6-01: acceptance linked the account
 and flipped the record; `TESTER_STATUS_CHANGED` — issue #26/S6-01:
-the suspend/reactivate switch with `from`/`to`),
+the suspend/reactivate switch with `from`/`to`;
+`TESTER_DEACTIVATED` — issue #29/S6-04: deactivation (revocation
+posture) with `from`/`to`, the mandatory `reason` (FR-024), the
+`suspendedMemberships` cascade count, and `refreshFamiliesRevoked`;
+`TESTER_REACTIVATED` — issue #29/S6-04: the explicit DISABLED ->
+ACTIVE re-enable with `from`/`to`),
 tester group (`TESTER_GROUP_CREATED` — issue #27/S6-02: a group
 created, carrying `name` and the tenant entity reference
 (`seeded=true` marks tenant-creation seeding);
@@ -160,11 +165,12 @@ and `status` (`reactivated=true` marks a re-link of a retained
 REVOKED row); `TENANT_TESTER_MEMBERSHIP_STATUS_CHANGED` —
 issue #28/S6-03: the reversible suspend/reactivate switch with
 `status.before`/`status.after` (no-op switches audit with equal
-before/after, mirroring tenant updates);
-`TENANT_TESTER_MEMBERSHIP_REMOVED` — issue #28/S6-03: removal, which
-RETAINS the row REVOKED — never a delete — with
-`status.before`/`status.after=REVOKED`; idempotent re-removals write
-nothing),
+before/after, mirroring tenant updates; the S6-04 deactivation
+cascade writes the same event with `cascade=tester_deactivated` and
+the deactivation `reason`); `TENANT_TESTER_MEMBERSHIP_REMOVED` —
+issue #28/S6-03: removal, which RETAINS the row REVOKED — never a
+delete — with `status.before`/`status.after=REVOKED`; idempotent
+re-removals write nothing),
 and
 platform (`ACCESS_DENIED`, S1-06).
 
