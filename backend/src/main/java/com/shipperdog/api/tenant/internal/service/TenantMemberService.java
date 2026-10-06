@@ -112,6 +112,14 @@ public class TenantMemberService implements TenantAccess {
 
     @Override
     @Transactional(readOnly = true)
+    public List<UUID> tenantIdsOfOrganization(UUID organizationId) {
+        return tenants.findByOrganizationId(organizationId).stream()
+                .map(TenantEntity::getId)
+                .toList();
+    }
+
+    @Override
+    @Transactional(readOnly = true)
     public boolean acceptsNewAffiliations(UUID tenantId) {
         return tenants.findById(tenantId)
                 .map(tenant -> tenant.getStatus() == TenantEntity.Status.ACTIVE)

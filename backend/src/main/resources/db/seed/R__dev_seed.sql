@@ -64,3 +64,27 @@ VALUES ('10000000-0000-4000-8000-000000000004',
         'com.shipperdog.demo.banking',
         'com.shipperdog.demo.banking')
 ON CONFLICT (id) DO NOTHING;
+
+-- Default tester groups for the demo tenants (issue #27, S6-02): the
+-- API seeds these on every tenant creation; the seed fixture creates
+-- its tenants directly, so it reproduces the same provisioning here
+-- (PRD 8.9's examples; the application default list). Fixed ids per
+-- tenant slot keep re-runs idempotent.
+INSERT INTO tester_groups (id, tenant_id, name)
+VALUES
+    ('10000000-0000-4000-8000-000000001002', '10000000-0000-4000-8000-000000000002', 'Internal QA'),
+    ('10000000-0000-4000-8000-000000001003', '10000000-0000-4000-8000-000000000002', 'Tenant QA'),
+    ('10000000-0000-4000-8000-000000001004', '10000000-0000-4000-8000-000000000002', 'UAT'),
+    ('10000000-0000-4000-8000-000000001005', '10000000-0000-4000-8000-000000000002', 'Pilot'),
+    ('10000000-0000-4000-8000-000000001006', '10000000-0000-4000-8000-000000000002', 'Executive Beta'),
+    ('10000000-0000-4000-8000-000000001007', '10000000-0000-4000-8000-000000000002', 'External Beta'),
+    ('10000000-0000-4000-8000-000000001102', '10000000-0000-4000-8000-000000000003', 'Internal QA'),
+    ('10000000-0000-4000-8000-000000001103', '10000000-0000-4000-8000-000000000003', 'Tenant QA'),
+    ('10000000-0000-4000-8000-000000001104', '10000000-0000-4000-8000-000000000003', 'UAT'),
+    ('10000000-0000-4000-8000-000000001105', '10000000-0000-4000-8000-000000000003', 'Pilot'),
+    ('10000000-0000-4000-8000-000000001106', '10000000-0000-4000-8000-000000000003', 'Executive Beta'),
+    ('10000000-0000-4000-8000-000000001107', '10000000-0000-4000-8000-000000000003', 'External Beta')
+-- Bare ON CONFLICT DO NOTHING: a local database that already holds a
+-- same-named group in a demo tenant (uq_tester_groups_tenant_name,
+-- not the fixed ids) must not abort the repeatable migration.
+ON CONFLICT DO NOTHING;

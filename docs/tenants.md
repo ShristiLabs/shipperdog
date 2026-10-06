@@ -68,10 +68,16 @@ on the constraint is the final authority — no driver-message parsing).
     new invitations"); tester memberships (S6-03) and distributions
     (S7) check the same state when they arrive — tester records
     themselves (S6-01) carry no tenant dimension, so tenant
-    deactivation does not touch them;
+    deactivation does not touch them; tester groups (S6-02) extend
+    the rule with `409 TESTER_GROUP_TENANT_DEACTIVATED` for new
+    groups and new memberships (reads, renames, deletions, and
+    removals continue);
   - **preserves everything** — no cascade, no deletion; existing
     members, applications, and data remain intact and readable
     (acceptance criterion 3).
+- Creation seeds the configurable default tester groups (S6-02,
+  PRD 8.9's examples) inside the creation transaction — see
+  [tester groups](tester-groups.md).
 - Every mutation writes an audit event — `TENANT_CREATED` with the
   created attributes, `TENANT_UPDATED` with `field.before`/`field.after`
   pairs for each changed field — carrying actor, organization, and

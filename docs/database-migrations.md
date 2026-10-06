@@ -320,6 +320,15 @@ backend/src/main/resources/db/
   re-minting flushes the revocation before the replacement insert
   (Hibernate action-ordering runs inserts before updates, and the
   partial index would otherwise see two PENDING rows).
+- S6-02 (issue #27) adds NO migration: `tester_groups` (with
+  `uq_tester_groups_tenant_name`) and `tester_group_members` (composite
+  PK `group_id`+`tester_id`, `idx_tgm_tester_id`) landed complete in
+  the V1 baseline exactly as PRD 13 sketched them, and default-group
+  seeding is application-level work inside the tenant-creation
+  transaction, not data migration. The dev seed fixture grew a
+  repeatable block provisioning the demo tenants' default groups to
+  match what the API now produces; tenants created before S6-02 keep
+  their original state (no retro-seeding).
 
 ## Status and type columns
 

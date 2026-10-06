@@ -103,6 +103,10 @@ shipperdog:
     # points at the local console origin.
     invitation-ttl: ${TESTER_INVITATION_TTL:P7D}
     portal-base-url: ${TESTER_PORTAL_BASE_URL:http://localhost:5173}
+    # Default tester groups seeded on every tenant creation (issue #27,
+    # S6-02, PRD 8.9's examples; the seeded rows are ordinary editable
+    # groups). Comma-separated; empty skips seeding.
+    default-groups: ${TESTER_DEFAULT_GROUPS:Internal QA,Tenant QA,UAT,Pilot,Executive Beta,External Beta}
 
 server:
   port: ${SERVER_PORT:8080}

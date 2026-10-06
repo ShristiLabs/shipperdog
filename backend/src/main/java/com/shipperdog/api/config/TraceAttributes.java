@@ -68,6 +68,11 @@ public class TraceAttributes {
         attribute("tester_id", testerId);
     }
 
+    /** Records the tester group the current request operates on (E6+, issue #27). */
+    public void testerGroup(UUID groupId) {
+        attribute("tester_group_id", groupId);
+    }
+
     private void attribute(String key, UUID id) {
         if (id == null) {
             return;

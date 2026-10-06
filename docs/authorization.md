@@ -107,6 +107,12 @@ password-reset pair) matched by the security chain's `permitAll`.
   organization-scoped (ADR-0002 tenth amendment), so item-addressed
   tester routes check `org:testers:*` at the record's organization
   and a foreign organization's tester is a concealed miss.
+  `tester-group` targets (S6-02, issue #27) resolve the group's
+  owning tenant with the organization overlay through the public
+  `TesterGroupAccess` hop — groups are tenant-scoped seam rows — and
+  an app-scope check at a `tester` target (the groups-per-tester
+  listing) resolves the person record's owning organization the same
+  way the org-scope hop does.
   Creation-time checks evaluate at the
   future owner tenant for tenant-owned registrations and at the owning
   organization for organization-shared ones, so
@@ -243,6 +249,26 @@ tester-flavored invitation (no permission — the token is the
 credential) and grants no organization membership; the invitation
 lifecycle and the suspended-tester credential blocks are documented in
 [Testers](testers.md).
+
+Tester groups (S6-02, issue #27) are tenant-scoped seam data checked
+with the catalog's `app:tester-groups:manage` (ORG_ADMIN and
+QA_ENGINEER since S1-05; no separate read grant exists yet):
+
+| Method | Path | Permission | Result |
+|---|---|---|---|
+| POST | `/api/v1/tester-groups` | `app:tester-groups:manage` at the target `tenantId` (body) | `201` group; `409 TESTER_GROUP_NAME_TAKEN`/`TESTER_GROUP_TENANT_DEACTIVATED`; `404` unknown tenant; honors `Idempotency-Key` |
+| GET | `/api/v1/tester-groups?tenantId=...` | `app:tester-groups:manage` at that tenant | `200` groups, cursor-paginated, creation-ordered |
+| GET | `/api/v1/tester-groups?testerId=...` | `app:tester-groups:manage` (`tester` target) | `200` the tester's groups across their organization's tenants, name-ordered |
+| GET | `/api/v1/tester-groups/{id}` | `app:tester-groups:manage` (`tester-group` target) | `200` group view |
+| PUT | `/api/v1/tester-groups/{id}` | `app:tester-groups:manage` (`tester-group` target) | `200` renamed; `409 TESTER_GROUP_NAME_TAKEN` |
+| DELETE | `/api/v1/tester-groups/{id}` | `app:tester-groups:manage` (`tester-group` target) | `204`; memberships removed with the group |
+| GET | `/api/v1/tester-groups/{id}/members` | `app:tester-groups:manage` (`tester-group` target) | `200` testers, cursor-paginated, join-ordered |
+| POST | `/api/v1/tester-groups/{id}/members` | `app:tester-groups:manage` (`tester-group` target) | `201 {added:true}`; re-add `200 {added:false}` (idempotent); `404 TESTER_NOT_FOUND` (unknown/foreign tester); honors `Idempotency-Key` |
+| DELETE | `/api/v1/tester-groups/{id}/members/{testerId}` | `app:tester-groups:manage` (`tester-group` target) | `204`, idempotent (absent membership is a no-op) |
+
+Default-group seeding on tenant creation runs inside the tenant
+module's creation transaction; details and the race discipline are
+documented in [Tester groups](tester-groups.md).
 
 ## Role-assignment endpoints
 

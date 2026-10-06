@@ -9,12 +9,12 @@ import org.springframework.web.bind.annotation.RestControllerAdvice;
 
 /**
  * Renders tester-module failures in the platform's single error
- * envelope (issue #8, issue #26): RFC 7807 problem+json with a stable
- * public code and the request's trace_id. Internal exception messages
- * are logged, never echoed.
+ * envelope (issue #8, issues #26 and #27): RFC 7807 problem+json with
+ * a stable public code and the request's trace_id. Internal exception
+ * messages are logged, never echoed.
  */
 @Order(0)
-@RestControllerAdvice(assignableTypes = TesterController.class)
+@RestControllerAdvice(assignableTypes = {TesterController.class, TesterGroupController.class})
 public class TesterExceptionHandler {
 
     @ExceptionHandler(TesterException.class)
