@@ -34,6 +34,20 @@ public interface VersionAccessGrantCatalog extends JpaRepository<VersionAccessGr
             UUID tenantId, UUID testerId, UUID applicationId);
 
     /**
+     * Every grant the tester holds through the tenant, all
+     * applications (issue #32, S7-03): the decision-input cache's
+     * loader — one prefix descent of
+     * {@code idx_version_access_grant_subject} (the composite probe
+     * index's tenant + tester prefix), filtered by application in
+     * memory. The per-tenant SET is the cached unit per the story's
+     * technical note (a grant mutation drops exactly this key); the
+     * application filter stays at evaluation time so one entry serves
+     * every application the tenant granted. Any expiry; authorization
+     * data only, never an endpoint data path.
+     */
+    List<VersionAccessGrantEntity> findByTenantIdAndTesterId(UUID tenantId, UUID testerId);
+
+    /**
      * The shared-application decision probe (issue #31 AC2): the
      * subject's grants for the application across tenants — one
      * {@code idx_version_access_tester_application} descent. For an

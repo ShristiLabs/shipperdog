@@ -40,8 +40,15 @@ combinations:
 | SUSPENDED | ACTIVE | no |
 | SUSPENDED | SUSPENDED | no |
 
-Effectiveness is a LIVE query (no cache; the documented staleness TTL
-is zero): a suspension or removal reflects on the very next request.
+Effectiveness is a LIVE query — the port's own contract keeps the
+documented staleness TTL at zero for every direct consumer: a
+suspension or removal reflects on the very next request. Since S7-03
+the layered engine's decision path resolves this probe through the
+Redis decision-input cache (see
+[authorization](authorization.md)): write-through invalidation drops
+the cached flag inside every membership and person-status mutation
+before commit, with the 15-minute TTL as the backstop — the same
+next-request freshness, bounded by an invalidation-miss window.
 Every listing row and item view carries the computed
 `effectiveAccess` flag; the cross-module surface
 (`TenantTesterMembershipAccess`) exposes `isActiveMember` /
@@ -131,6 +138,6 @@ precedent) so suspend and removal stay distinct states. No new index:
 the PK prefix `(tenant_id, tester_id)` already serves the hot
 authorization probe (an equality descent that reads the row, and so
 its status); tenant-grain listings walk the same prefix, and
-tenants-of-tester walks `idx_ttm_tester_id`. Revisit with S7-01/S7-03
-when the authorization chain's cache strategy lands (see
-[database migrations](database-migrations.md)).
+tenants-of-tester walks `idx_ttm_tester_id`. The S7-03 cache
+strategy landed WITHOUT schema (Redis above these probes — the
+index stays the loader's path); no revisit owed.

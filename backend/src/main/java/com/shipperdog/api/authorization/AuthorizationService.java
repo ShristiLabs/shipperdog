@@ -57,6 +57,17 @@ public interface AuthorizationService {
     AuthorizationDecision inspect(AuthorizationContext context);
 
     /**
+     * Decides for the first-party decision API (S7-03, issue #32):
+     * the self-scoped surface the tester portal (E8) and the download
+     * path consume — the caller IS the decided subject, unlike the
+     * inspection surface above. The same decision as {@link #decide};
+     * the audit distinction is the {@code surface=decision-api} tag,
+     * so a portal-served decision is distinguishable in the trail
+     * from the console surfaces' own guarded reads.
+     */
+    AuthorizationDecision decideForApi(AuthorizationContext context);
+
+    /**
      * Decides and enforces: a denial throws the concealed
      * not-found shape of the caller's route (PRD 12), so the response
      * is byte-for-byte what a genuine miss for that resource type

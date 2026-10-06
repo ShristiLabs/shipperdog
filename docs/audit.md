@@ -176,8 +176,10 @@ per layered-engine decision, allow and deny alike, carrying `action`,
 `outcome`, the compact `chain` summary (layer:status pairs), and — on
 a denial — `failingLayer` and `reason`; the audited user is the
 deciding subject, and for the inspection API the inspected subject
-(whose events carry `surface=inspect`, distinguishable from serving
-decisions since S7-02); see [authorization](authorization.md);
+(whose events carry `surface=inspect`, and S7-03's self-scoped
+decision API carries `surface=decision-api` — both distinguishable
+from serving decisions since S7-02); see
+[authorization](authorization.md);
 `AUTHORIZATION_GRANT_CREATED` / `AUTHORIZATION_GRANT_EXPIRY_CHANGED` /
 `AUTHORIZATION_GRANT_DELETED` — issue #31/S7-02: every grant mutation
 carries the actor (mandatory `reason`, 1..1000 trimmed), the grant's

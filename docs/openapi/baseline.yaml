@@ -1648,6 +1648,61 @@ paths:
             '*/*':
               schema:
                 $ref: "#/components/schemas/PageResponseMemberView"
+  /api/v1/authorization/decisions/eligibility:
+    get:
+      tags:
+      - authorization-decision-api-controller
+      operationId: eligibility
+      parameters:
+      - name: tenantId
+        in: query
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - name: applicationId
+        in: query
+        required: true
+        schema:
+          type: string
+          format: uuid
+      responses:
+        "200":
+          description: OK
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/EligibilityView"
+  /api/v1/authorization/decisions/download:
+    get:
+      tags:
+      - authorization-decision-api-controller
+      operationId: download
+      parameters:
+      - name: tenantId
+        in: query
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - name: versionId
+        in: query
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - name: platform
+        in: query
+        required: true
+        schema:
+          type: string
+      responses:
+        "200":
+          description: OK
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/DownloadDecisionView"
   /api/v1/auth/me:
     get:
       tags:
@@ -2187,9 +2242,7 @@ components:
     JsonNode:
       type: object
       properties:
-        string:
-          type: boolean
-        valueNode:
+        container:
           type: boolean
         nodeType:
           type: string
@@ -2203,11 +2256,17 @@ components:
           - OBJECT
           - POJO
           - STRING
+        string:
+          type: boolean
+        integralNumber:
+          type: boolean
         missingNode:
+          type: boolean
+        valueNode:
           type: boolean
         pojo:
           type: boolean
-        integralNumber:
+        number:
           type: boolean
         short:
           type: boolean
@@ -2227,10 +2286,6 @@ components:
         boolean:
           type: boolean
         binary:
-          type: boolean
-        container:
-          type: boolean
-        number:
           type: boolean
         floatingPointNumber:
           type: boolean
@@ -2977,6 +3032,53 @@ components:
           items:
             $ref: "#/components/schemas/OrganizationResponse"
         next_cursor:
+          type: string
+    EligibilityView:
+      type: object
+      properties:
+        tenantId:
+          type: string
+          format: uuid
+        applicationId:
+          type: string
+          format: uuid
+        effectiveAccess:
+          type: boolean
+        resolvedAt:
+          type: string
+          format: date-time
+        entries:
+          type: array
+          items:
+            $ref: "#/components/schemas/Entry"
+    Entry:
+      type: object
+      properties:
+        versionId:
+          type: string
+          format: uuid
+        versionName:
+          type: string
+        status:
+          type: string
+        expiresAt:
+          type: string
+          format: date-time
+    DownloadDecisionView:
+      type: object
+      properties:
+        applicationId:
+          type: string
+          format: uuid
+        versionId:
+          type: string
+          format: uuid
+        artifactId:
+          type: string
+          format: uuid
+        platform:
+          type: string
+        storageKey:
           type: string
     PageResponsePatResponse:
       type: object

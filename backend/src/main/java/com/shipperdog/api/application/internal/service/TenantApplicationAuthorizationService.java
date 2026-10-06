@@ -9,6 +9,7 @@ import com.shipperdog.api.application.internal.repository.TenantApplicationAutho
 import com.shipperdog.api.audit.AuditEvent;
 import com.shipperdog.api.audit.AuditEventPublisher;
 import com.shipperdog.api.audit.AuditEventType;
+import com.shipperdog.api.authorization.AuthorizationDecisionInvalidation;
 import com.shipperdog.api.config.CursorPageable;
 import com.shipperdog.api.tenant.TenantAccess;
 import java.time.Clock;
@@ -63,6 +64,7 @@ public class TenantApplicationAuthorizationService {
     private final ApplicationScopedRepository applications;
     private final TenantApplicationAuthorizationRepository authorizations;
     private final AuthorizationConflictResolver conflicts;
+    private final AuthorizationDecisionInvalidation decisionCache;
     private final TenantAccess tenants;
     private final AuditEventPublisher audit;
     private final Clock clock;
@@ -71,12 +73,14 @@ public class TenantApplicationAuthorizationService {
             ApplicationScopedRepository applications,
             TenantApplicationAuthorizationRepository authorizations,
             AuthorizationConflictResolver conflicts,
+            AuthorizationDecisionInvalidation decisionCache,
             TenantAccess tenants,
             AuditEventPublisher audit,
             Clock clock) {
         this.applications = applications;
         this.authorizations = authorizations;
         this.conflicts = conflicts;
+        this.decisionCache = decisionCache;
         this.tenants = tenants;
         this.audit = audit;
         this.clock = clock;
@@ -127,7 +131,10 @@ public class TenantApplicationAuthorizationService {
             if (moved == 1) {
                 // The flip won: audited as a re-grant; the view carries
                 // the transition's known post-state (the bulk update
-                // bypasses the persistence context).
+                // bypasses the persistence context). Write-through
+                // (S7-03, AC2): the re-grant widens visibility — the
+                // cached flag drops before this commit lands.
+                decisionCache.invalidateApplicationVisibility(applicationId, tenantId);
                 AuthorizationView view =
                         new AuthorizationView(applicationId, tenantId, "ACTIVE", actorId, now, null, null);
                 auditAuthorization(
@@ -167,6 +174,9 @@ public class TenantApplicationAuthorizationService {
             }
             return new AuthorizationGrant(AuthorizationView.from(winner), false);
         }
+        // Write-through (S7-03, AC2): the first grant widens
+        // visibility — the cached flag drops before this commit lands.
+        decisionCache.invalidateApplicationVisibility(applicationId, tenantId);
         auditAuthorization(
                 AuditEventType.APPLICATION_TENANT_AUTHORIZED,
                 actorId,
@@ -212,6 +222,10 @@ public class TenantApplicationAuthorizationService {
             // already-revoked state produces.
             throw new ApplicationException(ApplicationException.Code.NOT_FOUND, "authorization not found");
         }
+        // Write-through (S7-03, AC2): the revoked mapping narrows
+        // visibility — the cached flag drops before this commit lands,
+        // so the de-authorization denies on the next decision.
+        decisionCache.invalidateApplicationVisibility(applicationId, tenantId);
         auditAuthorization(
                 AuditEventType.APPLICATION_TENANT_DEAUTHORIZED,
                 actorId,

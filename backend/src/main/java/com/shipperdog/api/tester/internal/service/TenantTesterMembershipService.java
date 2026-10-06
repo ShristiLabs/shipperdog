@@ -3,6 +3,7 @@ package com.shipperdog.api.tester.internal.service;
 import com.shipperdog.api.audit.AuditEvent;
 import com.shipperdog.api.audit.AuditEventPublisher;
 import com.shipperdog.api.audit.AuditEventType;
+import com.shipperdog.api.authorization.AuthorizationDecisionInvalidation;
 import com.shipperdog.api.config.CursorPageable;
 import com.shipperdog.api.tenant.TenantAccess;
 import com.shipperdog.api.tester.TenantTesterMembershipAccess;
@@ -81,6 +82,7 @@ public class TenantTesterMembershipService implements TenantTesterMembershipAcce
     private final TenantAccess tenants;
     private final TenantTesterMembershipWriteAttempt writes;
     private final TenantTesterMembershipConflictResolver conflicts;
+    private final AuthorizationDecisionInvalidation decisionCache;
     private final AuditEventPublisher audit;
     private final Clock clock;
 
@@ -91,6 +93,7 @@ public class TenantTesterMembershipService implements TenantTesterMembershipAcce
             TenantAccess tenants,
             TenantTesterMembershipWriteAttempt writes,
             TenantTesterMembershipConflictResolver conflicts,
+            AuthorizationDecisionInvalidation decisionCache,
             AuditEventPublisher audit,
             Clock clock) {
         this.memberships = memberships;
@@ -99,6 +102,7 @@ public class TenantTesterMembershipService implements TenantTesterMembershipAcce
         this.tenants = tenants;
         this.writes = writes;
         this.conflicts = conflicts;
+        this.decisionCache = decisionCache;
         this.audit = audit;
         this.clock = clock;
     }
@@ -134,12 +138,22 @@ public class TenantTesterMembershipService implements TenantTesterMembershipAcce
         if (existing != null) {
             if (existing.getStatus() == TenantTesterMembershipEntity.Status.REVOKED) {
                 TenantTesterMembershipEntity reactivated = writes.reactivate(actorId, existing);
+                // Write-through (S7-03, AC2): the retained row flipped
+                // REVOKED -> ACTIVE; the inner attempt has committed,
+                // so the membership flag drops now — re-linked access
+                // is effective on the very next decision.
+                decisionCache.invalidateMembership(tenantId, testerId);
                 return new LinkResult(viewOf(reactivated), false, true);
             }
             return new LinkResult(viewOf(existing), false, false);
         }
         try {
             TenantTesterMembershipEntity membership = writes.attempt(actorId, tenantId, testerId);
+            // Write-through (S7-03, AC2): a fresh row both widens the
+            // tester's linked-tenant set (the shared-application
+            // probe's candidates) and seeds a new membership flag.
+            decisionCache.invalidateTesterTenantSet(testerId);
+            decisionCache.invalidateMembership(tenantId, testerId);
             return new LinkResult(viewOf(membership), true, false);
         } catch (DataIntegrityViolationException e) {
             // A concurrent link of the same pair won the composite key;
@@ -185,6 +199,11 @@ public class TenantTesterMembershipService implements TenantTesterMembershipAcce
         TenantTesterMembershipEntity.Status before = membership.getStatus();
         membership.setStatus(target);
         memberships.saveScoped(membership);
+        // Write-through (S7-03, AC2): the membership switch rides this
+        // transaction at before-commit — the flip denies (or restores)
+        // on the next decision after this commit, the revocation
+        // immediacy the story demands.
+        decisionCache.invalidateMembership(tenantId, testerId);
         audit.publish(AuditEvent.builder(AuditEventType.TENANT_TESTER_MEMBERSHIP_STATUS_CHANGED)
                 .userId(actorId)
                 .tenantId(tenantId)
@@ -212,6 +231,10 @@ public class TenantTesterMembershipService implements TenantTesterMembershipAcce
         TenantTesterMembershipEntity.Status before = membership.getStatus();
         membership.setStatus(TenantTesterMembershipEntity.Status.REVOKED);
         memberships.saveScoped(membership);
+        // Write-through (S7-03, AC2): removal ends effective access on
+        // the next decision; the retained row keeps the linked-tenant
+        // set complete, so only the flag drops.
+        decisionCache.invalidateMembership(tenantId, testerId);
         audit.publish(AuditEvent.builder(AuditEventType.TENANT_TESTER_MEMBERSHIP_REMOVED)
                 .userId(actorId)
                 .tenantId(tenantId)
@@ -368,6 +391,15 @@ public class TenantTesterMembershipService implements TenantTesterMembershipAcce
     @Transactional(readOnly = true)
     public boolean membershipExists(UUID tenantId, UUID testerId) {
         return catalog.findByTenantIdAndTesterId(tenantId, testerId).isPresent();
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public List<UUID> tenantIdsOfTester(UUID testerId) {
+        return catalog.findByTesterIdOrderByCreatedAtAscTenantIdAsc(testerId).stream()
+                .map(TenantTesterMembershipEntity::getTenantId)
+                .distinct()
+                .toList();
     }
 
     /**

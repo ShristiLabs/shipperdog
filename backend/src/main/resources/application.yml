@@ -9,6 +9,19 @@ spring:
     hibernate:
       ddl-auto: validate
     open-in-view: false
+  data:
+    redis:
+      # The decision-input cache's store (issue #32, S7-03): the grant
+      # set per tester x tenant, membership effectiveness, and tenant
+      # application visibility. Timeouts are deliberately tight — the
+      # decision path must fail over to direct evaluation in
+      # milliseconds, never wait on a struggling Redis (the PRD 42
+      # under-100 ms SLO holds with a healthy cache; a degraded cache
+      # is correct-but-slower by design, the story's AC3).
+      host: ${REDIS_HOST:localhost}
+      port: ${REDIS_PORT:6379}
+      timeout: ${REDIS_TIMEOUT:200ms}
+      connect-timeout: ${REDIS_CONNECT_TIMEOUT:250ms}
   flyway:
     locations: ${FLYWAY_LOCATIONS:classpath:db/migration}
   servlet:
@@ -107,6 +120,19 @@ shipperdog:
     # S6-02, PRD 8.9's examples; the seeded rows are ordinary editable
     # groups). Comma-separated; empty skips seeding.
     default-groups: ${TESTER_DEFAULT_GROUPS:Internal QA,Tenant QA,UAT,Pilot,Executive Beta,External Beta}
+  authorization-cache:
+    # The decision-input cache (issue #32, S7-03): Redis-backed, above
+    # the grant contributor and the effective-set resolution. Caches
+    # INPUTS only — the grant set per tester x tenant, the membership
+    # effectiveness flag, the tenant-application visibility flag, and
+    # the tester's linked-tenant set — never decisions: the engine
+    # still walks its layers and computes every evaluation. Write-
+    # through invalidation fires inside every decision-affecting
+    # mutation before commit; the TTL is the staleness backstop and
+    # stays at or under the signed-URL TTL (both 15 min default, the
+    # story's technical note).
+    enabled: ${AUTHORIZATION_DECISION_CACHE_ENABLED:true}
+    ttl: ${AUTHORIZATION_DECISION_CACHE_TTL:PT15M}
 
 server:
   port: ${SERVER_PORT:8080}
@@ -126,6 +152,16 @@ management:
   endpoint:
     health:
       show-details: ${MANAGEMENT_HEALTH_SHOW_DETAILS:never}
+  health:
+    redis:
+      # Deliberately off (issue #32, S7-03): the decision cache is a
+      # performance layer whose absence the API survives by design
+      # (fail-closed direct evaluation, the story's AC3), so Redis
+      # availability is not an API health dependency — a down cache
+      # must never page the on-call as an API outage. Cache health is
+      # observable on the decision-cache outcome counter instead
+      # (shipperdog.authorization.decision.cache, outcome=degraded).
+      enabled: false
   tracing:
     sampling:
       # Baseline samples every request (issue #7, AC1); operators dial
@@ -137,6 +173,12 @@ management:
         # Histogram buckets for the HTTP server timer so latency SLOs
         # (PRD section 42) are computable in Prometheus (p95 et al).
         "[http.server.requests]": ${MANAGEMENT_METRICS_HTTP_HISTOGRAM:true}
+        # Histogram buckets for the authorization decision timer so
+        # the PRD 42 under-100 ms decision SLO is computable as p95 in
+        # Prometheus (issue #32, S7-03, acceptance criterion 1 — the
+        # authorization_decision_duration family; the RBAC and layered
+        # legs share the meter, separated by the engine tag).
+        "[shipperdog.authorization.decision.duration]": ${MANAGEMENT_METRICS_AUTHZ_HISTOGRAM:true}
 
 ---
 

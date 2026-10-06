@@ -6,10 +6,10 @@ import static org.mockito.Mockito.mock;
 import com.shipperdog.api.application.ApplicationAccess;
 import com.shipperdog.api.authorization.AuthorizationDistributionPolicy;
 import com.shipperdog.api.authorization.AuthorizationEntitlement;
+import com.shipperdog.api.authorization.internal.cache.DecisionInputs;
 import com.shipperdog.api.identity.UserDirectory;
 import com.shipperdog.api.organization.OrganizationAccess;
 import com.shipperdog.api.tenant.TenantAccess;
-import com.shipperdog.api.tester.TenantTesterMembershipAccess;
 import java.util.List;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.ObjectProvider;
@@ -29,7 +29,7 @@ class LayerOrderUniquenessTest {
         AuthorizationLayer[] layers = {
             new UserLayer(mock(UserDirectory.class)),
             new OrganizationLayer(mock(TenantAccess.class), mock(OrganizationAccess.class)),
-            new TenantLayer(mock(TenantTesterMembershipAccess.class)),
+            new TenantLayer(mock(DecisionInputs.class)),
             new ApplicationLayer(mock(ApplicationAccess.class)),
             new VersionLayer(mockProvider()),
             new ArtifactLayer(),

@@ -41,6 +41,24 @@ public final class MetricNames {
     public static final String AUTHORIZATION_DECISION_DURATION = "shipperdog.authorization.decision.duration";
 
     /**
+     * Counter of every decision-input cache operation (issue #32,
+     * S7-03), tagged {@code family=grants|membership|visibility|
+     * tenants-of-tester} (which cached input) and
+     * {@code outcome=hit|miss|degraded|bypass|invalidate} — the
+     * cache-health signal beside the decision timer: {@code hit} and
+     * {@code miss} are the ordinary cache-aside legs, {@code degraded}
+     * counts Redis failures that fell through to direct evaluation
+     * (fail-closed correctness, the story's AC3 — its sustained growth
+     * is the operator's signal that decisions are running slower than
+     * the SLO needs), {@code bypass} counts lookups while the cache is
+     * disabled, and {@code invalidate} counts write-through key
+     * drops. Invalidations that themselves fail (Redis down during a
+     * mutation) count {@code degraded}; the TTL is the staleness
+     * backstop for that window.
+     */
+    public static final String AUTHORIZATION_DECISION_CACHE = "shipperdog.authorization.decision.cache";
+
+    /**
      * Timer of every completed artifact upload (issue #20, S5-01, the
      * reserved {@code artifact_upload_duration} of PRD 28), tagged
      * {@code path=multipart|resumable} (which of the two upload paths

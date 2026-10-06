@@ -10,6 +10,7 @@ import com.shipperdog.api.application.internal.repository.TenantApplicationAutho
 import com.shipperdog.api.audit.AuditEvent;
 import com.shipperdog.api.audit.AuditEventPublisher;
 import com.shipperdog.api.audit.AuditEventType;
+import com.shipperdog.api.authorization.AuthorizationDecisionInvalidation;
 import com.shipperdog.api.config.CursorPageable;
 import com.shipperdog.api.config.TraceAttributes;
 import com.shipperdog.api.organization.OrganizationAccess;
@@ -112,6 +113,7 @@ public class ApplicationService {
     private final TenantAccess tenants;
     private final OrganizationAccess organizations;
     private final TenantScopeExecutor scope;
+    private final AuthorizationDecisionInvalidation decisionCache;
     private final VersionAccess versions;
     private final AuditEventPublisher audit;
     private final Clock clock;
@@ -125,6 +127,7 @@ public class ApplicationService {
             TenantAccess tenants,
             OrganizationAccess organizations,
             TenantScopeExecutor scope,
+            AuthorizationDecisionInvalidation decisionCache,
             VersionAccess versions,
             AuditEventPublisher audit,
             Clock clock,
@@ -136,6 +139,7 @@ public class ApplicationService {
         this.tenants = tenants;
         this.organizations = organizations;
         this.scope = scope;
+        this.decisionCache = decisionCache;
         this.versions = versions;
         this.audit = audit;
         this.clock = clock;
@@ -561,6 +565,18 @@ public class ApplicationService {
                 application.getId(), transition.to(), transition.tenantId(), Instant.now(clock));
         if (moved != 1) {
             throw notFound("application not found");
+        }
+        // Write-through (S7-03, AC2): a scope transition rewrites who
+        // can see the application by ownership — the OLD owner loses
+        // by-ownership visibility (TENANT -> ORGANIZATION) and a NEW
+        // owner gains it (ORGANIZATION -> TENANT). Both cached
+        // visibility flags drop inside this transaction so the next
+        // eligibility read reflects the new scope, not a stale flag.
+        if (beforeTenantId != null) {
+            decisionCache.invalidateApplicationVisibility(application.getId(), beforeTenantId);
+        }
+        if (transition.tenantId() != null) {
+            decisionCache.invalidateApplicationVisibility(application.getId(), transition.tenantId());
         }
         // The application's versions carry the same owning-dimension
         // snapshot (issue #17): they must move in lockstep with the row,

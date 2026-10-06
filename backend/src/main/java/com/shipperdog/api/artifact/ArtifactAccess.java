@@ -25,6 +25,29 @@ public interface ArtifactAccess {
      */
     Optional<ArtifactState> stateOf(UUID artifactId);
 
+    /**
+     * The version's distributable artifact for the platform, with its
+     * storage key reference (issue #32, S7-03, acceptance criterion
+     * 4): the signed-URL issuance inputs the decision API hands the
+     * portal on an ALLOWED download — the artifact id and the object
+     * storage key (S8-04 mints the signed URL from exactly these).
+     * Only artifacts whose lifecycle is distributable ({@code READY}
+     * or {@code DISTRIBUTED}, PRD 18) resolve; newest first with the
+     * id as the deterministic tiebreaker. Authorization data in the
+     * same registry-read character as {@link #stateOf}; never an
+     * endpoint data path — the engine's own artifact layer stays the
+     * availability authority.
+     */
+    Optional<IssuanceInputs> issuanceInputsOf(UUID versionId, String platform);
+
     /** The artifact tuple callers may resolve; never the row itself. */
     record ArtifactState(UUID artifactId, UUID versionId, String platform, String status) {}
+
+    /**
+     * The signed-URL issuance inputs of one distributable artifact
+     * (issue #32, S7-03): the artifact id and the PRD 24 storage key
+     * reference, plus the resolved platform and lifecycle status for
+     * the caller's own reporting.
+     */
+    record IssuanceInputs(UUID artifactId, UUID versionId, String platform, String status, String storageKey) {}
 }

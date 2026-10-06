@@ -70,7 +70,8 @@ Prometheus registry renders underscores + `_seconds` units):
 
 | Prometheus name | Recorded by | Story |
 |---|---|---|
-| `shipperdog_authorization_decision_duration_seconds` | RBAC enforcement point (tag `outcome=allow\|deny`); since S7-01 also the layered authorization engine's decisions, distinguished by tag `engine=layered` | S1-07; layered leg S7-01 (issue #30) (SLO: <100 ms) |
+| `shipperdog_authorization_decision_duration_seconds` | RBAC enforcement point (tag `outcome=allow\|deny`); since S7-01 also the layered authorization engine's decisions, distinguished by tag `engine=layered`; since S7-03 the meter carries a percentile histogram, so the p95 is computable in Prometheus | S1-07; layered leg S7-01 (issue #30) (SLO: <100 ms); histogram S7-03 (issue #32) |
+| `shipperdog_authorization_decision_cache_total` | The decision-input cache (Redis) resolver, tags `family=grants\|membership\|visibility\|tenants-of-tester` and `outcome=hit\|miss\|degraded\|bypass\|invalidate` — `degraded` counts Redis failures that fell through to direct evaluation (fail-closed; sustained growth is the operator's slow-decision signal), `bypass` the disabled cache, `invalidate` write-through key drops | S7-03 (issue #32) |
 | `shipperdog_artifact_upload_duration_seconds` | Artifact upload service, tags `path=multipart\|resumable` and `outcome=success\|failure` (the failure leg records a store or insert failure after streaming began, not a rejected request) | S5-01 (issue #20) |
 | `shipperdog_artifact_extraction_duration_seconds` | Artifact metadata extraction job, tags `platform=IOS\|ANDROID` and `outcome=success\|failed-parse\|failed-infra` (the malformed-binary vs infra split; the PRD 42 "artifact metadata processing < 30 sec" SLO observes this meter) | S5-02 (issue #21) |
 | `shipperdog_artifact_validation_duration_seconds` | Artifact validation pipeline (one timer per completed attempt), tags `platform=IOS\|ANDROID` and `outcome=success\|failed\|blocked` (the stage-failure vs infra-block split; the PRD 42 "artifact metadata processing < 30 sec" SLO observes the extraction meter plus this one end to end) | S5-05 (issue #24) |
@@ -126,6 +127,17 @@ plus authorization decision rate/p95 (the <100 ms SLO signal) and JVM
 heap. PromQL uses `$__rate_interval` windows over
 `http_server_requests_seconds_*` and
 `shipperdog_authorization_decision_duration_seconds_*`.
+
+### The decision SLO under load (S7-03, issue #32)
+
+`backend/loadtest/` holds the reproducible k6 mixed-load test for the
+authorization decision SLO (see its README): ~50 rps across the
+decision API's granted/denied/eligibility legs with a warm
+decision-input cache, asserting p95 < 100 ms per leg. The committed
+result transcripts measured p95 ~6 ms warm-cache and ~7 ms with Redis
+stopped (the fail-closed breaker at work) — both an order of
+magnitude inside the SLO; the pre-breaker degraded baseline (3.2 s
+p95) is the finding that motivated the breaker.
 
 With `LOGGING_STRUCTURED_FORMAT_CONSOLE=logstash` (set in compose) the
 API writes structured JSON logs: one object per line with `correlationId`

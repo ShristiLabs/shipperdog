@@ -246,12 +246,16 @@ read/download surfaces join by marking and calling the engine.
 emits an `AUTHORIZATION_DECISION` audit event carrying the action,
 the outcome, the failing layer and reason when denied, a compact
 chain summary, the addressed resource ids, and (attached by the
-audit binding) the request's correlation id (PRD 27). Decisions are
-timed on the shared `shipperdog.authorization.decision.duration`
-meter tagged `engine=layered` beside the RBAC evaluator's leg
-(`engine` absent = rbac), so the PRD 42 under-100 ms SLO observes
-both engines; only the layer walk is timed (the audit write happens
-after the clock stops).
+audit binding) the request's correlation id (PRD 27). The event's
+`surface` distinguishes who asked: `serve` (a guarded console route),
+`inspect` (the admin inspection API), or `decision-api` (S7-03's
+self-scoped portal surface). Decisions are timed on the shared
+`shipperdog.authorization.decision.duration` meter tagged
+`engine=layered` beside the RBAC evaluator's leg (`engine` absent =
+rbac), so the PRD 42 under-100 ms SLO observes both engines — and
+since S7-03 the meter carries a percentile histogram so the p95 is
+computable in Prometheus; only the layer walk is timed (the audit
+write happens after the clock stops).
 
 **The inspection API** (issue #30 AC5):
 
@@ -277,8 +281,10 @@ isolation seam, while the engine's decision probe reads through a
 authorization input, never an endpoint path).
 
 **Grant shapes and resolution** (union semantics — overlapping grants
-compose; no negative grants in V1; every evaluation is live, no cache
-until S7-03):
+compose; no negative grants in V1; grant evaluation resolves through
+the S7-03 decision-input cache below — the grant SET per tester x
+tenant is cached and invalidated write-through, while the per-version
+coverage probes stay live):
 
 | Shape | Carries | Authorizes | Resolution path |
 |---|---|---|---|
@@ -336,11 +342,92 @@ target, and expiry state. Idempotent replays write and audit nothing.
 
 **M1 surface note.** The artifact routes' RBAC gate stays
 console-grade (`app:artifacts:read`) — a pure tester does not pass
-it, by design, until the tester portal surfaces arrive (S8). The
-grant's authority today is the layered engine: the tenant catalog a
-tester can list (`tenant:applications:read`, TENANT_TESTER), the
-decision the engine makes for any resource-addressing surface, and
-the effective-access view administrators watch.
+it, by design. Since S7-03 the tester persona's own surfaces are the
+decision API below (the download decision and the eligibility
+listing — self-scoped, engine-decided); the portal UI that renders
+them arrives with S8, which also relaxes the artifact routes'
+console-grade gate where the story demands it. The grant's authority
+is the layered engine: the tenant catalog listing, the decision API,
+and the effective-access view administrators watch.
+
+## The decision API (S7-03)
+
+The stable FIRST-PARTY contract the tester portal (E8) and the
+download path consume — the caller asks about their own reach, and
+the layered engine answers. It is deliberately NOT the deferred
+public third-party "authorize" endpoint (out of the story's scope)
+and it mints no URLs: the decision is the API; signing the storage
+key is S8-04's. Both routes are self-scoped (`isAuthenticated()`,
+the platform's caller-addressed convention) with the engine as their
+ENTIRE authority — a pure tester holds no RBAC role by S6-03 design
+(the membership IS the access), so a permission gate here would
+exclude exactly the persona the portal serves; an unrelated caller
+is denied by the engine's tenant layer with the same concealed miss
+a genuine unknown produces.
+
+| Method | Path | Result |
+|---|---|---|
+| GET | `/api/v1/authorization/decisions/download?tenantId=&versionId=&platform=` | `200` the ALLOWED download decision's issuance inputs: `applicationId`, `versionId`, `artifactId`, `platform`, and the `storageKey` reference (PRD 24 layout) S8-04 signs the URL from; `404` concealed on ANY denial — the version-grain miss (`VERSION_NOT_FOUND`: unknown version, no entitlement, invisible application, revoked version, or an unreachable/unknown tenant) or the artifact-grain miss (`ARTIFACT_NOT_FOUND`: no distributable artifact — READY or DISTRIBUTED, newest first — for the pinned platform), byte-identical to the genuine miss, never a layer name; `400` an unknown platform vocabulary |
+| GET | `/api/v1/authorization/decisions/eligibility?tenantId=&applicationId=` | `200` the caller's authorized version set (FR-013's history page): `effectiveAccess` (the two-switches flag), `resolvedAt`, newest-first `entries` (version id/name/status and each entry's TTL — null when a contributing grant never expires); `404` concealed as `TENANT_NOT_FOUND` (unknown tenant, or the caller reaches it not at all) or `APPLICATION_NOT_FOUND` (an application the tenant cannot see); a linked tester with no grants sees a legitimate EMPTY set, a console caller answers `effectiveAccess=false` and empty, and a SUSPENDED tester conceals entirely — the engine's list decision denies before the set resolves, so they learn nothing (stricter than the administrator's effective view, which still lists retained grants to admins) |
+
+Both decisions are audited with `surface=decision-api` (the engine's
+own `AUTHORIZATION_DECISION` events), and both resolve their inputs
+through the decision-input cache below. The admin inspection API
+(`POST /api/v1/authorization/decisions`, above) is untouched: it
+decides for a SUPPLIED subject with reason codes and the evaluated
+chain — the self-scoped routes above never leak either.
+
+## The decision-input cache (S7-03)
+
+The performance half of S7-03: a Redis-backed cache above the grant
+contributor and the effective-set resolution, built for the PRD 42
+under-100 ms decision SLO. It caches INPUTS only, never decisions
+(the story's technical note) — the engine still walks every layer
+and computes every evaluation:
+
+| Cached family | Key | Loader (on miss) | Invalidated by |
+|---|---|---|---|
+| Grant set | per tester x tenant — ALL the tester's grants through that tenant (any application, any expiry; versioned JSON payload, epoch-micros expiry) | one `idx_version_access_grant_subject` prefix descent | grant create, expiry change, delete |
+| Membership effectiveness | per tester x tenant — the two-switches flag | the membership catalog's live probe | membership link, re-link, status switch, removal; tester person-status changes (every linked tenant) |
+| Tenant-application visibility | per application x tenant — the S3-03/ownership flag | the application registry's live probe | mapping authorize/deauthorize; S3-02 ownership-scope transitions (both owner tenants) |
+| Linked-tenant set | per tester — the retained membership rows' tenants | the membership catalog's tenants-of-tester probe | a fresh membership row creation (removal retains the row, so the set cannot shrink) |
+
+Deliberately NOT cached: the TAG-grant probe (`versionHasTag`) and
+the LATEST_N working-set count — they track version lifecycle, which
+changes continuously and stays live per evaluation; the engine's
+ownership/organization/version/artifact state resolution (the layers
+stay live, which is what bounds every cached input below them);
+RBAC roles (`UserRolesSnapshot` stays per-request).
+
+**Write-through invalidation (AC2).** Every mutation above drops its
+affected keys at BEFORE-COMMIT inside the mutating transaction, so no
+reader sees committed state through stale cache; the deliberately
+non-transactional mutators (grant create and membership link — the
+concurrency disciplines of #31/#28) drop immediately after their
+inner write attempt commits. An invalidation that cannot run (Redis
+down mid-mutation) never fails the mutation; the TTL is the
+backstop. Entries expire after 15 minutes by default
+(`shipperdog.authorization-cache.ttl`), at or under the signed-URL
+TTL so worst-case staleness is bounded by the same window the story
+names; `shipperdog.authorization-cache.enabled=false` is the
+operational kill switch (every lookup answers the live loader).
+
+**Fail-closed degradation (AC3).** Any Redis failure — connection
+refused, command timeout, or a corrupt/future-versioned payload
+(every key and body carries the payload schema version, so a format
+change orphans old entries to TTL instead of poisoning a reader) —
+answers the LIVE loader's result. The cache can only make decisions
+slower, never different: no code path can synthesize an allow the
+engine would deny. Consecutive failures open a fail-fast circuit
+breaker (3 failures, 5-second cooldown), so a dead Redis costs each
+decision the loader's own latency rather than a per-lookup timeout
+stack — measured in `backend/loadtest/`: p95 ~6 ms warm-cache and
+~7 ms degraded under 50 rps mixed load, both far inside the 100 ms
+SLO (the pre-breaker degraded run measured 3.2 s p95, the finding
+that motivated it). The Redis health indicator is deliberately OFF:
+degraded mode is survivable by design, so Redis availability is not
+API health — watch the cache counter's `degraded` leg instead (see
+[observability](observability.md)).
 
 ## Opaque denials (PRD 12)
 
@@ -635,6 +722,7 @@ catalog through the role-overlay contributor; S7-02's grants
 (`version_access`, FR-011's four shapes) are registered as the second
 entitlement contributor (see
 [Authorization grants](#authorization-grants-s7-02)), S7-03 exposes
-the decision API with caching against the latency SLO, and S14-04's
+the first-party decision API with the input cache against the
+latency SLO ([above](#the-decision-api-s7-03)), and S14-04's
 ABAC attributes widen `AuthorizationContext` — the structured-inputs
 seam S7-01 left open.

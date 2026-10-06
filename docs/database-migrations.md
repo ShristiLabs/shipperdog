@@ -342,8 +342,9 @@ backend/src/main/resources/db/
   `(tenant_id, tester_id)`, `idx_ttm_tester_id`). No new index: the
   PK prefix already serves the hot authorization probe the issue's
   technical note names `(tenant_id, tester_id, status)` — an equality
-  descent reads the row and therefore its status; revisit with
-  S7-01/S7-03 when the cache strategy lands.
+  descent reads the row and therefore its status; the S7-03 cache
+  landed above these probes with no schema change of its own (Redis,
+  not PostgreSQL), so the index verdict stands.
 
 - `V21__version_access_grants.sql` (S7-02, issue #31) completes the
   V1 `version_access` junction for FR-011's four grant shapes. The V1

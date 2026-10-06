@@ -30,7 +30,12 @@ the read is additionally decision-guarded: the layered authorization
 engine decides the subject's PRD 11 chain before the scoped data
 read (deny-by-default; a pure tester denies until S7-02's grants),
 rendering the same two conceal grains — see
-[authorization](authorization.md).
+[authorization](authorization.md). Since S7-03 the registry port
+also answers the decision API's issuance question
+(`issuanceInputsOf`: the version's distributable — READY or
+DISTRIBUTED, newest first — artifact for a platform, with its PRD 24
+storage key), the inputs S8-04 signs the download URL from; the
+engine's own artifact layer stays the availability authority.
 
 ## Artifact states and extraction (S5-02, issue #21)
 

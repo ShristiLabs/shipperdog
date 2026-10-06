@@ -1,5 +1,6 @@
 package com.shipperdog.api.authorization;
 
+import com.shipperdog.api.authorization.internal.decision.AuthorizationDecisionApiService.AuthorizationDecisionApiException;
 import com.shipperdog.api.config.ApiError;
 import com.shipperdog.api.config.ApiProblems;
 import org.springframework.core.annotation.Order;
@@ -47,6 +48,16 @@ public class AuthorizationExceptionHandler {
     @ExceptionHandler(AuthorizationDecisionController.AuthorizationInspectionException.class)
     ResponseEntity<ProblemDetail> malformedInspection(
             AuthorizationDecisionController.AuthorizationInspectionException exception) {
+        return problem(ApiError.INVALID_REQUEST);
+    }
+
+    /**
+     * A malformed decision-API request (S7-03): the same generic 400
+     * envelope — an unknown platform vocabulary is a validation
+     * refusal, never a denial signal.
+     */
+    @ExceptionHandler(AuthorizationDecisionApiException.class)
+    ResponseEntity<ProblemDetail> malformedDecisionApi(AuthorizationDecisionApiException exception) {
         return problem(ApiError.INVALID_REQUEST);
     }
 
