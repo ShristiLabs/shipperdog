@@ -1,0 +1,27 @@
+version: "2"
+
+# Gate config for the shipperdog CLI (S5-06): the standard vet-grade
+# set plus gofmt. Deliberately conservative - no style-opinion linters
+# beyond formatting; the CI gate (cli-ci.yml) pins the lint version.
+
+formatters:
+  enable:
+    - gofmt
+
+linters:
+  enable:
+    - errcheck
+    - govet
+    - ineffassign
+    - staticcheck
+    - unused
+  settings:
+    errcheck:
+      # Deferred closes on read paths (files read to EOF, response
+      # bodies drained) are intentional no-check closes.
+      exclude-functions:
+        - (io.Closer).Close
+        - (*os.File).Close
+
+run:
+  timeout: 5m

@@ -1,0 +1,89 @@
+name: cli-ci
+
+# CLI gate (issue #25, S5-06): lint + unit tests + build on every PR
+# and main push, mirroring backend-ci/frontend-ci, plus a cross-compile
+# matrix producing the distributable static binaries (the story's
+# "distributed via a build artifact" criterion). CGO is disabled so
+# every target is a single static binary; version stamping comes from
+# git via ldflags.
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+jobs:
+  lint-test:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: cli
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Go 1.26
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.26'
+          cache: true
+          cache-dependency-path: cli/go.sum
+
+      - name: Lint (golangci-lint)
+        uses: golangci/golangci-lint-action@v8
+        with:
+          working-directory: cli
+          version: v2.10.1
+
+      - name: Unit tests (includes the OpenAPI endpoint contract test)
+        run: go test ./...
+
+      - name: Build
+        run: go build ./...
+
+  cross-compile:
+    needs: lint-test
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - goos: linux
+            goarch: amd64
+          - goos: linux
+            goarch: arm64
+          - goos: darwin
+            goarch: amd64
+          - goos: darwin
+            goarch: arm64
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Go 1.26
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.26'
+          cache: true
+          cache-dependency-path: cli/go.sum
+
+      - name: Build static binary (version-stamped)
+        working-directory: cli
+        env:
+          GOOS: ${{ matrix.goos }}
+          GOARCH: ${{ matrix.goarch }}
+          CGO_ENABLED: '0'
+        run: |
+          VERSION="$(git describe --tags --always --dirty)"
+          COMMIT="$(git rev-parse --short HEAD)"
+          mkdir -p "dist/shipperdog-${GOOS}-${GOARCH}"
+          go build -trimpath \
+            -ldflags "-s -w -X github.com/ShristiLabs/shipperdog/cli/internal/buildinfo.Version=${VERSION} -X github.com/ShristiLabs/shipperdog/cli/internal/buildinfo.Commit=${COMMIT}" \
+            -o "dist/shipperdog-${GOOS}-${GOARCH}/shipperdog" .
+          cd "dist/shipperdog-${GOOS}-${GOARCH}" && tar -czf "../shipperdog-${GOOS}-${GOARCH}.tar.gz" shipperdog
+
+      - name: Publish binary artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: shipperdog-${{ matrix.goos }}-${{ matrix.goarch }}
+          path: cli/dist/shipperdog-${{ matrix.goos }}-${{ matrix.goarch }}.tar.gz
+          if-no-files-found: error

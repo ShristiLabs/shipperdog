@@ -52,8 +52,14 @@ Current contents:
   correlation model, `shipperdog_*` metric namespace, Prometheus +
   Grafana local stack, and the management-port security posture
   (S1-07).
+- [CLI](cli.md) — the Go developer CLI (S5-06): command surface,
+  credentials store (PAT in `~/.shipperdog/credentials`, 0600), the
+  endpoint contract test pinning every URL to the OpenAPI baseline,
+  exit-code contract for CI, and the cli-ci gate with its cross-compile
+  matrix.
 - [ADR-0001: Flyway with plain SQL migrations](adr/ADR-0001-flyway-schema-migrations.md)
 - [ADR-0002: Predicate-injection repository seam for tenant isolation](adr/ADR-0002-tenant-isolation-data-seam.md)
 - [ADR-0003: Artifact object storage behind the ArtifactStore port](adr/ADR-0003-artifact-object-storage.md)
+- [ADR-0004: CLI implemented in Go with a contract-tested thin client](adr/ADR-0004-cli-toolchain.md)
 
 Start with the top-level README for local setup and CI.

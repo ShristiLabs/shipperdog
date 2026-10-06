@@ -45,6 +45,16 @@ Frontend (from `frontend/`, since S2-04 — see [docs/frontend.md]):
 - test-cmd: `npm test` (Vitest, happy-dom)
 - Node >= 22.12; all dependencies exact-pinned with a committed lockfile.
 
+CLI (from `cli/`, since S5-06 — see [docs/cli.md]):
+
+- fmt-cmd: `gofmt -w .` (checked via the lint gate)
+- lint-cmd: `golangci-lint run` (config `cli/.golangci.yml`, v2.10.x)
+- build-cmd: `go build ./...`
+- test-cmd: `go test ./...` (includes the OpenAPI endpoint contract
+  test against docs/openapi/baseline.yaml)
+- Go 1.26; two direct deps (cobra, x/term) exact-pinned via go.mod +
+  committed go.sum.
+
 ## Conventions
 
 - Conventional Commits (feat/fix/chore/docs/test/ci).
@@ -61,10 +71,10 @@ Frontend (from `frontend/`, since S2-04 — see [docs/frontend.md]):
 |---|---|---|
 | backend | backend/ | Spring Boot application, single Maven module |
 | frontend | frontend/ | Admin console: React 19 + TS strict + MUI 9 + React Query 5 + Router 7 on Vite 7 (S2-04) |
-| cli | cli/ | placeholder until S5-06 |
+| cli | cli/ | Go 1.26 developer CLI: login, artifact upload/list/view/revalidate, version list (S5-06) |
 | infrastructure | infrastructure/ | local docker compose stack (API, console, data, observability) |
 | docs | docs/ | developer docs |
-| workflows | .github/workflows/ | GitHub Actions CI (backend-ci + frontend-ci) |
+| workflows | .github/workflows/ | GitHub Actions CI (backend-ci + frontend-ci + cli-ci) |
 
 ## Reviewers / CODEOWNERS
 

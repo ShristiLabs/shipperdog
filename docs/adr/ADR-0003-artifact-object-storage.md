@@ -105,14 +105,37 @@ that story arrives — serving bytes to testers is a different concern
 from parsing them, and merging the two would couple an SLO-sensitive
 parser path to a CDN-shaped delivery path.
 
+## Amendment: session-URL reachability (issue #25, S5-06)
+
+The original consequence line assumed the emulator's `-external-url`
+makes its resumable-session URLs operator-reachable. It does not:
+fake-gcs-server (verified at v1.56.1, `internal/urlhelper.GetBaseURL`)
+builds the resumable `Location` header from the REQUEST's Host header,
+and `-external-url` never applies to it. The API dialed the emulator
+in-network (`gcs-emulator:4443`), so every granted `uploadUrl` carried
+a compose-internal hostname no host-side client could resolve — a
+latent gap from S5-01 that surfaced with the first such client, the
+S5-06 CLI.
+
+Fix (compose-only, no backend change): a `gcs-forward` socat sidecar
+(`alpine/socat:1.8.1.3`) shares the API's network namespace and
+bridges `localhost:4443` to the emulator service, and the API now
+points `ARTIFACT_STORAGE_EMULATOR_HOST` at `http://localhost:4443`.
+The Host header on the API's session-initiation request becomes
+`localhost:4443`, so the granted URL carries the operator-reachable
+published port. Verified end-to-end by a 101 MiB CLI upload through
+create-session, direct PUT, and finalize. Operational caveat: the
+forwarder shares the API's netns, so recreate both (`docker compose
+up -d`, or `up -d api gcs-forward`) rather than the API alone.
+
 ## Consequences
 
 - One dependency (`com.google.cloud:google-cloud-storage`) joins the
   build; it is flagged in the PR body and version-pinned.
 - Local and CI run the same GCS semantics as production; the compose
-  emulator gains `-external-url` so the session URLs it advertises are
-  reachable by the operator's machine (the API reaches it in-network;
-  the client that streams direct-to-storage does not).
+  emulator's session URLs are reachable by the operator's machine via
+  the localhost forwarder described in the amendment below (the
+  original `-external-url` assumption is corrected there).
 - The finalize replay (session gone, artifact present) makes the
   crash window between insert and session delete self-healing; an
   abandoned session leaves an unnamed, immutable object — cleanup is a
