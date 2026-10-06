@@ -172,7 +172,9 @@ class ArtifactExtractionIntegrationTest {
         assertThat(slot.get("minimumOs").asText()).isEqualTo(IpaFixtures.MINIMUM_OS);
         assertThat(slot.get("extraction").asText()).isEqualTo("SUCCESS");
 
-        assertThat(audit.eventsOfType(AuditEventType.ARTIFACT_METADATA_EXTRACTED))
+        assertThat(audit.eventsOfType(AuditEventType.ARTIFACT_METADATA_EXTRACTED).stream()
+                        .filter(event -> artifactId.equals(event.artifactId()))
+                        .toList())
                 .singleElement()
                 .satisfies(event -> {
                     assertThat(event.success()).isTrue();
@@ -214,7 +216,9 @@ class ArtifactExtractionIntegrationTest {
         // INV-003's corollary: a failed extraction never removes bytes.
         assertThat(row.get("storage_key")).asString().isNotBlank();
 
-        assertThat(audit.eventsOfType(AuditEventType.ARTIFACT_METADATA_EXTRACTED))
+        assertThat(audit.eventsOfType(AuditEventType.ARTIFACT_METADATA_EXTRACTED).stream()
+                        .filter(event -> artifactId.equals(event.artifactId()))
+                        .toList())
                 .singleElement()
                 .satisfies(event -> {
                     assertThat(event.success()).isFalse();
@@ -282,6 +286,10 @@ class ArtifactExtractionIntegrationTest {
         JsonNode response =
                 uploadMultipart(uploaded.token(), uploaded.versionId(), "app.ipa", null, IpaFixtures.releaseIpa(), 201);
         UUID artifactId = UUID.fromString(response.get("id").asText());
+        // Drain the async tail INSIDE this test: the extraction job's
+        // audit event must never land in a later test's capture window
+        // (the CI-runner race this await closes).
+        awaitExtraction(uploaded, artifactId, "SUCCESS");
 
         // A foreign version conceal-denies at the permission hop with the
         // version target's own not-found code; an unknown artifact under
