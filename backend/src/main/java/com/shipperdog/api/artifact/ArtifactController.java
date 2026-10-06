@@ -1,5 +1,6 @@
 package com.shipperdog.api.artifact;
 
+import com.shipperdog.api.artifact.internal.provenance.Provenance;
 import com.shipperdog.api.artifact.internal.service.ArtifactService;
 import com.shipperdog.api.artifact.internal.service.ArtifactService.ArtifactView;
 import com.shipperdog.api.artifact.internal.service.ArtifactService.FinalizeView;
@@ -69,11 +70,18 @@ public class ArtifactController {
     }
 
     /**
-     * Uploads an artifact (issue #20 AC1-AC4): multipart
-     * {@code file} plus the form fields {@code version_id},
-     * {@code platform}, and the optional {@code build_number} a CI
-     * uploader pins (S5-02/03 extract it otherwise). Returns 201 with
-     * the registered view, {@code duplicateOf} included when the same
+     * Uploads an artifact (issue #20 AC1-AC4; issue #23 provenance):
+     * multipart {@code file} plus the form fields {@code version_id},
+     * {@code platform}, the optional {@code build_number} a CI
+     * uploader pins (S5-02/03 extract it otherwise), and the optional
+     * build-provenance claims — {@code git_commit}, {@code git_branch},
+     * {@code pipeline}, {@code ci_run_url}, {@code build_timestamp}
+     * (S5-04, FR-005; the frozen names the S12-03/04 CI integrations
+     * send). Provenance is optional (manual uploads may omit every
+     * field) but shaped when present: a malformed commit or a non-URL
+     * run link answers one 400 naming every offending field, and
+     * nothing is ever fabricated server-side. Returns 201 with the
+     * registered view, {@code duplicateOf} included when the same
      * content already exists elsewhere in the application —
      * informational, never a rejection.
      */
@@ -86,17 +94,34 @@ public class ArtifactController {
             @RequestParam("version_id") UUID versionId,
             @RequestParam("platform") String platform,
             @RequestParam(value = "build_number", required = false) Long buildNumber,
+            @RequestParam(value = "git_commit", required = false) String gitCommit,
+            @RequestParam(value = "git_branch", required = false) String gitBranch,
+            @RequestParam(value = "pipeline", required = false) String pipeline,
+            @RequestParam(value = "ci_run_url", required = false) String ciRunUrl,
+            @RequestParam(value = "build_timestamp", required = false) String buildTimestamp,
             @RequestPart("file") MultipartFile file) {
-        return artifacts.upload(requireUserId(principal), versionId, platform, originalName(file), buildNumber, file);
+        return artifacts.upload(
+                requireUserId(principal),
+                versionId,
+                platform,
+                originalName(file),
+                buildNumber,
+                new Provenance.Fields(gitCommit, gitBranch, pipeline, ciRunUrl, buildTimestamp),
+                file);
     }
 
     /**
-     * Creates a direct-to-storage upload session (issue #20 AC5): the
-     * guards of the multipart path run first, then the response hands
-     * back the resumable session URL and the pre-allocated artifact id.
-     * The client streams bytes to {@code uploadUrl} (PUT; one request
-     * or resumable chunks) and then finalizes. Honors
-     * {@code Idempotency-Key}.
+     * Creates a direct-to-storage upload session (issue #20 AC5; issue
+     * #23 provenance): the guards of the multipart path run first —
+     * including the provenance validation, since this creation moment
+     * IS the resumable surface's upload-time capture point; the
+     * session carries the claims and finalize replays them into the
+     * registered artifact (finalize itself takes no provenance: hours
+     * may separate the calls, and the claims belong to the creating
+     * client). Then the response hands back the resumable session URL
+     * and the pre-allocated artifact id. The client streams bytes to
+     * {@code uploadUrl} (PUT; one request or resumable chunks) and
+     * then finalizes. Honors {@code Idempotency-Key}.
      */
     @PostMapping("/upload-sessions")
     @ResponseStatus(HttpStatus.CREATED)
@@ -110,6 +135,12 @@ public class ArtifactController {
                 request.platform(),
                 request.fileName(),
                 request.buildNumber(),
+                new Provenance.Fields(
+                        request.gitCommit(),
+                        request.gitBranch(),
+                        request.pipeline(),
+                        request.ciRunUrl(),
+                        request.buildTimestamp()),
                 request.sizeHint());
     }
 
@@ -169,17 +200,30 @@ public class ArtifactController {
     }
 
     /**
-     * The upload-session creation body (issue #20 AC5): everything the
-     * multipart path's form carries, plus the optional {@code sizeHint}
-     * (a client that knows the byte count up front gets the size
-     * ceiling checked before the session is granted).
+     * The upload-session creation body (issue #20 AC5; issue #23
+     * provenance): everything the multipart path's form carries,
+     * including the optional build-provenance claims (the camelCase
+     * JSON members of the frozen S5-04 field names), plus the optional
+     * {@code sizeHint} (a client that knows the byte count up front
+     * gets the size ceiling checked before the session is granted).
      */
     @Schema(
             description = "The direct-to-storage upload session to create: the version, platform, "
                     + "and file name of the artifact (extension allowlist .ipa/.apk/.aab applies), "
-                    + "the optional CI-pinned build number, and the optional size hint in bytes.")
+                    + "the optional CI-pinned build number, the optional size hint in bytes, and "
+                    + "the optional client-asserted build provenance (gitCommit, gitBranch, pipeline, "
+                    + "ciRunUrl, buildTimestamp: shape-validated claims, never verified facts).")
     public record CreateSessionRequest(
-            UUID versionId, String platform, String fileName, Long buildNumber, Long sizeHint) {}
+            UUID versionId,
+            String platform,
+            String fileName,
+            Long buildNumber,
+            String gitCommit,
+            String gitBranch,
+            String pipeline,
+            String ciRunUrl,
+            String buildTimestamp,
+            Long sizeHint) {}
 
     /** The finalize body: the version the session belongs to. */
     @Schema(description = "The version id the finalized artifact belongs to.")

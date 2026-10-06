@@ -24,6 +24,7 @@ backend/src/main/resources/db/
     V14__version_lifecycle.sql
     V15__artifact_upload.sql
     V16__artifact_extraction.sql
+    V17__artifact_provenance.sql
   seed/                 dev fixture, applied only when the seed location is active
     R__dev_seed.sql
 ```
@@ -261,10 +262,25 @@ backend/src/main/resources/db/
   storage unreadable after retries) records there too while the
   status deliberately STAYS `VALIDATING` — the document is what makes
   a missed extraction visible instead of silent. S5-03 (issue #22,
-  Android) deliberately adds NO V17: the Android payload (detected
-  format, target SDK, signing-block presence, BundleConfig-sourced
-  builds) rides the same `extracted_metadata` jsonb, and the identity
-  columns it shares with iOS already exist.
+  Android) added no migration of its own: the Android payload
+  (detected format, target SDK, signing-block presence,
+  BundleConfig-sourced builds) rides the same `extracted_metadata`
+  jsonb, and the identity columns it shares with iOS already exist.
+- `V17__artifact_provenance.sql` (S5-04, issue #23) adds the
+  build-provenance document — one nullable `provenance` jsonb column
+  on `artifacts` and one on `artifact_upload_sessions`, each with an
+  object-type CHECK, nothing dropped. A DEDICATED column, not a
+  namespaced key inside `extracted_metadata`: that document is
+  written once by the async extraction job over a write-once guard,
+  so an upload-time provenance document cannot ride inside it —
+  provenance is client input captured at upload (multipart form or
+  session creation; finalize replays the session's capture), the
+  extraction document is a server-derived outcome. The document keys
+  (`gitCommit`, `gitBranch`, `pipeline`, `ciRunUrl`,
+  `buildTimestamp`) are the frozen M2 CI-integration contract
+  (S12-03/04); only asserted members are stored — an absent claim is
+  an absent key, never a fabricated value — and the column is written
+  with the registration insert and never updated (INV-003).
 
 ## Status and type columns
 

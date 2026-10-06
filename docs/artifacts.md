@@ -1,8 +1,9 @@
 # Artifacts
 
 The artifact surface of ShipperDog: upload and object storage (S5-01,
-issue #20) and extracted metadata — iOS (S5-02, issue #21) and Android
-(S5-03, issue #22). An artifact is a
+issue #20), extracted metadata — iOS (S5-02, issue #21) and Android
+(S5-03, issue #22) — and build provenance capture (S5-04, issue #23).
+An artifact is a
 concrete immutable binary (PRD 8.5): bytes in object storage under the
 PRD 24 layout
 `/{organizationId}/{tenantId}/{applicationId}/{versionId}/{artifactId}/artifact`,
@@ -12,10 +13,10 @@ metadata only in PostgreSQL — never bytes (FR-007, ADR-0003).
 
 | Route | Permission | Notes |
 |---|---|---|
-| `POST /api/v1/artifacts` | `app:artifacts:upload` (DEVELOPER) | Multipart upload at or below the resumable threshold; honors `Idempotency-Key` |
-| `POST /api/v1/artifacts/upload-sessions` | `app:artifacts:upload` | Direct-to-storage session for large binaries (>100 MB rule); honors `Idempotency-Key` |
-| `POST /api/v1/artifacts/{artifactId}/finalize` | `app:artifacts:upload` | Registers the artifact after direct bytes; replays the registered state on retry |
-| `GET /api/v1/artifacts/{artifactId}?version_id={versionId}` | `app:artifacts:read` | The artifact read — where extraction outcomes land (S5-02) |
+| `POST /api/v1/artifacts` | `app:artifacts:upload` (DEVELOPER) | Multipart upload at or below the resumable threshold; honors `Idempotency-Key`; accepts the provenance form fields (S5-04) |
+| `POST /api/v1/artifacts/upload-sessions` | `app:artifacts:upload` | Direct-to-storage session for large binaries (>100 MB rule); honors `Idempotency-Key`; captures provenance here (S5-04) |
+| `POST /api/v1/artifacts/{artifactId}/finalize` | `app:artifacts:upload` | Registers the artifact after direct bytes; replays the registered state on retry; replays the session-captured provenance |
+| `GET /api/v1/artifacts/{artifactId}?version_id={versionId}` | `app:artifacts:read` | The artifact read — where extraction outcomes land (S5-02) and the provenance block answers (S5-04) |
 
 The surface is body-addressed: every route carries the version id in
 the form/body/query (never the path), the permission evaluator
@@ -110,6 +111,55 @@ presence stored in `signingBlocks`, never verified (S5-05 owns
 judging signatures, and v1 JAR signatures in `META-INF` are out of
 scope; a structurally inconsistent block reads as not-detected rather
 than failing identity extraction).
+
+## Build provenance (S5-04, issue #23)
+
+Every upload surface accepts the five build-provenance claims of FR-005
+/ PRD 8.5 — the answer to "what exactly is build 842" during an
+incident. The field names are FROZEN: they are the M2 CI-integration
+contract the S12-03/S12-04 integrations will send, so the multipart
+form names, the JSON member names, and the jsonb document keys never
+rename.
+
+| Claim | Multipart form field | JSON member | Shape when present |
+|---|---|---|---|
+| Git commit | `git_commit` | `gitCommit` | Hex SHA-1 (40) or SHA-256 (64); case-insensitive input, stored lowercase |
+| Git branch | `git_branch` | `gitBranch` | 1-255 printable characters |
+| Pipeline name | `pipeline` | `pipeline` | 1-255 printable characters |
+| CI run URL | `ci_run_url` | `ciRunUrl` | Absolute http/https URL with host, at most 2048 characters |
+| Build timestamp | `build_timestamp` | `buildTimestamp` | ISO-8601 instant with offset; canonicalized to UTC |
+
+Capture points: the multipart route binds the form fields; the
+resumable route captures the JSON members at **session creation** (the
+upload-time moment of that surface) and finalize replays them into the
+registered row — finalize takes no provenance of its own, because
+hours may separate the two calls and the claims belong to the client
+that made them. Storage is a dedicated `provenance` jsonb column on
+`artifacts` (V17) — dedicated because the extraction document is
+written once by the async parser over a write-once guard, so an
+upload-time document cannot ride inside it — written with the
+registration insert and never updated (INV-003). The version views'
+artifact slots carry the same block.
+
+Semantics:
+
+- **Optional, never fabricated** (the story's own criterion): every
+  field is optional and a manual upload may assert none — the view's
+  `provenance` block is then null, the stored document absent, and the
+  server never guesses a branch, a pipeline, or a build time. A blank
+  input is treated as absent, never coerced into a value.
+- **Shaped when present**: a malformed claim rejects the whole request
+  with one 400 (`INVALID_REQUEST`) whose `errors` member names every
+  offending wire field — bad commit hex, non-URL run links, unparseable
+  timestamps, overlong labels — in a single round trip, before any
+  byte is stored.
+- **Trust model**: the values are client-asserted CLAIMS, validated
+  for shape only. Nothing in M1 attests or verifies them — the
+  authenticated uploader (`uploadedBy`) plus the audit trail is the
+  accountability anchor; `ARTIFACT_UPLOADED` carries `gitCommit` and
+  `pipeline` in its detail map when asserted. Cryptographic
+  provenance/attestation verification is future work (S5-05 adjacent);
+  treat the block as "what the uploader said", not "what was proven".
 
 ## Configuration
 

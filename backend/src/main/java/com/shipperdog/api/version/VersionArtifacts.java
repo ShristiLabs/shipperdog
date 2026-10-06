@@ -45,7 +45,9 @@ public interface VersionArtifacts {
      * from the binary), the extracted identity fields S5-05's
      * validation matching compares, and the extraction outcome
      * ({@code PENDING|SUCCESS|FAILED|BLOCKED}) so a slot never hides a
-     * failed or blocked extraction behind VALIDATING.
+     * failed or blocked extraction behind VALIDATING; and, since S5-04
+     * (issue #23), the build-provenance block the uploader asserted at
+     * capture time (FR-005; {@code null} when none was asserted).
      */
     record VersionArtifactSlot(
             UUID id,
@@ -59,5 +61,16 @@ public interface VersionArtifacts {
             String bundleId,
             String versionName,
             String minimumOs,
-            String extraction) {}
+            String extraction,
+            ArtifactProvenance provenance) {}
+
+    /**
+     * The provenance block of a version-view artifact slot (issue
+     * #23, S5-04, FR-005): the five frozen, client-asserted build
+     * claims — {@code null} members for claims not asserted. A
+     * shape-only contract: the artifact module validates and stores
+     * the values; the version module renders them.
+     */
+    record ArtifactProvenance(
+            String gitCommit, String gitBranch, String pipeline, String ciRunUrl, String buildTimestamp) {}
 }
