@@ -70,6 +70,24 @@ public interface VersionAccess {
     /** The ownership tuple callers may resolve; never the row itself. */
     record VersionOwnership(UUID versionId, UUID applicationId, UUID organizationId, UUID tenantId) {}
 
+    /**
+     * The version's resolved decision inputs (issue #30, S7-01): the
+     * ownership tuple plus the application it belongs to and the
+     * lifecycle status — the E7 authorization chain's version-layer
+     * facts ({@code DRAFT}, {@code ACTIVE}, {@code ARCHIVED}, or
+     * {@code REVOKED}; a REVOKED version blocks new downloads,
+     * INV-007). Authorization data only, the same registry-read
+     * character as {@link #ownershipOf}; never an endpoint data path.
+     */
+    record VersionState(UUID versionId, UUID applicationId, UUID organizationId, UUID tenantId, String status) {}
+
+    /**
+     * The version's resolved decision inputs, or empty when unknown
+     * (issue #30, S7-01) — one point lookup where the engine would
+     * otherwise resolve ownership and status separately.
+     */
+    Optional<VersionState> stateOf(UUID versionId);
+
     /** The version-record name callers may resolve; never the row itself. */
     record VersionRecord(UUID versionId, String versionName) {}
 }

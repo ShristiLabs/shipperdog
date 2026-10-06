@@ -34,6 +34,18 @@ public interface ApplicationAccess {
      */
     Optional<ApplicationProfile> profileOf(UUID applicationId);
 
+    /**
+     * The single-application form of the effective-visibility
+     * resolution (issue #30, S7-01): whether the tenant may see the
+     * application — tenant-owned by it, or organization-shared with an
+     * ACTIVE authorization mapping for it. The set form is the catalog
+     * listing's sanctioned union (ADR-0002 fourth amendment); this is
+     * the same predicate for one addressed application, the E7
+     * authorization chain's "Does the tenant have Banking?" layer
+     * input. Authorization data only — never an endpoint data path.
+     */
+    boolean visibleToTenant(UUID applicationId, UUID tenantId);
+
     /** The ownership tuple callers may resolve; never the row itself. */
     record Ownership(UUID applicationId, UUID organizationId, UUID tenantId) {}
 

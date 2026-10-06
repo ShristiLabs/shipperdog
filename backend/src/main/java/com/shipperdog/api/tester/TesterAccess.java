@@ -20,4 +20,13 @@ public interface TesterAccess {
      * from a missing one. Empty when no such tester exists.
      */
     Optional<UUID> owningOrganizationOf(UUID testerId);
+
+    /**
+     * The linked tester person record of the user, or empty when the
+     * user is not a tester (issue #30, S7-01): the E7 authorization
+     * chain's subject resolution — the tester persona of a decision.
+     * Authorization data only, the same character as the owning-
+     * organization hop.
+     */
+    Optional<UUID> testerIdOfUser(UUID userId);
 }

@@ -44,6 +44,14 @@ public interface OrganizationAccess {
     boolean organizationExists(UUID organizationId);
 
     /**
+     * The organization's lifecycle status ({@code ACTIVE} or
+     * {@code DEACTIVATED}), or empty when unknown (issue #30, S7-01):
+     * the E7 authorization chain's organization-layer input.
+     * Authorization data only — the same character as the role reads.
+     */
+    Optional<String> statusOf(UUID organizationId);
+
+    /**
      * Grants a membership. Rejects a deactivated organization or an
      * existing member with {@link OrganizationException}.
      *

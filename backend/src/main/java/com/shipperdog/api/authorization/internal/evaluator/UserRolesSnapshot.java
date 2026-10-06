@@ -19,7 +19,7 @@ import java.util.concurrent.ConcurrentHashMap;
  * deactivation strips effective permissions without touching
  * memberships.
  */
-final class UserRolesSnapshot {
+public final class UserRolesSnapshot {
 
     private final UUID userId;
     private final boolean platformAdmin;
@@ -30,7 +30,7 @@ final class UserRolesSnapshot {
     /** Tenant-to-owning-organization resolutions memoized per request. */
     private final Map<UUID, Optional<UUID>> tenantOwners = new ConcurrentHashMap<>();
 
-    UserRolesSnapshot(
+    public UserRolesSnapshot(
             UUID userId,
             boolean platformAdmin,
             Map<UUID, OrgRole> orgRoles,
@@ -43,24 +43,24 @@ final class UserRolesSnapshot {
         this.tenants = tenants;
     }
 
-    UUID userId() {
+    public UUID userId() {
         return userId;
     }
 
-    boolean platformAdmin() {
+    public boolean platformAdmin() {
         return platformAdmin;
     }
 
-    OrgRole orgRole(UUID organizationId) {
+    public OrgRole orgRole(UUID organizationId) {
         return orgRoles.get(organizationId);
     }
 
-    TenantRole tenantRole(UUID tenantId) {
+    public TenantRole tenantRole(UUID tenantId) {
         return tenantRoles.get(tenantId);
     }
 
     /** The organization owning the tenant, memoized; empty when unknown. */
-    Optional<UUID> owningOrganization(UUID tenantId) {
+    public Optional<UUID> owningOrganization(UUID tenantId) {
         return tenantOwners.computeIfAbsent(tenantId, tenants::owningOrganizationId);
     }
 }

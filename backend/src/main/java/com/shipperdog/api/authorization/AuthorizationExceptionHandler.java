@@ -39,6 +39,17 @@ public class AuthorizationExceptionHandler {
         return problem(notFoundCodeFor(exception.targetType()), ApiError.NOT_FOUND);
     }
 
+    /**
+     * A malformed decision-inspection request (S7-01): the generic 400
+     * envelope, the same shape every module's validation refusal
+     * renders.
+     */
+    @ExceptionHandler(AuthorizationDecisionController.AuthorizationInspectionException.class)
+    ResponseEntity<ProblemDetail> malformedInspection(
+            AuthorizationDecisionController.AuthorizationInspectionException exception) {
+        return problem(ApiError.INVALID_REQUEST);
+    }
+
     @ExceptionHandler(AccessDeniedException.class)
     ResponseEntity<ProblemDetail> handle(AccessDeniedException exception) {
         return problem(ApiError.FORBIDDEN);
@@ -73,6 +84,12 @@ public class AuthorizationExceptionHandler {
             // caller failed a permission check rather than addressing a
             // nonexistent version).
             case "version" -> "VERSION_NOT_FOUND";
+            // Since S7-01 (issue #30) the layered engine guards the
+            // artifact read; an artifact-grain denial must render the
+            // artifact module's own miss code (the route's pre-engine
+            // contract distinguished the two grains), never a code
+            // that would leak which check failed.
+            case "artifact" -> "ARTIFACT_NOT_FOUND";
             // Since S6-02 (issue #27) the tester-group routes check the
             // 'tester-group' target: a concealed denial must render
             // exactly like the tester module's genuine group miss

@@ -171,6 +171,12 @@ the deactivation `reason`); `TENANT_TESTER_MEMBERSHIP_REMOVED` —
 issue #28/S6-03: removal, which RETAINS the row REVOKED — never a
 delete — with `status.before`/`status.after=REVOKED`; idempotent
 re-removals write nothing),
+authorization (`AUTHORIZATION_DECISION` — issue #30/S7-01: one event
+per layered-engine decision, allow and deny alike, carrying `action`,
+`outcome`, the compact `chain` summary (layer:status pairs), and — on
+a denial — `failingLayer` and `reason`; the audited user is the
+deciding subject, and for the inspection API the inspected subject;
+see [authorization](authorization.md)),
 and
 platform (`ACCESS_DENIED`, S1-06).
 

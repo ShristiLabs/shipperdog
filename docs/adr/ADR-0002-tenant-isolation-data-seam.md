@@ -514,3 +514,31 @@ EXPLICIT listing order (link time, then a real composite-key column as
 the deterministic tiebreaker)**; sorted pageables already bypass the
 default, so the seam contract itself is unchanged and future
 composite-key seam rows follow the same shape.
+
+## Thirteenth amendment (2026-10-06): the layered engine's artifact decision-input guard
+
+The authorization engine's first landing (E7, issue #30, S7-01)
+forces the same question the registries answered in the second
+amendment, one level deeper: PRD 11/12's artifact layer ("Is the
+artifact available?") must resolve the artifact's version, platform,
+and lifecycle status BEFORE any request scope exists, because the
+engine decides before the route serves — the artifact collection
+route is body-addressed (`GET /api/v1/artifacts/{id}?version_id=`),
+so no route interceptor binds a scope the seam could enforce.
+`ArtifactRegistryRepository` is therefore `@CrossTenantByDesign`
+with exactly one declared operation (`findArtifactById`), served
+through the public `ArtifactAccess` port as decision tuples only
+(`stateOf`: id, version, platform, status — never rows, never an
+endpoint data path): the same authorization-data character as
+`findApplicationById` and `findVersionById`, one more level down
+the chain. The engine's own reads of that port are point lookups by
+primary key, so the decision path stays index-backed (the PRD 42
+under-100 ms SLO); the seam-served `ArtifactScopedRepository`
+remains the only data path for endpoint reads and writes, unchanged.
+
+The landing also settles the #28 follow-up homed here: the
+two-switches effectiveness resolution (`isEffectivelyActive`) is a
+membership row by the `tenant_tester_memberships` primary key
+`(tenant_id, tester_id)` plus the person row by its primary key —
+both PK lookups, no additional index warranted; no migration was
+added by S7-01.

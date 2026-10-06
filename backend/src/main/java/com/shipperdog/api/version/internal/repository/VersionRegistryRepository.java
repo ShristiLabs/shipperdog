@@ -95,6 +95,23 @@ public interface VersionRegistryRepository extends JpaRepository<VersionEntity, 
         return findVersionById(versionId).map(version -> new VersionRecord(version.getId(), version.getVersionName()));
     }
 
+    /**
+     * The version's resolved decision inputs (issue #30, S7-01): one
+     * point lookup for the E7 chain's version layer — ownership plus
+     * lifecycle. Authorization data, the same character as
+     * {@link #ownershipOf}; never an endpoint data path.
+     */
+    @Override
+    default Optional<VersionState> stateOf(UUID versionId) {
+        return findVersionById(versionId)
+                .map(version -> new VersionState(
+                        version.getId(),
+                        version.getApplicationId(),
+                        version.getOrganizationId(),
+                        version.getTenantId(),
+                        version.getStatus().name()));
+    }
+
     /** The version ids of one application, for cross-version artifact reads. */
     @Query("select v.id from VersionEntity v where v.applicationId = :applicationId")
     List<UUID> findIdsByApplicationId(@Param("applicationId") UUID applicationId);

@@ -153,6 +153,14 @@ public class OrganizationService implements OrganizationAccess {
     }
 
     @Override
+    @Transactional(readOnly = true)
+    public Optional<String> statusOf(UUID organizationId) {
+        return organizations
+                .findById(organizationId)
+                .map(organization -> organization.getStatus().name());
+    }
+
+    @Override
     @Transactional
     public void addMember(UUID organizationId, UUID userId, OrgRole role, UUID actingUserId) {
         OrganizationEntity organization = mustFind(organizationId);

@@ -19,7 +19,10 @@ Current contents:
   behavior, AUTH_* configuration (S1-03).
 - [Authorization](authorization.md) — RBAC permission catalog and role
   matrix, the single enforcement point, deny-by-default and opaque
-  denials, role-assignment endpoints and guards (S1-05).
+  denials, role-assignment endpoints and guards (S1-05); the layered
+  authorization engine of PRD 11/12 — seven ordered layers, the
+  entitlement seam S7-02 plugs into, audited decisions, and the
+  admin-only decision inspection API (S7-01).
 - [Organizations](organizations.md) — organization lifecycle, settings,
   and membership surface (S1-04, extended by S1-05).
 - [Tenants](tenants.md) — tenant lifecycle under an organization,

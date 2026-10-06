@@ -16,6 +16,10 @@ import com.shipperdog.api.artifact.internal.validation.ArtifactValidationService
 import com.shipperdog.api.audit.AuditEvent;
 import com.shipperdog.api.audit.AuditEventPublisher;
 import com.shipperdog.api.audit.AuditEventType;
+import com.shipperdog.api.authorization.AuthorizationContext;
+import com.shipperdog.api.authorization.AuthorizationService;
+import com.shipperdog.api.authorization.ConcealedResourceAccessDeniedException;
+import com.shipperdog.api.authorization.DecisionGuarded;
 import com.shipperdog.api.config.CursorPageable;
 import com.shipperdog.api.config.MetricNames;
 import com.shipperdog.api.config.TraceAttributes;
@@ -44,6 +48,7 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
+import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.data.domain.Sort;
 import org.springframework.data.jpa.domain.Specification;
@@ -111,6 +116,7 @@ import org.springframework.web.multipart.MultipartFile;
  * the registered artifact and drop the stale session.
  */
 @Service
+@DecisionGuarded
 public class ArtifactService implements VersionArtifacts {
 
     /** The upload allowlist (issue #20 AC1): extension to platform coherence. */
@@ -137,6 +143,16 @@ public class ArtifactService implements VersionArtifacts {
     private final ArtifactExtractionService extraction;
     private final ArtifactValidationService validation;
     private final AuditEventPublisher audit;
+    /**
+     * Lazy on purpose (issue #30): the layered authorization engine's
+     * artifact layer resolves artifact state through this module's
+     * public {@code ArtifactAccess} port, so a direct constructor
+     * dependency on {@code AuthorizationService} would close a bean
+     * cycle — the ObjectProvider precedent this codebase uses for
+     * every inversion of that shape.
+     */
+    private final ObjectProvider<AuthorizationService> authorization;
+
     private final Clock clock;
     private final TraceAttributes trace;
     private final MeterRegistry meters;
@@ -154,6 +170,7 @@ public class ArtifactService implements VersionArtifacts {
             ArtifactExtractionService extraction,
             ArtifactValidationService validation,
             AuditEventPublisher audit,
+            ObjectProvider<AuthorizationService> authorization,
             Clock clock,
             TraceAttributes trace,
             MeterRegistry meters,
@@ -169,6 +186,7 @@ public class ArtifactService implements VersionArtifacts {
         this.extraction = extraction;
         this.validation = validation;
         this.audit = audit;
+        this.authorization = authorization;
         this.clock = clock;
         this.trace = trace;
         this.meters = meters;
@@ -426,8 +444,37 @@ public class ArtifactService implements VersionArtifacts {
      * (the same body-addressed shape as the upload routes: the
      * artifact collection has no nesting to bind a route interceptor);
      * a foreign or mismatched version is the standard concealed miss.
+     *
+     * <p>Since S7-01 (issue #30) the read is decision-guarded: before
+     * the scoped data read, the layered authorization engine decides
+     * the subject's PRD 11 chain over the version and artifact; a
+     * denial renders as the route's concealed version miss and the
+     * decision is audited with the correlation id. The engine is
+     * injected lazily because its artifact layer resolves artifact
+     * state through this module's public {@code ArtifactAccess} port —
+     * the same dependency inversion the {@code VersionArtifacts} seam
+     * this service implements uses, so neither constructor closes a
+     * cycle.
      */
     public ArtifactView get(UUID actorId, UUID artifactId, UUID versionId) {
+        AuthorizationService engine = authorization.getIfAvailable();
+        if (engine != null) {
+            // The conceal grain follows the route's pre-engine
+            // contract, not the failing layer: an artifact-layer miss
+            // (unknown artifact, foreign artifact) renders the
+            // artifact-grain miss ARTIFACT_NOT_FOUND; every other
+            // denial conceals as the version-grain miss — exactly the
+            // two shapes the route has always produced.
+            com.shipperdog.api.authorization.AuthorizationDecision decision =
+                    engine.decide(AuthorizationContext.readArtifact(actorId, versionId, artifactId));
+            if (!decision.allowed()) {
+                boolean artifactGrain = decision.reason()
+                                == com.shipperdog.api.authorization.DenialReason.ARTIFACT_MISSING
+                        || decision.reason() == com.shipperdog.api.authorization.DenialReason.ARTIFACT_PLATFORM_MISMATCH
+                        || decision.reason() == com.shipperdog.api.authorization.DenialReason.ARTIFACT_NOT_AVAILABLE;
+                throw new ConcealedResourceAccessDeniedException(artifactGrain ? "artifact" : "version");
+            }
+        }
         VersionOwnership ownership = ownershipOf(versionId);
         return inScope(ownership, actorId, () -> {
             ArtifactEntity artifact = artifacts.findScoped(artifactId).orElseThrow(ArtifactService::artifactMissing);

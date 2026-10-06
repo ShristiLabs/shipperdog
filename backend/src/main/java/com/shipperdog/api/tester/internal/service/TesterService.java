@@ -334,6 +334,12 @@ public class TesterService implements TesterOnboarding, TesterAccounts, TesterAc
         return testers.findById(testerId).map(TesterEntity::getOrganizationId);
     }
 
+    @Override
+    @Transactional(readOnly = true)
+    public Optional<UUID> testerIdOfUser(UUID userId) {
+        return testers.findByUserId(userId).map(TesterEntity::getId);
+    }
+
     private TesterEntity requireTester(UUID testerId) {
         return testers.findById(testerId)
                 .orElseThrow(() -> new TesterException(TesterException.Code.NOT_FOUND, "tester not found"));

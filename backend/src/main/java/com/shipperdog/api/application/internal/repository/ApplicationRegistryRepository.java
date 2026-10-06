@@ -141,6 +141,35 @@ public interface ApplicationRegistryRepository extends JpaRepository<Application
      */
     Page<ApplicationEntity> findByOrganizationIdOrderByCreatedAtAscIdAsc(UUID organizationId, Pageable pageable);
 
+    /**
+     * The single-application form of the effective-visibility
+     * resolution (issue #30, S7-01): the per-item twin of the union
+     * above — the E7 authorization chain's "Does the tenant have the
+     * application?" layer input, answered by the same ownership and
+     * ACTIVE-mapping predicates (one arm spans scopes by definition,
+     * the fourth amendment's character; the id equality keeps it a
+     * point lookup).
+     */
+    @Query("select count(a) > 0 from ApplicationEntity a where a.id = :applicationId"
+            + " and (a.tenantId = :tenantId or (a.ownershipScope = :sharedScope and a.id in"
+            + " (select m.applicationId from TenantApplicationAuthorizationEntity m"
+            + " where m.tenantId = :tenantId and m.status = :authorizedStatus)))")
+    boolean existsVisibleToTenant(
+            @Param("applicationId") UUID applicationId,
+            @Param("tenantId") UUID tenantId,
+            @Param("sharedScope") OwnershipScope sharedScope,
+            @Param("authorizedStatus") TenantApplicationAuthorizationEntity.Status authorizedStatus);
+
+    /** Visibility resolution for the E7 authorization chain; a boolean, never a row. */
+    @Override
+    default boolean visibleToTenant(UUID applicationId, UUID tenantId) {
+        return existsVisibleToTenant(
+                applicationId,
+                tenantId,
+                OwnershipScope.ORGANIZATION,
+                TenantApplicationAuthorizationEntity.Status.ACTIVE);
+    }
+
     /** Name guard excluding the application being updated. */
     boolean existsByOrganizationIdAndNameAndIdNot(UUID organizationId, String name, UUID id);
 
