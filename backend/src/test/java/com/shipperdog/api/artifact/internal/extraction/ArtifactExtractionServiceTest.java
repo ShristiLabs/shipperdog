@@ -167,6 +167,7 @@ class ArtifactExtractionServiceTest {
                 artifacts,
                 mock(com.shipperdog.api.artifact.ArtifactStore.class),
                 java.util.List.of(parser),
+                mock(com.shipperdog.api.artifact.internal.validation.ArtifactValidationService.class),
                 scopeExecutor,
                 audit,
                 Clock.systemUTC(),

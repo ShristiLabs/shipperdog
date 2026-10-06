@@ -2,8 +2,9 @@
 
 The artifact surface of ShipperDog: upload and object storage (S5-01,
 issue #20), extracted metadata — iOS (S5-02, issue #21) and Android
-(S5-03, issue #22) — and build provenance capture (S5-04, issue #23).
-An artifact is a
+(S5-03, issue #22) — build provenance capture (S5-04, issue #23), and
+the validation pipeline with the artifact state machine (S5-05, issue
+#24). An artifact is a
 concrete immutable binary (PRD 8.5): bytes in object storage under the
 PRD 24 layout
 `/{organizationId}/{tenantId}/{applicationId}/{versionId}/{artifactId}/artifact`,
@@ -16,7 +17,8 @@ metadata only in PostgreSQL — never bytes (FR-007, ADR-0003).
 | `POST /api/v1/artifacts` | `app:artifacts:upload` (DEVELOPER) | Multipart upload at or below the resumable threshold; honors `Idempotency-Key`; accepts the provenance form fields (S5-04) |
 | `POST /api/v1/artifacts/upload-sessions` | `app:artifacts:upload` | Direct-to-storage session for large binaries (>100 MB rule); honors `Idempotency-Key`; captures provenance here (S5-04) |
 | `POST /api/v1/artifacts/{artifactId}/finalize` | `app:artifacts:upload` | Registers the artifact after direct bytes; replays the registered state on retry; replays the session-captured provenance |
-| `GET /api/v1/artifacts/{artifactId}?version_id={versionId}` | `app:artifacts:read` | The artifact read — where extraction outcomes land (S5-02) and the provenance block answers (S5-04) |
+| `GET /api/v1/artifacts/{artifactId}?version_id={versionId}` | `app:artifacts:read` | The artifact read — where extraction outcomes land (S5-02), the provenance block answers (S5-04), and the validation block settles (S5-05) |
+| `POST /api/v1/artifacts/{artifactId}/revalidate?version_id={versionId}` | `app:artifacts:upload` | The validation retry entry (S5-05): a FAILED artifact re-enters through `FAILED -> VALIDATING`, a blocked validation re-drives, a blocked extraction re-arms; 202 with the artifact view, 409 `ARTIFACT_NOT_VALIDATABLE` for anything else |
 
 The surface is body-addressed: every route carries the version id in
 the form/body/query (never the path), the permission evaluator
@@ -35,9 +37,9 @@ back (`GET`) to watch it settle:
 | `extraction.status` | Meaning | Artifact status |
 |---|---|---|
 | `PENDING` | Parsing has not produced an outcome yet | `VALIDATING` |
-| `SUCCESS` | Fields extracted and stored | `VALIDATING` (S5-05 owns later transitions) |
-| `FAILED` | The binary is malformed; `errorCode`/`errorMessage` are actionable | `FAILED` |
-| `BLOCKED` | Extraction could not run (queue full, storage unreadable after retries); the error document says why | `VALIDATING` |
+| `SUCCESS` | Fields extracted and stored | `VALIDATING`, then the validation pipeline (S5-05) settles it `READY` or `FAILED` |
+| `FAILED` | The binary is malformed; `errorCode`/`errorMessage` are actionable | `FAILED` (the validation pipeline then records why on its own document) |
+| `BLOCKED` | Extraction could not run (queue full, storage unreadable after retries); the error document says why | `VALIDATING` (the revalidation surface re-arms the block) |
 
 On `SUCCESS`, the artifact view and the version views' artifact slots
 carry the extracted identity fields: `bundleId`, `versionName`,
@@ -112,6 +114,110 @@ judging signatures, and v1 JAR signatures in `META-INF` are out of
 scope; a structurally inconsistent block reads as not-detected rather
 than failing identity extraction).
 
+## Validation pipeline and the artifact state machine (S5-05, issue #24)
+
+The gate between upload and usability (FR-006, PRD 18): once the
+extraction tier settles, a second async pipeline — its own bounded
+executor, deliberately separate from the extraction pool since the
+extraction job's settled phase is what schedules it — runs the seven
+PRD-ordered stages and records every stage's outcome on the artifact's
+`validation` document (V18 jsonb, rewritten per attempt: outcome,
+attempts counter, timings, and each stage's status/code/reason):
+
+```text
+FILE -> FORMAT -> METADATA -> CHECKSUM -> SIGNING -> APPLICATION_MATCH -> VERSION_MATCH -> READY
+```
+
+- **FILE** — the stored object exists and its byte count equals the
+  registered size (`FILE_MISSING`, `SIZE_MISMATCH`).
+- **FORMAT** — the STRUCTURAL container verdict (the S5-03 detection,
+  never the file name's claim: iOS parsing success is the IPA verdict,
+  the Android document carries `APK`/`AAB`) checked against the
+  platform and the uploaded extension, and recorded in the
+  first-class `format` column (V18) so distribution-time
+  channel-format rules act on a recorded fact — FR-006's note: an AAB
+  is Play-only, direct download needs an APK, and an AAB upload
+  itself stays valid. A renamed binary (AAB bytes named `.apk`) fails
+  the coherence check (`FORMAT_MISMATCH`) WITH the structural truth
+  recorded. A container-fault extraction (`NOT_A_ZIP`,
+  `ZIP64_UNSUPPORTED`, `MALFORMED_ZIP`, `UNKNOWN_FORMAT`) fails here
+  carrying the extraction's code.
+- **METADATA** — the extraction outcome must be `SUCCESS`; a
+  payload-fault extraction (malformed plist/manifest, unreadable
+  entry) fails here (`METADATA_FAILED`) carrying the extraction's own
+  code — the join point of the two async tiers.
+- **CHECKSUM** — the stored object's SHA-256 digest re-proves the
+  registered checksum against the bytes as stored
+  (`CHECKSUM_MISMATCH`).
+- **SIGNING** — M1 presence and self-consistency only (the issue's
+  own scope line; certificate-chain and CMS verification depth is
+  M2/M3): an iOS build must carry an internally coherent, unexpired
+  embedded provisioning profile (`SIGNING_ABSENT`,
+  `SIGNING_INCOHERENT`, `SIGNING_PROFILE_EXPIRED`); an APK must carry
+  an APK Signing Scheme v2 or v3 block (`SIGNING_ABSENT`); an AAB
+  passes with its JAR-signature presence explicitly deferred (outside
+  the S5-03 marker's scope) — the deferred reason is recorded on the
+  stage, not silently skipped.
+- **APPLICATION_MATCH** — the extracted bundle id / package name
+  equals the application registry's registered identifier (S3-01):
+  a mismatch fails with the explicit expected/observed error
+  (`APPLICATION_MISMATCH`).
+- **VERSION_MATCH** — the extracted marketing version equals the
+  version record's name, and the extracted build (when a plain
+  integer) equals the CI-pinned build when the uploader pinned one.
+  M1 rejects mismatches outright — no auto-amend proposal
+  (`VERSION_MISMATCH`).
+
+The first FAILED stage stops the run; every later stage records
+`SKIPPED`. A FAILED artifact's read answers "which stage, which code,
+what reason" through the `validation` block (per-stage
+status/code/reason in pipeline order) — the story's actionable-detail
+criterion. The two infra conditions are NOT stage failures:
+`VALIDATION_QUEUE_FULL` (the bounded pool refused at schedule time)
+and `VALIDATION_UNAVAILABLE` (storage unreadable after bounded
+retries) close the attempt as `BLOCKED`, the artifact STAYS
+`VALIDATING`, and the document is what makes the stall visible rather
+than silent.
+
+### The state machine (PRD 18)
+
+Every artifact status change composes through the explicit
+`ArtifactStateMachine` transition table — an illegal transition is
+rejected at the attempt, never silently applied:
+
+```text
+UPLOADING   -> VALIDATING                  (registration: bytes stored, checksum known)
+VALIDATING  -> READY | FAILED              (the pipeline; extraction's malformed-binary leg)
+FAILED      -> VALIDATING                  (revalidation: the retry entry)
+READY       -> DISTRIBUTED | ARCHIVED      (distribution epics own these; reserved here)
+DISTRIBUTED -> ARCHIVED
+```
+
+PRD 18 has no REVOKED state — revocation is E7's authorization
+lifecycle (INV-007: an authorization can be revoked without deleting
+the artifact), never an artifact-row state. READY is the state from
+which E7's authorization grants will accept an artifact (FR-011);
+nothing grants off a FAILED or still-VALIDATING row. All transitions
+preserve INV-003 by construction: the machine moves only the status
+field and the pipeline's own writes — bytes, checksums, provenance,
+and the extraction documents are read, never written.
+
+### Revalidation (the retry scope)
+
+`POST /api/v1/artifacts/{id}/revalidate?version_id=...` (202, the
+`app:artifacts:upload` permission): a FAILED artifact moves back to
+VALIDATING and the pipeline re-runs; a blocked validation re-drives
+where it stands; a blocked EXTRACTION is re-armed (the block note
+clears and the parser re-runs — its settled phase schedules
+validation again, so the two async tiers re-enter in order).
+Deterministic stages reproduce their verdict, but the WORLD may have
+changed — a corrected registry identifier, recovered storage — and
+the retry is how the corrected fact wins; the `attempts` counter
+carries the history. Anything else answers 409
+`ARTIFACT_NOT_VALIDATABLE`: PRD 18 has no path from UPLOADING, READY,
+DISTRIBUTED, or ARCHIVED back to VALIDATING, and the machine is the
+authority.
+
 ## Build provenance (S5-04, issue #23)
 
 Every upload surface accepts the five build-provenance claims of FR-005
@@ -174,18 +280,29 @@ Semantics:
 | `ARTIFACT_EXTRACTION_QUEUE_CAPACITY` | `200` | Bounded queue; full = loud `EXTRACTION_QUEUE_FULL`, never unbounded backlog |
 | `ARTIFACT_EXTRACTION_MAX_ENTRY_BYTES` | `16777216` | Per-entry read/inflate cap (zip bombs become `ENTRY_TOO_LARGE`) |
 | `ARTIFACT_EXTRACTION_STORAGE_RETRIES` | `3` | Attempts against transient storage failures before `EXTRACTION_UNAVAILABLE` |
+| `ARTIFACT_VALIDATION_CONCURRENCY` | `2` | Validation pool size (its own pool — the extraction hand-off would self-deadlock a shared queue) |
+| `ARTIFACT_VALIDATION_QUEUE_CAPACITY` | `200` | Bounded queue; full = loud `VALIDATION_QUEUE_FULL` block record, never unbounded backlog |
+| `ARTIFACT_VALIDATION_STORAGE_RETRIES` | `3` | Attempts against transient storage failures before the attempt records `VALIDATION_UNAVAILABLE` |
 
 ## Observability
 
 - Audit: `ARTIFACT_UPLOAD_SESSION_CREATED`, `ARTIFACT_UPLOADED`
   (S5-01), `ARTIFACT_METADATA_EXTRACTED` (S5-02/S5-03 — success and
   failure legs, the failure carrying `errorCode`; Android success legs
-  also carry the detected `format`).
-- Metric: `shipperdog_artifact_upload_duration_seconds` (S5-01) and
+  also carry the detected `format`), `ARTIFACT_VALIDATED`
+  (S5-05 — one event per pipeline attempt: `outcome`, `attempts`,
+  `durationMs`, the `format` verdict when one exists, and the failing
+  `stage`/`errorCode` on a failure), and
+  `ARTIFACT_REVALIDATION_REQUESTED` (S5-05 — the retry entry's
+  acceptance).
+- Metric: `shipperdog_artifact_upload_duration_seconds` (S5-01),
   `shipperdog_artifact_extraction_duration_seconds` (S5-02; tags
-  `platform=IOS|ANDROID`, `outcome=success|failed-parse|failed-infra`
-  — the PRD 42 "artifact metadata processing" SLO observes this
-  meter).
+  `platform=IOS|ANDROID`, `outcome=success|failed-parse|failed-infra`)
+  and `shipperdog_artifact_validation_duration_seconds` (S5-05; tags
+  `platform=IOS|ANDROID`, `outcome=success|failed|blocked` — the
+  PRD 42 "artifact metadata processing < 30 s" SLO observes the
+  extraction meter plus this one end to end; `artifact_validation_duration`
+  is the PRD 28 reserved name).
 
 ## Duplicates and immutability
 

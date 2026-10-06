@@ -126,7 +126,19 @@ either the extracted fields (`bundleId`, `versionName`, `buildNumber`,
 `minimumOs`, `parser`, `durationMs`; Android success legs also carry
 the structurally detected `format`) or the failure's `errorCode` and
 `error`; recorded once per artifact — the row's write-once extraction
-guard makes a double schedule a no-op),
+guard makes a double schedule a no-op;
+`ARTIFACT_VALIDATED` — issue #24/S5-05: the validation pipeline's
+terminal outcome per attempt, carrying `versionId` and `artifactId`
+entity references with `platform`, `outcome`
+(`PASSED`/`FAILED`/`BLOCKED`), `attempts`, `durationMs`, the
+structural `format` when a verdict exists, and — on a stage failure —
+the failing `stage` and its `errorCode` (a BLOCKED leg carries the
+infra code the same way and `success=false`); one event per attempt,
+so a revalidation trail reads attempt by attempt;
+`ARTIFACT_REVALIDATION_REQUESTED` — issue #24/S5-05: the retry entry
+accepted (`FAILED -> VALIDATING`, a blocked validation re-driven, or
+a blocked extraction re-armed), carrying `versionId` and `artifactId`
+entity references with the `status` the row carried at acceptance),
 and
 platform (`ACCESS_DENIED`, S1-06).
 

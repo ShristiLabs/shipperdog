@@ -36,7 +36,9 @@ Current contents:
   asynchronous extraction tier and stored failure codes, the parser
   port with its iOS (S5-02) and Android APK/AAB (S5-03) implementations,
   build-provenance capture and its frozen CI-integration field names
-  (S5-04), ARTIFACT_* environment configuration, and the
+  (S5-04), the validation pipeline and artifact state machine with
+  its per-stage failure codes and the revalidation surface (S5-05),
+  ARTIFACT_* environment configuration, and the
   duplicate/immutability rules.
 - [Admin console](frontend.md) — the React/MUI console (S2-04, S3-04):
   stack and structure, the shared API client (problem+json, correlation

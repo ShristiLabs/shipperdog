@@ -45,9 +45,15 @@ public interface VersionArtifacts {
      * from the binary), the extracted identity fields S5-05's
      * validation matching compares, and the extraction outcome
      * ({@code PENDING|SUCCESS|FAILED|BLOCKED}) so a slot never hides a
-     * failed or blocked extraction behind VALIDATING; and, since S5-04
+     * failed or blocked extraction behind VALIDATING; since S5-04
      * (issue #23), the build-provenance block the uploader asserted at
-     * capture time (FR-005; {@code null} when none was asserted).
+     * capture time (FR-005; {@code null} when none was asserted); and
+     * since S5-05 (issue #24), the STRUCTURAL format verdict the
+     * validation pipeline recorded (the channel-format fact of FR-006's
+     * AAB/APK rule; {@code null} until a verdict exists) and the
+     * validation outcome ({@code PENDING|PASSED|FAILED|BLOCKED}) so a
+     * slot never hides a failed or blocked validation behind its
+     * status either.
      */
     record VersionArtifactSlot(
             UUID id,
@@ -62,7 +68,9 @@ public interface VersionArtifacts {
             String versionName,
             String minimumOs,
             String extraction,
-            ArtifactProvenance provenance) {}
+            ArtifactProvenance provenance,
+            String format,
+            String validation) {}
 
     /**
      * The provenance block of a version-view artifact slot (issue

@@ -12,6 +12,7 @@ import com.shipperdog.api.artifact.internal.repository.ArtifactScopedRepository;
 import com.shipperdog.api.artifact.internal.repository.ArtifactUploadSessionScopedRepository;
 import com.shipperdog.api.artifact.internal.storage.ArtifactStorageProperties;
 import com.shipperdog.api.artifact.internal.storage.ArtifactUploadProperties;
+import com.shipperdog.api.artifact.internal.validation.ArtifactValidationService;
 import com.shipperdog.api.audit.AuditEvent;
 import com.shipperdog.api.audit.AuditEventPublisher;
 import com.shipperdog.api.audit.AuditEventType;
@@ -134,6 +135,7 @@ public class ArtifactService implements VersionArtifacts {
     private final VersionDistributionGuard distributionGuard;
     private final TenantScopeExecutor scopeExecutor;
     private final ArtifactExtractionService extraction;
+    private final ArtifactValidationService validation;
     private final AuditEventPublisher audit;
     private final Clock clock;
     private final TraceAttributes trace;
@@ -150,6 +152,7 @@ public class ArtifactService implements VersionArtifacts {
             VersionDistributionGuard distributionGuard,
             TenantScopeExecutor scopeExecutor,
             ArtifactExtractionService extraction,
+            ArtifactValidationService validation,
             AuditEventPublisher audit,
             Clock clock,
             TraceAttributes trace,
@@ -164,6 +167,7 @@ public class ArtifactService implements VersionArtifacts {
         this.distributionGuard = distributionGuard;
         this.scopeExecutor = scopeExecutor;
         this.extraction = extraction;
+        this.validation = validation;
         this.audit = audit;
         this.clock = clock;
         this.trace = trace;
@@ -436,6 +440,75 @@ public class ArtifactService implements VersionArtifacts {
     }
 
     // -------------------------------------------------------------------------
+    // Revalidation (S5-05): the retry entry
+    // -------------------------------------------------------------------------
+
+    /**
+     * Re-drives validation (issue #24, S5-05 — the story's retry
+     * scope): a FAILED artifact moves back to VALIDATING through the
+     * state machine and the pipeline re-runs, a still-VALIDATING
+     * artifact with a BLOCKED validation re-drives where it stands,
+     * and a still-VALIDATING artifact whose EXTRACTION was blocked
+     * re-arms the extraction tier instead (the block note clears, the
+     * parser re-runs, and its settled phase schedules validation — the
+     * two async tiers re-enter in order). Deterministic stages
+     * reproduce their verdict, but the WORLD may have changed — a
+     * corrected registry identifier, recovered storage — and the
+     * retry is how the corrected fact wins. Anything else (an
+     * UPLOADING session row, a READY or later artifact) answers
+     * {@code ARTIFACT_NOT_VALIDATABLE}: PRD 18 has no path from those
+     * states back to VALIDATING, and the machine is the authority.
+     */
+    public ArtifactView revalidate(UUID actorId, UUID artifactId, UUID versionId) {
+        VersionOwnership ownership = ownershipOf(versionId);
+        return inScope(ownership, actorId, () -> {
+            ArtifactEntity artifact = artifacts.findScoped(artifactId).orElseThrow(ArtifactService::artifactMissing);
+            requireOwnVersion(artifact, versionId);
+            trace.application(ownership.applicationId());
+            trace.version(versionId);
+            trace.artifact(artifactId);
+            switch (artifact.getStatus()) {
+                case FAILED -> {
+                    artifact.beginRevalidation();
+                    ArtifactEntity saved = artifacts.saveScoped(artifact);
+                    auditRevalidation(
+                            actorId, ownership, artifactId, saved.getStatus().name());
+                    validation.schedule(saved, ownership);
+                    return viewOf(saved, new DuplicateScan(List.of(), false));
+                }
+                case VALIDATING -> {
+                    if ("BLOCKED".equals(artifact.extractionOutcome())) {
+                        artifact.clearExtractionBlock();
+                        ArtifactEntity saved = artifacts.saveScoped(artifact);
+                        auditRevalidation(
+                                actorId,
+                                ownership,
+                                artifactId,
+                                saved.getStatus().name());
+                        extraction.schedule(saved, ownership);
+                        return viewOf(saved, new DuplicateScan(List.of(), false));
+                    }
+                    auditRevalidation(
+                            actorId, ownership, artifactId, artifact.getStatus().name());
+                    validation.schedule(artifact, ownership);
+                    return viewOf(artifact, new DuplicateScan(List.of(), false));
+                }
+                default ->
+                    throw new ArtifactException(
+                            ArtifactException.Code.ARTIFACT_NOT_VALIDATABLE,
+                            "the artifact is " + artifact.getStatus().name()
+                                    + "; only a FAILED or still-VALIDATING artifact can be revalidated");
+            }
+        });
+    }
+
+    private void auditRevalidation(UUID actorId, VersionOwnership ownership, UUID artifactId, String status) {
+        Map<String, String> detail = new LinkedHashMap<>();
+        detail.put("status", status);
+        audit(AuditEventType.ARTIFACT_REVALIDATION_REQUESTED, actorId, ownership, artifactId, detail);
+    }
+
+    // -------------------------------------------------------------------------
     // VersionArtifacts: the version views' slot read
     // -------------------------------------------------------------------------
 
@@ -480,7 +553,9 @@ public class ArtifactService implements VersionArtifacts {
                             row.getVersionName(),
                             row.getMinimumOs(),
                             row.extractionOutcome(),
-                            provenanceSlot(row.getProvenance())));
+                            provenanceSlot(row.getProvenance()),
+                            row.getFormat(),
+                            ValidationView.outcomeOf(row.getValidation())));
         }
         return byVersion;
     }
@@ -490,7 +565,7 @@ public class ArtifactService implements VersionArtifacts {
     // -------------------------------------------------------------------------
 
     /**
-     * The artifact view (PRD 8.5 through S5-04): identity, platform,
+     * The artifact view (PRD 8.5 through S5-05): identity, platform,
      * the stored binary's name, size, and SHA-256, the pinned-or-
      * extracted build number, the lifecycle status, the uploader, the
      * server-derived storage key, and — since S5-04 (issue #23) — the
@@ -500,11 +575,16 @@ public class ArtifactService implements VersionArtifacts {
      * identity fields and the outcome — {@code extraction.status} is
      * PENDING in an upload response by construction (parsing is
      * async), which is exactly why the field exists: read the artifact
-     * back to see where extraction landed. {@code duplicateOf} carries
-     * the same-content detection (AC4 of #20): informational, never a
-     * rejection, and {@code duplicateOfTruncated} flags the 50-hit
-     * rendering cap so a long duplicate list is never mistaken for the
-     * complete one.
+     * back to see where extraction landed. Since S5-05 (issue #24) the
+     * view also carries the STRUCTURAL {@code format} verdict (the
+     * channel-format fact of FR-006's AAB/APK rule; {@code null} until
+     * a verdict exists) and the {@code validation} block — outcome,
+     * attempts, duration, and every stage's status/code/reason in
+     * pipeline order, the per-stage failure detail a FAILED artifact
+     * must surface. {@code duplicateOf} carries the same-content
+     * detection (AC4 of #20): informational, never a rejection, and
+     * {@code duplicateOfTruncated} flags the 50-hit rendering cap so a
+     * long duplicate list is never mistaken for the complete one.
      */
     public record ArtifactView(
             UUID id,
@@ -523,6 +603,8 @@ public class ArtifactService implements VersionArtifacts {
             Instant uploadedAt,
             ProvenanceView provenance,
             ExtractionView extraction,
+            String format,
+            ValidationView validation,
             List<DuplicateOf> duplicateOf,
             boolean duplicateOfTruncated) {
 
@@ -544,6 +626,8 @@ public class ArtifactService implements VersionArtifacts {
                     artifact.getCreatedAt(),
                     ProvenanceView.from(artifact.getProvenance()),
                     ExtractionView.from(artifact),
+                    artifact.getFormat(),
+                    ValidationView.from(artifact.getValidation()),
                     List.copyOf(duplicates),
                     truncated);
         }
@@ -606,6 +690,58 @@ public class ArtifactService implements VersionArtifacts {
 
     /** One same-content hit: where else this exact binary is registered. */
     public record DuplicateOf(UUID artifactId, UUID versionId) {}
+
+    /**
+     * The validation state of one artifact (issue #24, S5-05, FR-006):
+     * the LATEST attempt's outcome ({@code PENDING} before the first
+     * attempt, then {@code PASSED|FAILED|BLOCKED}), the attempts
+     * counter (revalidations are attempt N+1), the duration, and every
+     * stage's status/code/reason in pipeline order — the per-stage
+     * failure detail a FAILED artifact must surface, and the visible
+     * BLOCKED record that keeps a stalled VALIDATING row honest. Typed
+     * views, never the raw jsonb document.
+     */
+    public record ValidationView(String status, Integer attempts, Long durationMs, List<ValidationStageView> stages) {
+
+        /** Documents are tiny; one mapper reads them all. */
+        private static final tools.jackson.databind.ObjectMapper DOCUMENTS = new tools.jackson.databind.ObjectMapper();
+
+        static ValidationView from(String document) {
+            if (document == null) {
+                return new ValidationView("PENDING", null, null, List.of());
+            }
+            try {
+                tools.jackson.databind.JsonNode node = DOCUMENTS.readTree(document);
+                List<ValidationStageView> stages = new java.util.ArrayList<>();
+                for (tools.jackson.databind.JsonNode stage : node.path("stages")) {
+                    stages.add(new ValidationStageView(
+                            textOf(stage.get("name")),
+                            textOf(stage.get("status")),
+                            textOf(stage.get("code")),
+                            textOf(stage.get("reason"))));
+                }
+                return new ValidationView(
+                        textOf(node.get("outcome")),
+                        node.hasNonNull("attempts") ? node.get("attempts").asInt() : null,
+                        node.hasNonNull("durationMs") ? node.get("durationMs").asLong() : null,
+                        List.copyOf(stages));
+            } catch (RuntimeException e) {
+                return new ValidationView("PENDING", null, null, List.of());
+            }
+        }
+
+        /** The slot-rendering shortcut: the outcome string alone, or PENDING. */
+        static String outcomeOf(String document) {
+            return from(document).status();
+        }
+
+        private static String textOf(tools.jackson.databind.JsonNode node) {
+            return node == null || node.isNull() ? null : node.asText();
+        }
+    }
+
+    /** One pipeline stage's recorded outcome: name, status, and the code/reason a failure carries. */
+    public record ValidationStageView(String name, String status, String code, String reason) {}
 
     /** The upload-session handoff (AC5): where to stream, and until when. */
     public record UploadSessionView(

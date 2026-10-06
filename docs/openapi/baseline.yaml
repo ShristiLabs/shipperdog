@@ -625,6 +625,31 @@ paths:
             '*/*':
               schema:
                 $ref: "#/components/schemas/ArtifactView"
+  /api/v1/artifacts/{artifactId}/revalidate:
+    post:
+      tags:
+      - artifact-controller
+      operationId: revalidate
+      parameters:
+      - name: artifactId
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - name: version_id
+        in: query
+        required: true
+        schema:
+          type: string
+          format: uuid
+      responses:
+        "202":
+          description: Accepted
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/ArtifactView"
   /api/v1/artifacts/{artifactId}/finalize:
     post:
       tags:
@@ -1070,6 +1095,8 @@ paths:
           - ARTIFACT_UPLOAD_SESSION_CREATED
           - ARTIFACT_UPLOADED
           - ARTIFACT_METADATA_EXTRACTED
+          - ARTIFACT_VALIDATED
+          - ARTIFACT_REVALIDATION_REQUESTED
       - name: applicationId
         in: query
         required: false
@@ -1630,6 +1657,10 @@ components:
           $ref: "#/components/schemas/ProvenanceView"
         extraction:
           $ref: "#/components/schemas/ExtractionView"
+        format:
+          type: string
+        validation:
+          $ref: "#/components/schemas/ValidationView"
         duplicateOf:
           type: array
           items:
@@ -1667,6 +1698,32 @@ components:
           type: string
         buildTimestamp:
           type: string
+    ValidationStageView:
+      type: object
+      properties:
+        name:
+          type: string
+        status:
+          type: string
+        code:
+          type: string
+        reason:
+          type: string
+    ValidationView:
+      type: object
+      properties:
+        status:
+          type: string
+        attempts:
+          type: integer
+          format: int32
+        durationMs:
+          type: integer
+          format: int64
+        stages:
+          type: array
+          items:
+            $ref: "#/components/schemas/ValidationStageView"
     FinalizeRequest:
       type: object
       description: The version id the finalized artifact belongs to.
@@ -1837,6 +1894,10 @@ components:
           type: string
         provenance:
           $ref: "#/components/schemas/ArtifactProvenance"
+        format:
+          type: string
+        validation:
+          type: string
     VersionDetail:
       type: object
       properties:
@@ -2012,6 +2073,8 @@ components:
           - ARTIFACT_UPLOAD_SESSION_CREATED
           - ARTIFACT_UPLOADED
           - ARTIFACT_METADATA_EXTRACTED
+          - ARTIFACT_VALIDATED
+          - ARTIFACT_REVALIDATION_REQUESTED
         occurredAt:
           type: string
           format: date-time
