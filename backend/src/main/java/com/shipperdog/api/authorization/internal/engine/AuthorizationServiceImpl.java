@@ -90,13 +90,22 @@ class AuthorizationServiceImpl implements AuthorizationService {
 
     @Override
     public AuthorizationDecision decide(AuthorizationContext context) {
+        return decide(context, "serve");
+    }
+
+    @Override
+    public AuthorizationDecision inspect(AuthorizationContext context) {
+        return decide(context, "inspect");
+    }
+
+    private AuthorizationDecision decide(AuthorizationContext context, String surface) {
         Timer.Sample sample = Timer.start(meters);
         AuthorizationDecision decision = decideFailClosed(context);
         sample.stop(Timer.builder(MetricNames.AUTHORIZATION_DECISION_DURATION)
                 .tag("engine", "layered")
                 .tag("outcome", decision.allowed() ? "allow" : "deny")
                 .register(meters));
-        recordDecision(context, decision);
+        recordDecision(context, decision, surface);
         return decision;
     }
 
@@ -156,9 +165,10 @@ class AuthorizationServiceImpl implements AuthorizationService {
         }
     }
 
-    private void recordDecision(AuthorizationContext context, AuthorizationDecision decision) {
+    private void recordDecision(AuthorizationContext context, AuthorizationDecision decision, String surface) {
         Map<String, String> detail = new LinkedHashMap<>();
         detail.put("action", context.action().name());
+        detail.put("surface", surface);
         detail.put("outcome", decision.allowed() ? "ALLOW" : "DENY");
         if (!decision.allowed()) {
             detail.put("failingLayer", decision.failingLayer());

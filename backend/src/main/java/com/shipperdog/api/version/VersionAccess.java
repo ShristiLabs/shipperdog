@@ -88,6 +88,56 @@ public interface VersionAccess {
      */
     Optional<VersionState> stateOf(UUID versionId);
 
+    /**
+     * Whether the version carries the tag (issue #31, S7-02): the
+     * TAG-grant decision probe — a tag grant authorizes exactly the
+     * versions carrying its tag at evaluation time (FR-011: newly
+     * tagged versions join automatically). One composite-primary-key
+     * descent on {@code version_tags}; authorization data only.
+     */
+    boolean versionHasTag(UUID versionId, String tag);
+
+    /**
+     * The versions of the application currently carrying the tag
+     * (issue #31, S7-02): the TAG-grant creation validation (a grant
+     * may only address a tag the application actually uses, so a
+     * typo cannot mint a silently-dead grant) and the effective-set
+     * resolution's set form — one query per distinct tag, served by
+     * {@code idx_version_tags_tag} composed with the application's
+     * versions. Authorization data only.
+     */
+    List<UUID> versionIdsOfApplicationWithTag(UUID applicationId, String tag);
+
+    /**
+     * Whether the version is among the N newest of its application's
+     * WORKING SET — the {@code DRAFT} and M2-reserved {@code ACTIVE}
+     * window, the listing's default (issue #31, S7-02): the
+     * LATEST_N-grant decision probe, resolved by V12's zero-padded
+     * {@code sort_key} (never {@code created_at}). Terminal states
+     * (ARCHIVED, REVOKED) never occupy a window slot — an archive
+     * must not evict a live build from a tester's N. One indexed
+     * count over {@code idx_versions_application_sort}; the version's
+     * own lifecycle gates still apply at the engine's version layer.
+     */
+    boolean isWithinLatestWorkingSetN(UUID versionId, int n);
+
+    /**
+     * The application's full version catalog for grant-set
+     * resolution (issue #31, S7-02): id, name, lifecycle status, and
+     * sort key of every version, newest first — the effective-access
+     * computation's single read (the portal catalog's backbone, per
+     * the story's technical note). Authorization data only, the same
+     * registry-read character; never an endpoint data path.
+     */
+    List<VersionCatalogEntry> catalogOfApplication(UUID applicationId);
+
     /** The version-record name callers may resolve; never the row itself. */
     record VersionRecord(UUID versionId, String versionName) {}
+
+    /**
+     * One application version as the grant resolver sees it (issue
+     * #31, S7-02): the human name, the lifecycle status, and the
+     * normalized sort key that orders the latest-N window.
+     */
+    record VersionCatalogEntry(UUID versionId, String versionName, String status, String sortKey) {}
 }

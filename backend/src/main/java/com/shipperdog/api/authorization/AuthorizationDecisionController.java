@@ -39,13 +39,15 @@ public class AuthorizationDecisionController {
     /**
      * Inspects one decision: the layered chain's verdict for the
      * supplied context, evaluated live (no cache; the PRD 42 SLO
-     * applies to the engine, not this surface).
+     * applies to the engine, not this surface). Audited with
+     * {@code surface=inspect} so an inspection is distinguishable
+     * from the serving decision it mirrors.
      */
     @PostMapping(consumes = MediaType.APPLICATION_JSON_VALUE, produces = MediaType.APPLICATION_JSON_VALUE)
     @PreAuthorize("hasPermission(null, 'audit', 'platform:authorization:inspect')")
     DecisionView inspect(@RequestBody InspectRequest request) {
         AuthorizationContext context = request.toContext();
-        return DecisionView.of(authorization.decide(context));
+        return DecisionView.of(authorization.inspect(context));
     }
 
     /**

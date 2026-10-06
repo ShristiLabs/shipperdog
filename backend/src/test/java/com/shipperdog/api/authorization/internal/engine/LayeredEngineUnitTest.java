@@ -17,6 +17,7 @@ import com.shipperdog.api.tenant.TenantRole;
 import com.shipperdog.api.tester.TenantTesterMembershipAccess;
 import com.shipperdog.api.tester.TesterAccess;
 import com.shipperdog.api.version.VersionAccess;
+import com.shipperdog.api.version.VersionAccess.VersionCatalogEntry;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import java.util.List;
 import java.util.Map;
@@ -183,6 +184,11 @@ class LayeredEngineUnitTest {
             }
 
             @Override
+            public boolean membershipExists(UUID tenantId, UUID testerId) {
+                return effectiveMembership;
+            }
+
+            @Override
             public boolean isEffectivelyActive(UUID tenantId, UUID testerId) {
                 effectiveMembershipCalls++;
                 return effectiveMembership;
@@ -223,6 +229,26 @@ class LayeredEngineUnitTest {
             @Override
             public int reassignOwnership(UUID applicationId, UUID tenantId, java.time.Instant updatedAt) {
                 return 0;
+            }
+
+            @Override
+            public boolean versionHasTag(UUID versionId, String tag) {
+                return false;
+            }
+
+            @Override
+            public java.util.List<UUID> versionIdsOfApplicationWithTag(UUID applicationId, String tag) {
+                return java.util.List.of();
+            }
+
+            @Override
+            public boolean isWithinLatestWorkingSetN(UUID versionId, int n) {
+                return false;
+            }
+
+            @Override
+            public java.util.List<VersionCatalogEntry> catalogOfApplication(UUID applicationId) {
+                return java.util.List.of();
             }
 
             @Override

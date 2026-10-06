@@ -28,6 +28,7 @@ backend/src/main/resources/db/
     V18__artifact_validation.sql
     V19__tester_onboarding.sql
     V20__tenant_tester_membership_suspend.sql
+    V21__version_access_grants.sql
   seed/                 dev fixture, applied only when the seed location is active
     R__dev_seed.sql
 ```
@@ -343,6 +344,38 @@ backend/src/main/resources/db/
   technical note names `(tenant_id, tester_id, status)` — an equality
   descent reads the row and therefore its status; revisit with
   S7-01/S7-03 when the cache strategy lands.
+
+- `V21__version_access_grants.sql` (S7-02, issue #31) completes the
+  V1 `version_access` junction for FR-011's four grant shapes. The V1
+  sketch (`PRIMARY KEY (version_id, tester_id)`, `access_type`
+  `DIRECT`/`GROUP`) was a PRD 13 placeholder no code ever wrote —
+  S7-02 is the table's first writer, so the table is provably empty
+  and the constraint REPLACEMENT follows the V10/V19 precedent (a
+  widening: no data is dropped): the surrogate `id` primary key
+  replaces the composite (dropped BEFORE `version_id` relaxes its NOT
+  NULL — a keyed column cannot), and `version_id` becomes nullable
+  (only `EXPLICIT_VERSION` rows carry it). New columns: the granting
+  `tenant_id` (the row joins the tenant-isolation seam; endpoint
+  paths read it through `VersionAccessGrantScopedRepository`, the
+  engine's decision probe through the module's
+  `@CrossTenantByDesign` catalog), `application_id`, `tag` (V13's
+  shape check pinned again), `latest_n` (1..100), `expires_at`
+  (enforced at evaluation time, never swept), and `created_by`.
+  `access_type` gains the four labels by additive `ALTER TYPE ... ADD
+  VALUE` — unused elsewhere in the same migration (the PG enum rule,
+  V4's discipline), which is why the per-shape pairing is the
+  service's contract over the literal-free database guards
+  (`ck_version_access_single_target` — at most one target column —
+  plus the tag-shape and latest-N bound checks); V1's DIRECT/GROUP
+  stay reserved-unused. `uq_version_access_grant` (UNIQUE NULLS NOT
+  DISTINCT over the full grant identity, PG 15+ semantics) is the
+  duplicate authority behind the idempotent create and the 409
+  renewal conflict; `idx_version_access_grant_subject`
+  (tenant_id, tester_id, application_id) serves the seam predicate
+  and the per-tenant probes, `idx_version_access_tester_application`
+  (tester_id, application_id) the shared-application decision probe,
+  and `idx_versions_application_sort` (application_id, sort_key) the
+  latest-N rank counts over V12's sort key.
 
 ## Status and type columns
 

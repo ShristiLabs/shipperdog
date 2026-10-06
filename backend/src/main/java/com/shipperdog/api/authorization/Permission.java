@@ -61,6 +61,8 @@ public enum Permission {
     TENANT_TESTERS_MANAGE("tenant:testers:manage"), // issue #28 (S6-03)
     TENANT_APPLICATIONS_READ("tenant:applications:read"),
     TENANT_APPLICATIONS_DOWNLOAD("tenant:applications:download"),
+    TENANT_AUTHORIZATION_GRANTS_READ("tenant:authorization-grants:read"), // issue #31 (S7-02)
+    TENANT_AUTHORIZATION_GRANTS_MANAGE("tenant:authorization-grants:manage"), // issue #31 (S7-02)
     TENANT_FEEDBACK_CREATE("tenant:feedback:create"),
 
     // app scope (enforced from E3 / issue #13 onward)

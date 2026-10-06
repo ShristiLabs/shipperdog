@@ -226,6 +226,37 @@ paths:
             '*/*':
               schema:
                 $ref: "#/components/schemas/MemberView"
+  /api/v1/tenants/{id}/authorization-grants/{grantId}/expiry:
+    put:
+      tags:
+      - authorization-grant-controller
+      operationId: changeExpiry
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - name: grantId
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ExpiryRequest"
+        required: true
+      responses:
+        "200":
+          description: OK
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/GrantView"
   /api/v1/organizations/{id}:
     get:
       tags:
@@ -711,11 +742,76 @@ paths:
             '*/*':
               schema:
                 $ref: "#/components/schemas/MemberView"
+  /api/v1/tenants/{id}/authorization-grants:
+    get:
+      tags:
+      - authorization-grant-controller
+      operationId: list_3
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - name: testerId
+        in: query
+        required: false
+        schema:
+          type: string
+          format: uuid
+      - name: applicationId
+        in: query
+        required: false
+        schema:
+          type: string
+          format: uuid
+      - name: limit
+        in: query
+        required: false
+        schema:
+          type: string
+      - name: cursor
+        in: query
+        required: false
+        schema:
+          type: string
+      responses:
+        "200":
+          description: OK
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/PageResponseGrantView"
+    post:
+      tags:
+      - authorization-grant-controller
+      operationId: create_3
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateRequest"
+        required: true
+      responses:
+        "200":
+          description: OK
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/GrantCreatedResponse"
   /api/v1/organizations:
     get:
       tags:
       - organization-controller
-      operationId: list_3
+      operationId: list_4
       parameters:
       - name: limit
         in: query
@@ -737,7 +833,7 @@ paths:
     post:
       tags:
       - organization-controller
-      operationId: create_3
+      operationId: create_4
       requestBody:
         content:
           application/json:
@@ -1061,7 +1157,7 @@ paths:
     get:
       tags:
       - application-controller
-      operationId: list_4
+      operationId: list_5
       parameters:
       - name: organizationId
         in: query
@@ -1089,7 +1185,7 @@ paths:
     post:
       tags:
       - application-controller
-      operationId: create_4
+      operationId: create_5
       requestBody:
         content:
           application/json:
@@ -1162,7 +1258,7 @@ paths:
     get:
       tags:
       - version-controller
-      operationId: list_5
+      operationId: list_6
       parameters:
       - name: applicationId
         in: path
@@ -1200,7 +1296,7 @@ paths:
     post:
       tags:
       - version-controller
-      operationId: create_5
+      operationId: create_6
       parameters:
       - name: applicationId
         in: path
@@ -1413,11 +1509,92 @@ paths:
       responses:
         "204":
           description: No Content
+  /api/v1/tenants/{id}/authorization-grants/{grantId}:
+    get:
+      tags:
+      - authorization-grant-controller
+      operationId: get_5
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - name: grantId
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      responses:
+        "200":
+          description: OK
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/GrantView"
+    delete:
+      tags:
+      - authorization-grant-controller
+      operationId: delete_1
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - name: grantId
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - name: reason
+        in: query
+        required: false
+        schema:
+          type: string
+      responses:
+        "204":
+          description: No Content
+  /api/v1/tenants/{id}/authorization-grants/effective:
+    get:
+      tags:
+      - authorization-grant-controller
+      operationId: effective
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - name: testerId
+        in: query
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - name: applicationId
+        in: query
+        required: true
+        schema:
+          type: string
+          format: uuid
+      responses:
+        "200":
+          description: OK
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/EffectiveAccessView"
   /api/v1/tenants/{id}/applications:
     get:
       tags:
       - tenant-applications-controller
-      operationId: list_6
+      operationId: list_7
       parameters:
       - name: id
         in: path
@@ -1568,6 +1745,9 @@ paths:
           - TENANT_TESTER_MEMBERSHIP_STATUS_CHANGED
           - TENANT_TESTER_MEMBERSHIP_REMOVED
           - AUTHORIZATION_DECISION
+          - AUTHORIZATION_GRANT_CREATED
+          - AUTHORIZATION_GRANT_EXPIRY_CHANGED
+          - AUTHORIZATION_GRANT_DELETED
       - name: applicationId
         in: query
         required: false
@@ -1619,7 +1799,7 @@ paths:
     get:
       tags:
       - artifact-controller
-      operationId: get_5
+      operationId: get_6
       parameters:
       - name: artifactId
         in: path
@@ -1644,7 +1824,7 @@ paths:
     get:
       tags:
       - application-tenant-authorization-controller
-      operationId: list_7
+      operationId: list_8
       parameters:
       - name: id
         in: path
@@ -1673,7 +1853,7 @@ paths:
     get:
       tags:
       - version-controller
-      operationId: get_6
+      operationId: get_7
       parameters:
       - name: applicationId
         in: path
@@ -1935,6 +2115,50 @@ components:
       properties:
         role:
           type: string
+    ExpiryRequest:
+      type: object
+      properties:
+        expiresAt:
+          type: string
+        reason:
+          type: string
+    GrantView:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        tenantId:
+          type: string
+          format: uuid
+        testerId:
+          type: string
+          format: uuid
+        applicationId:
+          type: string
+          format: uuid
+        accessType:
+          type: string
+        versionId:
+          type: string
+          format: uuid
+        tag:
+          type: string
+        latestN:
+          type: integer
+          format: int32
+        expiresAt:
+          type: string
+          format: date-time
+        createdBy:
+          type: string
+          format: uuid
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
     OrganizationResponse:
       type: object
       properties:
@@ -1963,7 +2187,9 @@ components:
     JsonNode:
       type: object
       properties:
-        floatingPointNumber:
+        string:
+          type: boolean
+        valueNode:
           type: boolean
         nodeType:
           type: string
@@ -1977,17 +2203,11 @@ components:
           - OBJECT
           - POJO
           - STRING
-        string:
-          type: boolean
-        integralNumber:
-          type: boolean
         missingNode:
-          type: boolean
-        valueNode:
           type: boolean
         pojo:
           type: boolean
-        number:
+        integralNumber:
           type: boolean
         short:
           type: boolean
@@ -2009,6 +2229,10 @@ components:
         binary:
           type: boolean
         container:
+          type: boolean
+        number:
+          type: boolean
+        floatingPointNumber:
           type: boolean
         empty:
           type: boolean
@@ -2112,6 +2336,13 @@ components:
         membershipStatus:
           type: string
         effectiveAccess:
+          type: boolean
+    GrantCreatedResponse:
+      type: object
+      properties:
+        grant:
+          $ref: "#/components/schemas/GrantView"
+        created:
           type: boolean
     InspectRequest:
       type: object
@@ -2678,6 +2909,57 @@ components:
             $ref: "#/components/schemas/MembershipView"
         next_cursor:
           type: string
+    PageResponseGrantView:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/GrantView"
+        next_cursor:
+          type: string
+    EffectiveAccessView:
+      type: object
+      properties:
+        tenantId:
+          type: string
+          format: uuid
+        testerId:
+          type: string
+          format: uuid
+        applicationId:
+          type: string
+          format: uuid
+        effectiveAccess:
+          type: boolean
+        resolvedAt:
+          type: string
+          format: date-time
+        entries:
+          type: array
+          items:
+            $ref: "#/components/schemas/EffectiveEntryView"
+        expiredGrantCount:
+          type: integer
+          format: int32
+    EffectiveEntryView:
+      type: object
+      properties:
+        versionId:
+          type: string
+          format: uuid
+        versionName:
+          type: string
+        status:
+          type: string
+        sourceGrantIds:
+          type: array
+          items:
+            type: string
+            format: uuid
+        expiresAt:
+          type: string
+          format: date-time
     PageResponseApplicationView:
       type: object
       properties:
@@ -2811,6 +3093,9 @@ components:
           - TENANT_TESTER_MEMBERSHIP_STATUS_CHANGED
           - TENANT_TESTER_MEMBERSHIP_REMOVED
           - AUTHORIZATION_DECISION
+          - AUTHORIZATION_GRANT_CREATED
+          - AUTHORIZATION_GRANT_EXPIRY_CHANGED
+          - AUTHORIZATION_GRANT_DELETED
         occurredAt:
           type: string
           format: date-time

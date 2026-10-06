@@ -445,6 +445,26 @@ class RbacPermissionEvaluatorTest {
             }
 
             @Override
+            public boolean versionHasTag(UUID versionId, String tag) {
+                throw new UnsupportedOperationException();
+            }
+
+            @Override
+            public java.util.List<UUID> versionIdsOfApplicationWithTag(UUID applicationId, String tag) {
+                throw new UnsupportedOperationException();
+            }
+
+            @Override
+            public boolean isWithinLatestWorkingSetN(UUID versionId, int n) {
+                throw new UnsupportedOperationException();
+            }
+
+            @Override
+            public java.util.List<VersionAccess.VersionCatalogEntry> catalogOfApplication(UUID applicationId) {
+                throw new UnsupportedOperationException();
+            }
+
+            @Override
             public Optional<VersionAccess.VersionOwnership> ownershipOf(UUID id) {
                 return id.equals(versionId)
                         ? Optional.of(new VersionAccess.VersionOwnership(id, applicationId, organizationId, tenantId))

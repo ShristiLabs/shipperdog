@@ -457,23 +457,27 @@ public class ArtifactService implements VersionArtifacts {
      * cycle.
      */
     public ArtifactView get(UUID actorId, UUID artifactId, UUID versionId) {
-        AuthorizationService engine = authorization.getIfAvailable();
-        if (engine != null) {
-            // The conceal grain follows the route's pre-engine
-            // contract, not the failing layer: an artifact-layer miss
-            // (unknown artifact, foreign artifact) renders the
-            // artifact-grain miss ARTIFACT_NOT_FOUND; every other
-            // denial conceals as the version-grain miss — exactly the
-            // two shapes the route has always produced.
-            com.shipperdog.api.authorization.AuthorizationDecision decision =
-                    engine.decide(AuthorizationContext.readArtifact(actorId, versionId, artifactId));
-            if (!decision.allowed()) {
-                boolean artifactGrain = decision.reason()
-                                == com.shipperdog.api.authorization.DenialReason.ARTIFACT_MISSING
-                        || decision.reason() == com.shipperdog.api.authorization.DenialReason.ARTIFACT_PLATFORM_MISMATCH
-                        || decision.reason() == com.shipperdog.api.authorization.DenialReason.ARTIFACT_NOT_AVAILABLE;
-                throw new ConcealedResourceAccessDeniedException(artifactGrain ? "artifact" : "version");
-            }
+        // The engine is a required collaborator since S7-01: a
+        // missing engine bean must fail LOUD here (500), never
+        // silently skip the decision guard — the S7-01 review
+        // advisory this replaces (getIfAvailable's null arm was a
+        // pre-engine compatibility shim whose fallthrough served an
+        // unguarded read). Resolution at request time keeps the
+        // constructor cycle broken.
+        AuthorizationService engine = authorization.getObject();
+        // The conceal grain follows the route's pre-engine
+        // contract, not the failing layer: an artifact-layer miss
+        // (unknown artifact, foreign artifact) renders the
+        // artifact-grain miss ARTIFACT_NOT_FOUND; every other
+        // denial conceals as the version-grain miss — exactly the
+        // two shapes the route has always produced.
+        com.shipperdog.api.authorization.AuthorizationDecision decision =
+                engine.decide(AuthorizationContext.readArtifact(actorId, versionId, artifactId));
+        if (!decision.allowed()) {
+            boolean artifactGrain = decision.reason() == com.shipperdog.api.authorization.DenialReason.ARTIFACT_MISSING
+                    || decision.reason() == com.shipperdog.api.authorization.DenialReason.ARTIFACT_PLATFORM_MISMATCH
+                    || decision.reason() == com.shipperdog.api.authorization.DenialReason.ARTIFACT_NOT_AVAILABLE;
+            throw new ConcealedResourceAccessDeniedException(artifactGrain ? "artifact" : "version");
         }
         VersionOwnership ownership = ownershipOf(versionId);
         return inScope(ownership, actorId, () -> {

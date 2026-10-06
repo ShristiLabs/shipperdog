@@ -46,6 +46,17 @@ public interface AuthorizationService {
     AuthorizationDecision decide(AuthorizationContext context);
 
     /**
+     * Decides for the inspection surface (S7-01's admin API, advised
+     * apart since S7-02): the same decision as {@link #decide}, with
+     * one audit distinction — the {@code AUTHORIZATION_DECISION}
+     * event carries {@code surface=inspect}, so an inspection the
+     * platform administrator runs to debug a denial is
+     * distinguishable in the audit trail from the serving decision
+     * it mirrors (the audited user stays the inspected subject).
+     */
+    AuthorizationDecision inspect(AuthorizationContext context);
+
+    /**
      * Decides and enforces: a denial throws the concealed
      * not-found shape of the caller's route (PRD 12), so the response
      * is byte-for-byte what a genuine miss for that resource type

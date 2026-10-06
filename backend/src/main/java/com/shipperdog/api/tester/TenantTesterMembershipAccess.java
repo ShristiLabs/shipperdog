@@ -31,4 +31,16 @@ public interface TenantTesterMembershipAccess {
      * suspended membership, or a revoked membership all answer false.
      */
     boolean isEffectivelyActive(UUID tenantId, UUID testerId);
+
+    /**
+     * Whether a retained membership row exists for the pair in ANY
+     * status (issue #31, S7-02): the grant-creation target check — a
+     * grant addresses a tester linked to the tenant, but effectiveness
+     * is deliberately NOT consulted at grant time (the two-switches
+     * rule is honored at decision time, not grant time: a suspended
+     * tester keeps their grants and loses access; re-enabling restores
+     * both). A tester never linked to the tenant has no row at all,
+     * and a grant to them would be dead data the API refuses.
+     */
+    boolean membershipExists(UUID tenantId, UUID testerId);
 }
