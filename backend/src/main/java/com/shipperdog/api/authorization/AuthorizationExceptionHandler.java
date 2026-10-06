@@ -50,6 +50,20 @@ public class AuthorizationExceptionHandler {
         return problem(ApiError.INVALID_REQUEST);
     }
 
+    /**
+     * Grant-administration failures (S7-02, issue #31): the stable
+     * public codes of the grant surface, concealment included — a
+     * foreign tester/application/version is indistinguishable from a
+     * missing one.
+     */
+    @ExceptionHandler(AuthorizationGrantException.class)
+    ResponseEntity<ProblemDetail> grant(AuthorizationGrantException exception) {
+        ProblemDetail problem = exception.problem();
+        return ResponseEntity.status(problem.getStatus())
+                .contentType(MediaType.APPLICATION_PROBLEM_JSON)
+                .body(problem);
+    }
+
     @ExceptionHandler(AccessDeniedException.class)
     ResponseEntity<ProblemDetail> handle(AccessDeniedException exception) {
         return problem(ApiError.FORBIDDEN);

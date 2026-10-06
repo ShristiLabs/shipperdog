@@ -2,10 +2,12 @@ package com.shipperdog.api.version.internal.repository;
 
 import com.shipperdog.api.tenant.CrossTenantByDesign;
 import com.shipperdog.api.version.VersionAccess;
+import com.shipperdog.api.version.VersionAccess.VersionCatalogEntry;
 import com.shipperdog.api.version.VersionAccess.VersionOwnership;
 import com.shipperdog.api.version.VersionAccess.VersionRecord;
 import com.shipperdog.api.version.internal.entity.VersionEntity;
 import java.time.Instant;
+import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
@@ -115,4 +117,75 @@ public interface VersionRegistryRepository extends JpaRepository<VersionEntity, 
     /** The version ids of one application, for cross-version artifact reads. */
     @Query("select v.id from VersionEntity v where v.applicationId = :applicationId")
     List<UUID> findIdsByApplicationId(@Param("applicationId") UUID applicationId);
+
+    /**
+     * The TAG-grant decision probe (issue #31, S7-02): whether the
+     * addressed version carries the tag — one composite-key descent
+     * over the tag junction.
+     */
+    @Override
+    @Query("select count(t) > 0 from VersionTagEntity t where t.versionId = :versionId and t.tag = :tag")
+    boolean versionHasTag(@Param("versionId") UUID versionId, @Param("tag") String tag);
+
+    /**
+     * The TAG-grant set resolution (issue #31, S7-02): the
+     * application's versions currently carrying the tag — one
+     * idx_version_tags_tag descent plus the application filter.
+     */
+    @Override
+    default List<UUID> versionIdsOfApplicationWithTag(UUID applicationId, String tag) {
+        return findVersionIdsByTag(tag).stream()
+                .filter(id -> belongsToApplication(id, applicationId))
+                .toList();
+    }
+
+    /** The versions carrying a tag, served by idx_version_tags_tag. */
+    @Query("select t.versionId from VersionTagEntity t where t.tag = :tag")
+    List<UUID> findVersionIdsByTag(@Param("tag") String tag);
+
+    /** Whether the version belongs to the application (one registry lookup). */
+    private boolean belongsToApplication(UUID versionId, UUID applicationId) {
+        return findVersionById(versionId)
+                .map(version -> applicationId.equals(version.getApplicationId()))
+                .orElse(false);
+    }
+
+    /**
+     * The LATEST_N-grant decision probe (issue #31, S7-02): the
+     * version is within the N newest of its application's working
+     * set (DRAFT and the M2-reserved ACTIVE) by the V12 sort key.
+     * Terminal states never occupy a window slot. The sort key is
+     * unique per application (uq_versions_application_version pins
+     * the name it encodes), so the strict comparison is exact.
+     */
+    @Override
+    default boolean isWithinLatestWorkingSetN(UUID versionId, int n) {
+        return findVersionById(versionId)
+                .map(version -> countByApplicationIdAndSortKeyGreaterThanAndStatusIn(
+                                version.getApplicationId(), version.getSortKey(), VersionEntity.Status.WORKING_SET)
+                        < n)
+                .orElse(false);
+    }
+
+    /** The newer-working-set count behind {@link #isWithinLatestWorkingSetN}. */
+    long countByApplicationIdAndSortKeyGreaterThanAndStatusIn(
+            UUID applicationId, String sortKey, Collection<VersionEntity.Status> statuses);
+
+    /**
+     * The grant resolver's catalog read (issue #31, S7-02): every
+     * version of the application, newest first by the sort key.
+     */
+    @Override
+    default List<VersionCatalogEntry> catalogOfApplication(UUID applicationId) {
+        return findByApplicationIdOrderBySortKeyDesc(applicationId).stream()
+                .map(version -> new VersionCatalogEntry(
+                        version.getId(),
+                        version.getVersionName(),
+                        version.getStatus().name(),
+                        version.getSortKey()))
+                .toList();
+    }
+
+    /** The application's versions, newest first by the normalized sort key. */
+    List<VersionEntity> findByApplicationIdOrderBySortKeyDesc(UUID applicationId);
 }

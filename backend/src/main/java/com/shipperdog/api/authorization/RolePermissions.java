@@ -34,12 +34,15 @@ import java.util.Set;
  *                       tenant:members:read         tenant:members:manage
  *                       tenant:testers:read/manage (S6-03)
  *                       tenant:applications:read
+ *                       tenant:authorization-grants:read/manage (S7-02)
  *                       app:applications:read/write app:versions:read
  *                       app:releases:read           app:tester-groups:manage
  *                       app:feedback:read
  * APP_OWNER             app:applications:read/write app:versions:read/write
  *                       app:artifacts:read          app:releases:read/manage
  *                       app:feedback:read
+ *                       tenant:authorization-grants:read/manage (S7-02,
+ *                       through the owning-organization overlay)
  * DEVELOPER             app:artifacts:read          app:artifacts:upload
  *                       app:versions:read           app:releases:read
  * QA_ENGINEER           app:applications:read       app:versions:read
@@ -56,6 +59,7 @@ import java.util.Set;
  * TENANT_ADMIN          tenant:tenants:read         tenant:members:read
  *                       tenant:members:manage       tenant:applications:read
  *                       tenant:testers:read/manage (S6-03)
+ *                       tenant:authorization-grants:read/manage (S7-02)
  * TENANT_TESTER         tenant:applications:read    tenant:applications:download
  *                       tenant:feedback:create
  * ORG_MEMBER            (none — membership only; deny-by-default, PRD P3)
@@ -91,6 +95,8 @@ public final class RolePermissions {
             Permission.TENANT_TESTERS_READ,
             Permission.TENANT_TESTERS_MANAGE,
             Permission.TENANT_APPLICATIONS_READ,
+            Permission.TENANT_AUTHORIZATION_GRANTS_READ,
+            Permission.TENANT_AUTHORIZATION_GRANTS_MANAGE,
             Permission.APP_APPLICATIONS_READ,
             Permission.APP_APPLICATIONS_WRITE,
             Permission.APP_VERSIONS_READ,
@@ -106,7 +112,13 @@ public final class RolePermissions {
             Permission.APP_ARTIFACTS_READ,
             Permission.APP_RELEASES_READ,
             Permission.APP_RELEASES_MANAGE,
-            Permission.APP_FEEDBACK_READ);
+            Permission.APP_FEEDBACK_READ,
+            // S7-02 (issue #31): app owners administer tester grants
+            // inside their organization's tenants through the
+            // owning-organization overlay (PRD 26's tenant-admin /
+            // app-owner grant authority).
+            Permission.TENANT_AUTHORIZATION_GRANTS_READ,
+            Permission.TENANT_AUTHORIZATION_GRANTS_MANAGE);
 
     private static final Set<Permission> DEVELOPER = Set.of(
             Permission.APP_ARTIFACTS_READ,
@@ -173,7 +185,9 @@ public final class RolePermissions {
             Permission.TENANT_MEMBERS_MANAGE,
             Permission.TENANT_TESTERS_READ,
             Permission.TENANT_TESTERS_MANAGE,
-            Permission.TENANT_APPLICATIONS_READ);
+            Permission.TENANT_APPLICATIONS_READ,
+            Permission.TENANT_AUTHORIZATION_GRANTS_READ,
+            Permission.TENANT_AUTHORIZATION_GRANTS_MANAGE);
 
     private static final Set<Permission> TENANT_TESTER = Set.of(
             Permission.TENANT_APPLICATIONS_READ,

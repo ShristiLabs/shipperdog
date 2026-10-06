@@ -39,7 +39,8 @@ import tools.jackson.databind.ObjectMapper;
  * the engine walks the whole PRD 11 chain — the console persona ALLOWs
  * through every layer in order with an audited decision; the tester
  * persona with effective tenant access but no grant denies at the
- * version layer (INV-005: deny-by-default until S7-02) and the HTTP
+ * version layer (INV-005: deny-by-default — the resting state S7-02's
+ * grants flip, proven in AuthorizationGrantsIntegrationTest) and the HTTP
  * surface renders the denial as the concealed 404 a genuine miss
  * produces; authentication failures stay 401s; the two-switches rule
  * and version revocation flip the failing layer live; the catalog
@@ -158,8 +159,9 @@ class AuthorizationEngineIntegrationTest {
         String testerToken = accessToken(login("s7-john@example.com", PASSWORD));
 
         // The engine: effective tenant access holds (both switches on)
-        // but no entitlement contributor covers a pure tester — INV-005
-        // deny-by-default at the version layer until S7-02's grants.
+        // but no entitlement contributor covers a pure tester with no
+        // grants — INV-005 deny-by-default at the version layer (the
+        // S7-02 flip, with a grant, is AuthorizationGrantsIntegrationTest).
         JsonNode decision = inspect(
                 world.platformAdmin(),
                 Map.of(

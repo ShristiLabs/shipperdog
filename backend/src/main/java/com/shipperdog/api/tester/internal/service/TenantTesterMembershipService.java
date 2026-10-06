@@ -364,6 +364,12 @@ public class TenantTesterMembershipService implements TenantTesterMembershipAcce
                 .orElse(false);
     }
 
+    @Override
+    @Transactional(readOnly = true)
+    public boolean membershipExists(UUID tenantId, UUID testerId) {
+        return catalog.findByTenantIdAndTesterId(tenantId, testerId).isPresent();
+    }
+
     /**
      * Group-membership precondition (the S6-02 narrowing this story
      * lands): a tester may join a tenant's groups only as an

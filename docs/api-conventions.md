@@ -132,8 +132,12 @@ the existing membership `200 {added:false}`), and
 `POST /api/v1/tenants/{id}/testers` (S6-03; idempotent even without
 the header — a duplicate link of an ACTIVE/SUSPENDED membership
 answers the existing row `200 {linked:false}`, and a re-link of a
-retained REVOKED row reactivates it `200 {reactivated:true}`). The
-artifact finalize route is
+retained REVOKED row reactivates it `200 {reactivated:true}`), and
+`POST /api/v1/tenants/{id}/authorization-grants` (S7-02; idempotent
+even without the header — the SAME grant identity replays the stored
+row `200 {created:false}` with no write and no audit, while the same
+identity with a different `expiresAt` is a `409
+AUTHORIZATION_GRANT_CONFLICT`). The artifact finalize route is
 deliberately NOT in
 the registry: its terminal state is the replay answer — a retry
 answers the registered artifact `200 created=false`, exactly like the

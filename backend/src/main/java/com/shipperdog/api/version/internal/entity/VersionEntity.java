@@ -60,7 +60,16 @@ public class VersionEntity implements OrganizationScope {
         DRAFT,
         ACTIVE,
         ARCHIVED,
-        REVOKED
+        REVOKED;
+
+        /**
+         * The default listing window (S4-01): the working set. The
+         * latest-N grant resolution (S7-02, issue #31) resolves its
+         * window over exactly this set — an ARCHIVED or REVOKED
+         * version never occupies a latest-N slot, so archiving a
+         * build cannot evict a live one from a tester's N.
+         */
+        public static final java.util.Set<Status> WORKING_SET = java.util.Set.of(DRAFT, ACTIVE);
     }
 
     @Id

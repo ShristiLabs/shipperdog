@@ -41,15 +41,15 @@ permission:
 | Role | Permissions |
 |---|---|
 | PLATFORM_ADMIN | `*` (wildcard; the `users.platform_admin` flag, PRD 7.1) |
-| ORG_ADMIN | `org:organizations:read` `org:organizations:update` `org:idp-configs:read` `org:idp-configs:write` `org:members:read` `org:members:invite` `org:members:manage` `org:testers:read` `org:testers:invite` `org:testers:manage` `org:tenants:create` `org:tenants:read` `tenant:tenants:read` `tenant:tenants:update` `tenant:members:read` `tenant:members:manage` `tenant:testers:read` `tenant:testers:manage` `tenant:applications:read` `app:applications:read` `app:applications:write` `app:versions:read` `app:releases:read` `app:tester-groups:manage` `app:feedback:read` |
-| APP_OWNER | `app:applications:read` `app:applications:write` `app:versions:read` `app:versions:write` `app:artifacts:read` `app:releases:read` `app:releases:manage` `app:feedback:read` |
+| ORG_ADMIN | `org:organizations:read` `org:organizations:update` `org:idp-configs:read` `org:idp-configs:write` `org:members:read` `org:members:invite` `org:members:manage` `org:testers:read` `org:testers:invite` `org:testers:manage` `org:tenants:create` `org:tenants:read` `tenant:tenants:read` `tenant:tenants:update` `tenant:members:read` `tenant:members:manage` `tenant:testers:read` `tenant:testers:manage` `tenant:applications:read` `app:applications:read` `app:applications:write` `app:versions:read` `app:releases:read` `app:tester-groups:manage` `app:feedback:read` `tenant:authorization-grants:read` `tenant:authorization-grants:manage` (S7-02) |
+| APP_OWNER | `app:applications:read` `app:applications:write` `app:versions:read` `app:versions:write` `app:artifacts:read` `app:releases:read` `app:releases:manage` `app:feedback:read` `tenant:authorization-grants:read` `tenant:authorization-grants:manage` (S7-02, via the owning-organization overlay inside their organization's tenants) |
 | DEVELOPER | `app:artifacts:read` `app:artifacts:upload` `app:versions:read` `app:releases:read` |
 | QA_ENGINEER | `app:applications:read` `app:versions:read` `app:releases:read` `app:releases:approve-qa` `app:tester-groups:manage` `app:feedback:read` |
 | RELEASE_MANAGER | `app:applications:read` `app:versions:read` `app:artifacts:read` `app:releases:read` `app:releases:manage` |
 | SECURITY_REVIEWER | `app:applications:read` `app:versions:read` `app:releases:read` `app:releases:approve-security` |
 | COMPLIANCE_REVIEWER | `app:applications:read` `app:versions:read` `app:releases:read` `app:releases:approve-compliance` |
 | VIEWER | `app:applications:read` `app:versions:read` `app:releases:read` |
-| TENANT_ADMIN | `tenant:tenants:read` `tenant:members:read` `tenant:members:manage` `tenant:testers:read` `tenant:testers:manage` `tenant:applications:read` |
+| TENANT_ADMIN | `tenant:tenants:read` `tenant:members:read` `tenant:members:manage` `tenant:testers:read` `tenant:testers:manage` `tenant:applications:read` `tenant:authorization-grants:read` `tenant:authorization-grants:manage` (S7-02) |
 | TENANT_TESTER | `tenant:applications:read` `tenant:applications:download` `tenant:feedback:create` |
 | ORG_MEMBER | (none — membership only; deny-by-default) |
 
@@ -195,13 +195,16 @@ an allow and never a 500.
   S4-03 while reads stay available per INV-006), then the FR-011
   entitlement seam: every registered `AuthorizationEntitlement`
   contributor is asked (union semantics). S7-01 registers exactly
-  one — the role overlay (`RoleOverlayEntitlement`: the subject
-  holding `app:artifacts:read` or `tenant:applications:download` at
-  the owning organization/tenant, or the platform wildcard). S7-02
-  registers the `version_access` grant contributor (explicit /
-  app-wide / tag / latest-N) — until it lands, a pure tester denies
+  contributors — the role overlay (`RoleOverlayEntitlement`: the
+  subject holding `app:artifacts:read` or
+  `tenant:applications:download` at the owning organization/tenant,
+  or the platform wildcard) and, since S7-02, the
+  `version_access` grant contributor (`VersionAccessGrantEntitlement`:
+  explicit / app-wide / tag / latest-N — see
+  [Authorization grants](#authorization-grants-s7-02)). A pure
+  tester with no applicable grant still denies
   `ENTITLEMENT_MISSING` at this layer: INV-005 deny-by-default is
-  the engine's resting state, not an omission.
+  the engine's resting state, flipped by a grant, never by default.
 - **ARTIFACT** ("Is the Android artifact available?") — existence
   under the addressed version, the platform pin when the request
   carries one, and availability: downloads require READY or
@@ -259,6 +262,85 @@ after the clock stops).
 Reason codes and the evaluated chain reach exactly two places — the
 audit trail and this platform-administrator surface — never an HTTP
 error response.
+
+## Authorization grants (S7-02)
+
+FR-011's four grant shapes — the entitlement data the layered engine
+consumes — implemented by the authorization module's `internal.grant`
+packages over the `version_access` table (PRD 13, expanded by V21 from
+the V1 junction sketch: a surrogate id, the granting tenant, the
+application, the shape's target, `expires_at`, and the granting actor;
+the V1 `DIRECT`/`GROUP` labels stay reserved-unused). A grant is
+tenant-scoped user data: administration rides the tenant path on the
+isolation seam, while the engine's decision probe reads through a
+`@CrossTenantByDesign` catalog (the role-resolution precedent — an
+authorization input, never an endpoint path).
+
+**Grant shapes and resolution** (union semantics — overlapping grants
+compose; no negative grants in V1; every evaluation is live, no cache
+until S7-03):
+
+| Shape | Carries | Authorizes | Resolution path |
+|---|---|---|---|
+| `EXPLICIT_VERSION` | `versionId` | exactly that version (any lifecycle state — the engine's own layers still apply the REVOKED download block and artifact availability) | the subject probe's identity match |
+| `APPLICATION` | nothing | every version of the application the granting tenant can see (tenant-owned by it, or organization-shared with an ACTIVE S3-03 mapping — the chain still applies) | any live grant matches |
+| `TAG` | `tag` (UPPER, the V13 vocabulary) | every version carrying the tag at evaluation time — newly tagged versions join with no grant change | `version_tags` composite-key probe per decision; one set query per distinct tag for the effective view |
+| `LATEST_N` | `latestN` (1..100) | the N newest of the application's WORKING SET (`DRAFT` + the M2-reserved `ACTIVE` — the default listing window): ARCHIVED and REVOKED versions never occupy a window slot, so archiving a build cannot evict a live one from a tester's N; FR-011's "latest 3" drops the oldest when a 4th arrives | one indexed count of newer working-set versions over `idx_versions_application_sort` (V12's zero-padded `sort_key`, never `created_at`) |
+
+**Both owning dimensions.** For a tenant-owned application the
+engine's query carries the owning tenant — which the TENANT layer has
+already verified against the subject's tester persona (two switches
+on) — so the grant through that tenant matches directly. For an
+organization-shared application (owning tenant null) the subject's
+grants resolve by (tester, application) and each grant's own tenant
+is matched LIVE: the subject's access to that tenant must be
+effective (the same two-switches rule, re-checked here because the
+engine's tenant layer verified the organization dimension for shared
+applications) and the granting tenant must still hold the application
+(the ACTIVE S3-03 mapping). A de-authorization or a suspension denies
+on the very next evaluation; nothing is precomputed or swept.
+
+**Expiry** is evaluation-time only: `expiresAt` null means never
+expires; an expired grant never authorizes and stays in place
+(INV-006 — history is the audit trail, not a sweeper's concern). The
+effective-access view carries each entry's TTL (the nearest
+contributing expiry; null when any contributor never expires) and the
+count of already-expired grants.
+
+**Two switches at decision time, not grant time.** Grant creation
+checks the TARGET is real (the tester belongs to the tenant's
+organization, holds a retained membership row — any status — and the
+application is visible to the tenant) but deliberately not
+effectiveness: a suspended tester keeps their grants and loses
+access; re-enabling restores both with no re-grant.
+
+**Endpoints** (new permissions `tenant:authorization-grants:read` and
+`tenant:authorization-grants:manage`, held by TENANT_ADMIN and —
+through the owning-organization overlay — ORG_ADMIN and APP_OWNER;
+PRD 26's tenant-admin / app-owner grant authority):
+
+| Method | Path | Permission | Result |
+|---|---|---|---|
+| POST | `/api/v1/tenants/{id}/authorization-grants` | `tenant:authorization-grants:manage` | `201 {grant, created:true}`; the SAME grant (tester, application, shape, target) replays `200 {created:false}` idempotent (no write, no audit); the same identity with a different `expiresAt` is `409 AUTHORIZATION_GRANT_CONFLICT` (renewal is the expiry route's job); `400` shape-pairing/target/bounds/past-or-malformed-expiry/reason (1..1000, mandatory); `400 AUTHORIZATION_GRANT_TAG_UNKNOWN` for a tag the application does not use; `404` concealed unknown/foreign tester (`TESTER_NOT_FOUND`), unlinked tester (`TENANT_TESTER_MEMBERSHIP_NOT_FOUND`), invisible application (`APPLICATION_NOT_FOUND`), wrong-application version (`VERSION_NOT_FOUND`); `409 TENANT_DEACTIVATED` for new grants on a deactivated tenant (existing grants stay administrable); honors `Idempotency-Key` |
+| GET | `/api/v1/tenants/{id}/authorization-grants?testerId=&applicationId=` | `tenant:authorization-grants:read` | `200` the tenant's grants, cursor-paginated, creation-ordered, optional filters |
+| GET | `/api/v1/tenants/{id}/authorization-grants/{grantId}` | `tenant:authorization-grants:read` | `200` grant view; `404 AUTHORIZATION_GRANT_NOT_FOUND` (the concealed shape — a foreign tenant's grant is indistinguishable) |
+| GET | `/api/v1/tenants/{id}/authorization-grants/effective?testerId=&applicationId=` | `tenant:authorization-grants:read` | `200` the tester's effective access: `effectiveAccess` (the two-switches flag, live), newest-first `entries` (version name/status, contributing `sourceGrantIds`, entry `expiresAt` TTL), and `expiredGrantCount` — the single resolved method the portal catalog (S8-02) builds on and S7-03 caches |
+| PUT | `/api/v1/tenants/{id}/authorization-grants/{grantId}/expiry` | `tenant:authorization-grants:manage` | `200` grant view with the new `expiresAt` (`null` clears to never-expires); idempotent for the same value; `400` past expiry/malformed/missing reason |
+| DELETE | `/api/v1/tenants/{id}/authorization-grants/{grantId}?reason=...` | `tenant:authorization-grants:manage` | `204`; the row is deleted and the removal audited (the append-only audit store is the history; S7-04 builds revocation flows above this primitive); a repeated delete is the ordinary `404` (the tenant-member route's shape) |
+
+**Every mutation is audited** with actor + reason (mandatory, 1..1000
+trimmed): `AUTHORIZATION_GRANT_CREATED`,
+`AUTHORIZATION_GRANT_EXPIRY_CHANGED` (with `expiry.before`/`after`),
+`AUTHORIZATION_GRANT_DELETED` — each carrying the grant's shape,
+target, and expiry state. Idempotent replays write and audit nothing.
+
+**M1 surface note.** The artifact routes' RBAC gate stays
+console-grade (`app:artifacts:read`) — a pure tester does not pass
+it, by design, until the tester portal surfaces arrive (S8). The
+grant's authority today is the layered engine: the tenant catalog a
+tester can list (`tenant:applications:read`, TENANT_TESTER), the
+decision the engine makes for any resource-addressing surface, and
+the effective-access view administrators watch.
 
 ## Opaque denials (PRD 12)
 
@@ -549,9 +631,10 @@ the rest of E5 onward). The authorization engine series
 (S7-01..S7-05) builds policy administration on this catalog without
 changing the enforcement point. Since S7-01 the layered engine
 ([above](#the-layered-authorization-engine-s7-01)) consumes the
-catalog through the role-overlay contributor: S7-02's grants
-(`version_access`, FR-011's four shapes) register as the second
-entitlement contributor, S7-03 exposes the decision API with caching
-against the latency SLO, and S14-04's ABAC attributes widen
-`AuthorizationContext` — the structured-inputs seam this story
-leaves open.
+catalog through the role-overlay contributor; S7-02's grants
+(`version_access`, FR-011's four shapes) are registered as the second
+entitlement contributor (see
+[Authorization grants](#authorization-grants-s7-02)), S7-03 exposes
+the decision API with caching against the latency SLO, and S14-04's
+ABAC attributes widen `AuthorizationContext` — the structured-inputs
+seam S7-01 left open.

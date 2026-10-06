@@ -542,3 +542,21 @@ membership row by the `tenant_tester_memberships` primary key
 `(tenant_id, tester_id)` plus the person row by its primary key —
 both PK lookups, no additional index warranted; no migration was
 added by S7-01.
+
+## Fourteenth amendment (2026-10-06): the grant catalog joins the cross-tenant-by-design family
+
+S7-02 (issue #31) makes `version_access` a tenant-scoped seam table
+(grant administration rides `/api/v1/tenants/{id}/authorization-grants`
+under the seam's bound context) and adds a second reader that cannot
+run under it: `VersionAccessGrantCatalog`, the layered engine's
+grant-entitlement probe. The engine decides mid-request on surfaces
+(the artifact read, the inspection API) that bind no tenant context,
+exactly like the role resolution of the tenth-through-thirteenth
+amendments' catalogs — so the catalog carries `@CrossTenantByDesign`,
+declares only its sanctioned questions (the subject's grants for an
+application, by tenant and — for organization-shared applications,
+whose owning tenant is null — across tenants), and never serves
+endpoint data paths. The paired probe indexes
+(`idx_version_access_grant_subject`, `idx_version_access_tester_application`)
+keep every question an index descent; the isolation test pairs the
+marker with the seam rule as for every predecessor.

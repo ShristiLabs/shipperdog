@@ -175,8 +175,17 @@ authorization (`AUTHORIZATION_DECISION` — issue #30/S7-01: one event
 per layered-engine decision, allow and deny alike, carrying `action`,
 `outcome`, the compact `chain` summary (layer:status pairs), and — on
 a denial — `failingLayer` and `reason`; the audited user is the
-deciding subject, and for the inspection API the inspected subject;
-see [authorization](authorization.md)),
+deciding subject, and for the inspection API the inspected subject
+(whose events carry `surface=inspect`, distinguishable from serving
+decisions since S7-02); see [authorization](authorization.md);
+`AUTHORIZATION_GRANT_CREATED` / `AUTHORIZATION_GRANT_EXPIRY_CHANGED` /
+`AUTHORIZATION_GRANT_DELETED` — issue #31/S7-02: every grant mutation
+carries the actor (mandatory `reason`, 1..1000 trimmed), the grant's
+`grantId`/`accessType`/target (`tag`/`latestN`/`versionId` context),
+`testerId`, and expiry state — the expiry change adds
+`expiry.before`/`expiry.after`; idempotent replays and no-op changes
+write and audit nothing; grant deletion's history IS this trail —
+rows are not retained),
 and
 platform (`ACCESS_DENIED`, S1-06).
 
