@@ -29,7 +29,16 @@ public class TesterException extends RuntimeException {
         TENANT_DEACTIVATED(
                 HttpStatus.CONFLICT,
                 "TESTER_GROUP_TENANT_DEACTIVATED",
-                "The tenant is deactivated and takes no new tester groups or members.");
+                "The tenant is deactivated and takes no new tester groups or members."),
+        MEMBERSHIP_TENANT_DEACTIVATED(
+                HttpStatus.CONFLICT,
+                "TENANT_DEACTIVATED",
+                "The tenant is deactivated and takes no new tester affiliations."),
+        MEMBERSHIP_NOT_FOUND(
+                HttpStatus.NOT_FOUND, "TENANT_TESTER_MEMBERSHIP_NOT_FOUND", "Tenant tester membership not found."),
+        TESTER_NOT_ACTIVE(HttpStatus.CONFLICT, "TESTER_NOT_ACTIVE", "Only an ACTIVE tester can be linked to a tenant."),
+        TESTER_NOT_TENANT_MEMBER(
+                HttpStatus.CONFLICT, "TESTER_NOT_TENANT_MEMBER", "The tester is not an active member of the tenant.");
 
         final HttpStatus httpStatus;
         final String code;

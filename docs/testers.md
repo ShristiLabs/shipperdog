@@ -4,8 +4,10 @@ Testers are the people who exercise application versions (PRD 8.8):
 each tester record is the ORGANIZATION-scoped person record — one
 record per email address per organization, so the same person can be a
 tester of two organizations. Tenant attachment is deliberately not
-modeled here: `tenant_tester_memberships` arrives with S6-03 and
-tester groups with S6-02; this story delivers the invitation funnel
+modeled here: it lives in the separate tenant-tester membership join
+(S6-03, [tenant-tester memberships](tenant-tester-memberships.md))
+and tester grouping in [tester groups](tester-groups.md) (S6-02);
+this story delivers the invitation funnel
 (FRD FR-010): an organization administrator invites by email, the
 invitee self-onboards, and the resulting account spans tenants and
 groups through memberships. Implemented by the `tester` module
@@ -40,7 +42,8 @@ concept: `user_invitations` gains a tester flavor (V19), the accept
 flow IS `POST /api/v1/auth/register`, and tokens come from the
 existing login. A tester invitation never grants an organization
 membership (that is the org-member invitation flavor; tester
-memberships attach per tenant in S6-03).
+memberships attach per tenant in S6-03, which also requires the
+person record ACTIVE before a tenant may link it).
 
 ## Endpoints (base `/api/v1/testers`)
 

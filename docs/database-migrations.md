@@ -27,6 +27,7 @@ backend/src/main/resources/db/
     V17__artifact_provenance.sql
     V18__artifact_validation.sql
     V19__tester_onboarding.sql
+    V20__tenant_tester_membership_suspend.sql
   seed/                 dev fixture, applied only when the seed location is active
     R__dev_seed.sql
 ```
@@ -329,6 +330,19 @@ backend/src/main/resources/db/
   repeatable block provisioning the demo tenants' default groups to
   match what the API now produces; tenants created before S6-02 keep
   their original state (no retro-seeding).
+- `V20__tenant_tester_membership_suspend.sql` (S6-03, issue #28)
+  appends ONE value: `membership_status` gains `SUSPENDED` (the V8
+  `tenant_member_status` vocabulary precedent) so the issue's three
+  operations — create/suspend/remove — stay three distinct states:
+  ACTIVE is effective, SUSPENDED parks the membership reversibly
+  without unlinking the tester, REVOKED is removal (the row is
+  retained as the historical record; a re-link reactivates it). The
+  table itself is V1 baseline (`tenant_tester_memberships`, PK
+  `(tenant_id, tester_id)`, `idx_ttm_tester_id`). No new index: the
+  PK prefix already serves the hot authorization probe the issue's
+  technical note names `(tenant_id, tester_id, status)` — an equality
+  descent reads the row and therefore its status; revisit with
+  S7-01/S7-03 when the cache strategy lands.
 
 ## Status and type columns
 

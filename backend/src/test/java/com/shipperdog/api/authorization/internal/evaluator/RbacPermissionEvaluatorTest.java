@@ -9,12 +9,14 @@ import com.shipperdog.api.authorization.ConcealedResourceAccessDeniedException;
 import com.shipperdog.api.config.TraceAttributes;
 import com.shipperdog.api.organization.OrgRole;
 import com.shipperdog.api.tenant.TenantAccess;
+import com.shipperdog.api.tenant.TenantAccess.TenantSummary;
 import com.shipperdog.api.tenant.TenantRole;
 import com.shipperdog.api.tester.TesterAccess;
 import com.shipperdog.api.version.VersionAccess;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import io.micrometer.observation.ObservationRegistry;
 import java.time.Clock;
+import java.util.Collection;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -547,6 +549,11 @@ class RbacPermissionEvaluatorTest {
             public boolean acceptsNewAffiliations(UUID tenantId) {
                 return false;
             }
+
+            @Override
+            public Map<UUID, TenantSummary> tenantSummariesOf(Collection<UUID> tenantIds) {
+                return Map.of();
+            }
         };
     }
 
@@ -575,6 +582,11 @@ class RbacPermissionEvaluatorTest {
             @Override
             public boolean acceptsNewAffiliations(UUID tenant) {
                 return tenant.equals(tenantId);
+            }
+
+            @Override
+            public Map<UUID, TenantSummary> tenantSummariesOf(Collection<UUID> tenantIds) {
+                return Map.of();
             }
         };
     }

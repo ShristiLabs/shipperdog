@@ -133,6 +133,37 @@ paths:
             '*/*':
               schema:
                 $ref: "#/components/schemas/TenantResponse"
+  /api/v1/tenants/{id}/testers/{testerId}/status:
+    put:
+      tags:
+      - tenant-tester-membership-controller
+      operationId: changeStatus_1
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - name: testerId
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/StatusChangeRequest"
+        required: true
+      responses:
+        "200":
+          description: OK
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/MembershipView"
   /api/v1/tenants/{id}/members/{userId}/status:
     put:
       tags:
@@ -569,6 +600,64 @@ paths:
             '*/*':
               schema:
                 $ref: "#/components/schemas/TenantResponse"
+  /api/v1/tenants/{id}/testers:
+    get:
+      tags:
+      - tenant-tester-membership-controller
+      operationId: listTesters
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - name: status
+        in: query
+        required: false
+        schema:
+          type: string
+      - name: limit
+        in: query
+        required: false
+        schema:
+          type: string
+      - name: cursor
+        in: query
+        required: false
+        schema:
+          type: string
+      responses:
+        "200":
+          description: OK
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/PageResponseMembershipView"
+    post:
+      tags:
+      - tenant-tester-membership-controller
+      operationId: link
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/LinkRequest"
+        required: true
+      responses:
+        "200":
+          description: OK
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/TesterAddedResponse"
   /api/v1/tenants/{id}/members:
     get:
       tags:
@@ -1232,6 +1321,80 @@ paths:
             '*/*':
               schema:
                 $ref: "#/components/schemas/TesterResponse"
+  /api/v1/testers/{id}/tenants:
+    get:
+      tags:
+      - tenant-tester-membership-controller
+      operationId: tenantsOfTester
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - name: limit
+        in: query
+        required: false
+        schema:
+          type: string
+      - name: cursor
+        in: query
+        required: false
+        schema:
+          type: string
+      responses:
+        "200":
+          description: OK
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/PageResponseTenantsOfTesterView"
+  /api/v1/tenants/{id}/testers/{testerId}:
+    get:
+      tags:
+      - tenant-tester-membership-controller
+      operationId: getMembership
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - name: testerId
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      responses:
+        "200":
+          description: OK
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/MembershipView"
+    delete:
+      tags:
+      - tenant-tester-membership-controller
+      operationId: remove
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - name: testerId
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      responses:
+        "204":
+          description: No Content
   /api/v1/tenants/{id}/applications:
     get:
       tags:
@@ -1381,6 +1544,9 @@ paths:
           - TESTER_GROUP_DELETED
           - TESTER_GROUP_MEMBER_ADDED
           - TESTER_GROUP_MEMBER_REMOVED
+          - TENANT_TESTER_MEMBERSHIP_CREATED
+          - TENANT_TESTER_MEMBERSHIP_STATUS_CHANGED
+          - TENANT_TESTER_MEMBERSHIP_REMOVED
       - name: applicationId
         in: query
         required: false
@@ -1696,6 +1862,28 @@ components:
         updatedAt:
           type: string
           format: date-time
+    MembershipView:
+      type: object
+      properties:
+        testerId:
+          type: string
+          format: uuid
+        email:
+          type: string
+        fullName:
+          type: string
+        testerStatus:
+          type: string
+        membershipStatus:
+          type: string
+        effectiveAccess:
+          type: boolean
+        linkedAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
     MemberView:
       type: object
       properties:
@@ -1878,6 +2066,29 @@ components:
           type: string
           format: uuid
         added:
+          type: boolean
+    LinkRequest:
+      type: object
+      properties:
+        testerId:
+          type: string
+          format: uuid
+    TesterAddedResponse:
+      type: object
+      properties:
+        tenantId:
+          type: string
+          format: uuid
+        testerId:
+          type: string
+          format: uuid
+        linked:
+          type: boolean
+        reactivated:
+          type: boolean
+        membershipStatus:
+          type: string
+        effectiveAccess:
           type: boolean
     CreatePatRequest:
       type: object
@@ -2322,6 +2533,43 @@ components:
             $ref: "#/components/schemas/TesterResponse"
         next_cursor:
           type: string
+    PageResponseTenantsOfTesterView:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/TenantsOfTesterView"
+        next_cursor:
+          type: string
+    TenantSummary:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+        status:
+          type: string
+    TenantsOfTesterView:
+      type: object
+      properties:
+        tenantId:
+          type: string
+          format: uuid
+        tenant:
+          $ref: "#/components/schemas/TenantSummary"
+        membershipStatus:
+          type: string
+        effectiveAccess:
+          type: boolean
+        linkedAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
     PageResponseGroupResponse:
       type: object
       properties:
@@ -2347,6 +2595,15 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/TenantResponse"
+        next_cursor:
+          type: string
+    PageResponseMembershipView:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/MembershipView"
         next_cursor:
           type: string
     PageResponseApplicationView:
@@ -2476,6 +2733,9 @@ components:
           - TESTER_GROUP_DELETED
           - TESTER_GROUP_MEMBER_ADDED
           - TESTER_GROUP_MEMBER_REMOVED
+          - TENANT_TESTER_MEMBERSHIP_CREATED
+          - TENANT_TESTER_MEMBERSHIP_STATUS_CHANGED
+          - TENANT_TESTER_MEMBERSHIP_REMOVED
         occurredAt:
           type: string
           format: date-time

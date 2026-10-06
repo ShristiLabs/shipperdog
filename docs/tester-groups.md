@@ -24,13 +24,19 @@ out of scope by the story.
   serves tester→groups (authorization grants will resolve groups to
   testers under the decision-latency SLO).
 
-Tenant-membership validation of group members arrives with S6-03
-(`tenant_tester_memberships` rows): S6-02 validates the tester's
-existence within the group tenant's owning organization — a foreign
-organization's tester is indistinguishable from a missing one
-(concealed `TESTER_NOT_FOUND`). Testers of any status may join
-groups; an INVITED tester can be pre-assigned so targeting is ready
-before acceptance.
+Since S6-03 (issue #28), group membership enforces the tenant link:
+a tester may join a tenant's groups only as an effectively-active
+member of that tenant — an ACTIVE `tenant_tester_memberships` row
+under an ACTIVE person record (see
+[tenant-tester memberships](tenant-tester-memberships.md)). A
+visible-but-unlinked or suspended tester answers the explicit
+`409 TESTER_NOT_TENANT_MEMBER`; a foreign organization's tester
+remains indistinguishable from a missing one (concealed
+`TESTER_NOT_FOUND`). The S6-02 grain — existence within the group
+tenant's owning organization — still runs first, so concealment never
+leaks; the pre-assignment of not-yet-active testers is no longer
+possible through the API (link the tester once their record is
+ACTIVE).
 
 ## Endpoints
 

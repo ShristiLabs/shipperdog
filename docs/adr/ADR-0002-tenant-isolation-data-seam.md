@@ -484,3 +484,33 @@ tenant dimension; future junctions over tenant-scoped parents
 catalog joins `TenantMemberRepository` on the review-critical list —
 it must never serve endpoint data paths, only ownership hops and the
 organization-grain listing.
+
+## Twelfth amendment (2026-10-06): tenant-tester memberships join the seam directly; composite-key seam rows order by their real columns
+
+The tenth amendment reserved this landing too: when
+`tenant_tester_memberships` (S6-03, issue #28, V1's table + V20's
+`SUSPENDED` value) arrived, it would join the seam. Unlike
+`tester_group_members` — the eleventh amendment's via-parent junction,
+which carries no tenant column — this junction carries its OWN
+`tenant_id`, so the amendment's boundary now has both sides settled:
+**a junction that owns its tenant dimension implements `TenantScope`
+and rides the seam directly (an `@IdClass` composite key
+`(tenant_id, tester_id)` is no obstacle); a junction whose tenant
+dimension is a single tenant-scoped parent's follows the via-parent
+rule.** The membership's routes ride the tenant path
+(`/api/v1/tenants/{id}/testers`), where the existing route interceptor
+binds the context the seam enforces; the tester-direction read
+(tenants-of-tester) is organization-grain by nature and runs through a
+`@CrossTenantByDesign` catalog constrained to the tester's own
+organization's tenants — the eleventh amendment's carve-out pattern,
+now twice-established.
+
+One mechanical consequence this landing surfaced: the seam's platform
+listing order ends in the derived `id` attribute, and Spring Data
+cannot translate an order over an `@IdClass` entity's derived id path
+(the path is not a singular bindable attribute — a `ClassCastException`
+at query assembly). The rule: **composite-key seam rows pass their
+EXPLICIT listing order (link time, then a real composite-key column as
+the deterministic tiebreaker)**; sorted pageables already bypass the
+default, so the seam contract itself is unchanged and future
+composite-key seam rows follow the same shape.

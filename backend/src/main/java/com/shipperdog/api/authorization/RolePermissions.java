@@ -32,6 +32,7 @@ import java.util.Set;
  *                       org:tenants:create          org:tenants:read
  *                       tenant:tenants:read         tenant:tenants:update
  *                       tenant:members:read         tenant:members:manage
+ *                       tenant:testers:read/manage (S6-03)
  *                       tenant:applications:read
  *                       app:applications:read/write app:versions:read
  *                       app:releases:read           app:tester-groups:manage
@@ -54,6 +55,7 @@ import java.util.Set;
  *                       app:releases:read
  * TENANT_ADMIN          tenant:tenants:read         tenant:members:read
  *                       tenant:members:manage       tenant:applications:read
+ *                       tenant:testers:read/manage (S6-03)
  * TENANT_TESTER         tenant:applications:read    tenant:applications:download
  *                       tenant:feedback:create
  * ORG_MEMBER            (none — membership only; deny-by-default, PRD P3)
@@ -86,6 +88,8 @@ public final class RolePermissions {
             Permission.TENANT_TENANTS_UPDATE,
             Permission.TENANT_MEMBERS_READ,
             Permission.TENANT_MEMBERS_MANAGE,
+            Permission.TENANT_TESTERS_READ,
+            Permission.TENANT_TESTERS_MANAGE,
             Permission.TENANT_APPLICATIONS_READ,
             Permission.APP_APPLICATIONS_READ,
             Permission.APP_APPLICATIONS_WRITE,
@@ -167,6 +171,8 @@ public final class RolePermissions {
             Permission.TENANT_TENANTS_READ,
             Permission.TENANT_MEMBERS_READ,
             Permission.TENANT_MEMBERS_MANAGE,
+            Permission.TENANT_TESTERS_READ,
+            Permission.TENANT_TESTERS_MANAGE,
             Permission.TENANT_APPLICATIONS_READ);
 
     private static final Set<Permission> TENANT_TESTER = Set.of(

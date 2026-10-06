@@ -59,6 +59,11 @@ Current contents:
   add/remove over the composite-PK junction, default-group seeding on
   tenant creation, and the testers-per-group / groups-per-tester
   listings.
+- [Tenant-tester memberships](tenant-tester-memberships.md) — the
+  portal-access join between testers and tenants (S6-03): link /
+  suspend / history-preserving removal over the seam-joined composite
+  key, the two-switches effective-access rule, both listings, and the
+  group-membership precondition.
 - [Observability](observability.md) — tracing/metrics/logs baseline,
   correlation model, `shipperdog_*` metric namespace, Prometheus +
   Grafana local stack, and the management-port security posture
