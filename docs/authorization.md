@@ -97,7 +97,11 @@ password-reset pair) matched by the security chain's `permitAll`.
   scopes). `app:` — since the application registry (S3-01), resolved
   through the application's owning tenant with the organization overlay;
   organization-shared rows (S3-02, PRD 14 — null owning tenant) resolve
-  at the owning organization. Creation-time checks evaluate at the
+  at the owning organization. `version` targets (S5-01, issue #20)
+  resolve the same way through the version's application owner: the
+  artifact routes are body-addressed by version id, so the check hops
+  version -> application -> owner exactly once at the enforcement
+  point. Creation-time checks evaluate at the
   future owner tenant for tenant-owned registrations and at the owning
   organization for organization-shared ones, so
   `app:applications:write` authority is organization-level by
@@ -288,6 +292,30 @@ Identifier and lifecycle edits are audited (`APPLICATION_CREATED`,
 [error codes](error-codes.md) for the full application table and
 [API conventions](api-conventions.md) for the idempotency registry.
 
+## Artifact upload endpoints (S5-01)
+
+Artifact upload (issue #20) is the `DEVELOPER` story — the role's
+`app:artifacts:upload` grant — checked at the **version** every route
+carries: the surface is body-addressed (the version id rides the
+multipart form or the JSON body, never the path), so the evaluator
+resolves the target version -> application -> owning tenant with the
+organization overlay, and a caller without the grant on that
+application receives the concealed 404 — indistinguishable from an
+unknown version id. The same union rule as everywhere applies: an
+organization-level `DEVELOPER` reaches the artifact surface of every
+tenant of their organization.
+
+| Method | Path | Permission | Result |
+|---|---|---|---|
+| POST | `/api/v1/artifacts` | `app:artifacts:upload` at the form's `version_id` | `201` registered artifact view (born `VALIDATING`, in-stream SHA-256, `duplicateOf` informational); `400` invalid fields/platform not registered; `415` `ARTIFACT_FILE_TYPE_REJECTED`; `413` `ARTIFACT_TOO_LARGE` (ceiling or over the resumable threshold); `409` `ARTIFACT_BUILD_TAKEN` / `APPLICATION_ARCHIVED` / `VERSION_IMMUTABLE`; `404` unknown or denied version (concealed); honors `Idempotency-Key` |
+| POST | `/api/v1/artifacts/upload-sessions` | `app:artifacts:upload` at the body's `versionId` | `201` session view (`artifactId`, `uploadUrl`, `expiresAt`); same guard codes as the multipart path, plus `400` on a non-positive `sizeHint` and `413` on an over-ceiling hint; `404` unknown or denied version (concealed); honors `Idempotency-Key` |
+| POST | `/api/v1/artifacts/{artifactId}/finalize` | `app:artifacts:upload` at the body's `versionId` | `201 created=true` first registration, `200 created=false` replaying the registered artifact on retry; `400` no bytes/empty; `410` `UPLOAD_SESSION_EXPIRED`; `413` over-ceiling stored bytes; `409` `VERSION_IMMUTABLE` (freeze re-checked at finalize) / `APPLICATION_ARCHIVED`; `404` unknown artifact, session of another version, or denied version (all concealed, identical envelope); no `Idempotency-Key` — the state is the replay answer |
+
+Uploads of a frozen version are refused before any byte moves, and
+finalize re-checks the freeze — a version revoked mid-upload fails
+closed. See [API conventions](api-conventions.md) for the upload
+shapes and [error codes](error-codes.md) for the artifact table.
+
 ## Audit events
 
 `ORG_MEMBER_ROLE_CHANGED` and `TENANT_MEMBER_ROLE_CHANGED` carry
@@ -303,6 +331,7 @@ role; `TOKEN_REVOKED` carries the machine-readable reason. See
 `UserRolesSnapshot` is the seam the ABAC engine (S14-04) extends with
 resource attributes; `app:` permissions bind to endpoints as their
 owning modules land (the registry since S3-01; `app:versions:read` and
-`app:versions:write` since S4-01; E5 onward for the rest). The authorization engine series
+`app:versions:write` since S4-01; `app:artifacts:upload` since S5-01;
+the rest of E5 onward). The authorization engine series
 (S7-01..S7-05) builds policy administration on this catalog without
 changing the enforcement point.

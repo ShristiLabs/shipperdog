@@ -78,6 +78,15 @@ public class VersionException extends RuntimeException {
         return code;
     }
 
+    /**
+     * The rejection's HTTP status (public since E5: the artifact
+     * module re-renders this exception's own envelope on its routes,
+     * and the code's status field is package-private by design).
+     */
+    public HttpStatus status() {
+        return code.httpStatus;
+    }
+
     /** The RFC 7807 envelope for this failure (issue #8). */
     public ProblemDetail problem() {
         return ApiProblems.of(code.httpStatus, code.code, code.httpStatus.getReasonPhrase(), code.detail);

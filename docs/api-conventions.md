@@ -116,12 +116,17 @@ applications stays the tenant-scoped listing.
 
 ## Idempotency
 
-Designated POSTs honor the `Idempotency-Key` header (issue #8; artifact
-upload joins in S5-01 — the registry of designated endpoints is
+Designated POSTs honor the `Idempotency-Key` header (issue #8 — the
+registry of designated endpoints is
 `POST /api/v1/organizations`, `POST /api/v1/tenants`,
 `POST /api/v1/tenants/{id}/members` (S2-03, idempotent even without the
 header for same-role duplicates), `POST /api/v1/applications`
-(S3-01), and `POST /api/v1/applications/{id}/versions` (S4-01)):
+(S3-01), `POST /api/v1/applications/{id}/versions` (S4-01),
+`POST /api/v1/artifacts` and `POST /api/v1/artifacts/upload-sessions`
+(S5-01, issue #20). The artifact finalize route is deliberately NOT in
+the registry: its terminal state is the replay answer — a retry
+answers the registered artifact `200 created=false`, exactly like the
+lifecycle verbs above):
 
 - Send a unique key per logical operation (a UUID is fine; 1..255 chars).
 - The first request executes and its outcome is stored for 24 hours,
@@ -139,6 +144,66 @@ curl -X POST $API/api/v1/organizations \
      -H "Authorization: Bearer $TOKEN" \
      -d '{"name":"Acme Industries"}'
 ```
+
+## Artifact uploads (S5-01)
+
+Artifact binaries (FR-004/FR-007, PRD 24) upload through two routes,
+both permission-checked at the **version** they carry — the artifact
+surface is body-addressed, so `POST /api/v1/artifacts` and
+`POST /api/v1/artifacts/upload-sessions` take the version id in the
+form/body (not the path), the evaluator resolves it version ->
+application -> owning tenant/organization, and denials conceal as the
+uniform 404 (`app:artifacts:upload`, held by `DEVELOPER`).
+
+**Multipart (at or below the resumable threshold).**
+`POST /api/v1/artifacts` with `multipart/form-data`:
+
+- `version_id` (UUID), `platform` (`IOS`/`ANDROID`), optional
+  `build_number` (a CI uploader's pinned build), and `file`.
+- The file name is a bare name of at most 255 characters whose final
+  extension is on the allowlist and coherent with the platform:
+  `.ipa` is IOS, `.apk`/`.aab` are ANDROID; anything else is a 415
+  `ARTIFACT_FILE_TYPE_REJECTED` — before any byte is stored.
+- The platform must be one the application registered (400 otherwise).
+- Sizes: anything over `ARTIFACT_MAX_UPLOAD_BYTES` is a 413
+  `ARTIFACT_TOO_LARGE` on either path; anything over
+  `ARTIFACT_RESUMABLE_THRESHOLD_BYTES` is a 413 on the multipart path
+  specifically — the enforced pointer at the session path below (the
+  story's >100 MB rule; both default to kilobyte-scale values only in
+  tests).
+- Bytes stream through the server to object storage under the PRD 24
+  key `/{orgId}/{tenantId}/{appId}/{versionId}/{artifactId}/artifact`
+  (`_shared` in the tenant slot for organization-owned versions); the
+  SHA-256 is computed during the stream and only the metadata row
+  lands in PostgreSQL. The response is `201` with the registered view,
+  born `VALIDATING`; identical content elsewhere in the application is
+  surfaced informationally as `duplicateOf`, never rejected.
+
+**Resumable (larger than the threshold).** Three steps:
+
+1. `POST /api/v1/artifacts/upload-sessions` (JSON: `versionId`,
+   `platform`, `fileName`, optional `buildNumber`, optional positive
+   `sizeHint`) runs the same guards and answers `201` with the
+   pre-allocated `artifactId`, the storage-granted `uploadUrl`, and
+   `expiresAt` (`ARTIFACT_UPLOAD_SESSION_TTL`, default 10 minutes).
+2. The client streams bytes direct to `uploadUrl` (PUT; one request or
+   resumable chunks) — they never transit the API.
+3. `POST /api/v1/artifacts/{artifactId}/finalize` (JSON:
+   `versionId`) hashes the stored object server-side, registers the
+   row, and deletes the session: `201 created=true` on first
+   registration, `200 created=false` replaying the registered artifact
+   on any retry. Finalize re-checks the version freeze (a version
+   revoked mid-upload answers 409 `VERSION_IMMUTABLE`), enforces the
+   TTL (410 `UPLOAD_SESSION_EXPIRED`), and refuses no-byte or
+   zero-byte uploads (400). Over-ceiling bytes streamed direct are
+   caught here with the same 413.
+
+Re-uploads never overwrite: a repeat of the same file is a NEW
+artifact with a NEW id and key (INV-003); only a pinned
+`(version, platform, build)` triple conflicts (409
+`ARTIFACT_BUILD_TAKEN`). See [error codes](error-codes.md) for the
+full artifact table and [ADR-0003](adr/ADR-0003-artifact-object-storage.md)
+for the storage decision.
 
 ## Payload conventions
 

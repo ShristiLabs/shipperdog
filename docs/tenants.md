@@ -180,6 +180,29 @@ the seam-served version exactly like tags (ADR-0002 eighth amendment)
 — revoked and archived versions stay fully readable inside their
 bound scope forever; only mutation and new distribution end.
 
+Artifacts (S5-01, issue #20) are the deliberate counter-case: they
+rejoin the seam as addressable, cross-parent children (ADR-0002 ninth
+amendment) — the upload routes address them by version id in the body
+(`POST /api/v1/artifacts`, no parent path to bind a scope), and the
+same-content detection reads them across every version of the
+application. `artifacts` and the transient
+`artifact_upload_sessions` both carry the full owning-dimension
+snapshot (V15) and are served by scoped repositories; the upload
+service establishes the owning scope through the sanctioned
+`TenantScopeExecutor` once the version resolves, so a foreign or
+unknown version id answers the concealed 404 before anything streams.
+Binaries live in object storage under
+`/{orgId}/{tenantId}/{appId}/{versionId}/{artifactId}/artifact` — the
+`_shared` segment for organization-owned versions — addressing only,
+never authorization (PRD 24's own note); PostgreSQL keeps the
+metadata row alone (FR-007). A version's artifact set freezes with
+its lifecycle (`VERSION_IMMUTABLE`, re-checked at finalize), and
+stored artifacts are immutable (INV-003: a re-upload is a new row and
+a new object, never an overwrite). See
+[authorization](authorization.md) for the upload endpoints and
+[ADR-0003](adr/ADR-0003-artifact-object-storage.md) for the storage
+decision.
+
 ## Isolation (S2-02, INV-001)
 
 Tenant isolation is enforced in two layers, so no endpoint or future

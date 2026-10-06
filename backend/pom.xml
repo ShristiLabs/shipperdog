@@ -26,6 +26,11 @@
     <!-- springdoc 3.x is the Spring Boot 4 line (issue #8); the starter
          is generated at build time and published as a CI artifact. -->
     <springdoc.version>3.1.1</springdoc.version>
+    <!-- Google Cloud Storage Java client (E5/S5-01): the one object-
+         storage dependency, used against both the compose GCS emulator
+         (fsouza/fake-gcs-server) and production GCS. OSS, Apache-2.0,
+         version-pinned here. -->
+    <google-cloud-storage.version>2.72.0</google-cloud-storage.version>
   </properties>
 
   <dependencyManagement>
@@ -117,6 +122,16 @@
       <groupId>org.postgresql</groupId>
       <artifactId>postgresql</artifactId>
       <scope>runtime</scope>
+    </dependency>
+    <!-- Object storage client (issue #20, S5-01, FR-007/PRD 24): one
+         implementation serves both the emulator (host-configured, no
+         credentials) and production GCS (application default
+         credentials) behind the artifact module's ArtifactStore port.
+         ADR-0003 records the choice. -->
+    <dependency>
+      <groupId>com.google.cloud</groupId>
+      <artifactId>google-cloud-storage</artifactId>
+      <version>${google-cloud-storage.version}</version>
     </dependency>
     <dependency>
       <groupId>org.flywaydb</groupId>

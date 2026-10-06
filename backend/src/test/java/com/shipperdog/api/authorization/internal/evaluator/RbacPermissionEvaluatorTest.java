@@ -10,6 +10,7 @@ import com.shipperdog.api.config.TraceAttributes;
 import com.shipperdog.api.organization.OrgRole;
 import com.shipperdog.api.tenant.TenantAccess;
 import com.shipperdog.api.tenant.TenantRole;
+import com.shipperdog.api.version.VersionAccess;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import io.micrometer.observation.ObservationRegistry;
 import java.time.Clock;
@@ -193,6 +194,51 @@ class RbacPermissionEvaluatorTest {
     }
 
     @Test
+    void appScopeResolvesVersionTargetsThroughTheVersionApplicationOwnerHop() {
+        UUID userId = UUID.randomUUID();
+        UUID owningOrg = UUID.randomUUID();
+        UUID tenant = UUID.randomUUID();
+        UUID application = UUID.randomUUID();
+        UUID version = UUID.randomUUID();
+        Authentication auth = jwtAuth(userId);
+        TenantAccess ownedByOrg = owningOrg(tenant, owningOrg);
+
+        // The artifact routes are body-addressed by version id (issue
+        // #20, FR-004): the version target hops version to application
+        // to owner exactly like the application target — DEVELOPER's
+        // app:artifacts:upload granted at the owning organization.
+        RbacPermissionEvaluator developer = evaluator(
+                unknownApplications(),
+                versions(version, application, owningOrg, tenant),
+                grants(new UserRolesSnapshot(
+                        userId, false, Map.of(owningOrg, OrgRole.DEVELOPER), Map.of(), ownedByOrg)));
+        assertThat(developer.hasPermission(auth, version, "version", "app:artifacts:upload"))
+                .as("a DEVELOPER of the owning organization uploads artifacts")
+                .isTrue();
+
+        // APP_OWNER reads artifacts but holds no upload: concealed
+        // denial, indistinguishable from an unknown version.
+        RbacPermissionEvaluator owner = evaluator(
+                unknownApplications(),
+                versions(version, application, owningOrg, tenant),
+                grants(new UserRolesSnapshot(
+                        userId, false, Map.of(owningOrg, OrgRole.APP_OWNER), Map.of(), ownedByOrg)));
+        assertThatThrownBy(() -> owner.hasPermission(auth, version, "version", "app:artifacts:upload"))
+                .as("read-only roles cannot upload (concealed denial)")
+                .isInstanceOf(ConcealedResourceAccessDeniedException.class);
+
+        // Unknown versions deny concealed through the same hop.
+        RbacPermissionEvaluator unknown = evaluator(
+                unknownApplications(),
+                unknownVersions(),
+                grants(new UserRolesSnapshot(
+                        userId, false, Map.of(owningOrg, OrgRole.DEVELOPER), Map.of(), ownedByOrg)));
+        assertThatThrownBy(() -> unknown.hasPermission(auth, UUID.randomUUID(), "version", "app:artifacts:upload"))
+                .as("unknown version ids conceal")
+                .isInstanceOf(ConcealedResourceAccessDeniedException.class);
+    }
+
+    @Test
     void appScopeFailsClosedOnUnknownApplicationsAndMalformedTargets() {
         UUID userId = UUID.randomUUID();
         Authentication auth = jwtAuth(userId);
@@ -219,12 +265,46 @@ class RbacPermissionEvaluatorTest {
 
     /** Evaluator under test with an application registry stub. */
     private static RbacPermissionEvaluator evaluator(ApplicationAccess applications, RequestRoleGrants grants) {
+        return evaluator(applications, unknownVersions(), grants);
+    }
+
+    /** Evaluator under test with registry stubs for both hops (issue #20). */
+    private static RbacPermissionEvaluator evaluator(
+            ApplicationAccess applications, VersionAccess versions, RequestRoleGrants grants) {
         return new RbacPermissionEvaluator(
                 grants,
                 applications,
+                versions,
                 new AuditLogger(event -> {}, Clock.systemUTC()),
                 new SimpleMeterRegistry(),
                 new TraceAttributes(ObservationRegistry.NOOP));
+    }
+
+    /** Version registry stub resolving nothing (the version hop stays inert). */
+    private static VersionAccess unknownVersions() {
+        return versions(null, null, null, null);
+    }
+
+    /** Version registry stub resolving exactly one tenant-owned version (issue #20). */
+    private static VersionAccess versions(UUID versionId, UUID applicationId, UUID organizationId, UUID tenantId) {
+        return new VersionAccess() {
+            @Override
+            public int reassignOwnership(UUID application, UUID tenant, java.time.Instant updatedAt) {
+                throw new UnsupportedOperationException();
+            }
+
+            @Override
+            public Optional<VersionAccess.VersionOwnership> ownershipOf(UUID id) {
+                return id.equals(versionId)
+                        ? Optional.of(new VersionAccess.VersionOwnership(id, applicationId, organizationId, tenantId))
+                        : Optional.empty();
+            }
+
+            @Override
+            public List<UUID> versionIdsOfApplication(UUID application) {
+                return List.of();
+            }
+        };
     }
 
     /** Registry stub resolving exactly one tenant-owned application. */

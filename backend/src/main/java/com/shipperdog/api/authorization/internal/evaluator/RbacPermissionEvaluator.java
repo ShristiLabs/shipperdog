@@ -12,6 +12,7 @@ import com.shipperdog.api.config.TraceAttributes;
 import com.shipperdog.api.identity.AuthenticatedPrincipal;
 import com.shipperdog.api.organization.OrgRole;
 import com.shipperdog.api.tenant.TenantRole;
+import com.shipperdog.api.version.VersionAccess;
 import io.micrometer.core.instrument.MeterRegistry;
 import io.micrometer.core.instrument.Timer;
 import java.io.Serializable;
@@ -73,6 +74,7 @@ public class RbacPermissionEvaluator implements PermissionEvaluator {
 
     private final RequestRoleGrants grants;
     private final ApplicationAccess applications;
+    private final VersionAccess versions;
     private final AuditLogger audit;
     private final MeterRegistry meters;
     private final TraceAttributes trace;
@@ -80,11 +82,13 @@ public class RbacPermissionEvaluator implements PermissionEvaluator {
     RbacPermissionEvaluator(
             RequestRoleGrants grants,
             ApplicationAccess applications,
+            VersionAccess versions,
             AuditLogger audit,
             MeterRegistry meters,
             TraceAttributes trace) {
         this.grants = grants;
         this.applications = applications;
+        this.versions = versions;
         this.audit = audit;
         this.meters = meters;
         this.trace = trace;
@@ -111,6 +115,8 @@ public class RbacPermissionEvaluator implements PermissionEvaluator {
                 trace.tenant(id);
             } else if ("application".equals(targetType)) {
                 trace.application(id);
+            } else if ("version".equals(targetType)) {
+                trace.version(id);
             }
         }
         // SLO measurability from day one (PRD sections 28 and 42):
@@ -178,11 +184,16 @@ public class RbacPermissionEvaluator implements PermissionEvaluator {
      * itself. {@code application} targets resolve the record's owner —
      * tenant-owned rows check the tenant plus the owning-organization
      * overlay, organization-shared rows (PRD 14, S3-02) check the owning
-     * organization; {@code tenant} targets are the creation-time check at
-     * the future owner tenant; {@code organization} targets are the
-     * creation-time check at the owning organization of an
-     * organization-shared application. Unknown targets deny (concealment
-     * is added by the caller of this evaluator).
+     * organization; {@code version} targets (since E5, issue #20) resolve
+     * the version's application owner the same way — the artifact routes
+     * are body-addressed by version id ({@code POST /api/v1/artifacts},
+     * FR-004), so the permission check must hop version to application
+     * to owner exactly once, here; {@code tenant} targets are the
+     * creation-time check at the future owner tenant; {@code
+     * organization} targets are the creation-time check at the owning
+     * organization of an organization-shared application. Unknown
+     * targets deny (concealment is added by the caller of this
+     * evaluator).
      */
     private boolean appGrants(UserRolesSnapshot snapshot, UUID targetId, String targetType, Permission required) {
         if (targetId == null) {
@@ -191,6 +202,13 @@ public class RbacPermissionEvaluator implements PermissionEvaluator {
         if ("application".equals(targetType)) {
             return applications
                     .ownershipOf(targetId)
+                    .map(ownership -> ownership.tenantId() != null
+                            ? tenantGrants(snapshot, ownership.tenantId(), required)
+                            : orgGrants(snapshot, ownership.organizationId(), required))
+                    .orElse(false);
+        }
+        if ("version".equals(targetType)) {
+            return versions.ownershipOf(targetId)
                     .map(ownership -> ownership.tenantId() != null
                             ? tenantGrants(snapshot, ownership.tenantId(), required)
                             : orgGrants(snapshot, ownership.organizationId(), required))

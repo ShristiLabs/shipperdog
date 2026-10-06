@@ -1,0 +1,48 @@
+package com.shipperdog.api.version;
+
+import java.time.Instant;
+import java.util.Collection;
+import java.util.List;
+import java.util.Map;
+import java.util.UUID;
+
+/**
+ * The version module's read-side seam for artifact slots (issue #20,
+ * S5-01): the per-platform artifact lists of the version views and the
+ * chronological artifact section of the history read. The version
+ * module owns the shape and consumes it through an {@code
+ * ObjectProvider} of this interface; the artifact module registers the
+ * implementation — the exact dependency inversion of {@link
+ * VersionDistributionContributor}, so the version module never learns
+ * the artifact schema and the artifact module never duplicates the
+ * version views.
+ *
+ * <p>Implementations run inside the request's already-bound scope (the
+ * route interceptor bound it for application-addressing reads) and
+ * answer with tuples only, never entities. The chronological order
+ * (upload time, then id) is the contract: the history read renders the
+ * list verbatim, and the per-platform slots group a per-platform
+ * subsequence of the same order.
+ */
+public interface VersionArtifacts {
+
+    /**
+     * The artifacts of each requested version, chronological (upload
+     * time ascending, id ascending as the tiebreak). Versions with no
+     * artifacts are absent from the map (never a null value); an empty
+     * request returns an empty map. The single bulk read backs both the
+     * listing page and the detail/history reads — no per-version
+     * fan-out.
+     */
+    Map<UUID, List<VersionArtifactSlot>> byVersionIds(Collection<UUID> versionIds);
+
+    /**
+     * One artifact of a version, as the version views render it:
+     * identity, platform, the client file name, the stored size and
+     * SHA-256 checksum, the lifecycle status (PRD 18), and the upload
+     * timestamp. The build number and the extraction metadata of PRD
+     * 8.5 arrive with S5-02/03 and extend this tuple there.
+     */
+    record VersionArtifactSlot(
+            UUID id, String platform, String fileName, long size, String sha256, String status, Instant uploadedAt) {}
+}

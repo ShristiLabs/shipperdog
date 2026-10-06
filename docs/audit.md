@@ -106,6 +106,16 @@ itself in the trail, and the same reason rides the version's
 transition: the lifecycle commits through a database compare-and-set,
 so concurrent transitions never double-commit — a repeat or a
 forbidden direction answers the precise 409 and writes nothing),
+artifact (`ARTIFACT_UPLOAD_SESSION_CREATED` — issue #20/S5-01: the
+resumable direct-to-storage handoff is granted, carrying the
+pre-allocated `artifactId` entity reference with `platform`,
+`fileName`, and `expiresAt` in the detail map; and
+`ARTIFACT_UPLOADED` — issue #20/S5-01: an artifact registered through
+either upload path, carrying `versionId` and `artifactId` entity
+references with `platform`, `fileName`, `size`, `sha256`, and the
+carrying `path` (`multipart` or `resumable`) in the detail map — the
+FR-024 actor/version/platform/checksum record; a finalize replay
+writes no second event, the registered row already has its trail),
 and
 platform (`ACCESS_DENIED`, S1-06).
 

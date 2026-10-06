@@ -559,6 +559,90 @@ paths:
             '*/*':
               schema:
                 $ref: "#/components/schemas/InvitationResponse"
+  /api/v1/artifacts:
+    post:
+      tags:
+      - artifact-controller
+      operationId: upload
+      parameters:
+      - name: version_id
+        in: query
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - name: platform
+        in: query
+        required: true
+        schema:
+          type: string
+      - name: build_number
+        in: query
+        required: false
+        schema:
+          type: integer
+          format: int64
+      requestBody:
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              properties:
+                file:
+                  type: string
+                  format: binary
+              required:
+              - file
+      responses:
+        "201":
+          description: Created
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/ArtifactView"
+  /api/v1/artifacts/{artifactId}/finalize:
+    post:
+      tags:
+      - artifact-controller
+      operationId: finalizeSession
+      parameters:
+      - name: artifactId
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/FinalizeRequest"
+        required: true
+      responses:
+        "200":
+          description: OK
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/FinalizeView"
+  /api/v1/artifacts/upload-sessions:
+    post:
+      tags:
+      - artifact-controller
+      operationId: createSession
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateSessionRequest"
+        required: true
+      responses:
+        "201":
+          description: Created
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/UploadSessionView"
   /api/v1/applications:
     get:
       tags:
@@ -958,6 +1042,8 @@ paths:
           - VERSION_TAGS_CHANGED
           - VERSION_ARCHIVED
           - VERSION_DISTRIBUTION_REVOKED
+          - ARTIFACT_UPLOAD_SESSION_CREATED
+          - ARTIFACT_UPLOADED
       - name: applicationId
         in: query
         required: false
@@ -1234,7 +1320,15 @@ components:
     JsonNode:
       type: object
       properties:
+        string:
+          type: boolean
+        binary:
+          type: boolean
+        pojo:
+          type: boolean
         valueNode:
+          type: boolean
+        missingNode:
           type: boolean
         nodeType:
           type: string
@@ -1248,10 +1342,6 @@ components:
           - OBJECT
           - POJO
           - STRING
-        missingNode:
-          type: boolean
-        pojo:
-          type: boolean
         integralNumber:
           type: boolean
         short:
@@ -1271,11 +1361,7 @@ components:
           deprecated: true
         boolean:
           type: boolean
-        binary:
-          type: boolean
         number:
-          type: boolean
-        string:
           type: boolean
         container:
           type: boolean
@@ -1452,6 +1538,100 @@ components:
           format: uuid
         role:
           type: string
+    ArtifactView:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        versionId:
+          type: string
+          format: uuid
+        platform:
+          type: string
+        fileName:
+          type: string
+        size:
+          type: integer
+          format: int64
+        sha256:
+          type: string
+        buildNumber:
+          type: integer
+          format: int64
+        status:
+          type: string
+        uploadedBy:
+          type: string
+          format: uuid
+        storageKey:
+          type: string
+        uploadedAt:
+          type: string
+          format: date-time
+        duplicateOf:
+          type: array
+          items:
+            $ref: "#/components/schemas/DuplicateOf"
+    DuplicateOf:
+      type: object
+      properties:
+        artifactId:
+          type: string
+          format: uuid
+        versionId:
+          type: string
+          format: uuid
+    FinalizeRequest:
+      type: object
+      description: The version id the finalized artifact belongs to.
+      properties:
+        versionId:
+          type: string
+          format: uuid
+    FinalizeView:
+      type: object
+      properties:
+        created:
+          type: boolean
+        artifact:
+          $ref: "#/components/schemas/ArtifactView"
+    CreateSessionRequest:
+      type: object
+      description: "The direct-to-storage upload session to create: the version, platform,\
+        \ and file name of the artifact (extension allowlist .ipa/.apk/.aab applies),\
+        \ the optional CI-pinned build number, and the optional size hint in bytes."
+      properties:
+        versionId:
+          type: string
+          format: uuid
+        platform:
+          type: string
+        fileName:
+          type: string
+        buildNumber:
+          type: integer
+          format: int64
+        sizeHint:
+          type: integer
+          format: int64
+    UploadSessionView:
+      type: object
+      properties:
+        sessionId:
+          type: string
+          format: uuid
+        artifactId:
+          type: string
+          format: uuid
+        versionId:
+          type: string
+          format: uuid
+        uploadUrl:
+          type: string
+        expiresAt:
+          type: string
+          format: date-time
     ApplicationView:
       type: object
       properties:
@@ -1514,6 +1694,26 @@ components:
         revokedAt:
           type: string
           format: date-time
+    VersionArtifactSlot:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        platform:
+          type: string
+        fileName:
+          type: string
+        size:
+          type: integer
+          format: int64
+        sha256:
+          type: string
+        status:
+          type: string
+        uploadedAt:
+          type: string
+          format: date-time
     VersionDetail:
       type: object
       properties:
@@ -1541,7 +1741,8 @@ components:
           type: object
           additionalProperties:
             type: array
-            items: {}
+            items:
+              $ref: "#/components/schemas/VersionArtifactSlot"
         releaseHistory:
           type: array
           items: {}
@@ -1685,6 +1886,8 @@ components:
           - VERSION_TAGS_CHANGED
           - VERSION_ARCHIVED
           - VERSION_DISTRIBUTION_REVOKED
+          - ARTIFACT_UPLOAD_SESSION_CREATED
+          - ARTIFACT_UPLOADED
         occurredAt:
           type: string
           format: date-time
@@ -1777,7 +1980,8 @@ components:
           type: object
           additionalProperties:
             type: array
-            items: {}
+            items:
+              $ref: "#/components/schemas/VersionArtifactSlot"
     StatusTransitionView:
       type: object
       properties:
@@ -1813,4 +2017,5 @@ components:
             $ref: "#/components/schemas/StatusTransitionView"
         artifacts:
           type: array
-          items: {}
+          items:
+            $ref: "#/components/schemas/VersionArtifactSlot"
