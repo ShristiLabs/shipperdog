@@ -35,8 +35,9 @@ Current contents:
   routes and object storage (S5-01), the read route with its
   asynchronous extraction tier and stored failure codes, the parser
   port with its iOS (S5-02) and Android APK/AAB (S5-03) implementations,
-  ARTIFACT_* environment configuration, and the duplicate/immutability
-  rules.
+  build-provenance capture and its frozen CI-integration field names
+  (S5-04), ARTIFACT_* environment configuration, and the
+  duplicate/immutability rules.
 - [Admin console](frontend.md) — the React/MUI console (S2-04, S3-04):
   stack and structure, the shared API client (problem+json, correlation
   ids, cursor pagination), token storage and silent refresh, role-aware

@@ -112,10 +112,13 @@ pre-allocated `artifactId` entity reference with `platform`,
 `fileName`, and `expiresAt` in the detail map; and
 `ARTIFACT_UPLOADED` — issue #20/S5-01: an artifact registered through
 either upload path, carrying `versionId` and `artifactId` entity
-references with `platform`, `fileName`, `size`, `sha256`, and the
-carrying `path` (`multipart` or `resumable`) in the detail map — the
-FR-024 actor/version/platform/checksum record; a finalize replay
-writes no second event, the registered row already has its trail;
+references with `platform`, `fileName`, `size`, `sha256`, and
+`path` (`multipart` or `resumable`) in the detail map — the
+FR-024 actor/version/platform/checksum record; since issue #23/S5-04
+the detail also carries the incident-answer pair `gitCommit` and
+`pipeline` when the uploader asserted provenance (never fabricated);
+a finalize replay writes no second event, the registered row already
+has its trail;
 `ARTIFACT_METADATA_EXTRACTED` — issues #21/S5-02 and #22/S5-03: the
 async extraction job's terminal outcome, success or failure, carrying
 `versionId` and `artifactId` entity references with `platform` and

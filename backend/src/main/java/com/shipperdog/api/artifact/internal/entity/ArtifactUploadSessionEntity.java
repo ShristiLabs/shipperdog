@@ -56,6 +56,16 @@ public class ArtifactUploadSessionEntity implements OrganizationScope {
 
     private Long buildNumber;
 
+    /**
+     * The provenance the creating client asserted (jsonb, V17, issue
+     * #23): captured at upload time — the session-creation moment of
+     * the resumable surface — and replayed by finalize into the
+     * registered artifact row. The frozen-key document of
+     * {@code internal.provenance.Provenance}, or null.
+     */
+    @JdbcTypeCode(SqlTypes.JSON)
+    private String provenance;
+
     private String storageKey;
 
     private String sessionUrl;
@@ -83,6 +93,7 @@ public class ArtifactUploadSessionEntity implements OrganizationScope {
             Platform platform,
             String fileName,
             Long buildNumber,
+            String provenanceDocument,
             String storageKey,
             String sessionUrl,
             Instant expiresAt,
@@ -94,6 +105,7 @@ public class ArtifactUploadSessionEntity implements OrganizationScope {
         this.platform = platform;
         this.fileName = fileName;
         this.buildNumber = buildNumber;
+        this.provenance = provenanceDocument;
         this.storageKey = storageKey;
         this.sessionUrl = sessionUrl;
         this.expiresAt = expiresAt;
@@ -152,6 +164,11 @@ public class ArtifactUploadSessionEntity implements OrganizationScope {
 
     public Long getBuildNumber() {
         return buildNumber;
+    }
+
+    /** The session-captured provenance document finalize replays, or null. */
+    public String getProvenance() {
+        return provenance;
     }
 
     public String getStorageKey() {

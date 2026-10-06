@@ -7,6 +7,7 @@ import com.shipperdog.api.artifact.internal.entity.ArtifactEntity;
 import com.shipperdog.api.artifact.internal.entity.ArtifactEntity.Platform;
 import com.shipperdog.api.artifact.internal.entity.ArtifactUploadSessionEntity;
 import com.shipperdog.api.artifact.internal.extraction.ArtifactExtractionService;
+import com.shipperdog.api.artifact.internal.provenance.Provenance;
 import com.shipperdog.api.artifact.internal.repository.ArtifactScopedRepository;
 import com.shipperdog.api.artifact.internal.repository.ArtifactUploadSessionScopedRepository;
 import com.shipperdog.api.artifact.internal.storage.ArtifactStorageProperties;
@@ -179,7 +180,9 @@ public class ArtifactService implements VersionArtifacts {
      * Uploads an artifact through the server-streamed multipart route:
      * everything validates before the first byte is stored — platform
      * parse, file-name shape and extension allowlist (AC1: unknown
-     * extensions never reach storage), platform registered for the
+     * extensions never reach storage), the build-provenance claims of
+     * issue #23 (optional, shaped when present, rejected with every
+     * field's error at once), platform registered for the
      * application, size ceiling, the >threshold rule that points at
      * the session path (AC5), a pinned build's availability, the
      * archived-application guard, and INV-004's freeze — then the bytes
@@ -188,10 +191,17 @@ public class ArtifactService implements VersionArtifacts {
      * surfaces as {@code duplicateOf} (AC4), informational only.
      */
     public ArtifactView upload(
-            UUID actorId, UUID versionId, String platformText, String fileName, Long buildNumber, MultipartFile file) {
+            UUID actorId,
+            UUID versionId,
+            String platformText,
+            String fileName,
+            Long buildNumber,
+            Provenance.Fields provenanceFields,
+            MultipartFile file) {
         Platform platform = parsePlatform(platformText);
         String validatedName = requireArtifactFileName(fileName, platform);
         requireBuildNumber(buildNumber);
+        Provenance provenance = Provenance.of(provenanceFields);
         if (file == null || file.isEmpty()) {
             throw invalid("file is required and must not be empty");
         }
@@ -240,6 +250,7 @@ public class ArtifactService implements VersionArtifacts {
                     sha256,
                     file.getSize(),
                     buildNumber,
+                    provenance == null ? null : provenance.toJson(),
                     actorId);
             auditUploaded(actorId, ownership, "multipart", saved);
             extraction.schedule(saved, ownership);
@@ -255,16 +266,27 @@ public class ArtifactService implements VersionArtifacts {
     /**
      * Creates the short-lived direct-to-storage session (AC5): the
      * same guards as the multipart path run first — the session is a
-     * handoff to an already-validated upload, not a bypass — then the
-     * artifact id and storage key allocate, the store grants the
-     * resumable session URL, and the session row records the handoff
-     * with its expiry. Audited as {@code ARTIFACT_UPLOAD_SESSION_CREATED}.
+     * handoff to an already-validated upload, not a bypass — including
+     * the issue #23 provenance validation: this creation moment IS the
+     * upload-time capture point of the resumable surface, so the
+     * session row carries the claims and finalize replays them into
+     * the registered artifact. Then the artifact id and storage key
+     * allocate, the store grants the resumable session URL, and the
+     * session row records the handoff with its expiry. Audited as
+     * {@code ARTIFACT_UPLOAD_SESSION_CREATED}.
      */
     public UploadSessionView createSession(
-            UUID actorId, UUID versionId, String platformText, String fileName, Long buildNumber, Long sizeHint) {
+            UUID actorId,
+            UUID versionId,
+            String platformText,
+            String fileName,
+            Long buildNumber,
+            Provenance.Fields provenanceFields,
+            Long sizeHint) {
         Platform platform = parsePlatform(platformText);
         String validatedName = requireArtifactFileName(fileName, platform);
         requireBuildNumber(buildNumber);
+        Provenance provenance = Provenance.of(provenanceFields);
         if (sizeHint != null) {
             if (sizeHint <= 0) {
                 throw invalid("sizeHint must be positive when present");
@@ -292,6 +314,7 @@ public class ArtifactService implements VersionArtifacts {
                     platform,
                     validatedName,
                     buildNumber,
+                    provenance == null ? null : provenance.toJson(),
                     storageKey,
                     sessionUrl,
                     expiresAt,
@@ -312,8 +335,12 @@ public class ArtifactService implements VersionArtifacts {
      * Finalizes the session (AC5): the stored object is streamed back
      * through a SHA-256 digest — the server never saw the client's
      * direct bytes, so the checksum comes from the storage itself —
-     * then the artifact row registers, the session row disappears, and
-     * the outcome replays: a finalize against an already-registered
+     * then the artifact row registers with the provenance the session
+     * captured at its creation (issue #23: the resumable surface's
+     * upload-time capture point; finalize takes no provenance of its
+     * own — hours may separate the two calls, and the claims belong to
+     * the client that made them), the session row disappears, and the
+     * outcome replays: a finalize against an already-registered
      * artifact (retry, or the heal of a crash between insert and
      * session delete) answers the registered view, 200 not 201. The
      * freeze is re-checked (a version can be revoked mid-upload), the
@@ -366,6 +393,7 @@ public class ArtifactService implements VersionArtifacts {
                         stored.sha256Hex(),
                         stored.size(),
                         session.getBuildNumber(),
+                        session.getProvenance(),
                         actorId);
                 sample.stop(timer("resumable", "success"));
             } catch (RuntimeException e) {
@@ -451,7 +479,8 @@ public class ArtifactService implements VersionArtifacts {
                             row.getBundleId(),
                             row.getVersionName(),
                             row.getMinimumOs(),
-                            row.extractionOutcome()));
+                            row.extractionOutcome(),
+                            provenanceSlot(row.getProvenance())));
         }
         return byVersion;
     }
@@ -461,18 +490,21 @@ public class ArtifactService implements VersionArtifacts {
     // -------------------------------------------------------------------------
 
     /**
-     * The artifact view (PRD 8.5 through S5-02): identity, platform,
+     * The artifact view (PRD 8.5 through S5-04): identity, platform,
      * the stored binary's name, size, and SHA-256, the pinned-or-
-     * extracted build number, the lifecycle status, the uploader, and
-     * the server-derived storage key. The extraction tier (S5-02)
-     * rides along: the identity fields and the outcome — {@code
-     * extraction.status} is PENDING in an upload response by
-     * construction (parsing is async), which is exactly why the field
-     * exists: read the artifact back to see where extraction landed.
-     * {@code duplicateOf} carries the same-content detection (AC4 of
-     * #20): informational, never a rejection, and {@code
-     * duplicateOfTruncated} flags the 50-hit rendering cap so a long
-     * duplicate list is never mistaken for the complete one.
+     * extracted build number, the lifecycle status, the uploader, the
+     * server-derived storage key, and — since S5-04 (issue #23) — the
+     * build-provenance block the uploader asserted at capture time
+     * ({@code null} when a manual upload asserted none; never
+     * fabricated). The extraction tier (S5-02) rides along: the
+     * identity fields and the outcome — {@code extraction.status} is
+     * PENDING in an upload response by construction (parsing is
+     * async), which is exactly why the field exists: read the artifact
+     * back to see where extraction landed. {@code duplicateOf} carries
+     * the same-content detection (AC4 of #20): informational, never a
+     * rejection, and {@code duplicateOfTruncated} flags the 50-hit
+     * rendering cap so a long duplicate list is never mistaken for the
+     * complete one.
      */
     public record ArtifactView(
             UUID id,
@@ -489,6 +521,7 @@ public class ArtifactService implements VersionArtifacts {
             UUID uploadedBy,
             String storageKey,
             Instant uploadedAt,
+            ProvenanceView provenance,
             ExtractionView extraction,
             List<DuplicateOf> duplicateOf,
             boolean duplicateOfTruncated) {
@@ -509,9 +542,34 @@ public class ArtifactService implements VersionArtifacts {
                     artifact.getUploadedBy(),
                     artifact.getStorageKey(),
                     artifact.getCreatedAt(),
+                    ProvenanceView.from(artifact.getProvenance()),
                     ExtractionView.from(artifact),
                     List.copyOf(duplicates),
                     truncated);
+        }
+    }
+
+    /**
+     * The provenance block of an artifact view (issue #23, S5-04,
+     * FR-005, PRD 8.5): the five frozen, client-asserted build claims
+     * — {@code null} members for claims the uploader did not assert,
+     * and a {@code null} block when none were. The names are the M2
+     * CI-integration contract; shape-validated claims, never verified
+     * facts (see docs/artifacts.md for the trust model).
+     */
+    public record ProvenanceView(
+            String gitCommit, String gitBranch, String pipeline, String ciRunUrl, String buildTimestamp) {
+
+        static ProvenanceView from(String document) {
+            Provenance provenance = Provenance.from(document);
+            return provenance == null
+                    ? null
+                    : new ProvenanceView(
+                            provenance.gitCommit(),
+                            provenance.gitBranch(),
+                            provenance.pipeline(),
+                            provenance.ciRunUrl(),
+                            provenance.buildTimestamp());
         }
     }
 
@@ -615,7 +673,11 @@ public class ArtifactService implements VersionArtifacts {
                         artifactId);
     }
 
-    /** Inserts the metadata row; the pinned-build race answers the precise 409. */
+    /**
+     * Inserts the metadata row; the pinned-build race answers the precise 409.
+     * The provenance document is written HERE and never after (issue
+     * #23: upload-time capture, INV-003's immutable-after-insert).
+     */
     private ArtifactEntity register(
             UUID artifactId,
             VersionOwnership ownership,
@@ -625,6 +687,7 @@ public class ArtifactService implements VersionArtifacts {
             String sha256,
             long size,
             Long buildNumber,
+            String provenanceDocument,
             UUID actorId) {
         ArtifactEntity entity = new ArtifactEntity(
                 artifactId,
@@ -638,7 +701,8 @@ public class ArtifactService implements VersionArtifacts {
                 size,
                 buildNumber,
                 ArtifactEntity.Status.VALIDATING,
-                actorId);
+                actorId,
+                provenanceDocument);
         try {
             return artifacts.saveScoped(entity);
         } catch (DataIntegrityViolationException e) {
@@ -689,7 +753,32 @@ public class ArtifactService implements VersionArtifacts {
         detail.put("size", Long.toString(artifact.getSize()));
         detail.put("sha256", artifact.getSha256());
         detail.put("path", path);
+        // The incident-answer pair of issue #23: which commit, which
+        // pipeline — present in the trail only when the uploader
+        // asserted them (never fabricated).
+        Provenance provenance = Provenance.from(artifact.getProvenance());
+        if (provenance != null) {
+            if (provenance.gitCommit() != null) {
+                detail.put("gitCommit", provenance.gitCommit());
+            }
+            if (provenance.pipeline() != null) {
+                detail.put("pipeline", provenance.pipeline());
+            }
+        }
         audit(AuditEventType.ARTIFACT_UPLOADED, actorId, ownership, artifact.getId(), detail);
+    }
+
+    /** The version-slot rendering of the provenance block (issue #23). */
+    private static VersionArtifacts.ArtifactProvenance provenanceSlot(String document) {
+        Provenance provenance = Provenance.from(document);
+        return provenance == null
+                ? null
+                : new VersionArtifacts.ArtifactProvenance(
+                        provenance.gitCommit(),
+                        provenance.gitBranch(),
+                        provenance.pipeline(),
+                        provenance.ciRunUrl(),
+                        provenance.buildTimestamp());
     }
 
     private void audit(

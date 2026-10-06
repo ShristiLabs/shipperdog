@@ -582,6 +582,31 @@ paths:
         schema:
           type: integer
           format: int64
+      - name: git_commit
+        in: query
+        required: false
+        schema:
+          type: string
+      - name: git_branch
+        in: query
+        required: false
+        schema:
+          type: string
+      - name: pipeline
+        in: query
+        required: false
+        schema:
+          type: string
+      - name: ci_run_url
+        in: query
+        required: false
+        schema:
+          type: string
+      - name: build_timestamp
+        in: query
+        required: false
+        schema:
+          type: string
       requestBody:
         content:
           multipart/form-data:
@@ -1346,12 +1371,6 @@ components:
     JsonNode:
       type: object
       properties:
-        string:
-          type: boolean
-        floatingPointNumber:
-          type: boolean
-        valueNode:
-          type: boolean
         nodeType:
           type: string
           enum:
@@ -1364,11 +1383,17 @@ components:
           - OBJECT
           - POJO
           - STRING
+        string:
+          type: boolean
+        integralNumber:
+          type: boolean
         missingNode:
+          type: boolean
+        valueNode:
           type: boolean
         pojo:
           type: boolean
-        integralNumber:
+        number:
           type: boolean
         short:
           type: boolean
@@ -1389,9 +1414,9 @@ components:
           type: boolean
         binary:
           type: boolean
-        number:
-          type: boolean
         container:
+          type: boolean
+        floatingPointNumber:
           type: boolean
         empty:
           type: boolean
@@ -1601,6 +1626,8 @@ components:
         uploadedAt:
           type: string
           format: date-time
+        provenance:
+          $ref: "#/components/schemas/ProvenanceView"
         extraction:
           $ref: "#/components/schemas/ExtractionView"
         duplicateOf:
@@ -1627,6 +1654,19 @@ components:
           type: string
         errorMessage:
           type: string
+    ProvenanceView:
+      type: object
+      properties:
+        gitCommit:
+          type: string
+        gitBranch:
+          type: string
+        pipeline:
+          type: string
+        ciRunUrl:
+          type: string
+        buildTimestamp:
+          type: string
     FinalizeRequest:
       type: object
       description: The version id the finalized artifact belongs to.
@@ -1645,7 +1685,9 @@ components:
       type: object
       description: "The direct-to-storage upload session to create: the version, platform,\
         \ and file name of the artifact (extension allowlist .ipa/.apk/.aab applies),\
-        \ the optional CI-pinned build number, and the optional size hint in bytes."
+        \ the optional CI-pinned build number, the optional size hint in bytes, and\
+        \ the optional client-asserted build provenance (gitCommit, gitBranch, pipeline,\
+        \ ciRunUrl, buildTimestamp: shape-validated claims, never verified facts)."
       properties:
         versionId:
           type: string
@@ -1657,6 +1699,16 @@ components:
         buildNumber:
           type: integer
           format: int64
+        gitCommit:
+          type: string
+        gitBranch:
+          type: string
+        pipeline:
+          type: string
+        ciRunUrl:
+          type: string
+        buildTimestamp:
+          type: string
         sizeHint:
           type: integer
           format: int64
@@ -1739,6 +1791,19 @@ components:
         revokedAt:
           type: string
           format: date-time
+    ArtifactProvenance:
+      type: object
+      properties:
+        gitCommit:
+          type: string
+        gitBranch:
+          type: string
+        pipeline:
+          type: string
+        ciRunUrl:
+          type: string
+        buildTimestamp:
+          type: string
     VersionArtifactSlot:
       type: object
       properties:
@@ -1770,6 +1835,8 @@ components:
           type: string
         extraction:
           type: string
+        provenance:
+          $ref: "#/components/schemas/ArtifactProvenance"
     VersionDetail:
       type: object
       properties:

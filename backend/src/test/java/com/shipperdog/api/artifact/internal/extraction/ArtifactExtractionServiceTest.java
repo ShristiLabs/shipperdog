@@ -80,7 +80,8 @@ class ArtifactExtractionServiceTest {
                 100L,
                 null,
                 ArtifactEntity.Status.VALIDATING,
-                UUID.randomUUID());
+                UUID.randomUUID(),
+                null);
         when(artifacts.findScoped(entity.getId())).thenReturn(Optional.of(entity));
         org.mockito.Mockito.doThrow(new TaskRejectedException("queue full"))
                 .when(executor)
@@ -122,7 +123,8 @@ class ArtifactExtractionServiceTest {
                 100L,
                 null,
                 ArtifactEntity.Status.VALIDATING,
-                UUID.randomUUID());
+                UUID.randomUUID(),
+                null);
         entity.recordExtractionFailure("{\"code\":\"NOT_A_ZIP\",\"message\":\"x\"}");
         when(artifacts.findScoped(entity.getId())).thenReturn(Optional.of(entity));
         org.mockito.Mockito.doThrow(new TaskRejectedException("queue full"))
@@ -150,7 +152,8 @@ class ArtifactExtractionServiceTest {
                 100L,
                 null,
                 ArtifactEntity.Status.VALIDATING,
-                UUID.randomUUID());
+                UUID.randomUUID(),
+                null);
         ArtifactExtractionService service = service();
 
         service.schedule(android, ownership());

@@ -52,9 +52,16 @@ class OpenApiExportIntegrationTest {
         RestClient client =
                 RestClient.builder().baseUrl("http://localhost:" + port).build();
 
-        String yaml = client.get().uri("/v3/api-docs.yaml").retrieve().body(String.class);
-        assertThat(yaml).as("the YAML spec document is served").isNotBlank();
+        // The export preserves the served BYTES verbatim: a String-body
+        // conversion would decode with the response's default charset
+        // and re-encode the artifact differently from what the API
+        // serves. Schema descriptions stay ASCII (the codebase
+        // convention; the spec's YAML path is not charset-negotiated).
+        byte[] yamlBytes = client.get().uri("/v3/api-docs.yaml").retrieve().body(byte[].class);
+        assertThat(yamlBytes).as("the YAML spec document is served").isNotEmpty();
+        String yaml = new String(yamlBytes, StandardCharsets.UTF_8);
         assertThat(yaml).contains("/api/v1/");
+        assertThat(yaml).as("the served spec is clean ASCII").matches("(?s)[\\x00-\\x7F]*");
 
         // Structure assertions run against the JSON flavor (same content).
         JsonNode spec =
@@ -65,7 +72,7 @@ class OpenApiExportIntegrationTest {
         Path output = Path.of("target", "openapi.yaml");
         try {
             Files.createDirectories(output.getParent());
-            Files.writeString(output, yaml, StandardCharsets.UTF_8);
+            Files.write(output, yamlBytes);
         } catch (Exception e) {
             throw new IllegalStateException("cannot write " + output, e);
         }

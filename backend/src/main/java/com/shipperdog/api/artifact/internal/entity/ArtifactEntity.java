@@ -127,6 +127,19 @@ public class ArtifactEntity implements OrganizationScope, Persistable<UUID> {
     @JdbcTypeCode(SqlTypes.JSON)
     private String extractedMetadata;
 
+    /**
+     * The build-provenance document (jsonb, V17, issue #23, S5-04,
+     * FR-005): the client-asserted git/pipeline/CI-run claims captured
+     * at upload time — written ONCE with the registration insert and
+     * never updated (INV-003: no setter exists; the column has no
+     * writer after insert). Only supplied members are stored; NULL is
+     * the honest representation of a manual upload that asserted none.
+     * The document keys are the frozen S12-03 contract (see
+     * {@code internal.provenance.Provenance}).
+     */
+    @JdbcTypeCode(SqlTypes.JSON)
+    private String provenance;
+
     /** The actionable failure or block record (jsonb, V16; issue #21 AC3). */
     @JdbcTypeCode(SqlTypes.JSON)
     private String extractionError;
@@ -154,6 +167,9 @@ public class ArtifactEntity implements OrganizationScope, Persistable<UUID> {
      *     embeds, allocated server-side before any byte moved
      * @param buildNumber the uploader's pinned build, or null until
      *     S5-02/03 extract it
+     * @param provenanceDocument the validated build-provenance jsonb
+     *     document (issue #23), or null when the uploader asserted no
+     *     provenance — written here and never after
      */
     public ArtifactEntity(
             UUID id,
@@ -167,7 +183,8 @@ public class ArtifactEntity implements OrganizationScope, Persistable<UUID> {
             long size,
             Long buildNumber,
             Status status,
-            UUID uploadedBy) {
+            UUID uploadedBy,
+            String provenanceDocument) {
         this.id = id;
         this.versionId = versionId;
         this.organizationId = organizationId;
@@ -180,6 +197,7 @@ public class ArtifactEntity implements OrganizationScope, Persistable<UUID> {
         this.buildNumber = buildNumber;
         this.status = status;
         this.uploadedBy = uploadedBy;
+        this.provenance = provenanceDocument;
     }
 
     /** The platform vocabulary (V1 {@code platform}); one value per slot. */
@@ -279,6 +297,11 @@ public class ArtifactEntity implements OrganizationScope, Persistable<UUID> {
 
     public String getExtractionError() {
         return extractionError;
+    }
+
+    /** The frozen-key provenance document, or null when none was asserted. */
+    public String getProvenance() {
+        return provenance;
     }
 
     public Status getStatus() {

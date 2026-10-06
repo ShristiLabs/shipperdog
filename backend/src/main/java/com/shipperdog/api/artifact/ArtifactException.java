@@ -1,6 +1,7 @@
 package com.shipperdog.api.artifact;
 
 import com.shipperdog.api.config.ApiProblems;
+import java.util.Map;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ProblemDetail;
 
@@ -60,17 +61,38 @@ public class ArtifactException extends RuntimeException {
 
     private final Code code;
 
+    /**
+     * The per-field validation report of a rejection (issue #23,
+     * S5-04's field-errors criterion): keys are the frozen wire names
+     * ({@code git_commit}, {@code ci_run_url}, ...), values are
+     * caller-safe messages. Empty unless the failure is a shape
+     * rejection that names its fields.
+     */
+    private final Map<String, String> fieldErrors;
+
     public ArtifactException(Code code, String message) {
+        this(code, message, Map.of());
+    }
+
+    public ArtifactException(Code code, String message, Map<String, String> fieldErrors) {
         super(message);
         this.code = code;
+        this.fieldErrors = Map.copyOf(fieldErrors);
     }
 
     public Code code() {
         return code;
     }
 
+    /** The field-level report, empty when the failure names no field. */
+    public Map<String, String> fieldErrors() {
+        return fieldErrors;
+    }
+
     /** The RFC 7807 envelope for this failure (issue #8). */
     public ProblemDetail problem() {
-        return ApiProblems.of(code.httpStatus, code.code, code.httpStatus.getReasonPhrase(), code.detail);
+        return ApiProblems.withErrors(
+                ApiProblems.of(code.httpStatus, code.code, code.httpStatus.getReasonPhrase(), code.detail),
+                fieldErrors);
     }
 }
