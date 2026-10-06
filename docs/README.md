@@ -48,6 +48,12 @@ Current contents:
 - [Audit logging](audit.md) — append-only audit trail, transactional
   persistence, redaction, correlation ids, and the admin query API
   (S1-06).
+- [Testers](testers.md) — tester onboarding and invitations (S6-01):
+  organization-scoped tester records, the reused invitation machinery
+  with the 7-day single-use token, accept flow through registration,
+  the INVITED/ACTIVE/SUSPENDED lifecycle with login/refresh/PAT
+  suspension, email delivery through the notification seam, and
+  TESTER_* configuration.
 - [Observability](observability.md) — tracing/metrics/logs baseline,
   correlation model, `shipperdog_*` metric namespace, Prometheus +
   Grafana local stack, and the management-port security posture

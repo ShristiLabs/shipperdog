@@ -5,7 +5,8 @@ multi-tenant (PRD 8.2): every tenant belongs to exactly one
 organization, and the organization's administrators manage the tenant
 lifecycle. A tenant is never a user (PRD 8.2/8.8) — it has no login
 surface and no identity coupling. Members (users holding tenant roles)
-arrived with S2-03; tester records themselves arrive with S6. The
+arrived with S2-03; tester records (organization-scoped persons, not
+tenant members) landed with S6-01 (see [testers](testers.md)). The
 admin console drives this entire surface for organization
 administrators since S2-04 (see [frontend](frontend.md)).
 Implemented by the `tenant` module
@@ -64,8 +65,10 @@ on the constraint is the final authority — no driver-message parsing).
   - **reversible** — `PUT /{id}` with `"status": "ACTIVE"` restores it;
   - **blocks new affiliations** — adding a membership to a deactivated
     tenant is `409 TENANT_DEACTIVATED` (the membership analog of "no
-    new invitations"); tester invitations (S6-01) and distributions
-    (S7) check the same state when they arrive;
+    new invitations"); tester memberships (S6-03) and distributions
+    (S7) check the same state when they arrive — tester records
+    themselves (S6-01) carry no tenant dimension, so tenant
+    deactivation does not touch them;
   - **preserves everything** — no cascade, no deletion; existing
     members, applications, and data remain intact and readable
     (acceptance criterion 3).

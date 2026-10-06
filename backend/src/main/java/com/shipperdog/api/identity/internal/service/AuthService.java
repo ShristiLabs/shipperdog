@@ -7,6 +7,7 @@ import com.shipperdog.api.identity.internal.AuthException;
 import com.shipperdog.api.identity.internal.entity.UserEntity;
 import com.shipperdog.api.identity.internal.repository.UserRepository;
 import com.shipperdog.api.organization.OrganizationAccess;
+import com.shipperdog.api.tester.TesterAccounts;
 import java.time.Clock;
 import java.time.Instant;
 import java.util.Locale;
@@ -24,7 +25,8 @@ import org.springframework.transaction.support.TransactionTemplate;
  * dummy digest for unknown addresses) so response timing does not reveal
  * whether an address is registered. Since S1-04, users whose every
  * organization is DEACTIVATED are refused (uniform 401, distinct audit
- * reason) unless they are platform administrators.
+ * reason) unless they are platform administrators. Since S6-01, users whose
+ * tester record is SUSPENDED are refused the same way.
  */
 @Service
 public class AuthService {
@@ -44,6 +46,7 @@ public class AuthService {
     private final LoginFailureRecorder failures;
     private final AuditEventPublisher audit;
     private final OrganizationAccess organizations;
+    private final TesterAccounts testerAccounts;
     private final TransactionTemplate transactions;
 
     AuthService(
@@ -54,6 +57,7 @@ public class AuthService {
             LoginFailureRecorder failures,
             AuditEventPublisher audit,
             OrganizationAccess organizations,
+            TesterAccounts testerAccounts,
             TransactionTemplate transactions) {
         this.users = users;
         this.passwordEncoder = passwordEncoder;
@@ -62,6 +66,7 @@ public class AuthService {
         this.failures = failures;
         this.audit = audit;
         this.organizations = organizations;
+        this.testerAccounts = testerAccounts;
         this.transactions = transactions;
     }
 
@@ -111,6 +116,13 @@ public class AuthService {
             // log in; platform administrators stay exempt. The response stays
             // the uniform generic 401 so organization state is not revealed.
             audit(AuditEventType.LOGIN_FAILURE, user.getId(), "organization_deactivated");
+            throw invalidCredentials();
+        }
+        if (!user.isPlatformAdmin() && testerAccounts.loginBlockedFor(user.getId())) {
+            // S6-01: a SUSPENDED tester may not log in; the same uniform
+            // 401 and the same platform-admin exemption as the
+            // deactivated-organization block above.
+            audit(AuditEventType.LOGIN_FAILURE, user.getId(), "tester_suspended");
             throw invalidCredentials();
         }
 

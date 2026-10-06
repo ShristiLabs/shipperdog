@@ -49,6 +49,14 @@ public class UserInvitationEntity {
     @JdbcTypeCode(SqlTypes.NAMED_ENUM)
     private OrgRole role;
 
+    /**
+     * Tester-onboarding flavor (issue #26): the tester record the
+     * invitation activates on acceptance. Mutually exclusive with
+     * {@code role} per {@code ck_user_invitations_scope}; null for
+     * platform and org-member invitations.
+     */
+    private UUID testerId;
+
     private Instant expiresAt;
 
     private Instant acceptedAt;
@@ -65,12 +73,24 @@ public class UserInvitationEntity {
 
     public UserInvitationEntity(
             String email, UUID invitedBy, String tokenHash, Instant expiresAt, UUID organizationId, OrgRole role) {
+        this(email, invitedBy, tokenHash, expiresAt, organizationId, role, null);
+    }
+
+    public UserInvitationEntity(
+            String email,
+            UUID invitedBy,
+            String tokenHash,
+            Instant expiresAt,
+            UUID organizationId,
+            OrgRole role,
+            UUID testerId) {
         this.email = email;
         this.invitedBy = invitedBy;
         this.status = Status.PENDING;
         this.tokenHash = tokenHash;
         this.organizationId = organizationId;
         this.role = role;
+        this.testerId = testerId;
         this.expiresAt = expiresAt;
     }
 
@@ -116,6 +136,10 @@ public class UserInvitationEntity {
 
     public OrgRole getRole() {
         return role;
+    }
+
+    public UUID getTesterId() {
+        return testerId;
     }
 
     public Instant getExpiresAt() {

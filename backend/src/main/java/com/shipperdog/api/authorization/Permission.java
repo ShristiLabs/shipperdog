@@ -45,6 +45,9 @@ public enum Permission {
     ORG_MEMBERS_READ("org:members:read"),
     ORG_MEMBERS_INVITE("org:members:invite"),
     ORG_MEMBERS_MANAGE("org:members:manage"),
+    ORG_TESTERS_READ("org:testers:read"),
+    ORG_TESTERS_INVITE("org:testers:invite"),
+    ORG_TESTERS_MANAGE("org:testers:manage"),
     ORG_TENANTS_CREATE("org:tenants:create"),
     ORG_TENANTS_READ("org:tenants:read"),
 

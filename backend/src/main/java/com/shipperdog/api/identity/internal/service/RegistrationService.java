@@ -13,6 +13,7 @@ import com.shipperdog.api.identity.internal.repository.UserRepository;
 import com.shipperdog.api.organization.OrgRole;
 import com.shipperdog.api.organization.OrganizationAccess;
 import com.shipperdog.api.organization.OrganizationException;
+import com.shipperdog.api.tester.TesterOnboarding;
 import java.time.Clock;
 import java.time.Instant;
 import java.util.HashMap;
@@ -47,6 +48,7 @@ public class RegistrationService {
     private final InvitationStateRecorder invitationState;
     private final AuditEventPublisher audit;
     private final OrganizationAccess organizations;
+    private final TesterOnboarding testerOnboarding;
 
     RegistrationService(
             UserRepository users,
@@ -56,7 +58,8 @@ public class RegistrationService {
             Clock clock,
             InvitationStateRecorder invitationState,
             AuditEventPublisher audit,
-            OrganizationAccess organizations) {
+            OrganizationAccess organizations,
+            TesterOnboarding testerOnboarding) {
         this.users = users;
         this.invitations = invitations;
         this.passwordEncoder = passwordEncoder;
@@ -65,6 +68,7 @@ public class RegistrationService {
         this.invitationState = invitationState;
         this.audit = audit;
         this.organizations = organizations;
+        this.testerOnboarding = testerOnboarding;
     }
 
     /** Creates a platform invitation (no organization context). */
@@ -91,8 +95,11 @@ public class RegistrationService {
         }
         OrgRole grantedRole = organizationId == null ? null : (role == null ? OrgRole.ORG_MEMBER : role);
         Instant now = Instant.now(clock);
+        // Tester-flavored invitations (issue #26) are revoked per tester
+        // record by the tester module's mint path; the address-wide
+        // revoke here must not kill a tester's live invitation.
         invitations
-                .findByEmailAndStatus(email, UserInvitationEntity.Status.PENDING)
+                .findByEmailAndStatusAndTesterIdIsNull(email, UserInvitationEntity.Status.PENDING)
                 .forEach(pending -> {
                     pending.setStatus(UserInvitationEntity.Status.REVOKED);
                     invitations.save(pending);
@@ -151,7 +158,21 @@ public class RegistrationService {
         invitation.setStatus(UserInvitationEntity.Status.ACCEPTED);
         invitation.setAcceptedAt(now);
         invitations.save(invitation);
-        if (invitation.getOrganizationId() != null) {
+        if (invitation.getTesterId() != null) {
+            // Tester onboarding (issue #26): the same endpoint IS the
+            // accept flow — activation links the account and flips the
+            // tester INVITED -> ACTIVE; no organization membership is
+            // granted (tenant attachment is S6-03).
+            try {
+                testerOnboarding.onInvitationAccepted(
+                        invitation.getTesterId(), user.getId(), invitation.getInvitedBy());
+            } catch (TesterOnboarding.NotOnboardingException e) {
+                // The tester record vanished or left INVITED after the
+                // invitation was minted; the registration fails atomically
+                // with the same generic error as any dead token.
+                throw invalidInvitation();
+            }
+        } else if (invitation.getOrganizationId() != null) {
             try {
                 organizations.addMember(
                         invitation.getOrganizationId(), user.getId(), invitation.getRole(), invitation.getInvitedBy());

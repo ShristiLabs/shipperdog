@@ -10,6 +10,7 @@ import com.shipperdog.api.config.TraceAttributes;
 import com.shipperdog.api.organization.OrgRole;
 import com.shipperdog.api.tenant.TenantAccess;
 import com.shipperdog.api.tenant.TenantRole;
+import com.shipperdog.api.tester.TesterAccess;
 import com.shipperdog.api.version.VersionAccess;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import io.micrometer.observation.ObservationRegistry;
@@ -104,6 +105,31 @@ class RbacPermissionEvaluatorTest {
                 .isInstanceOf(ConcealedResourceAccessDeniedException.class);
         assertThatThrownBy(() -> evaluator.hasPermission(auth, UUID.randomUUID(), "organization", "org:members:read"))
                 .as("roles never apply outside their organization (concealed denial)")
+                .isInstanceOf(ConcealedResourceAccessDeniedException.class);
+    }
+
+    @Test
+    void testerTargetsResolveTheOwningOrganizationForOrgScopeGrants() {
+        UUID userId = UUID.randomUUID();
+        UUID owningOrg = UUID.randomUUID();
+        UUID foreignOrg = UUID.randomUUID();
+        UUID testerId = UUID.randomUUID();
+        UUID foreignTesterId = UUID.randomUUID();
+        Authentication auth = jwtAuth(userId);
+        RbacPermissionEvaluator evaluator = evaluator(
+                unknownApplications(),
+                unknownVersions(),
+                testers(Map.of(testerId, owningOrg, foreignTesterId, foreignOrg)),
+                grants(snapshot(userId, false, Map.of(owningOrg, OrgRole.ORG_ADMIN), Map.of())));
+
+        assertThat(evaluator.hasPermission(auth, testerId, "tester", "org:testers:invite"))
+                .as("the owning organization's admin holds org:testers:invite through the tester target (issue #26)")
+                .isTrue();
+        assertThatThrownBy(() -> evaluator.hasPermission(auth, foreignTesterId, "tester", "org:testers:invite"))
+                .as("a tester of another organization is a concealed miss")
+                .isInstanceOf(ConcealedResourceAccessDeniedException.class);
+        assertThatThrownBy(() -> evaluator.hasPermission(auth, UUID.randomUUID(), "tester", "org:testers:read"))
+                .as("an unknown tester is a concealed miss")
                 .isInstanceOf(ConcealedResourceAccessDeniedException.class);
     }
 
@@ -271,13 +297,35 @@ class RbacPermissionEvaluatorTest {
     /** Evaluator under test with registry stubs for both hops (issue #20). */
     private static RbacPermissionEvaluator evaluator(
             ApplicationAccess applications, VersionAccess versions, RequestRoleGrants grants) {
+        return evaluator(applications, versions, unknownTesters(), grants);
+    }
+
+    /** Evaluator under test with registry stubs including the tester hop (issue #26). */
+    private static RbacPermissionEvaluator evaluator(
+            ApplicationAccess applications, VersionAccess versions, TesterAccess testers, RequestRoleGrants grants) {
         return new RbacPermissionEvaluator(
                 grants,
                 applications,
                 versions,
+                testers,
                 new AuditLogger(event -> {}, Clock.systemUTC()),
                 new SimpleMeterRegistry(),
                 new TraceAttributes(ObservationRegistry.NOOP));
+    }
+
+    /** Tester registry stub resolving nothing (the tester hop stays inert). */
+    private static TesterAccess unknownTesters() {
+        return testers(Map.of());
+    }
+
+    /** Tester registry stub resolving the given tester-to-organization map (issue #26). */
+    private static TesterAccess testers(Map<UUID, UUID> ownership) {
+        return new TesterAccess() {
+            @Override
+            public Optional<UUID> owningOrganizationOf(UUID id) {
+                return Optional.ofNullable(ownership.get(id));
+            }
+        };
     }
 
     /** Version registry stub resolving nothing (the version hop stays inert). */

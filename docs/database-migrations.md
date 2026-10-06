@@ -26,6 +26,7 @@ backend/src/main/resources/db/
     V16__artifact_extraction.sql
     V17__artifact_provenance.sql
     V18__artifact_validation.sql
+    V19__tester_onboarding.sql
   seed/                 dev fixture, applied only when the seed location is active
     R__dev_seed.sql
 ```
@@ -297,6 +298,28 @@ backend/src/main/resources/db/
   formalizes the TRANSITIONS in code (`ArtifactStateMachine`), not
   the labels, and PRD 18 has no REVOKED state (revocation is E7's
   authorization lifecycle of INV-007, never an artifact-row state).
+- `V19__tester_onboarding.sql` (S6-01, issue #26) completes the V1
+  `testers` table for the tester funnel. The tester record gains the
+  organization dimension PRD 13's sketch omitted (`organization_id`
+  NOT NULL with `fk_testers_organization_id`, `uq_testers_organization_email`
+  as the within-org identifier guard) plus `email`/`full_name`
+  (normalized email, the users-table convention), and `user_id`
+  becomes NULLABLE — an INVITED tester exists before any account, the
+  V15 `build_number` widening precedent (V1's `uq_testers_user` stays
+  valid under NULLs-distinct semantics). `tester_status` gains
+  `INVITED` (the born state) and `SUSPENDED` (the reversible park,
+  the V8 vocabulary precedent); V1's `DISABLED` stays reserved-unused
+  for S6-04. The invitation machinery is REUSED, not duplicated:
+  `user_invitations` gains `tester_id` (named `fk_`), V3's
+  `ck_user_invitations_org_role_pair` is REPLACED by the broader
+  three-flavor `ck_user_invitations_scope` (the V10
+  constraint-replacement precedent — a widening: every previously
+  valid row stays valid), and the partial unique index
+  `uq_user_invitations_pending_tester` collapses concurrent mints
+  onto one live PENDING row per tester. Application-side consequence:
+  re-minting flushes the revocation before the replacement insert
+  (Hibernate action-ordering runs inserts before updates, and the
+  partial index would otherwise see two PENDING rows).
 
 ## Status and type columns
 

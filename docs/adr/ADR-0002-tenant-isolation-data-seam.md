@@ -419,3 +419,33 @@ plain-child doctrine but its boundary: joining the seam is strictly
 more isolation (the write guard and the forced predicate both apply),
 reserved for rows that cannot inherit a single parent's scope at the
 moment they are addressed.
+
+## Tenth amendment (2026-10-06): testers are organization-scoped person records, not seam rows
+
+The tester module's first landing (E6, issue #26, V19) forces the
+question this ADR's consequences line has carried since day one:
+"testers ... when they land, their entities implement `TenantScope`
+and their repositories extend the seam, or the architecture tests
+fail the build." They do not — because that line misread PRD 13's
+simplified sketch. A tester record is a PERSON (PRD 8.8), not
+tenant-scoped data: the tenant relationship is the
+`tenant_tester_memberships` junction (S6-03), and a tester's row has
+no tenant dimension to filter by. What the record DOES need is an
+organization dimension, so one organization's tester funnel never
+surfaces another organization's testers (INV-001 read isolation,
+applied at the organization grain instead of the tenant grain).
+
+The amendment's rule: **organization-scoped records that carry no
+tenant dimension use plain repositories plus explicit
+organization-scoped queries** (`findByOrganizationId...`,
+`uq_testers_organization_email`), and the RBAC evaluator resolves
+their owning organization through a public `TesterAccess` hop — the
+exact pattern `application`/`version` targets follow — so every
+route over the record is permission-checked at its organization.
+`TenantScope` remains reserved for rows with a real tenant dimension;
+when `tenant_tester_memberships` (S6-03) and `tester_groups` (S6-02,
+tenant-scoped per PRD 13) land, THEY join the seam, and the tester
+person record stays a plain organization-scoped parent exactly like
+organizations themselves. The consequence line above is corrected by
+this amendment rather than edited in place (decision records are
+append-only history).

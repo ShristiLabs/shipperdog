@@ -63,6 +63,11 @@ public class TraceAttributes {
         attribute("release_id", releaseId);
     }
 
+    /** Records the tester the current request operates on (E6+, issue #26). */
+    public void tester(UUID testerId) {
+        attribute("tester_id", testerId);
+    }
+
     private void attribute(String key, UUID id) {
         if (id == null) {
             return;

@@ -7,7 +7,7 @@ Stable public error codes of the problem+json envelope (issue #8). Rules:
 - Codes are UPPER_SNAKE (payload enum casing convention).
 - Source of truth in code: `ApiError` (cross-cutting) and each module's
   domain exception enum (`AuthException.Code`, `OrganizationException.Code`,
-  `TenantException.Code`, `ArtifactException.Code`). This file is the human registry; update it in
+  `TenantException.Code`, `ArtifactException.Code`, `TesterException.Code`). This file is the human registry; update it in
   the same PR that adds a code.
 - All 404 codes share the uniform detail `Resource not found.` — the
   concealed-denial rule (PRD §12) requires genuine misses and concealed
@@ -120,3 +120,16 @@ arrives through the version module's code as noted above.
 | `ARTIFACT_NOT_VALIDATABLE` | 409 | Only a FAILED or still-VALIDATING artifact can be revalidated. (the revalidation surface of S5-05, issue #24: PRD 18 has no path from UPLOADING, READY, DISTRIBUTED, or ARCHIVED back to VALIDATING, and the `ArtifactStateMachine` transition table is the authority — a FAILED row re-enters through `FAILED -> VALIDATING`, a blocked row re-drives where it stands) |
 | `APPLICATION_ARCHIVED` | 409 | The application is archived; new artifacts cannot be added. (the artifact module's own value of the code issue #13 reserved for this surface — existing artifacts stay readable, and unarchiving resumes uploads) |
 | `STORAGE_UNAVAILABLE` | 503 | Artifact storage is unavailable; retry the upload. (the object store refused the write or cannot be read; a retry re-allocates a fresh artifact id and key, never overwriting anything — INV-003) |
+
+## Tester (`TesterException.Code`)
+
+The tester onboarding surface (S6-01, issue #26).
+
+| Code | HTTP | Detail |
+|---|---|---|
+| `TESTER_NOT_FOUND` | 404 | Resource not found. (also the concealed-denial shape for testers — a foreign organization's tester is indistinguishable from a missing one, on every item-addressed route) |
+| `INVALID_REQUEST` | 400 | The request is invalid. (missing/blank fields, an invalid email, an overlong name, an unknown status value; a missing `organizationId` on creation is denied earlier — the target-less permission check answers the opaque 403, authorization preceding validation platform-wide) |
+| `TESTER_EMAIL_TAKEN` | 409 | A tester with this email already exists in the organization. (the race-fallback answer when `uq_testers_organization_email` is violated and the concurrent winner is somehow not visible; the sequential duplicate never sees it — creation is idempotent and returns the existing tester) |
+| `TESTER_ALREADY_ACTIVE` | 409 | The tester has already accepted onboarding. (re-inviting an ACTIVE tester; the account exists, a fresh invitation is meaningless) |
+| `TESTER_INVALID_TRANSITION` | 409 | The status transition is not allowed. (the manual lifecycle allows only `ACTIVE <-> SUSPENDED` — `INVITED -> ACTIVE` belongs to the accept flow alone, and nothing leaves `INVITED` or enters `DISABLED` through this surface; also the answer for re-inviting a SUSPENDED tester) |
+| `TESTER_INVITATION_IN_FLIGHT` | 409 | A concurrent invitation for this tester is in flight; retry. (a lost concurrent re-invite on `uq_user_invitations_pending_tester`; the retry revokes the winner's invitation and mints fresh — the one-live-token invariant holds) |

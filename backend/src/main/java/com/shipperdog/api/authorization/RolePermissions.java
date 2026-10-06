@@ -28,6 +28,7 @@ import java.util.Set;
  *                       org:idp-configs:read        org:idp-configs:write
  *                       org:members:read            org:members:invite
  *                       org:members:manage
+ *                       org:testers:read/invite/manage (S6-01)
  *                       org:tenants:create          org:tenants:read
  *                       tenant:tenants:read         tenant:tenants:update
  *                       tenant:members:read         tenant:members:manage
@@ -76,6 +77,9 @@ public final class RolePermissions {
             Permission.ORG_MEMBERS_READ,
             Permission.ORG_MEMBERS_INVITE,
             Permission.ORG_MEMBERS_MANAGE,
+            Permission.ORG_TESTERS_READ,
+            Permission.ORG_TESTERS_INVITE,
+            Permission.ORG_TESTERS_MANAGE,
             Permission.ORG_TENANTS_CREATE,
             Permission.ORG_TENANTS_READ,
             Permission.TENANT_TENANTS_READ,
