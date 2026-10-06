@@ -260,7 +260,11 @@ backend/src/main/resources/db/
   one transition S5-02 owns); an infrastructure miss (queue full,
   storage unreadable after retries) records there too while the
   status deliberately STAYS `VALIDATING` — the document is what makes
-  a missed extraction visible instead of silent.
+  a missed extraction visible instead of silent. S5-03 (issue #22,
+  Android) deliberately adds NO V17: the Android payload (detected
+  format, target SDK, signing-block presence, BundleConfig-sourced
+  builds) rides the same `extracted_metadata` jsonb, and the identity
+  columns it shares with iOS already exist.
 
 ## Status and type columns
 

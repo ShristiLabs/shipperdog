@@ -146,6 +146,11 @@ class ArtifactExtractionIntegrationTest {
         JsonNode document = mapper.readTree(String.valueOf(row.get("extracted_metadata")));
         assertThat(document.get("displayName").asText()).isEqualTo(IpaFixtures.DISPLAY_NAME);
         assertThat(document.get("parser").asText()).isEqualTo("ipa:dd-plist");
+        // Additive-only rule of the shared record: the S5-03 Android
+        // keys must never appear in an iOS document.
+        assertThat(document.has("targetOs")).isFalse();
+        assertThat(document.has("format")).isFalse();
+        assertThat(document.has("signingBlocks")).isFalse();
         assertThat(document.get("signing").get("profileName").asText()).isEqualTo(IpaFixtures.PROFILE_NAME);
         assertThat(document.get("signing").get("profileUuid").asText()).isEqualTo(IpaFixtures.PROFILE_UUID);
         assertThat(document.get("signing").get("teamIdentifiers").get(0).asText())
@@ -179,6 +184,8 @@ class ArtifactExtractionIntegrationTest {
                 .satisfies(event -> {
                     assertThat(event.success()).isTrue();
                     assertThat(event.detail()).containsEntry("bundleId", IpaFixtures.BUNDLE_ID);
+                    // The format detail key is Android's alone.
+                    assertThat(event.detail()).doesNotContainKey("format");
                 });
         Timer timer = meters.get(MetricNames.ARTIFACT_EXTRACTION_DURATION)
                 .tag("outcome", "success")
@@ -356,6 +363,129 @@ class ArtifactExtractionIntegrationTest {
     }
 
     // -----------------------------------------------------------------------
+    // Android (issue #22, S5-03): the same flow over APK and AAB
+    // -----------------------------------------------------------------------
+
+    @Test
+    void apkUploadExtractsAndroidMetadataEndToEnd() throws Exception {
+        Uploaded uploaded = uploadWorld("ae-apk", "ANDROID", AndroidFixtures.PACKAGE);
+        byte[] apk = AndroidFixtures.signedApk(true, false);
+
+        JsonNode response =
+                uploadMultipart(uploaded.token(), uploaded.versionId(), "ANDROID", "app.apk", null, apk, 201);
+        UUID artifactId = UUID.fromString(response.get("id").asText());
+
+        JsonNode settled = awaitExtraction(uploaded, artifactId, "SUCCESS");
+        assertThat(settled.get("bundleId").asText()).isEqualTo(AndroidFixtures.PACKAGE);
+        assertThat(settled.get("versionName").asText()).isEqualTo(AndroidFixtures.VERSION_NAME);
+        assertThat(settled.get("minimumOs").asText()).isEqualTo(AndroidFixtures.MIN_SDK);
+        assertThat(settled.get("buildNumber").asLong()).isEqualTo(421L);
+
+        Map<String, Object> row = jdbc.queryForMap(
+                "SELECT bundle_id, version_name, minimum_os, build_number, extracted_metadata FROM artifacts "
+                        + "WHERE id = ?",
+                artifactId);
+        assertThat(row.get("bundle_id")).isEqualTo(AndroidFixtures.PACKAGE);
+        assertThat(((Number) row.get("build_number")).longValue()).isEqualTo(421L);
+        JsonNode document = mapper.readTree(String.valueOf(row.get("extracted_metadata")));
+        assertThat(document.get("format").asText()).isEqualTo("APK");
+        assertThat(document.get("targetOs").asText()).isEqualTo(AndroidFixtures.TARGET_SDK);
+        assertThat(document.get("signingBlocks").get("v2SignatureBlock").asBoolean())
+                .isTrue();
+        assertThat(document.get("signingBlocks").get("v3SignatureBlock").asBoolean())
+                .isFalse();
+        assertThat(document.get("parser").asText()).isEqualTo("android:axml-walker");
+
+        JsonNode version = get(
+                uploaded.token(),
+                "/api/v1/applications/" + uploaded.applicationId() + "/versions/" + uploaded.versionId(),
+                200);
+        JsonNode slot = version.get("artifactsByPlatform").get("ANDROID").get(0);
+        assertThat(slot.get("bundleId").asText()).isEqualTo(AndroidFixtures.PACKAGE);
+        assertThat(slot.get("extraction").asText()).isEqualTo("SUCCESS");
+
+        assertThat(audit.eventsOfType(AuditEventType.ARTIFACT_METADATA_EXTRACTED).stream()
+                        .filter(event -> artifactId.equals(event.artifactId()))
+                        .toList())
+                .singleElement()
+                .satisfies(event -> {
+                    assertThat(event.success()).isTrue();
+                    assertThat(event.detail()).containsEntry("platform", "ANDROID");
+                    assertThat(event.detail()).containsEntry("format", "APK");
+                });
+    }
+
+    @Test
+    void aabUploadExtractsTheBundleConfigVersionCode() throws Exception {
+        Uploaded uploaded = uploadWorld("ae-aab", "ANDROID", AndroidFixtures.PACKAGE);
+
+        JsonNode response = uploadMultipart(
+                uploaded.token(),
+                uploaded.versionId(),
+                "ANDROID",
+                "app.aab",
+                null,
+                AndroidFixtures.aabVersionCodeInBundleConfig(),
+                201);
+        UUID artifactId = UUID.fromString(response.get("id").asText());
+
+        JsonNode settled = awaitExtraction(uploaded, artifactId, "SUCCESS");
+        assertThat(settled.get("bundleId").asText()).isEqualTo(AndroidFixtures.PACKAGE);
+        assertThat(settled.get("buildNumber").asLong()).isEqualTo(421L);
+        JsonNode row = mapper.readTree(String.valueOf(jdbc.queryForObject(
+                "SELECT extracted_metadata FROM artifacts WHERE id = ?", String.class, artifactId)));
+        assertThat(row.get("format").asText()).isEqualTo("AAB");
+        assertThat(row.get("parser").asText()).isEqualTo("android:axml-walker+bundle-config-pb");
+    }
+
+    @Test
+    void aRenamedZipApkFailsAsUnknownFormat() throws Exception {
+        Uploaded uploaded = uploadWorld("ae-unknown", "ANDROID", AndroidFixtures.PACKAGE);
+
+        JsonNode response = uploadMultipart(
+                uploaded.token(),
+                uploaded.versionId(),
+                "ANDROID",
+                "not-really.apk",
+                null,
+                AndroidFixtures.renamedZipApk(),
+                201);
+        UUID artifactId = UUID.fromString(response.get("id").asText());
+
+        JsonNode settled = awaitExtraction(uploaded, artifactId, "FAILED");
+        assertThat(settled.get("extraction").get("errorCode").asText()).isEqualTo("UNKNOWN_FORMAT");
+        assertThat(settled.get("bundleId").isNull()).isTrue();
+        assertThat(audit.eventsOfType(AuditEventType.ARTIFACT_METADATA_EXTRACTED).stream()
+                        .filter(event -> artifactId.equals(event.artifactId()))
+                        .toList())
+                .singleElement()
+                .satisfies(event -> {
+                    assertThat(event.success()).isFalse();
+                    assertThat(event.detail()).containsEntry("errorCode", "UNKNOWN_FORMAT");
+                });
+    }
+
+    @Test
+    void aCorruptBundleConfigFailsExtractionEndToEnd() throws Exception {
+        Uploaded uploaded = uploadWorld("ae-badconfig", "ANDROID", AndroidFixtures.PACKAGE);
+
+        JsonNode response = uploadMultipart(
+                uploaded.token(),
+                uploaded.versionId(),
+                "ANDROID",
+                "app.aab",
+                null,
+                AndroidFixtures.aabWithCorruptBundleConfig(),
+                201);
+        UUID artifactId = UUID.fromString(response.get("id").asText());
+
+        JsonNode settled = awaitExtraction(uploaded, artifactId, "FAILED");
+        assertThat(settled.get("extraction").get("errorCode").asText()).isEqualTo("MALFORMED_BUNDLE_CONFIG");
+        assertThat(settled.get("extraction").get("errorMessage").asText()).contains("BundleConfig");
+        assertThat(settled.get("status").asText()).isEqualTo("FAILED");
+    }
+
+    // -----------------------------------------------------------------------
     // Harness
     // -----------------------------------------------------------------------
 
@@ -375,6 +505,11 @@ class ArtifactExtractionIntegrationTest {
 
     /** One organization, tenant, iOS application, and version; a DEVELOPER token. */
     private Uploaded uploadWorld(String suffix) {
+        return uploadWorld(suffix, "IOS", IpaFixtures.BUNDLE_ID);
+    }
+
+    /** The platform-aware world: an application registered for the platform. */
+    private Uploaded uploadWorld(String suffix, String platform, String bundleId) {
         String devToken = accessToken(login(DEV_ADMIN_EMAIL, DEV_ADMIN_PASSWORD));
         UUID organizationId =
                 UUID.fromString(post(devToken, "/api/v1/organizations", Map.of("name", "extraction-" + suffix), 201)
@@ -390,19 +525,14 @@ class ArtifactExtractionIntegrationTest {
                         201)
                 .get("id")
                 .asText());
-        UUID applicationId = UUID.fromString(post(
-                        devToken,
-                        "/api/v1/applications",
-                        Map.of(
-                                "tenantId",
-                                tenantId.toString(),
-                                "name",
-                                "Banking " + suffix,
-                                "platforms",
-                                List.of("IOS"),
-                                "bundleId",
-                                IpaFixtures.BUNDLE_ID),
-                        201)
+        // The registry keys the platform identifier: bundleId for IOS,
+        // packageName for ANDROID (issue #12's rule).
+        Map<String, Object> application = new java.util.HashMap<>(Map.of(
+                "tenantId", tenantId.toString(),
+                "name", "Banking " + suffix,
+                "platforms", List.of(platform)));
+        application.put("ANDROID".equals(platform) ? "packageName" : "bundleId", bundleId);
+        UUID applicationId = UUID.fromString(post(devToken, "/api/v1/applications", application, 201)
                 .get("id")
                 .asText());
         UUID versionId = UUID.fromString(post(
@@ -419,9 +549,20 @@ class ArtifactExtractionIntegrationTest {
 
     private JsonNode uploadMultipart(
             String token, UUID versionId, String fileName, Long buildNumber, byte[] bytes, int expected) {
+        return uploadMultipart(token, versionId, "IOS", fileName, buildNumber, bytes, expected);
+    }
+
+    private JsonNode uploadMultipart(
+            String token,
+            UUID versionId,
+            String platform,
+            String fileName,
+            Long buildNumber,
+            byte[] bytes,
+            int expected) {
         MultiValueMap<String, Object> parts = new LinkedMultiValueMap<>();
         parts.add("version_id", versionId.toString());
-        parts.add("platform", "IOS");
+        parts.add("platform", platform);
         if (buildNumber != null) {
             parts.add("build_number", Long.toString(buildNumber));
         }

@@ -116,6 +116,61 @@ class ZipRangesTest {
     }
 
     @Test
+    void rejectsLocalHeaderOffsetsDeclaredPastTheArchive() throws IOException {
+        byte[] damaged = twoEntryZip();
+        int central = centralOffset(damaged);
+        // Declare the first entry's local header past the central
+        // directory — binary damage that previously reached the ranged
+        // read and misfiled as infra; it must answer MALFORMED_ZIP at
+        // open time (issue #21's folded reviewer advisory).
+        damaged[central + 42] = (byte) 0xFF;
+        damaged[central + 43] = (byte) 0xFF;
+        damaged[central + 44] = (byte) 0xFF;
+        damaged[central + 45] = (byte) 0x7F;
+        assertThatThrownBy(() -> ZipRanges.open(new CountingRanges(damaged), damaged.length, CAP))
+                .isInstanceOf(ExtractionFailure.class)
+                .extracting(failure -> ((ExtractionFailure) failure).code())
+                .isEqualTo(ExtractionFailure.Code.MALFORMED_ZIP);
+    }
+
+    @Test
+    void rejectsDataExtentsDeclaredPastTheCentralDirectory() throws IOException {
+        byte[] damaged = twoEntryZip();
+        int central = centralOffset(damaged);
+        // A valid local header but a compressed size whose extent runs
+        // into the central directory: damage, answered before any read.
+        damaged[central + 20] = (byte) central;
+        damaged[central + 21] = 0;
+        damaged[central + 22] = 0;
+        damaged[central + 23] = 0;
+        ZipRanges zip = ZipRanges.open(new CountingRanges(damaged), damaged.length, CAP);
+        assertThatThrownBy(() -> zip.readEntry(zip.entries().get(0)))
+                .isInstanceOf(ExtractionFailure.class)
+                .extracting(failure -> ((ExtractionFailure) failure).code())
+                .isEqualTo(ExtractionFailure.Code.MALFORMED_ZIP);
+    }
+
+    @Test
+    void rejectsAOneByteExtentOverrunAtTheExactBoundary() throws IOException {
+        byte[] damaged = twoEntryZip();
+        int central = centralOffset(damaged);
+        // The first entry's data starts at 39 (header 30 + the 9-byte
+        // name "first.txt"); declare a size that ends exactly ONE byte
+        // past the central directory's start — the boundary the new
+        // check exists to catch, where a ranged read would happily try.
+        int dataStartsAt = 39;
+        for (int i = 0; i < 4; i++) {
+            damaged[central + 20 + i] = (byte) ((central - dataStartsAt + 1) >> (8 * i));
+        }
+        ZipRanges zip = ZipRanges.open(new CountingRanges(damaged), damaged.length, CAP);
+        assertThatThrownBy(() -> zip.readEntry(zip.entries().get(0)))
+                .isInstanceOf(ExtractionFailure.class)
+                .hasMessageContaining("past the archive")
+                .extracting(failure -> ((ExtractionFailure) failure).code())
+                .isEqualTo(ExtractionFailure.Code.MALFORMED_ZIP);
+    }
+
+    @Test
     void rejectsDamagedLocalHeaders() throws IOException {
         byte[] damaged = twoEntryZip();
         ZipRanges zip = ZipRanges.open(new CountingRanges(damaged), damaged.length, CAP);

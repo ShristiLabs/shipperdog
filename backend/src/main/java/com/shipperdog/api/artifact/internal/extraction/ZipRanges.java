@@ -71,11 +71,14 @@ final class ZipRanges {
 
     private final int maxEntryBytes;
 
+    private final long centralDirectoryOffset;
+
     private final List<Entry> entries;
 
-    private ZipRanges(RangeReader ranges, int maxEntryBytes, List<Entry> entries) {
+    private ZipRanges(RangeReader ranges, int maxEntryBytes, long centralDirectoryOffset, List<Entry> entries) {
         this.ranges = ranges;
         this.maxEntryBytes = maxEntryBytes;
+        this.centralDirectoryOffset = centralDirectoryOffset;
         this.entries = entries;
     }
 
@@ -127,12 +130,22 @@ final class ZipRanges {
                             + centralSize + ", archive " + size + " bytes)");
         }
         List<Entry> entries = parseCentralDirectory(ranges, totalEntries, centralOffset, centralSize);
-        return new ZipRanges(ranges, maxEntryBytes, entries);
+        return new ZipRanges(ranges, maxEntryBytes, centralOffset, entries);
     }
 
     /** The central directory entries, in archive order. */
     List<Entry> entries() {
         return Collections.unmodifiableList(entries);
+    }
+
+    /**
+     * The central directory's start offset. Everything BEFORE it is
+     * entry data (and, for APKs, the signing block); a format probe
+     * that needs the bytes just before the directory (the v2/v3
+     * signing block's footer) anchors here.
+     */
+    long centralDirectoryOffset() {
+        return centralDirectoryOffset;
     }
 
     /**
@@ -163,6 +176,20 @@ final class ZipRanges {
                     "the local header of '" + entry.name() + "' does not start where the directory says");
         }
         long dataOffset = entry.localHeaderOffset() + LOCAL_FIXED + u16(local, 26) + u16(local, 28);
+        // The entry's declared extent must stay inside the archive —
+        // and specifically before the central directory, where entry
+        // data physically lives. Declaring an extent past the archive
+        // end is binary damage: answering it here keeps the artifact
+        // FAILED (the binary's fault) instead of a ranged-read throw
+        // that would misfile as STORAGE_UNAVAILABLE (infra) and BLOCK
+        // the artifact after retries.
+        if (dataOffset + entry.compressedSize() > centralDirectoryOffset) {
+            throw new ExtractionFailure(
+                    ExtractionFailure.Code.MALFORMED_ZIP,
+                    "the data of '" + entry.name() + "' extends past the archive (offset " + dataOffset
+                            + ", size " + entry.compressedSize() + ", central directory at "
+                            + centralDirectoryOffset + ")");
+        }
         byte[] compressed = ranges.read(dataOffset, (int) entry.compressedSize());
         if (entry.method() == 0) {
             if (entry.compressedSize() != entry.uncompressedSize()) {
@@ -238,6 +265,18 @@ final class ZipRanges {
             int commentLength = u16(directory, position + 32);
             long localHeaderOffset = u32(directory, position + 42);
             int nameStart = position + CENTRAL_FIXED;
+            // Every local header must live before the central
+            // directory — a declared offset at or past it (or past the
+            // archive itself) is binary damage, answered BEFORE any
+            // ranged read so a damaged archive fails as the binary's
+            // own fault, never as an infra misread.
+            if (localHeaderOffset + LOCAL_FIXED > centralOffset) {
+                throw new ExtractionFailure(
+                        ExtractionFailure.Code.MALFORMED_ZIP,
+                        "the directory declares a local header for '" + decodeName(directory, nameStart, nameLength)
+                                + "' outside the archive (offset " + localHeaderOffset
+                                + ", central directory at " + centralOffset + ")");
+            }
             int recordEnd = nameStart + nameLength + extraLength + commentLength;
             if (recordEnd > directory.length) {
                 throw new ExtractionFailure(
@@ -256,13 +295,16 @@ final class ZipRanges {
         return entries;
     }
 
+    /**
+     * Decodes an entry name as UTF-8. Malformed bytes never throw —
+     * {@link String#String(byte[], int, int, java.nio.charset.Charset)}
+     * replaces them with U+FFFD — so a name that fails to match an
+     * expected entry shape reads as that shape's absence (the binary
+     * stays wrong, through the shape-specific failure) rather than as
+     * a decode error.
+     */
     private static String decodeName(byte[] directory, int start, int length) {
-        try {
-            return new String(directory, start, length, StandardCharsets.UTF_8);
-        } catch (RuntimeException e) {
-            throw new ExtractionFailure(
-                    ExtractionFailure.Code.MALFORMED_ZIP, "an entry name does not decode as UTF-8", e);
-        }
+        return new String(directory, start, length, StandardCharsets.UTF_8);
     }
 
     // -------------------------------------------------------------------------
@@ -271,9 +313,13 @@ final class ZipRanges {
 
     /**
      * Inflates raw deflate (the ZIP variant, no zlib wrapper) with the
-     * wrapped form as fallback, capping output at the entry ceiling —
-     * a compressed bomb inflates to {@link ExtractionFailure.Code#ENTRY_TOO_LARGE},
-     * never to an allocation.
+     * wrapped form as fallback, capping output at the entry's
+     * CENTRAL-DIRECTORY-DECLARED size as it streams — a compressed
+     * bomb that declares a small size stops at the declaration, never
+     * at an allocation. {@link ExtractionFailure.Code#ENTRY_TOO_LARGE}
+     * is the earlier, pre-read answer for sizes honestly declared
+     * above the configured cap; this guard is the dishonest-declaration
+     * one.
      */
     private static byte[] inflate(byte[] compressed, Entry entry) {
         byte[] raw = inflate(compressed, entry, true);
