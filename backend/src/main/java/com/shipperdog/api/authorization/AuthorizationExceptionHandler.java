@@ -66,6 +66,13 @@ public class AuthorizationExceptionHandler {
             case "organization" -> "ORGANIZATION_NOT_FOUND";
             case "tenant" -> "TENANT_NOT_FOUND";
             case "application" -> "APPLICATION_NOT_FOUND";
+            // Since S5-02 the artifact read routes permission-check the
+            // version target: a concealed denial on a version must render
+            // exactly like the version module's genuine miss, which is
+            // VERSION_NOT_FOUND (the generic fallback would leak that the
+            // caller failed a permission check rather than addressing a
+            // nonexistent version).
+            case "version" -> "VERSION_NOT_FOUND";
             default -> ApiError.NOT_FOUND.name();
         };
     }

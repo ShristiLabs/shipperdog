@@ -198,8 +198,14 @@ never authorization (PRD 24's own note); PostgreSQL keeps the
 metadata row alone (FR-007). A version's artifact set freezes with
 its lifecycle (`VERSION_IMMUTABLE`, re-checked at finalize), and
 stored artifacts are immutable (INV-003: a re-upload is a new row and
-a new object, never an overwrite). See
-[authorization](authorization.md) for the upload endpoints and
+a new object, never an overwrite). Since S5-02 (issue #21) the
+extraction job that parses stored binaries is itself a background
+seam client: it runs off the request thread and establishes the
+artifact's owning scope through the same sanctioned
+`TenantScopeExecutor` (the background-job entry point ADR-0002
+documents), writing its outcome exactly once per artifact. See
+[authorization](authorization.md) for the upload endpoints,
+[artifacts](artifacts.md) for the extraction surface, and
 [ADR-0003](adr/ADR-0003-artifact-object-storage.md) for the storage
 decision.
 

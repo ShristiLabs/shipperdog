@@ -47,5 +47,16 @@ public final class MetricNames {
      */
     public static final String ARTIFACT_UPLOAD_DURATION = "shipperdog.artifact.upload.duration";
 
+    /**
+     * Timer of every completed artifact metadata extraction (issue
+     * #21, S5-02 — the PRD 42 SLO "artifact metadata processing
+     * < 30 sec" observes THIS meter), tagged {@code platform=IOS|ANDROID}
+     * and {@code outcome=success|failed-parse|failed-infra}: the
+     * failed-parse leg is the malformed-binary outcome (artifact
+     * FAILED), failed-infra the queue/storage outcome (artifact stays
+     * VALIDATING).
+     */
+    public static final String ARTIFACT_EXTRACTION_DURATION = "shipperdog.artifact.extraction.duration";
+
     private MetricNames() {}
 }

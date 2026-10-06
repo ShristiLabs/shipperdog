@@ -6,6 +6,7 @@ import com.shipperdog.api.artifact.ArtifactStore;
 import com.shipperdog.api.artifact.internal.entity.ArtifactEntity;
 import com.shipperdog.api.artifact.internal.entity.ArtifactEntity.Platform;
 import com.shipperdog.api.artifact.internal.entity.ArtifactUploadSessionEntity;
+import com.shipperdog.api.artifact.internal.extraction.ArtifactExtractionService;
 import com.shipperdog.api.artifact.internal.repository.ArtifactScopedRepository;
 import com.shipperdog.api.artifact.internal.repository.ArtifactUploadSessionScopedRepository;
 import com.shipperdog.api.artifact.internal.storage.ArtifactStorageProperties;
@@ -131,6 +132,7 @@ public class ArtifactService implements VersionArtifacts {
     private final VersionAccess versions;
     private final VersionDistributionGuard distributionGuard;
     private final TenantScopeExecutor scopeExecutor;
+    private final ArtifactExtractionService extraction;
     private final AuditEventPublisher audit;
     private final Clock clock;
     private final TraceAttributes trace;
@@ -146,6 +148,7 @@ public class ArtifactService implements VersionArtifacts {
             VersionAccess versions,
             VersionDistributionGuard distributionGuard,
             TenantScopeExecutor scopeExecutor,
+            ArtifactExtractionService extraction,
             AuditEventPublisher audit,
             Clock clock,
             TraceAttributes trace,
@@ -159,6 +162,7 @@ public class ArtifactService implements VersionArtifacts {
         this.versions = versions;
         this.distributionGuard = distributionGuard;
         this.scopeExecutor = scopeExecutor;
+        this.extraction = extraction;
         this.audit = audit;
         this.clock = clock;
         this.trace = trace;
@@ -238,6 +242,7 @@ public class ArtifactService implements VersionArtifacts {
                     buildNumber,
                     actorId);
             auditUploaded(actorId, ownership, "multipart", saved);
+            extraction.schedule(saved, ownership);
             return viewOf(saved, duplicatesOf(sha256, ownership.applicationId(), saved.getId()));
         });
         return registered;
@@ -324,7 +329,7 @@ public class ArtifactService implements VersionArtifacts {
                 ArtifactEntity existing =
                         artifacts.findScoped(artifactId).orElseThrow(ArtifactService::artifactMissing);
                 requireOwnVersion(existing, versionId);
-                return new FinalizeView(false, viewOf(existing, List.of()));
+                return new FinalizeView(false, viewOf(existing, new DuplicateScan(List.of(), false)));
             }
             requireOwnVersion(session, versionId);
             distributionGuard.requireArtifactsMutable(ownership.applicationId(), versionId);
@@ -347,6 +352,8 @@ public class ArtifactService implements VersionArtifacts {
                         false,
                         viewOf(healed, duplicatesOf(healed.getSha256(), ownership.applicationId(), healed.getId())));
             }
+            // The registration point of the resumable path: same
+            // guards, same audit, same async extraction handoff.
             Timer.Sample sample = Timer.start(meters);
             ArtifactEntity saved;
             try {
@@ -367,8 +374,36 @@ public class ArtifactService implements VersionArtifacts {
             }
             sessions.delete(session);
             auditUploaded(actorId, ownership, "resumable", saved);
+            extraction.schedule(saved, ownership);
             return new FinalizeView(
                     true, viewOf(saved, duplicatesOf(stored.sha256Hex(), ownership.applicationId(), saved.getId())));
+        });
+    }
+
+    // -------------------------------------------------------------------------
+    // The artifact read (S5-02): where extraction lands
+    // -------------------------------------------------------------------------
+
+    /**
+     * Reads one artifact (issue #21, S5-02): the read-back surface of
+     * the extraction tier — an upload response can only ever show
+     * {@code extraction.status = PENDING} (parsing is async by the
+     * story's scope), so this route is where a client watches the
+     * outcome settle, SUCCESS or the actionable FAILED/BLOCKED error.
+     * The {@code version_id} query parameter is the permission target
+     * (the same body-addressed shape as the upload routes: the
+     * artifact collection has no nesting to bind a route interceptor);
+     * a foreign or mismatched version is the standard concealed miss.
+     */
+    public ArtifactView get(UUID actorId, UUID artifactId, UUID versionId) {
+        VersionOwnership ownership = ownershipOf(versionId);
+        return inScope(ownership, actorId, () -> {
+            ArtifactEntity artifact = artifacts.findScoped(artifactId).orElseThrow(ArtifactService::artifactMissing);
+            requireOwnVersion(artifact, versionId);
+            trace.application(ownership.applicationId());
+            trace.version(versionId);
+            trace.artifact(artifactId);
+            return viewOf(artifact, new DuplicateScan(List.of(), false));
         });
     }
 
@@ -411,7 +446,12 @@ public class ArtifactService implements VersionArtifacts {
                             row.getSize(),
                             row.getSha256(),
                             row.getStatus().name(),
-                            row.getCreatedAt()));
+                            row.getCreatedAt(),
+                            row.getBuildNumber(),
+                            row.getBundleId(),
+                            row.getVersionName(),
+                            row.getMinimumOs(),
+                            row.extractionOutcome()));
         }
         return byVersion;
     }
@@ -421,12 +461,18 @@ public class ArtifactService implements VersionArtifacts {
     // -------------------------------------------------------------------------
 
     /**
-     * The artifact view (PRD 8.5's S5-01 slice): identity, platform,
-     * the stored binary's name, size, and SHA-256, the pinned-or-null
-     * build number, the lifecycle status (VALIDATING — S5-05's
-     * pipeline owns the later transitions), the uploader, and the
-     * server-derived storage key. {@code duplicateOf} carries the
-     * same-content detection (AC4): informational, never a rejection.
+     * The artifact view (PRD 8.5 through S5-02): identity, platform,
+     * the stored binary's name, size, and SHA-256, the pinned-or-
+     * extracted build number, the lifecycle status, the uploader, and
+     * the server-derived storage key. The extraction tier (S5-02)
+     * rides along: the identity fields and the outcome — {@code
+     * extraction.status} is PENDING in an upload response by
+     * construction (parsing is async), which is exactly why the field
+     * exists: read the artifact back to see where extraction landed.
+     * {@code duplicateOf} carries the same-content detection (AC4 of
+     * #20): informational, never a rejection, and {@code
+     * duplicateOfTruncated} flags the 50-hit rendering cap so a long
+     * duplicate list is never mistaken for the complete one.
      */
     public record ArtifactView(
             UUID id,
@@ -436,13 +482,18 @@ public class ArtifactService implements VersionArtifacts {
             long size,
             String sha256,
             Long buildNumber,
+            String bundleId,
+            String versionName,
+            String minimumOs,
             String status,
             UUID uploadedBy,
             String storageKey,
             Instant uploadedAt,
-            List<DuplicateOf> duplicateOf) {
+            ExtractionView extraction,
+            List<DuplicateOf> duplicateOf,
+            boolean duplicateOfTruncated) {
 
-        static ArtifactView from(ArtifactEntity artifact, List<DuplicateOf> duplicates) {
+        static ArtifactView from(ArtifactEntity artifact, List<DuplicateOf> duplicates, boolean truncated) {
             return new ArtifactView(
                     artifact.getId(),
                     artifact.getVersionId(),
@@ -451,11 +502,47 @@ public class ArtifactService implements VersionArtifacts {
                     artifact.getSize(),
                     artifact.getSha256(),
                     artifact.getBuildNumber(),
+                    artifact.getBundleId(),
+                    artifact.getVersionName(),
+                    artifact.getMinimumOs(),
                     artifact.getStatus().name(),
                     artifact.getUploadedBy(),
                     artifact.getStorageKey(),
                     artifact.getCreatedAt(),
-                    List.copyOf(duplicates));
+                    ExtractionView.from(artifact),
+                    List.copyOf(duplicates),
+                    truncated);
+        }
+    }
+
+    /**
+     * The extraction state of one artifact, as views render it: the
+     * outcome ({@code PENDING|SUCCESS|FAILED|BLOCKED}) plus the error
+     * code and message when an outcome was recorded. Never the raw
+     * jsonb documents — the view is typed, the document is storage.
+     */
+    public record ExtractionView(String status, String errorCode, String errorMessage) {
+
+        /** Error documents are tiny; one mapper reads them all. */
+        private static final tools.jackson.databind.ObjectMapper DOCUMENTS = new tools.jackson.databind.ObjectMapper();
+
+        static ExtractionView from(ArtifactEntity artifact) {
+            return new ExtractionView(
+                    artifact.extractionOutcome(),
+                    artifact.getExtractionError() == null ? null : documentField(artifact.getExtractionError(), "code"),
+                    artifact.getExtractionError() == null
+                            ? null
+                            : documentField(artifact.getExtractionError(), "message"));
+        }
+
+        private static String documentField(String document, String field) {
+            try {
+                tools.jackson.databind.JsonNode value =
+                        DOCUMENTS.readTree(document).get(field);
+                return value == null || value.isNull() ? null : value.asText();
+            } catch (RuntimeException e) {
+                return null;
+            }
         }
     }
 
@@ -562,20 +649,38 @@ public class ArtifactService implements VersionArtifacts {
         }
     }
 
-    /** The same-content detection (AC4): every other registration of this checksum in the application. */
-    private List<DuplicateOf> duplicatesOf(String sha256, UUID applicationId, UUID excludeArtifactId) {
+    /**
+     * The same-content detection (AC4 of #20): every other
+     * registration of this checksum in the application, capped at 50
+     * rendered hits with the cap SIGNALED — the probe reads 51 so
+     * {@code truncated} is true only when there really is more (the
+     * #20 review's silent-truncation advisory, folded here at its
+     * touchpoint).
+     */
+    private DuplicateScan duplicatesOf(String sha256, UUID applicationId, UUID excludeArtifactId) {
         Set<UUID> versionIds = new LinkedHashSet<>(versions.versionIdsOfApplication(applicationId));
         if (versionIds.isEmpty()) {
-            return List.of();
+            return new DuplicateScan(List.of(), false);
         }
-        return artifacts
+        List<ArtifactEntity> hits = artifacts
                 .findAllScoped(
                         sameContent(sha256, versionIds, excludeArtifactId),
-                        org.springframework.data.domain.PageRequest.of(0, 50))
+                        org.springframework.data.domain.PageRequest.of(0, DUPLICATE_RENDER_CAP + 1))
                 .stream()
+                .toList();
+        boolean truncated = hits.size() > DUPLICATE_RENDER_CAP;
+        List<DuplicateOf> duplicates = hits.stream()
+                .limit(DUPLICATE_RENDER_CAP)
                 .map(row -> new DuplicateOf(row.getId(), row.getVersionId()))
                 .toList();
+        return new DuplicateScan(duplicates, truncated);
     }
+
+    /** The rendered-duplicate ceiling of every artifact view. */
+    private static final int DUPLICATE_RENDER_CAP = 50;
+
+    /** The duplicate probe's answer: the hits plus the cap signal. */
+    private record DuplicateScan(List<DuplicateOf> duplicates, boolean truncated) {}
 
     private void auditUploaded(UUID actorId, VersionOwnership ownership, String path, ArtifactEntity artifact) {
         Map<String, String> detail = new LinkedHashMap<>();
@@ -613,8 +718,8 @@ public class ArtifactService implements VersionArtifacts {
                 .register(meters);
     }
 
-    private ArtifactView viewOf(ArtifactEntity artifact, List<DuplicateOf> duplicates) {
-        return ArtifactView.from(artifact, duplicates);
+    private ArtifactView viewOf(ArtifactEntity artifact, DuplicateScan scan) {
+        return ArtifactView.from(artifact, scan.duplicates(), scan.truncated());
     }
 
     private static Platform parsePlatform(String platformText) {

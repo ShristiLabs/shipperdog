@@ -23,6 +23,7 @@ backend/src/main/resources/db/
     V13__version_tags.sql
     V14__version_lifecycle.sql
     V15__artifact_upload.sql
+    V16__artifact_extraction.sql
   seed/                 dev fixture, applied only when the seed location is active
     R__dev_seed.sql
 ```
@@ -243,6 +244,23 @@ backend/src/main/resources/db/
   `idempotency_keys` precedent: transient rows do not wedge the user
   lifecycle). No binaries anywhere (FR-007): metadata plus
   `storage_key`; bytes live in object storage under the PRD 24 layout.
+- `V16__artifact_extraction.sql` (S5-02, issue #21) adds the
+  extracted-metadata tier to `artifacts` — five nullable columns,
+  nothing dropped or tightened. The fields S5-05 validation matching
+  compares become first-class columns (`bundle_id`, `version_name`,
+  `minimum_os`; `build_number` already exists since V15 made it
+  nullable for exactly this story — extraction fills it only when the
+  uploader did not pin it), while the open-ended per-platform payload
+  (signing information, entitlements, parser attribution, timings)
+  lands in one `extracted_metadata` jsonb document — the same
+  scalar-columns-plus-context-document split the audit framework
+  chose. `extraction_error` jsonb is the actionable failure record:
+  a malformed binary records its machine-readable code and operator
+  message there while the status moves `VALIDATING` to `FAILED` (the
+  one transition S5-02 owns); an infrastructure miss (queue full,
+  storage unreadable after retries) records there too while the
+  status deliberately STAYS `VALIDATING` — the document is what makes
+  a missed extraction visible instead of silent.
 
 ## Status and type columns
 

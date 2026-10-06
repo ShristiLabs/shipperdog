@@ -454,17 +454,21 @@ class ArtifactUploadAdversarialTest {
         assertThat(store.hash(key).orElseThrow().sha256Hex()).isEqualTo(sha256Of(bytes));
 
         // No artifact route answers a mutation method: the collection
-        // refuses the method outright, the item path does not exist.
+        // and the item both refuse the method outright. The item path
+        // became a real route with S5-02's read endpoint, so mutation
+        // methods now answer 405 (method refused) instead of 404 (no
+        // route) — the invariant under test, no overwrite surface, is
+        // unchanged.
         assertThat(exchange("/api/v1/artifacts", uploaded.token(), "PUT", Map.of()).status)
                 .isEqualTo(405);
         assertThat(exchange("/api/v1/artifacts", uploaded.token(), "DELETE", null).status)
                 .isEqualTo(405);
         assertThat(exchange("/api/v1/artifacts/" + artifactId, uploaded.token(), "PATCH", Map.of()).status)
-                .isEqualTo(404);
+                .isEqualTo(405);
         assertThat(exchange("/api/v1/artifacts/" + artifactId, uploaded.token(), "PUT", Map.of()).status)
-                .isEqualTo(404);
+                .isEqualTo(405);
         assertThat(exchange("/api/v1/artifacts/" + artifactId, uploaded.token(), "DELETE", null).status)
-                .isEqualTo(404);
+                .isEqualTo(405);
 
         // FR-007's schema leg: no binary column anywhere in the
         // artifact tables.

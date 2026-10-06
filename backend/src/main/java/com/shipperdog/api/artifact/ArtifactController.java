@@ -14,6 +14,7 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.security.oauth2.jwt.Jwt;
+import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
@@ -131,6 +132,26 @@ public class ArtifactController {
         return ResponseEntity.status(outcome.created() ? HttpStatus.CREATED : HttpStatus.OK)
                 .contentType(MediaType.APPLICATION_JSON)
                 .body(outcome);
+    }
+
+    /**
+     * Reads one artifact (issue #21, S5-02): the read-back surface of
+     * the extraction tier — identity fields, lifecycle status, and
+     * the extraction outcome (PENDING in an upload response by
+     * construction; poll here to watch it settle). The {@code
+     * version_id} query parameter carries the permission target for
+     * the same reason the upload bodies do: the artifact collection
+     * route is body-addressed, so no route interceptor can bind the
+     * scope. A foreign artifact or a mismatched version is the
+     * concealed miss.
+     */
+    @GetMapping("/{artifactId}")
+    @PreAuthorize("hasPermission(#versionId, 'version', 'app:artifacts:read')")
+    ArtifactView get(
+            @AuthenticationPrincipal Object principal,
+            @PathVariable UUID artifactId,
+            @RequestParam("version_id") UUID versionId) {
+        return artifacts.get(requireUserId(principal), artifactId, versionId);
     }
 
     private static String originalName(MultipartFile file) {

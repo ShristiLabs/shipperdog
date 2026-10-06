@@ -29,8 +29,13 @@ Current contents:
   ownership scopes, shared-app authorization, org-wide administration
   listing, versions under an application with their lifecycle and
   permanent history, and the seam-served artifact uploads with their
-  object-storage layout) (S2-01, S2-02, S2-03, S3-01
-  through S3-04, S4-01 through S4-03, S5-01).
+  object-storage layout and background extraction) (S2-01, S2-02,
+  S2-03, S3-01 through S3-04, S4-01 through S4-03, S5-01, S5-02).
+- [Artifacts](artifacts.md) — the artifact surface end to end: upload
+  routes and object storage (S5-01), the read route with its
+  asynchronous extraction tier and stored failure codes, the parser
+  port the Android sibling (S5-03) implements, ARTIFACT_* environment
+  configuration, and the duplicate/immutability rules (S5-02).
 - [Admin console](frontend.md) — the React/MUI console (S2-04, S3-04):
   stack and structure, the shared API client (problem+json, correlation
   ids, cursor pagination), token storage and silent refresh, role-aware

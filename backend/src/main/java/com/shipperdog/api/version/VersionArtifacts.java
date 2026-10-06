@@ -40,9 +40,24 @@ public interface VersionArtifacts {
      * One artifact of a version, as the version views render it:
      * identity, platform, the client file name, the stored size and
      * SHA-256 checksum, the lifecycle status (PRD 18), and the upload
-     * timestamp. The build number and the extraction metadata of PRD
-     * 8.5 arrive with S5-02/03 and extend this tuple there.
+     * timestamp — plus, since S5-02 (issue #21), the extraction tier
+     * of PRD 8.5: the build number (CI-pinned at upload or extracted
+     * from the binary), the extracted identity fields S5-05's
+     * validation matching compares, and the extraction outcome
+     * ({@code PENDING|SUCCESS|FAILED|BLOCKED}) so a slot never hides a
+     * failed or blocked extraction behind VALIDATING.
      */
     record VersionArtifactSlot(
-            UUID id, String platform, String fileName, long size, String sha256, String status, Instant uploadedAt) {}
+            UUID id,
+            String platform,
+            String fileName,
+            long size,
+            String sha256,
+            String status,
+            Instant uploadedAt,
+            Long buildNumber,
+            String bundleId,
+            String versionName,
+            String minimumOs,
+            String extraction) {}
 }

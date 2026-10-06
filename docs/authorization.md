@@ -125,7 +125,10 @@ Since S1-08 denials render through the platform's single error envelope
 - **Resource-scoped denials are concealed as `404`.** When a
   `hasPermission(#id, ...)` check fails for an authenticated caller, the
   response is byte-for-byte what a genuine not-found for that resource
-  type produces (`ORGANIZATION_NOT_FOUND` / `TENANT_NOT_FOUND`, title
+  type produces (`ORGANIZATION_NOT_FOUND` / `TENANT_NOT_FOUND` /
+  `APPLICATION_NOT_FOUND` / `VERSION_NOT_FOUND` — the version target's
+  mapping since S5-02, when the artifact read began permission-checking
+  the version it carries; title
   `Not Found`, detail `Resource not found.`). A denied caller cannot
   distinguish an existing organization from an unknown id; a permitted
   caller still learns existence through ordinary `404`s.
@@ -309,6 +312,7 @@ tenant of their organization.
 |---|---|---|---|
 | POST | `/api/v1/artifacts` | `app:artifacts:upload` at the form's `version_id` | `201` registered artifact view (born `VALIDATING`, in-stream SHA-256, `duplicateOf` informational); `400` invalid fields/platform not registered; `415` `ARTIFACT_FILE_TYPE_REJECTED`; `413` `ARTIFACT_TOO_LARGE` (ceiling or over the resumable threshold); `409` `ARTIFACT_BUILD_TAKEN` / `APPLICATION_ARCHIVED` / `VERSION_IMMUTABLE`; `404` unknown or denied version (concealed); honors `Idempotency-Key` |
 | POST | `/api/v1/artifacts/upload-sessions` | `app:artifacts:upload` at the body's `versionId` | `201` session view (`artifactId`, `uploadUrl`, `expiresAt`); same guard codes as the multipart path, plus `400` on a non-positive `sizeHint` and `413` on an over-ceiling hint; `404` unknown or denied version (concealed); honors `Idempotency-Key` |
+| GET | `/api/v1/artifacts/{artifactId}?version_id={versionId}` | `app:artifacts:read` at the query's `version_id` | `200` artifact view with the extraction tier (`bundleId`, `versionName`, `minimumOs`, `buildNumber`, `extraction.status` — always `PENDING` in an upload response, settled here: `SUCCESS`/`FAILED`/`BLOCKED` with `errorCode`/`errorMessage`); `404` unknown artifact under the caller's own version (`ARTIFACT_NOT_FOUND`) or unknown/denied version (concealed `VERSION_NOT_FOUND`) (S5-02, issue #21) |
 | POST | `/api/v1/artifacts/{artifactId}/finalize` | `app:artifacts:upload` at the body's `versionId` | `201 created=true` first registration, `200 created=false` replaying the registered artifact on retry; `400` no bytes/empty; `410` `UPLOAD_SESSION_EXPIRED`; `413` over-ceiling stored bytes; `409` `VERSION_IMMUTABLE` (freeze re-checked at finalize) / `APPLICATION_ARCHIVED`; `404` unknown artifact, session of another version, or denied version (all concealed, identical envelope); no `Idempotency-Key` — the state is the replay answer |
 
 Uploads of a frozen version are refused before any byte moves, and

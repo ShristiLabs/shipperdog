@@ -108,6 +108,29 @@ public class ArtifactEntity implements OrganizationScope, Persistable<UUID> {
 
     private Long buildNumber;
 
+    /**
+     * The extraction tier of V16 (issue #21, S5-02, FR-005): the
+     * identity fields S5-05's validation matching compares — written
+     * ONCE by the extraction job, null until then (and null forever
+     * for a FAILED extraction, which records {@code extractionError}
+     * instead). {@code buildNumber} above stays the CI-pinned value
+     * when the uploader pinned one; extraction fills it only when it
+     * was null.
+     */
+    private String bundleId;
+
+    private String versionName;
+
+    private String minimumOs;
+
+    /** The full extraction document (jsonb): signing, entitlements, timings. */
+    @JdbcTypeCode(SqlTypes.JSON)
+    private String extractedMetadata;
+
+    /** The actionable failure or block record (jsonb, V16; issue #21 AC3). */
+    @JdbcTypeCode(SqlTypes.JSON)
+    private String extractionError;
+
     @Enumerated(EnumType.STRING)
     @JdbcTypeCode(SqlTypes.NAMED_ENUM)
     private Status status;
@@ -238,8 +261,107 @@ public class ArtifactEntity implements OrganizationScope, Persistable<UUID> {
         return buildNumber;
     }
 
+    public String getBundleId() {
+        return bundleId;
+    }
+
+    public String getVersionName() {
+        return versionName;
+    }
+
+    public String getMinimumOs() {
+        return minimumOs;
+    }
+
+    public String getExtractedMetadata() {
+        return extractedMetadata;
+    }
+
+    public String getExtractionError() {
+        return extractionError;
+    }
+
     public Status getStatus() {
         return status;
+    }
+
+    // -------------------------------------------------------------------------
+    // Extraction writes (issue #21, S5-02): once, and only once
+    // -------------------------------------------------------------------------
+
+    /** True once any extraction outcome — success, failure, or block — is recorded. */
+    public boolean extractionRecorded() {
+        return extractedMetadata != null || extractionError != null;
+    }
+
+    /**
+     * The one successful extraction write (async job): the scalar
+     * identity fields, the numeric build ONLY where the uploader did
+     * not pin one, and the jsonb document. Write-once by guard — a
+     * double-scheduled job is a no-op log line, never a second write
+     * over an immutable-history row.
+     */
+    public void applyExtraction(
+            String extractedBundleId,
+            String extractedVersionName,
+            String extractedMinimumOs,
+            Long extractedBuildNumber,
+            String metadataDocument) {
+        requireExtractionNotRecorded();
+        this.bundleId = extractedBundleId;
+        this.versionName = extractedVersionName;
+        this.minimumOs = extractedMinimumOs;
+        if (this.buildNumber == null && extractedBuildNumber != null) {
+            this.buildNumber = extractedBuildNumber;
+        }
+        this.extractedMetadata = metadataDocument;
+    }
+
+    /**
+     * The malformed-binary outcome (issue #21 AC3): the actionable
+     * error records and the status moves VALIDATING to FAILED — the
+     * one transition S5-02 owns; every later transition belongs to
+     * S5-05's validation pipeline. Bytes stay stored and immutable.
+     */
+    public void recordExtractionFailure(String errorDocument) {
+        requireExtractionNotRecorded();
+        this.extractionError = errorDocument;
+        if (this.status == Status.VALIDATING) {
+            this.status = Status.FAILED;
+        }
+    }
+
+    /**
+     * The infra outcome (queue full, storage unreadable after
+     * retries): the error records so the missed extraction is VISIBLE,
+     * and the status deliberately stays VALIDATING — the binary did
+     * nothing wrong, and S5-05's pipeline (or a re-extraction follow-
+     * up) decides its fate.
+     */
+    public void noteExtractionBlocked(String errorDocument) {
+        requireExtractionNotRecorded();
+        this.extractionError = errorDocument;
+    }
+
+    /**
+     * The extraction state views render: PENDING (nothing recorded),
+     * SUCCESS (a document), FAILED (an error on a FAILED row), or
+     * BLOCKED (an error on a still-VALIDATING row).
+     */
+    public String extractionOutcome() {
+        if (extractedMetadata != null) {
+            return "SUCCESS";
+        }
+        if (extractionError != null) {
+            return status == Status.FAILED ? "FAILED" : "BLOCKED";
+        }
+        return "PENDING";
+    }
+
+    private void requireExtractionNotRecorded() {
+        if (extractionRecorded()) {
+            throw new IllegalStateException("an extraction outcome is already recorded for artifact " + id);
+        }
     }
 
     public UUID getUploadedBy() {

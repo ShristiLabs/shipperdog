@@ -115,7 +115,14 @@ either upload path, carrying `versionId` and `artifactId` entity
 references with `platform`, `fileName`, `size`, `sha256`, and the
 carrying `path` (`multipart` or `resumable`) in the detail map — the
 FR-024 actor/version/platform/checksum record; a finalize replay
-writes no second event, the registered row already has its trail),
+writes no second event, the registered row already has its trail;
+`ARTIFACT_METADATA_EXTRACTED` — issue #21/S5-02: the async extraction
+job's terminal outcome, success or failure, carrying `versionId` and
+`artifactId` entity references with `platform` and either the
+extracted fields (`bundleId`, `versionName`, `buildNumber`,
+`minimumOs`, `parser`, `durationMs`) or the failure's `errorCode` and
+`error`; recorded once per artifact — the row's write-once extraction
+guard makes a double schedule a no-op),
 and
 platform (`ACCESS_DENIED`, S1-06).
 
