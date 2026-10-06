@@ -1,13 +1,13 @@
 package com.shipperdog.api.authorization.internal.grant;
 
-import com.shipperdog.api.application.ApplicationAccess;
 import com.shipperdog.api.authorization.AuthorizationEntitlement;
-import com.shipperdog.api.authorization.internal.grant.VersionAccessGrantEntity.AccessType;
-import com.shipperdog.api.tester.TenantTesterMembershipAccess;
+import com.shipperdog.api.authorization.internal.cache.AuthorizationDecisionCache.CachedGrant;
+import com.shipperdog.api.authorization.internal.cache.DecisionInputs;
 import com.shipperdog.api.tester.TesterAccess;
 import com.shipperdog.api.version.VersionAccess;
 import java.time.Clock;
 import java.time.Instant;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
 import org.springframework.core.annotation.Order;
@@ -30,25 +30,33 @@ import org.springframework.stereotype.Component;
  *   <li><strong>Tenant-owned applications</strong> — the engine's
  *       query carries the owning tenant, and the TENANT layer has
  *       already verified the subject's tester-persona access to that
- *       very tenant (the two-switches rule, live-queried, order 300
- *       before the version layer's 500): a grant through that tenant
- *       covers the addressed version per its shape, no re-derivation.</li>
+ *       very tenant (the two-switches rule, resolved through the
+ *       decision-input cache at order 300, before the version layer's
+ *       500): a grant through that tenant covers the addressed
+ *       version per its shape, no re-derivation.</li>
  *   <li><strong>Organization-shared applications</strong> (query
- *       tenant null) — the subject's grants for the application
- *       resolve across tenants by (tester, application); each grant
- *       carries its own granting tenant, and the contributor matches
- *       it live: the subject's access to that tenant must be
- *       effective (the same two-switches rule, re-checked here
- *       because the engine's tenant layer verified the ORGANIZATION
- *       dimension for shared applications, not this tenant) and the
- *       granting tenant must still hold the application (the ACTIVE
- *       S3-03 mapping). A de-authorization or suspension denies on
- *       the next evaluation.</li>
+ *       tenant null) — the subject's linked-tenant set resolves the
+ *       candidate grants (the cached per-tenant sets, filtered by
+ *       application in memory); each grant carries its own granting
+ *       tenant, and the contributor matches it live: the subject's
+ *       access to that tenant must be effective (the same
+ *       two-switches rule, re-checked here because the engine's
+ *       tenant layer verified the ORGANIZATION dimension for shared
+ *       applications, not this tenant) and the granting tenant must
+ *       still hold the application (the ACTIVE S3-03 mapping). A
+ *       de-authorization or a suspension denies on the next
+ *       evaluation.</li>
  * </ul>
  *
- * <p>Semantics — the four FR-011 shapes, each an indexed point
- * lookup (the PRD 42 under-100 ms decision SLO; S7-03 caches above
- * this seam, this story does not):
+ * <p>Semantics — the four FR-011 shapes, each computed from the
+ * cached grant set at evaluation time (the PRD 42 under-100 ms
+ * decision SLO; since S7-03, issue #32, the grant SET per tester x
+ * tenant, the membership flag, the visibility flag, and the linked-
+ * tenant set resolve through the Redis decision-input cache with
+ * write-through invalidation — a warm decision makes no grant-table
+ * descent; the tag and working-set probes below stay LIVE because
+ * they track version lifecycle, which mutations outside the cache's
+ * invalidation set change continuously):
  *
  * <ul>
  *   <li>{@code EXPLICIT_VERSION}: a grant whose version is the
@@ -74,24 +82,15 @@ import org.springframework.stereotype.Component;
 @Order(300)
 class VersionAccessGrantEntitlement implements AuthorizationEntitlement {
 
-    private final VersionAccessGrantCatalog grants;
+    private final DecisionInputs decisionInputs;
     private final TesterAccess testers;
-    private final TenantTesterMembershipAccess memberships;
-    private final ApplicationAccess applications;
     private final VersionAccess versions;
     private final Clock clock;
 
     VersionAccessGrantEntitlement(
-            VersionAccessGrantCatalog grants,
-            TesterAccess testers,
-            TenantTesterMembershipAccess memberships,
-            ApplicationAccess applications,
-            VersionAccess versions,
-            Clock clock) {
-        this.grants = grants;
+            DecisionInputs decisionInputs, TesterAccess testers, VersionAccess versions, Clock clock) {
+        this.decisionInputs = decisionInputs;
         this.testers = testers;
-        this.memberships = memberships;
-        this.applications = applications;
         this.versions = versions;
         this.clock = clock;
     }
@@ -99,17 +98,16 @@ class VersionAccessGrantEntitlement implements AuthorizationEntitlement {
     @Override
     public boolean isEntitled(EntitlementQuery query) {
         try {
-            UUID testerId = testers.testerIdOfUser(query.subjectUserId()).orElse(null);
+            UUID subject = query.subjectUserId();
+            UUID testerId = testers.testerIdOfUser(subject).orElse(null);
             if (testerId == null) {
                 return false;
             }
             Instant now = Instant.now(clock);
-            List<VersionAccessGrantEntity> live =
-                    grants.findByTesterIdAndApplicationId(testerId, query.applicationId()).stream()
-                            .filter(grant -> grant.getExpiresAt() == null
-                                    || grant.getExpiresAt().isAfter(now))
-                            .toList();
-            for (VersionAccessGrantEntity grant : live) {
+            for (CachedGrant grant : candidateGrants(query, testerId)) {
+                if (isExpired(grant, now)) {
+                    continue;
+                }
                 if (reachesThrough(grant, query, testerId) && covers(grant, query)) {
                     return true;
                 }
@@ -121,6 +119,37 @@ class VersionAccessGrantEntitlement implements AuthorizationEntitlement {
     }
 
     /**
+     * The subject's candidate grants for the addressed application:
+     * the engine-verified tenant's cached set for a tenant-owned
+     * application (one cache entry), or — for an organization-shared
+     * application — the union of the cached per-tenant sets across
+     * the subject's linked tenants, filtered by application. Complete
+     * by construction: a grant's creation requires a retained
+     * membership row, and removal retains the row, so every grant's
+     * tenant sits in the linked-tenant set.
+     */
+    private List<CachedGrant> candidateGrants(EntitlementQuery query, UUID testerId) {
+        if (query.tenantId() != null) {
+            return grantsForApplication(query.tenantId(), testerId, query.applicationId());
+        }
+        List<CachedGrant> candidates = new ArrayList<>();
+        for (UUID tenantId : decisionInputs.tenantsOfTester(testerId)) {
+            candidates.addAll(grantsForApplication(tenantId, testerId, query.applicationId()));
+        }
+        return candidates;
+    }
+
+    private List<CachedGrant> grantsForApplication(UUID tenantId, UUID testerId, UUID applicationId) {
+        return decisionInputs.grantsOf(tenantId, testerId).stream()
+                .filter(grant -> grant.applicationId().equals(applicationId))
+                .toList();
+    }
+
+    private static boolean isExpired(CachedGrant grant, Instant now) {
+        return grant.expiresAt() != null && grant.expiresAt() <= CachedGrant.epochMicros(now);
+    }
+
+    /**
      * Whether the subject reaches the application through the grant's
      * tenant at evaluation time: for a tenant-owned application the
      * engine's tenant layer already verified exactly this tenant (no
@@ -128,24 +157,23 @@ class VersionAccessGrantEntitlement implements AuthorizationEntitlement {
      * organization-shared application the grant's own tenant is
      * matched live (effective membership + the S3-03 mapping).
      */
-    private boolean reachesThrough(VersionAccessGrantEntity grant, EntitlementQuery query, UUID testerId) {
+    private boolean reachesThrough(CachedGrant grant, EntitlementQuery query, UUID testerId) {
         if (query.tenantId() != null) {
-            return query.tenantId().equals(grant.getTenantId());
+            return query.tenantId().equals(grant.tenantId());
         }
-        return memberships.isEffectivelyActive(grant.getTenantId(), testerId)
-                && applications.visibleToTenant(query.applicationId(), grant.getTenantId());
+        return decisionInputs.effectiveMembership(grant.tenantId(), testerId)
+                && decisionInputs.visibleToTenant(query.applicationId(), grant.tenantId());
     }
 
     /** The per-shape coverage check over the addressed version. */
-    private boolean covers(VersionAccessGrantEntity grant, EntitlementQuery query) {
-        AccessType shape = grant.getAccessType();
-        return switch (shape) {
-            case EXPLICIT_VERSION ->
-                grant.getVersionId() != null && grant.getVersionId().equals(query.versionId());
-            case APPLICATION -> true;
-            case TAG -> grant.getTag() != null && versions.versionHasTag(query.versionId(), grant.getTag());
-            case LATEST_N ->
-                grant.getLatestN() != null && versions.isWithinLatestWorkingSetN(query.versionId(), grant.getLatestN());
+    private boolean covers(CachedGrant grant, EntitlementQuery query) {
+        return switch (grant.accessType()) {
+            case "EXPLICIT_VERSION" ->
+                grant.versionId() != null && grant.versionId().equals(query.versionId());
+            case "APPLICATION" -> true;
+            case "TAG" -> grant.tag() != null && versions.versionHasTag(query.versionId(), grant.tag());
+            case "LATEST_N" ->
+                grant.latestN() != null && versions.isWithinLatestWorkingSetN(query.versionId(), grant.latestN());
             default -> false;
         };
     }

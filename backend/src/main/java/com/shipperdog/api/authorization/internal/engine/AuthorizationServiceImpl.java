@@ -98,6 +98,11 @@ class AuthorizationServiceImpl implements AuthorizationService {
         return decide(context, "inspect");
     }
 
+    @Override
+    public AuthorizationDecision decideForApi(AuthorizationContext context) {
+        return decide(context, "decision-api");
+    }
+
     private AuthorizationDecision decide(AuthorizationContext context, String surface) {
         Timer.Sample sample = Timer.start(meters);
         AuthorizationDecision decision = decideFailClosed(context);

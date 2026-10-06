@@ -8,6 +8,8 @@ import com.shipperdog.api.authorization.AuthorizationContext;
 import com.shipperdog.api.authorization.AuthorizationDecision;
 import com.shipperdog.api.authorization.AuthorizationDecision.Status;
 import com.shipperdog.api.authorization.DenialReason;
+import com.shipperdog.api.authorization.internal.cache.AuthorizationDecisionCache.CachedGrant;
+import com.shipperdog.api.authorization.internal.cache.DecisionInputs;
 import com.shipperdog.api.authorization.internal.evaluator.UserRolesSnapshot;
 import com.shipperdog.api.identity.UserDirectory;
 import com.shipperdog.api.organization.OrgRole;
@@ -190,8 +192,12 @@ class LayeredEngineUnitTest {
 
             @Override
             public boolean isEffectivelyActive(UUID tenantId, UUID testerId) {
-                effectiveMembershipCalls++;
                 return effectiveMembership;
+            }
+
+            @Override
+            public List<UUID> tenantIdsOfTester(UUID testerId) {
+                return effectiveMembership ? List.of(TENANT) : List.of();
             }
         };
         final TesterAccess testers = new TesterAccess() {
@@ -274,11 +280,44 @@ class LayeredEngineUnitTest {
                         : Optional.empty();
             }
         };
-        final ArtifactAccess artifacts = artifactId -> {
-            artifactStateCalls++;
-            return artifactKnown
-                    ? Optional.of(new ArtifactAccess.ArtifactState(ARTIFACT, VERSION, artifactPlatform, artifactStatus))
-                    : Optional.empty();
+        final ArtifactAccess artifacts = new ArtifactAccess() {
+            @Override
+            public Optional<ArtifactState> stateOf(UUID artifactId) {
+                artifactStateCalls++;
+                return artifactKnown
+                        ? Optional.of(new ArtifactState(ARTIFACT, VERSION, artifactPlatform, artifactStatus))
+                        : Optional.empty();
+            }
+
+            @Override
+            public Optional<IssuanceInputs> issuanceInputsOf(UUID versionId, String platform) {
+                return artifactKnown && artifactPlatform.equals(platform)
+                        ? Optional.of(new IssuanceInputs(ARTIFACT, VERSION, platform, artifactStatus, "test/key"))
+                        : Optional.empty();
+            }
+        };
+        final DecisionInputs decisionInputs = new DecisionInputs() {
+            @Override
+            public List<CachedGrant> grantsOf(UUID tenantId, UUID testerId) {
+                return List.of();
+            }
+
+            @Override
+            public List<UUID> tenantsOfTester(UUID testerId) {
+                return List.of();
+            }
+
+            @Override
+            public boolean effectiveMembership(UUID tenantId, UUID testerId) {
+                effectiveMembershipCalls++;
+                return effectiveMembership;
+            }
+
+            @Override
+            public boolean visibleToTenant(UUID applicationId, UUID tenantId) {
+                visibleToTenantCalls++;
+                return visibleToTenant;
+            }
         };
     }
 
@@ -345,7 +384,7 @@ class LayeredEngineUnitTest {
 
     @Test
     void tenantLayerAdmitsTheTesterPersonaOnEffectiveMembershipOnly() {
-        TenantLayer layer = new TenantLayer(world.testerMemberships);
+        TenantLayer layer = new TenantLayer(world.decisionInputs);
         AuthorizationContext context = AuthorizationContext.listApplications(USER, TENANT);
 
         // A linked tester with both switches on: TENANT dimension, no
@@ -373,7 +412,7 @@ class LayeredEngineUnitTest {
 
     @Test
     void tenantLayerAdmitsTheRolePersonaThroughTenantOrOverlayRoles() {
-        TenantLayer layer = new TenantLayer(world.testerMemberships);
+        TenantLayer layer = new TenantLayer(world.decisionInputs);
         AuthorizationContext context = AuthorizationContext.listApplications(USER, TENANT);
 
         assertThat(layer.evaluate(stateWith(null, TenantRole.TENANT_ADMIN, false), context)
@@ -401,7 +440,7 @@ class LayeredEngineUnitTest {
         ApplicationLayer layer = new ApplicationLayer(world.applications);
         AuthorizationContext download = AuthorizationContext.download(USER, TENANT, APP, VERSION, ARTIFACT, "ANDROID");
         EvaluationState tenantDimension = stateWith(OrgRole.DEVELOPER, null, false);
-        new TenantLayer(world.testerMemberships)
+        new TenantLayer(world.decisionInputs)
                 .evaluate(tenantDimension, AuthorizationContext.listApplications(USER, TENANT));
 
         // Tenant-owned application: visible by ownership.
@@ -418,7 +457,7 @@ class LayeredEngineUnitTest {
         // ownership resolution caches per decision by design).
         world.applicationKnown = false;
         EvaluationState missing = stateWith(OrgRole.DEVELOPER, null, false);
-        new TenantLayer(world.testerMemberships).evaluate(missing, AuthorizationContext.listApplications(USER, TENANT));
+        new TenantLayer(world.decisionInputs).evaluate(missing, AuthorizationContext.listApplications(USER, TENANT));
         assertThat(layer.evaluate(missing, download).reason()).isEqualTo(DenialReason.APPLICATION_MISSING);
 
         // List decisions skip the per-item question (the set form is
@@ -577,7 +616,7 @@ class LayeredEngineUnitTest {
                 List.of(
                         new UserLayer(world.users),
                         new OrganizationLayer(world.tenants, world.organizations),
-                        new TenantLayer(world.testerMemberships),
+                        new TenantLayer(world.decisionInputs),
                         new ApplicationLayer(world.applications),
                         new VersionLayer(entitlements(RoleOverlayTestContributor.entitleAll())),
                         new ArtifactLayer(),
@@ -703,7 +742,7 @@ class LayeredEngineUnitTest {
         List<AuthorizationLayer> layers = List.of(
                 new UserLayer(world.users),
                 new OrganizationLayer(world.tenants, world.organizations),
-                new TenantLayer(world.testerMemberships),
+                new TenantLayer(world.decisionInputs),
                 new ApplicationLayer(world.applications),
                 new VersionLayer(entitlements),
                 new ArtifactLayer(),

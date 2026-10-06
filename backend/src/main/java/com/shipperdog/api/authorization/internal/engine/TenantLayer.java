@@ -2,7 +2,7 @@ package com.shipperdog.api.authorization.internal.engine;
 
 import com.shipperdog.api.authorization.AuthorizationContext;
 import com.shipperdog.api.authorization.DenialReason;
-import com.shipperdog.api.tester.TenantTesterMembershipAccess;
+import com.shipperdog.api.authorization.internal.cache.DecisionInputs;
 import java.util.Optional;
 import java.util.UUID;
 import org.springframework.stereotype.Component;
@@ -19,12 +19,16 @@ import org.springframework.stereotype.Component;
  *       engine, like the RBAC evaluator, never denies them here).</li>
  *   <li><strong>TENANT</strong> — either the tester persona: a linked
  *       tester person record whose access is EFFECTIVE (the S6-03
- *       two-switches rule, a LIVE query — person record ACTIVE and
- *       membership ACTIVE, so a suspension or removal denies on the
- *       very next evaluation), or the console persona: a tenant role
- *       or the owning organization's overlay role in the snapshot
- *       (the RBAC union rule). A tester reaching this dimension holds
- *       no role at all — the membership IS the access.</li>
+ *       two-switches rule — person record ACTIVE and membership ACTIVE,
+ *       both switches resolved through the decision-input cache since
+ *       S7-03: write-through invalidation on every membership and
+ *       person-status mutation keeps the flag decision-fresh, with the
+ *       TTL as the backstop, so a suspension or removal denies on the
+ *       next evaluation after the invalidating commit), or the console
+ *       persona: a tenant role or the owning organization's overlay
+ *       role in the snapshot (the RBAC union rule). A tester reaching
+ *       this dimension holds no role at all — the membership IS the
+ *       access.</li>
  *   <li><strong>ORGANIZATION</strong> — organization-shared
  *       applications (S3-02/PRD 14) addressed without a tenant: an
  *       organization role reaches them; a pure tester does not, because
@@ -40,10 +44,10 @@ import org.springframework.stereotype.Component;
 @Component
 class TenantLayer implements AuthorizationLayer {
 
-    private final TenantTesterMembershipAccess testerMemberships;
+    private final DecisionInputs decisionInputs;
 
-    TenantLayer(TenantTesterMembershipAccess testerMemberships) {
-        this.testerMemberships = testerMemberships;
+    TenantLayer(DecisionInputs decisionInputs) {
+        this.decisionInputs = decisionInputs;
     }
 
     @Override
@@ -81,7 +85,7 @@ class TenantLayer implements AuthorizationLayer {
             boolean sameOrganization = testerOrganization != null
                     && state.organizationOfTester(testerId.get()).stream()
                             .anyMatch(org -> org.equals(testerOrganization));
-            if (sameOrganization && testerMemberships.isEffectivelyActive(tenantId, testerId.get())) {
+            if (sameOrganization && decisionInputs.effectiveMembership(tenantId, testerId.get())) {
                 state.recordDimension(new EvaluationState.AccessDimension(
                         EvaluationState.AccessDimension.Kind.TENANT, testerOrganization, tenantId));
                 return Verdict.passed("effective tester membership (two switches on)");

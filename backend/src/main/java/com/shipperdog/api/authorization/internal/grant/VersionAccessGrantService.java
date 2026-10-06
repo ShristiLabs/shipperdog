@@ -5,6 +5,8 @@ import com.shipperdog.api.audit.AuditEvent;
 import com.shipperdog.api.audit.AuditEventType;
 import com.shipperdog.api.audit.AuditLogger;
 import com.shipperdog.api.authorization.AuthorizationGrantException;
+import com.shipperdog.api.authorization.internal.cache.AuthorizationDecisionCache;
+import com.shipperdog.api.authorization.internal.cache.AuthorizationDecisionCache.CachedGrant;
 import com.shipperdog.api.authorization.internal.grant.EffectiveAccessResolver.EffectiveEntry;
 import com.shipperdog.api.authorization.internal.grant.EffectiveAccessResolver.EffectiveSet;
 import com.shipperdog.api.authorization.internal.grant.EffectiveAccessResolver.GrantShape;
@@ -89,6 +91,7 @@ public class VersionAccessGrantService {
     private final TenantTesterMembershipAccess memberships;
     private final ApplicationAccess applications;
     private final VersionAccess versions;
+    private final AuthorizationDecisionCache decisionCache;
     private final AuditLogger audit;
     private final Clock clock;
 
@@ -100,6 +103,7 @@ public class VersionAccessGrantService {
             TenantTesterMembershipAccess memberships,
             ApplicationAccess applications,
             VersionAccess versions,
+            AuthorizationDecisionCache decisionCache,
             AuditLogger audit,
             Clock clock) {
         this.grants = grants;
@@ -109,6 +113,7 @@ public class VersionAccessGrantService {
         this.memberships = memberships;
         this.applications = applications;
         this.versions = versions;
+        this.decisionCache = decisionCache;
         this.audit = audit;
         this.clock = clock;
     }
@@ -216,6 +221,15 @@ public class VersionAccessGrantService {
                 actorId);
         try {
             VersionAccessGrantEntity saved = grants.saveScoped(grant);
+            // Write-through (S7-03, AC2): create is deliberately
+            // non-transactional (the link discipline above), so the
+            // inner save has committed by the time this runs — the
+            // drop lands immediately after the new state exists and
+            // before any reader can be served another decision on the
+            // old set; a concurrent refill race is bounded by the TTL
+            // (the safe direction: it can only delay a brand-new
+            // grant's effect, never extend a deleted one's).
+            decisionCache.invalidateGrantSet(tenantId, testerId);
             auditGrant(
                     AuditEventType.AUTHORIZATION_GRANT_CREATED,
                     actorId,
@@ -285,6 +299,10 @@ public class VersionAccessGrantService {
         Instant before = grant.getExpiresAt();
         grant.setExpiresAt(next);
         VersionAccessGrantEntity saved = grants.saveScoped(grant);
+        // Write-through (S7-03, AC2): this transaction holds the
+        // mutation, so the drop registers at before-commit — the
+        // moment the new expiry becomes visible, the old set is gone.
+        decisionCache.invalidateGrantSet(tenantId, grant.getTesterId());
         Map<String, String> detail = new LinkedHashMap<>(shapeDetail(saved));
         detail.put("expiry.before", String.valueOf(before));
         detail.put("expiry.after", String.valueOf(next));
@@ -313,6 +331,9 @@ public class VersionAccessGrantService {
         requireReason(reason);
         VersionAccessGrantEntity grant = mustFind(tenantId, grantId);
         grants.delete(grant);
+        // Write-through (S7-03, AC2): the drop rides this transaction
+        // at before-commit — revocation immediacy is the point.
+        decisionCache.invalidateGrantSet(tenantId, grant.getTesterId());
         Map<String, String> detail = new LinkedHashMap<>(shapeDetail(grant));
         detail.put("testerId", String.valueOf(grant.getTesterId()));
         audit.record(AuditEvent.builder(AuditEventType.AUTHORIZATION_GRANT_DELETED)
@@ -339,7 +360,11 @@ public class VersionAccessGrantService {
      * The {@code effectiveAccess} flag is the two-switches rule
      * live-evaluated (person record ACTIVE and membership ACTIVE) —
      * a suspended tester's grants stay listed but authorize nothing
-     * until re-enabled.
+     * until re-enabled. Since S7-03 the grant set and the flag
+     * resolve through the decision-input cache (write-through
+     * invalidated, TTL-backed); the version catalog and the tagged
+     * sets stay live so version lifecycle is reflected on the very
+     * next read.
      */
     @Transactional(readOnly = true)
     public EffectiveAccessView effective(UUID tenantId, UUID testerId, UUID applicationId) {
@@ -351,11 +376,25 @@ public class VersionAccessGrantService {
                     "the tester holds no membership row with the tenant");
         }
         requireVisibleApplication(applicationId, tenantId);
+        return resolveEffective(tenantId, visibleTester, applicationId);
+    }
+
+    /**
+     * The effective-set computation the validated admin view and the
+     * decision API's self-scoped eligibility listing share (S7-03):
+     * callers perform their OWN authorization and concealment first
+     * (the admin route its tenant/tester/application validation, the
+     * eligibility route its engine decision and visibility check),
+     * then this resolves the tester's authorized version set from
+     * the cached grant set and the live version catalog.
+     */
+    @Transactional(readOnly = true)
+    public EffectiveAccessView resolveEffective(UUID tenantId, UUID testerId, UUID applicationId) {
         Instant now = Instant.now(clock);
-        List<VersionAccessGrantEntity> rows =
-                catalog.findByTenantIdAndTesterIdAndApplicationId(tenantId, visibleTester, applicationId);
-        List<GrantShape> shapes =
-                rows.stream().map(VersionAccessGrantService::shapeOf).toList();
+        List<GrantShape> shapes = decisionCache.grantsOf(tenantId, testerId).stream()
+                .filter(grant -> grant.applicationId().equals(applicationId))
+                .map(VersionAccessGrantService::shapeOf)
+                .toList();
         List<VersionCatalogEntry> versionCatalog = versions.catalogOfApplication(applicationId);
         Map<String, Set<UUID>> tagged = taggedVersionSets(applicationId, shapes, now);
         EffectiveSet set = EffectiveAccessResolver.resolve(shapes, versionCatalog, tagged, now);
@@ -367,9 +406,9 @@ public class VersionAccessGrantService {
                 .toList();
         return new EffectiveAccessView(
                 tenantId,
-                visibleTester,
+                testerId,
                 applicationId,
-                memberships.isEffectivelyActive(tenantId, visibleTester),
+                decisionCache.effectiveMembership(tenantId, testerId),
                 now,
                 entries,
                 expiredGrantCount);
@@ -626,6 +665,17 @@ public class VersionAccessGrantService {
                 grant.getTag(),
                 grant.getLatestN(),
                 grant.getExpiresAt());
+    }
+
+    /** The cached tuple's shape: the same facts, epoch-micros expiry. */
+    private static GrantShape shapeOf(CachedGrant grant) {
+        return new GrantShape(
+                grant.grantId(),
+                AccessType.valueOf(grant.accessType()),
+                grant.versionId(),
+                grant.tag(),
+                grant.latestN(),
+                grant.expiresAt() == null ? null : CachedGrant.instantOf(grant.expiresAt()));
     }
 
     private static EffectiveEntryView entryViewOf(EffectiveEntry entry) {

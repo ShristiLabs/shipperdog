@@ -3,6 +3,10 @@ package com.shipperdog.api.artifact.internal.repository;
 import com.shipperdog.api.artifact.ArtifactAccess;
 import com.shipperdog.api.artifact.internal.entity.ArtifactEntity;
 import com.shipperdog.api.tenant.CrossTenantByDesign;
+import java.util.Collection;
+import java.util.EnumSet;
+import java.util.List;
+import java.util.Locale;
 import java.util.Optional;
 import java.util.UUID;
 import org.springframework.data.jpa.repository.JpaRepository;
@@ -46,6 +50,25 @@ public interface ArtifactRegistryRepository extends JpaRepository<ArtifactEntity
     @Query("select a from ArtifactEntity a where a.id = :id")
     Optional<ArtifactEntity> findArtifactById(@Param("id") UUID id);
 
+    /**
+     * The version's distributable artifact for the platform (issue
+     * #32, S7-03): the issuance-inputs lookup behind the decision
+     * API's ALLOW path — one indexed descent on the artifact table,
+     * newest first with the id tiebreaker, restricted to the
+     * distributable lifecycle statuses (PRD 18) so the decision API
+     * can never hand the portal a storage key whose bytes are not yet
+     * settled. Authorization data in the same registry-read character
+     * as {@link #findArtifactById}; never an endpoint data path.
+     */
+    @Query("select a from ArtifactEntity a"
+            + " where a.versionId = :versionId and a.platform = :platform"
+            + " and a.status in :distributable"
+            + " order by a.createdAt desc, a.id asc")
+    List<ArtifactEntity> findDistributableByVersionAndPlatform(
+            @Param("versionId") UUID versionId,
+            @Param("platform") ArtifactEntity.Platform platform,
+            @Param("distributable") Collection<ArtifactEntity.Status> distributable);
+
     /** Decision-input resolution for the E7 authorization chain; tuples only, never rows. */
     @Override
     default Optional<ArtifactState> stateOf(UUID artifactId) {
@@ -55,5 +78,26 @@ public interface ArtifactRegistryRepository extends JpaRepository<ArtifactEntity
                         artifact.getVersionId(),
                         artifact.getPlatform().name(),
                         artifact.getStatus().name()));
+    }
+
+    /** The issuance-inputs resolution of the decision API; tuples only, never rows. */
+    @Override
+    default Optional<IssuanceInputs> issuanceInputsOf(UUID versionId, String platform) {
+        ArtifactEntity.Platform pinned;
+        try {
+            pinned = ArtifactEntity.Platform.valueOf(platform.trim().toUpperCase(Locale.ROOT));
+        } catch (IllegalArgumentException e) {
+            return Optional.empty();
+        }
+        return findDistributableByVersionAndPlatform(
+                        versionId, pinned, EnumSet.of(ArtifactEntity.Status.READY, ArtifactEntity.Status.DISTRIBUTED))
+                .stream()
+                .findFirst()
+                .map(artifact -> new IssuanceInputs(
+                        artifact.getId(),
+                        artifact.getVersionId(),
+                        artifact.getPlatform().name(),
+                        artifact.getStatus().name(),
+                        artifact.getStorageKey()));
     }
 }

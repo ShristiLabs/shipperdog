@@ -76,6 +76,19 @@
       <groupId>org.springframework.boot</groupId>
       <artifactId>spring-boot-starter-data-jpa</artifactId>
     </dependency>
+    <!-- Redis (issue #32, S7-03): the decision-input cache's store — the
+         grant set per tester x tenant, the membership effectiveness
+         flag, and the tenant-application visibility flag the layered
+         engine's decision path resolves. The compose stack runs redis:8
+         (infrastructure/docker-compose.yml) and the API degrades to
+         direct evaluation when Redis is unavailable (fail-closed
+         correctness, slower — the story's AC3), which is also why the
+         Redis health indicator stays off: cache availability is not an
+         API health dependency by design. -->
+    <dependency>
+      <groupId>org.springframework.boot</groupId>
+      <artifactId>spring-boot-starter-data-redis</artifactId>
+    </dependency>
     <dependency>
       <groupId>org.springframework.boot</groupId>
       <artifactId>spring-boot-starter-actuator</artifactId>

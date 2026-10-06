@@ -30,8 +30,9 @@ module's public `OrganizationAccess` surface.
 
 - **Access tokens** are HS256 JWTs: `iss` (configurable), `sub` (user
   id), `type=access`, `jti`, `iat`, `exp`. TTL defaults to 15 minutes
-  (the issue caps it there; authorization caching in S7-03 must not
-  depend on it). Since S1-04 the `org_id` claim carries the user's
+  (the issue caps it there; the S7-03 decision-input cache does not
+  depend on it — it caches engine inputs in Redis, never token
+  claims). Since S1-04 the `org_id` claim carries the user's
   primary organization: the **earliest-created membership in an ACTIVE
   organization**. It is absent — never defaulted, never a deactivated
   organization's id — when the user has no active organization

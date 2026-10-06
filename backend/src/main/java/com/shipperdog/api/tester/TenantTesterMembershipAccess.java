@@ -1,5 +1,6 @@
 package com.shipperdog.api.tester;
 
+import java.util.List;
 import java.util.UUID;
 
 /**
@@ -14,6 +15,13 @@ import java.util.UUID;
  * like the authorization engine's role resolution. Implementation
  * lives in the module's {@code .internal.} packages; cross-module
  * callers must use only this interface (enforced by ArchUnit).
+ *
+ * <p>Since S7-03 (issue #32) the authorization module caches these
+ * lookups ABOVE this port — the engine's decision path resolves
+ * through the cache and falls back to these live queries on any cache
+ * miss or failure (fail-closed direct evaluation); the port itself
+ * stays live-query so every uncached consumer keeps the zero-staleness
+ * contract.
  */
 public interface TenantTesterMembershipAccess {
 
@@ -43,4 +51,19 @@ public interface TenantTesterMembershipAccess {
      * and a grant to them would be dead data the API refuses.
      */
     boolean membershipExists(UUID tenantId, UUID testerId);
+
+    /**
+     * Every tenant holding a retained membership row for the tester,
+     * any status, link-ordered (issue #32, S7-03): the decision-input
+     * cache's candidate set — the grant cache is keyed per tester x
+     * tenant (the story's technical note), so the shared-application
+     * probe (a grant may live under any tenant the tester reached)
+     * enumerates the linked tenants and resolves each per-tenant grant
+     * set. Complete by construction: a grant's creation requires a
+     * retained membership row, and removal retains the row REVOKED,
+     * so every grant's tenant appears here. Authorization data in the
+     * same live-query character as {@link #isEffectivelyActive};
+     * never an endpoint data path.
+     */
+    List<UUID> tenantIdsOfTester(UUID testerId);
 }

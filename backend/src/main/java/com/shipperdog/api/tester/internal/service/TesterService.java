@@ -3,6 +3,7 @@ package com.shipperdog.api.tester.internal.service;
 import com.shipperdog.api.audit.AuditEvent;
 import com.shipperdog.api.audit.AuditEventPublisher;
 import com.shipperdog.api.audit.AuditEventType;
+import com.shipperdog.api.authorization.AuthorizationDecisionInvalidation;
 import com.shipperdog.api.config.CursorPageable;
 import com.shipperdog.api.identity.SessionRevocation;
 import com.shipperdog.api.identity.TesterInvitations;
@@ -60,6 +61,7 @@ public class TesterService implements TesterOnboarding, TesterAccounts, TesterAc
     private final AuditEventPublisher audit;
     private final TesterConflictResolver conflicts;
     private final TesterCreationAttempt creation;
+    private final AuthorizationDecisionInvalidation decisionCache;
 
     /**
      * Both resolved lazily like {@code OrganizationService}'s
@@ -83,6 +85,7 @@ public class TesterService implements TesterOnboarding, TesterAccounts, TesterAc
             AuditEventPublisher audit,
             TesterConflictResolver conflicts,
             TesterCreationAttempt creation,
+            AuthorizationDecisionInvalidation decisionCache,
             ObjectProvider<TenantTesterMembershipService> memberships,
             ObjectProvider<SessionRevocation> sessions) {
         this.testers = testers;
@@ -94,6 +97,7 @@ public class TesterService implements TesterOnboarding, TesterAccounts, TesterAc
         this.audit = audit;
         this.conflicts = conflicts;
         this.creation = creation;
+        this.decisionCache = decisionCache;
         this.memberships = memberships;
         this.sessions = sessions;
     }
@@ -244,6 +248,14 @@ public class TesterService implements TesterOnboarding, TesterAccounts, TesterAc
         }
         tester.setStatus(target);
         TesterEntity saved = testers.save(tester);
+        // Write-through (S7-03, AC2): the person switch flips the
+        // two-switches rule for every retained membership row, and the
+        // DISABLED cascade below suspends the ACTIVE ones besides —
+        // drop the membership flags for every linked tenant before
+        // this transaction's state becomes visible, so the next
+        // decision after the commit sees the new person state.
+        decisionCache.invalidateMembershipsOfTester(
+                testerId, memberships.getObject().tenantIdsOfTester(testerId));
         Map<String, String> change = new LinkedHashMap<>();
         change.put("from", before.name());
         change.put("to", target.name());

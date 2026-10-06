@@ -3,14 +3,15 @@ package com.shipperdog.api.authorization.internal.grant;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
-import com.shipperdog.api.application.ApplicationAccess;
 import com.shipperdog.api.authorization.AuthorizationAction;
 import com.shipperdog.api.authorization.AuthorizationEntitlement.EntitlementQuery;
+import com.shipperdog.api.authorization.internal.cache.AuthorizationDecisionCache.CachedGrant;
+import com.shipperdog.api.authorization.internal.cache.DecisionInputs;
 import com.shipperdog.api.authorization.internal.grant.VersionAccessGrantEntity.AccessType;
-import com.shipperdog.api.tester.TenantTesterMembershipAccess;
 import com.shipperdog.api.tester.TesterAccess;
 import com.shipperdog.api.version.VersionAccess;
 import java.time.Clock;
@@ -23,12 +24,13 @@ import org.junit.jupiter.api.Test;
 
 /**
  * The grant contributor's per-shape semantics in isolation (issue
- * #31): each FR-011 shape's coverage over the addressed version, both
- * owning dimensions (tenant-owned and the S3-03-mapped shared case),
- * the expiry filter, the subject-to-tester resolution, the
- * one-descent probe discipline, and the fail-closed contract (a probe
- * that cannot run answers not-entitled, never an exception and never
- * an allow).
+ * #31, re-based onto the S7-03 decision-input seam): each FR-011
+ * shape's coverage over the addressed version, both owning dimensions
+ * (tenant-owned and the S3-03-mapped shared case), the expiry filter,
+ * the subject-to-tester resolution, the per-tenant set-read
+ * discipline (the cached unit of issue #32's technical note), and the
+ * fail-closed contract (an input that cannot run answers
+ * not-entitled, never an exception and never an allow).
  */
 class VersionAccessGrantEntitlementTest {
 
@@ -41,13 +43,11 @@ class VersionAccessGrantEntitlementTest {
     private static final UUID VERSION = UUID.randomUUID();
     private static final UUID OTHER_VERSION = UUID.randomUUID();
 
-    private final VersionAccessGrantCatalog catalog = mock(VersionAccessGrantCatalog.class);
+    private final DecisionInputs decisionInputs = mock(DecisionInputs.class);
     private final TesterAccess testers = mock(TesterAccess.class);
-    private final TenantTesterMembershipAccess memberships = mock(TenantTesterMembershipAccess.class);
-    private final ApplicationAccess applications = mock(ApplicationAccess.class);
     private final VersionAccess versions = mock(VersionAccess.class);
-    private final VersionAccessGrantEntitlement contributor = new VersionAccessGrantEntitlement(
-            catalog, testers, memberships, applications, versions, Clock.fixed(NOW, ZoneOffset.UTC));
+    private final VersionAccessGrantEntitlement contributor =
+            new VersionAccessGrantEntitlement(decisionInputs, testers, versions, Clock.fixed(NOW, ZoneOffset.UTC));
 
     @Test
     void explicitGrantCoversExactlyTheAddressedVersion() {
@@ -99,27 +99,32 @@ class VersionAccessGrantEntitlementTest {
     @Test
     void aSharedApplicationMatchesTheGrantsTenantLive() {
         // Organization-shared application (owning tenant null): the
-        // grant through the mapped tenant covers while both switches
-        // and the mapping hold.
-        given(grant(OTHER_TENANT, AccessType.APPLICATION, null, null, null, null));
-        when(memberships.isEffectivelyActive(OTHER_TENANT, TESTER)).thenReturn(true);
-        when(applications.visibleToTenant(APPLICATION, OTHER_TENANT)).thenReturn(true);
+        // candidate tenants resolve through the linked-tenant set, and
+        // each grant's own tenant is matched live — effective
+        // membership plus the S3-03 mapping.
+        when(testers.testerIdOfUser(SUBJECT)).thenReturn(Optional.of(TESTER));
+        when(decisionInputs.tenantsOfTester(TESTER)).thenReturn(List.of(OTHER_TENANT));
+        when(decisionInputs.grantsOf(OTHER_TENANT, TESTER))
+                .thenReturn(
+                        List.of(CachedGrant.of(grant(OTHER_TENANT, AccessType.APPLICATION, null, null, null, null))));
+        when(decisionInputs.effectiveMembership(OTHER_TENANT, TESTER)).thenReturn(true);
+        when(decisionInputs.visibleToTenant(APPLICATION, OTHER_TENANT)).thenReturn(true);
         assertThat(entitled(sharedQuery(VERSION))).isTrue();
 
         // Membership suspended (a switch off): denied on this
         // evaluation; re-enabling restores without any re-grant.
-        when(memberships.isEffectivelyActive(OTHER_TENANT, TESTER)).thenReturn(false);
+        when(decisionInputs.effectiveMembership(OTHER_TENANT, TESTER)).thenReturn(false);
         assertThat(entitled(sharedQuery(VERSION))).isFalse();
 
         // Mapping revoked (S3-03 de-authorization): denied live.
-        when(memberships.isEffectivelyActive(OTHER_TENANT, TESTER)).thenReturn(true);
-        when(applications.visibleToTenant(APPLICATION, OTHER_TENANT)).thenReturn(false);
+        when(decisionInputs.effectiveMembership(OTHER_TENANT, TESTER)).thenReturn(true);
+        when(decisionInputs.visibleToTenant(APPLICATION, OTHER_TENANT)).thenReturn(false);
         assertThat(entitled(sharedQuery(VERSION))).isFalse();
     }
 
     @Test
     void aSubjectWithoutATesterRecordIsNotEntitled() {
-        when(catalog.findByTesterIdAndApplicationId(any(), any())).thenReturn(List.of());
+        when(decisionInputs.grantsOf(any(), any())).thenReturn(List.of());
         when(testers.testerIdOfUser(SUBJECT)).thenReturn(Optional.empty());
         assertThat(entitled(query(VERSION))).isFalse();
     }
@@ -127,27 +132,29 @@ class VersionAccessGrantEntitlementTest {
     @Test
     void aFaultAnswersNotEntitledNeverAnException() {
         when(testers.testerIdOfUser(SUBJECT)).thenReturn(Optional.of(TESTER));
-        when(catalog.findByTesterIdAndApplicationId(any(), any()))
-                .thenThrow(new IllegalStateException("probe unavailable"));
+        when(decisionInputs.grantsOf(TENANT, TESTER)).thenThrow(new IllegalStateException("probe unavailable"));
         assertThat(entitled(query(VERSION)))
-                .as("fail-closed: a probe that cannot run does not authorize")
+                .as("fail-closed: an input that cannot run does not authorize")
                 .isFalse();
     }
 
     @Test
-    void theProbeIsOneDescentRegardlessOfGrantCount() {
-        // The memoization discipline (the UserRolesSnapshot analog):
-        // however many grants the tester holds, the subject's grants
-        // resolve in ONE catalog descent — the per-decision port
-        // budget S7-03 caches above.
+    void theProbeIsOneSetReadPerTenantRegardlessOfGrantCount() {
+        // The cached-unit discipline (issue #32's technical note):
+        // however many grants the tester holds through the tenant, the
+        // tenant-owned decision resolves ONE per-tenant set read and
+        // filters in memory — the cache entry a grant mutation
+        // invalidates; the shared-application path adds exactly one
+        // linked-tenant set read plus one set read per linked tenant.
         when(testers.testerIdOfUser(SUBJECT)).thenReturn(Optional.of(TESTER));
-        when(catalog.findByTesterIdAndApplicationId(TESTER, APPLICATION))
+        when(decisionInputs.grantsOf(TENANT, TESTER))
                 .thenReturn(List.of(
-                        grant(TENANT, AccessType.EXPLICIT_VERSION, VERSION, null, null, null),
-                        grant(TENANT, AccessType.APPLICATION, null, null, null, null),
-                        grant(TENANT, AccessType.LATEST_N, null, null, 2, null)));
+                        CachedGrant.of(grant(TENANT, AccessType.EXPLICIT_VERSION, VERSION, null, null, null)),
+                        CachedGrant.of(grant(TENANT, AccessType.APPLICATION, null, null, null, null)),
+                        CachedGrant.of(grant(TENANT, AccessType.LATEST_N, null, null, 2, null))));
         assertThat(entitled(query(VERSION))).isTrue();
-        verify(catalog, org.mockito.Mockito.times(1)).findByTesterIdAndApplicationId(TESTER, APPLICATION);
+        verify(decisionInputs, times(1)).grantsOf(TENANT, TESTER);
+        verify(decisionInputs, times(0)).tenantsOfTester(TESTER);
     }
 
     // -----------------------------------------------------------------------
@@ -172,7 +179,7 @@ class VersionAccessGrantEntitlementTest {
 
     private void given(VersionAccessGrantEntity grant) {
         when(testers.testerIdOfUser(SUBJECT)).thenReturn(Optional.of(TESTER));
-        when(catalog.findByTesterIdAndApplicationId(TESTER, APPLICATION)).thenReturn(List.of(grant));
+        when(decisionInputs.grantsOf(TENANT, TESTER)).thenReturn(List.of(CachedGrant.of(grant)));
     }
 
     private boolean entitled(EntitlementQuery query) {
