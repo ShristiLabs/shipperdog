@@ -123,7 +123,10 @@ registry of designated endpoints is
 header for same-role duplicates), `POST /api/v1/applications`
 (S3-01), `POST /api/v1/applications/{id}/versions` (S4-01),
 `POST /api/v1/artifacts` and `POST /api/v1/artifacts/upload-sessions`
-(S5-01, issue #20). The artifact finalize route is deliberately NOT in
+(S5-01, issue #20), and `POST /api/v1/testers` (S6-01, idempotent even
+without the header: a duplicate pending invite returns the existing
+tester `200` instead of re-minting). The artifact finalize route is
+deliberately NOT in
 the registry: its terminal state is the replay answer — a retry
 answers the registered artifact `200 created=false`, exactly like the
 lifecycle verbs above):

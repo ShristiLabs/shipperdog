@@ -12,6 +12,7 @@ import com.shipperdog.api.config.TraceAttributes;
 import com.shipperdog.api.identity.AuthenticatedPrincipal;
 import com.shipperdog.api.organization.OrgRole;
 import com.shipperdog.api.tenant.TenantRole;
+import com.shipperdog.api.tester.TesterAccess;
 import com.shipperdog.api.version.VersionAccess;
 import io.micrometer.core.instrument.MeterRegistry;
 import io.micrometer.core.instrument.Timer;
@@ -75,6 +76,7 @@ public class RbacPermissionEvaluator implements PermissionEvaluator {
     private final RequestRoleGrants grants;
     private final ApplicationAccess applications;
     private final VersionAccess versions;
+    private final TesterAccess testers;
     private final AuditLogger audit;
     private final MeterRegistry meters;
     private final TraceAttributes trace;
@@ -83,12 +85,14 @@ public class RbacPermissionEvaluator implements PermissionEvaluator {
             RequestRoleGrants grants,
             ApplicationAccess applications,
             VersionAccess versions,
+            TesterAccess testers,
             AuditLogger audit,
             MeterRegistry meters,
             TraceAttributes trace) {
         this.grants = grants;
         this.applications = applications;
         this.versions = versions;
+        this.testers = testers;
         this.audit = audit;
         this.meters = meters;
         this.trace = trace;
@@ -117,6 +121,8 @@ public class RbacPermissionEvaluator implements PermissionEvaluator {
                 trace.application(id);
             } else if ("version".equals(targetType)) {
                 trace.version(id);
+            } else if ("tester".equals(targetType)) {
+                trace.tester(id);
             }
         }
         // SLO measurability from day one (PRD sections 28 and 42):
@@ -168,9 +174,18 @@ public class RbacPermissionEvaluator implements PermissionEvaluator {
         UUID scopeId = targetId instanceof UUID id
                 ? id
                 : targetId instanceof String text && !text.isBlank() ? parseUuid(text) : null;
+        // S6-01: org-scope permissions evaluated against a 'tester' target
+        // resolve the record's owning organization — the same hop the
+        // 'version' target performs for app-scope grants. An unknown or
+        // cross-organization tester denies here; the caller adds the
+        // concealed-404 shape so it is indistinguishable from a miss.
+        UUID effectiveScopeId = scopeId;
+        if ("tester".equals(targetType) && "org".equals(required.scope()) && scopeId != null) {
+            effectiveScopeId = testers.owningOrganizationOf(scopeId).orElse(null);
+        }
         return switch (required.scope()) {
             case "platform" -> false; // only the platform wildcard above
-            case "org" -> scopeId != null && orgGrants(snapshot, scopeId, required);
+            case "org" -> effectiveScopeId != null && orgGrants(snapshot, effectiveScopeId, required);
             case "tenant" -> scopeId != null && tenantGrants(snapshot, scopeId, required);
             case "app" -> appGrants(snapshot, scopeId, targetType, required);
             default -> false;

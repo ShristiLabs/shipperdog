@@ -41,7 +41,7 @@ permission:
 | Role | Permissions |
 |---|---|
 | PLATFORM_ADMIN | `*` (wildcard; the `users.platform_admin` flag, PRD 7.1) |
-| ORG_ADMIN | `org:organizations:read` `org:organizations:update` `org:idp-configs:read` `org:idp-configs:write` `org:members:read` `org:members:invite` `org:members:manage` `org:tenants:create` `org:tenants:read` `tenant:tenants:read` `tenant:tenants:update` `tenant:members:read` `tenant:members:manage` `tenant:applications:read` `app:applications:read` `app:applications:write` `app:versions:read` `app:releases:read` `app:tester-groups:manage` `app:feedback:read` |
+| ORG_ADMIN | `org:organizations:read` `org:organizations:update` `org:idp-configs:read` `org:idp-configs:write` `org:members:read` `org:members:invite` `org:members:manage` `org:testers:read` `org:testers:invite` `org:testers:manage` `org:tenants:create` `org:tenants:read` `tenant:tenants:read` `tenant:tenants:update` `tenant:members:read` `tenant:members:manage` `tenant:applications:read` `app:applications:read` `app:applications:write` `app:versions:read` `app:releases:read` `app:tester-groups:manage` `app:feedback:read` |
 | APP_OWNER | `app:applications:read` `app:applications:write` `app:versions:read` `app:versions:write` `app:artifacts:read` `app:releases:read` `app:releases:manage` `app:feedback:read` |
 | DEVELOPER | `app:artifacts:read` `app:artifacts:upload` `app:versions:read` `app:releases:read` |
 | QA_ENGINEER | `app:applications:read` `app:versions:read` `app:releases:read` `app:releases:approve-qa` `app:tester-groups:manage` `app:feedback:read` |
@@ -101,7 +101,13 @@ password-reset pair) matched by the security chain's `permitAll`.
   resolve the same way through the version's application owner: the
   artifact routes are body-addressed by version id, so the check hops
   version -> application -> owner exactly once at the enforcement
-  point. Creation-time checks evaluate at the
+  point. `tester` targets (S6-01, issue #26) resolve the record's
+  owning organization through the public `TesterAccess` hop for
+  `org:` permissions — the tester person record is
+  organization-scoped (ADR-0002 tenth amendment), so item-addressed
+  tester routes check `org:testers:*` at the record's organization
+  and a foreign organization's tester is a concealed miss.
+  Creation-time checks evaluate at the
   future owner tenant for tenant-owned registrations and at the owning
   organization for organization-shared ones, so
   `app:applications:write` authority is organization-level by
@@ -219,6 +225,24 @@ memberships (`409 TENANT_DEACTIVATED`) while preserving all data; see
 [Tenants](tenants.md). Creation requests missing an `organizationId`
 are denied by the permission check before the body is read
 (authorization precedes validation platform-wide).
+
+Tester onboarding (S6-01, issue #26) is organization-level
+administration of organization-scoped person records (ADR-0002 tenth
+amendment); tenant attachment arrives with S6-03.
+
+| Method | Path | Permission | Result |
+|---|---|---|---|
+| POST | `/api/v1/testers` | `org:testers:invite` at the target `organizationId` (body) | `201` INVITED tester with the once-shown invitation block; duplicate address `200` existing tester (idempotent); `400` invalid email/missing `fullName`; `404` unknown organization; honors `Idempotency-Key` |
+| GET | `/api/v1/testers?organizationId=...&status=...` | `org:testers:read` at that organization | `200` testers, cursor-paginated, email-ordered; `status` filter (`INVITED`/`ACTIVE`/`SUSPENDED`) |
+| GET | `/api/v1/testers/{id}` | `org:testers:read` (`tester` target) | `200` tester view |
+| POST | `/api/v1/testers/{id}/invitations` | `org:testers:invite` (`tester` target) | `201` fresh invitation (revokes the live one); `409 TESTER_ALREADY_ACTIVE`/`TESTER_INVALID_TRANSITION`/`TESTER_INVITATION_IN_FLIGHT` (concurrent re-invite lost — retry) |
+| PUT | `/api/v1/testers/{id}/status` | `org:testers:manage` (`tester` target) | `200`; `ACTIVE <-> SUSPENDED` only (`INVITED -> ACTIVE` is the accept flow's); `409 TESTER_INVALID_TRANSITION` |
+
+Acceptance runs through the platform registration endpoint with a
+tester-flavored invitation (no permission — the token is the
+credential) and grants no organization membership; the invitation
+lifecycle and the suspended-tester credential blocks are documented in
+[Testers](testers.md).
 
 ## Role-assignment endpoints
 

@@ -16,6 +16,7 @@ import com.shipperdog.api.identity.internal.repository.PersonalAccessTokenReposi
 import com.shipperdog.api.identity.internal.repository.RefreshTokenRepository;
 import com.shipperdog.api.identity.internal.repository.UserRepository;
 import com.shipperdog.api.organization.OrganizationAccess;
+import com.shipperdog.api.tester.TesterAccounts;
 import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
@@ -76,6 +77,7 @@ public class TokenService implements SessionRevocation {
     private final AuditEventPublisher audit;
     private final UserRepository users;
     private final OrganizationAccess organizations;
+    private final TesterAccounts testerAccounts;
 
     TokenService(
             JwtEncoder encoder,
@@ -86,7 +88,8 @@ public class TokenService implements SessionRevocation {
             PersonalAccessTokenRepository pats,
             AuditEventPublisher audit,
             UserRepository users,
-            OrganizationAccess organizations) {
+            OrganizationAccess organizations,
+            TesterAccounts testerAccounts) {
         this.encoder = encoder;
         this.decoder = decoder;
         this.properties = properties;
@@ -96,6 +99,7 @@ public class TokenService implements SessionRevocation {
         this.audit = audit;
         this.users = users;
         this.organizations = organizations;
+        this.testerAccounts = testerAccounts;
     }
 
     /** A freshly issued access/refresh pair; the refresh starts a family. */
@@ -142,6 +146,17 @@ public class TokenService implements SessionRevocation {
                     record.getUserId(),
                     false,
                     Map.of("kind", "refresh", "reason", "organization_deactivated"));
+            throw invalidRefresh();
+        }
+        if (suspendedTesterBlocksUser(record.getUserId())) {
+            // S6-01: a SUSPENDED tester's existing session must not survive
+            // suspension either — refresh is refused (reversible, so the
+            // family is NOT revoked; platform admins stay exempt).
+            audit(
+                    AuditEventType.TOKEN_REFRESHED,
+                    record.getUserId(),
+                    false,
+                    Map.of("kind", "refresh", "reason", "tester_suspended"));
             throw invalidRefresh();
         }
         refreshTokens.revokeFamily(record.getFamilyId(), now);
@@ -208,16 +223,18 @@ public class TokenService implements SessionRevocation {
 
     /**
      * Authenticates a raw PAT bearer credential, or returns null when it is
-     * unknown, revoked, or expired. Used by the PAT authentication filter;
-     * never throws for a bad token. The {@code last_used_at} bookkeeping
-     * write is throttled to at most one per minute so authenticated
-     * requests do not turn into per-request database writes.
+     * unknown, revoked, or expired, or the owner is disabled or a suspended
+     * tester (S6-01). Used by the PAT authentication filter; never throws
+     * for a bad token. The {@code last_used_at} bookkeeping write is
+     * throttled to at most one per minute so authenticated requests do not
+     * turn into per-request database writes.
      */
     public Authentication authenticatePat(String rawToken) {
         return pats.findByTokenHash(SecureTokens.sha256Hex(rawToken))
                 .filter(pat -> pat.getRevokedAt() == null)
                 .filter(pat -> pat.getExpiresAt() == null || pat.getExpiresAt().isAfter(Instant.now(clock)))
                 .filter(pat -> !userDisabled(pat.getUserId()))
+                .filter(pat -> !suspendedTesterBlocksUser(pat.getUserId()))
                 .map(pat -> {
                     Instant now = Instant.now(clock);
                     if (pat.getLastUsedAt() == null || pat.getLastUsedAt().isBefore(now.minus(Duration.ofMinutes(1)))) {
@@ -259,6 +276,13 @@ public class TokenService implements SessionRevocation {
         boolean platformAdmin =
                 users.findById(userId).map(UserEntity::isPlatformAdmin).orElse(false);
         return !platformAdmin && organizations.loginBlockedFor(userId);
+    }
+
+    /** Suspended-tester block (S6-01) with the same platform-admin exemption. */
+    private boolean suspendedTesterBlocksUser(UUID userId) {
+        boolean platformAdmin =
+                users.findById(userId).map(UserEntity::isPlatformAdmin).orElse(false);
+        return !platformAdmin && testerAccounts.loginBlockedFor(userId);
     }
 
     /** S1-05: DISABLED accounts keep neither refresh sessions nor PATs. */

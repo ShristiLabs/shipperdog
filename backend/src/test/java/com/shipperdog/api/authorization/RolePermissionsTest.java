@@ -88,9 +88,23 @@ class RolePermissionsTest {
                         Permission.ORG_MEMBERS_READ,
                         Permission.ORG_MEMBERS_INVITE,
                         Permission.ORG_MEMBERS_MANAGE,
+                        Permission.ORG_TESTERS_READ,
+                        Permission.ORG_TESTERS_INVITE,
+                        Permission.ORG_TESTERS_MANAGE,
                         Permission.TENANT_MEMBERS_READ,
                         Permission.TENANT_MEMBERS_MANAGE)
                 .doesNotContain(Permission.PLATFORM_ORGANIZATIONS_CREATE);
+    }
+
+    @Test
+    void testerSurfacePermissionsBelongToOrganizationAdminsOnly() {
+        assertThat(RolePermissions.of(OrgRole.ORG_ADMIN))
+                .contains(Permission.ORG_TESTERS_READ, Permission.ORG_TESTERS_INVITE, Permission.ORG_TESTERS_MANAGE);
+        Arrays.stream(OrgRole.values())
+                .filter(role -> role != OrgRole.ORG_ADMIN)
+                .forEach(role -> assertThat(RolePermissions.of(role))
+                        .as("%s", role)
+                        .doesNotContain(Permission.ORG_TESTERS_READ));
     }
 
     @Test

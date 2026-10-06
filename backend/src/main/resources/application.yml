@@ -94,6 +94,15 @@ shipperdog:
       concurrency: ${ARTIFACT_VALIDATION_CONCURRENCY:2}
       queue-capacity: ${ARTIFACT_VALIDATION_QUEUE_CAPACITY:200}
       storage-retry-attempts: ${ARTIFACT_VALIDATION_STORAGE_RETRIES:3}
+  tester:
+    # Tester onboarding (issue #26, S6-01): invitations reuse the
+    # identity machinery but carry their own TTL (the issue's 7-day
+    # default; the platform invitation TTL above stays 3 days). The
+    # portal base URL prefixes the accept link in the invitation
+    # email; the tester portal itself arrives with E8, so the default
+    # points at the local console origin.
+    invitation-ttl: ${TESTER_INVITATION_TTL:P7D}
+    portal-base-url: ${TESTER_PORTAL_BASE_URL:http://localhost:5173}
 
 server:
   port: ${SERVER_PORT:8080}

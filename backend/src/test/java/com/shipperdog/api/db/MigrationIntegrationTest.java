@@ -126,7 +126,11 @@ class MigrationIntegrationTest {
                         "fk_organization_members_user_id",
                         "fk_user_invitations_organization_id",
                         "fk_organization_idp_configs_organization_id",
-                        "ck_user_invitations_org_role_pair");
+                        // V19 (issue #26) replaced the org/role pair check
+                        // with the broader three-flavor scope check.
+                        "ck_user_invitations_scope")
+                .as("V19 replaced ck_user_invitations_org_role_pair with the scope check")
+                .doesNotContain("ck_user_invitations_org_role_pair");
 
         Set<String> indexes = new HashSet<>(
                 jdbc.queryForList("SELECT indexname FROM pg_indexes WHERE schemaname = 'public'", String.class));
@@ -273,5 +277,34 @@ class MigrationIntegrationTest {
                 .as("core audit fields are mandatory")
                 .hasSize(3)
                 .allSatisfy(column -> assertThat(column.get("is_nullable")).isEqualTo("NO"));
+    }
+
+    /** V19 (issue #26): the tester onboarding surface. */
+    @Test
+    void testerOnboardingObjectsExist() {
+        List<String> testerStates = jdbc.queryForList(
+                "SELECT e.enumlabel FROM pg_enum e "
+                        + "JOIN pg_type t ON t.oid = e.enumtypid WHERE t.typname = 'tester_status'",
+                String.class);
+        assertThat(testerStates).containsExactlyInAnyOrder("INVITED", "ACTIVE", "SUSPENDED", "DISABLED");
+
+        Map<String, Object> userIdColumn = jdbc.queryForMap("SELECT is_nullable FROM information_schema.columns "
+                + "WHERE table_schema = 'public' AND table_name = 'testers' AND column_name = 'user_id'");
+        assertThat(userIdColumn.get("is_nullable"))
+                .as("INVITED testers exist before an account is linked (V19 widening)")
+                .isEqualTo("YES");
+
+        Set<String> constraints = new HashSet<>(jdbc.queryForList(
+                "SELECT conname FROM pg_constraint WHERE connamespace = 'public'::regnamespace", String.class));
+        assertThat(constraints)
+                .contains(
+                        "fk_testers_organization_id",
+                        "uq_testers_organization_email",
+                        "fk_user_invitations_tester_id",
+                        "ck_user_invitations_scope");
+
+        Set<String> indexes = new HashSet<>(
+                jdbc.queryForList("SELECT indexname FROM pg_indexes WHERE schemaname = 'public'", String.class));
+        assertThat(indexes).contains("uq_user_invitations_pending_tester", "idx_user_invitations_tester_id");
     }
 }

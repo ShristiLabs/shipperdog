@@ -15,7 +15,7 @@ module's public `OrganizationAccess` surface.
 | Method | Path | Auth | Result |
 |---|---|---|---|
 | POST | `/login` | none | `200` with `{accessToken, refreshToken, tokenType, expiresInSeconds}`; any failure is a uniform `401` problem+json with code `INVALID_CREDENTIALS` (see [API conventions](api-conventions.md)) |
-| POST | `/register` | none (invitation token in body) | `201` user view; `400` INVALID_INVITATION / WEAK_PASSWORD; `409` EMAIL_TAKEN |
+| POST | `/register` | none (invitation token in body) | `201` user view; `400` INVALID_INVITATION / WEAK_PASSWORD; `409` EMAIL_TAKEN. Since S6-01 this endpoint is ALSO the tester-onboarding accept flow: an invitation minted by `POST /api/v1/testers` (tester flavor, 7-day TTL) creates the ACTIVE account, links it to the tester record, and flips the tester `INVITED -> ACTIVE` — no organization membership is granted (see [Testers](testers.md)) |
 | POST | `/refresh` | none (refresh token in body) | `200` rotated token pair; `401` INVALID_REFRESH_TOKEN |
 | POST | `/logout` | none (refresh token in body) | `204`; idempotent — revokes the token family |
 | GET | `/me` | access JWT or PAT | `200` current actor (`orgId` resolves live from the earliest ACTIVE membership, S1-04; `tenantId` still null — member assignments landed with S2-03, `/me` tenant resolution remains deferred) |
@@ -88,6 +88,13 @@ module's public `OrganizationAccess` surface.
   (`users.platform_admin`) are exempt: they may hold deactivated-only
   memberships and still log in and refresh; their access tokens carry no
   `org_id` in that state.
+- Tester suspension (S6-01): a user whose tester record is SUSPENDED is
+  refused by EVERY credential path — login, token refresh, and personal
+  access tokens (a suspended PAT authenticates as unknown, a uniform
+  401). Same uniform 401 and distinct audit reason
+  (`tester_suspended`); platform administrators are exempt like the
+  deactivation block. Suspension is reversible and revokes nothing;
+  full revocation semantics arrive with S6-04.
 - Password reset tokens are single-use with a 30-minute TTL. Until the
   notification module exists (S12-02), the reset link is emitted on a
   WARN log line; treat local logs as sensitive. Confirming a reset
