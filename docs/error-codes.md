@@ -7,7 +7,7 @@ Stable public error codes of the problem+json envelope (issue #8). Rules:
 - Codes are UPPER_SNAKE (payload enum casing convention).
 - Source of truth in code: `ApiError` (cross-cutting) and each module's
   domain exception enum (`AuthException.Code`, `OrganizationException.Code`,
-  `TenantException.Code`). This file is the human registry; update it in
+  `TenantException.Code`, `ArtifactException.Code`). This file is the human registry; update it in
   the same PR that adds a code.
 - All 404 codes share the uniform detail `Resource not found.` — the
   concealed-denial rule (PRD §12) requires genuine misses and concealed
@@ -81,10 +81,12 @@ see [api-conventions.md](api-conventions.md)).
 | `APPLICATION_PACKAGE_TAKEN` | 409 | The package name is already in use in the organization. |
 | `APPLICATION_AUTHORIZED_TENANTS_PRESENT` | 409 | The application has authorized tenants; de-authorize them before converting ownership. (ORGANIZATION-to-TENANT scope transition while any tenant holds an ACTIVE authorization; the same concealed `APPLICATION_NOT_FOUND` answers an absent or already-revoked authorization on the mapping surface, S3-03) |
 
-Reserved, not yet emitted: `APPLICATION_ARCHIVED` for artifact creation
-(E5/S5-01). The code itself is live — version creation under an
-archived application emits it since S4-01 (see the version table
-below); issue #13 reserved it for exactly that surface.
+Reserved, not yet emitted: none. `APPLICATION_ARCHIVED` was reserved in
+issue #13 for the artifact-creation surface and is live there since
+S5-01 — the artifact module emits its own `ArtifactException.Code`
+value of the same public code string (see the artifact table below);
+version creation under an archived application has emitted it since
+S4-01 (see the version table below).
 
 ## Version (`VersionException.Code`)
 
@@ -97,4 +99,23 @@ below); issue #13 reserved it for exactly that surface.
 | `APPLICATION_ARCHIVED` | 409 | The application is archived; new versions cannot be added. (reserved in issue #13, emitted since S4-01; existing versions stay readable, and unarchiving resumes creation) |
 | `VERSION_ARCHIVED` | 409 | The version is archived; it is read-only and cannot transition further. (since S4-03: repeat archives and mutations of an archived version — its tags today, artifact uploads with E5) |
 | `VERSION_REVOKED` | 409 | The version's distribution is revoked; it is read-only and blocked from new downloads. (since S4-03: repeat revokes, archives of a revoked version, and mutations of a revoked version; the version and its history remain fully readable — INV-006) |
-| `VERSION_IMMUTABLE` | 409 | The version's artifact set is frozen (terminal lifecycle state or existing distribution); no artifacts can be added. (INV-004, since S4-03: the `VersionDistributionGuard` rejection E5's upload path surfaces — terminal status, or any distribution record reported through the contributor seam E7 grants and M2 releases will register on) |
+| `VERSION_IMMUTABLE` | 409 | The version's artifact set is frozen (terminal lifecycle state or existing distribution); no artifacts can be added. (INV-004, since S4-03: the `VersionDistributionGuard` rejection E5's upload path surfaces — terminal status, or any distribution record reported through the contributor seam E7 grants and M2 releases will register on; emitted on the artifact routes since S5-01, where the artifact module's advice re-renders the version module's envelope verbatim — same code, same shape) |
+
+## Artifact (`ArtifactException.Code`)
+
+The artifact upload surface (S5-01, issue #20). Both upload paths —
+the server-streamed multipart route and the resumable direct-to-storage
+session (create, finalize) — share these codes; `VERSION_IMMUTABLE`
+arrives through the version module's code as noted above.
+
+| Code | HTTP | Detail |
+|---|---|---|
+| `ARTIFACT_NOT_FOUND` | 404 | Resource not found. (the concealed-denial shape for unknown or foreign artifacts and upload sessions — finalize answers it for a session of another version, a session invisible in the caller's scope, or an already-registered artifact addressed through the wrong version) |
+| `UPLOAD_SESSION_NOT_FOUND` | 404 | Resource not found. (reserved, not yet emitted — finalize deliberately conceals as `ARTIFACT_NOT_FOUND` so a session and an artifact miss are indistinguishable; held for the follow-up session sweeper) |
+| `INVALID_REQUEST` | 400 | The request is invalid. (missing/blank fields, an unparseable platform, an incoherent file name — a bare name of at most 255 characters — a negative or non-numeric build number, a non-positive size hint, a finalize with no bytes uploaded, an empty artifact) |
+| `ARTIFACT_FILE_TYPE_REJECTED` | 415 | The artifact file type is not supported; expected .ipa, .apk, or .aab matching the platform. (the extension allowlist, judged on the name's final extension, case-insensitive: `.ipa` is IOS, `.apk`/`.aab` are ANDROID, and the extension must be coherent with the `platform` field — rejected before any byte is stored) |
+| `ARTIFACT_TOO_LARGE` | 413 | The artifact exceeds the maximum upload size. (both size rules: the platform-wide `ARTIFACT_MAX_UPLOAD_BYTES` ceiling on either path — including bytes streamed direct to storage, re-checked at finalize — and the multipart `ARTIFACT_RESUMABLE_THRESHOLD_BYTES` rule that answers 413 for anything larger, pointing the client at the upload-session path) |
+| `ARTIFACT_BUILD_TAKEN` | 409 | The build number is already in use for this version and platform. (the pinned `(version, platform, build)` triple of V1's `uq_artifacts_version_platform_build` lands once; race-safe — the database constraint is the authority) |
+| `UPLOAD_SESSION_EXPIRED` | 410 | The upload session has expired; create a new one. (the `ARTIFACT_UPLOAD_SESSION_TTL` lifetime, enforced at finalize) |
+| `APPLICATION_ARCHIVED` | 409 | The application is archived; new artifacts cannot be added. (the artifact module's own value of the code issue #13 reserved for this surface — existing artifacts stay readable, and unarchiving resumes uploads) |
+| `STORAGE_UNAVAILABLE` | 503 | Artifact storage is unavailable; retry the upload. (the object store refused the write or cannot be read; a retry re-allocates a fresh artifact id and key, never overwriting anything — INV-003) |

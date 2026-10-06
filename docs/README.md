@@ -28,8 +28,9 @@ Current contents:
   applications surface (tenant effective-visibility listing, registry,
   ownership scopes, shared-app authorization, org-wide administration
   listing, versions under an application with their lifecycle and
-  permanent history) (S2-01, S2-02, S2-03, S3-01
-  through S3-04, S4-01 through S4-03).
+  permanent history, and the seam-served artifact uploads with their
+  object-storage layout) (S2-01, S2-02, S2-03, S3-01
+  through S3-04, S4-01 through S4-03, S5-01).
 - [Admin console](frontend.md) — the React/MUI console (S2-04, S3-04):
   stack and structure, the shared API client (problem+json, correlation
   ids, cursor pagination), token storage and silent refresh, role-aware
@@ -44,5 +45,6 @@ Current contents:
   (S1-07).
 - [ADR-0001: Flyway with plain SQL migrations](adr/ADR-0001-flyway-schema-migrations.md)
 - [ADR-0002: Predicate-injection repository seam for tenant isolation](adr/ADR-0002-tenant-isolation-data-seam.md)
+- [ADR-0003: Artifact object storage behind the ArtifactStore port](adr/ADR-0003-artifact-object-storage.md)
 
 Start with the top-level README for local setup and CI.

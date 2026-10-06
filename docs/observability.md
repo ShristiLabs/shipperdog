@@ -55,9 +55,12 @@ parameters only, never names or PII. The ids land as span attributes
 (`organization_id`, `tenant_id`, ...) on the request's active child
 span (Spring Security wraps dispatch in a `secured request`
 observation), so any span search by entity id finds the request.
-Current call sites: organization creation (`OrganizationService`) and
+Current call sites: organization creation (`OrganizationService`),
 the RBAC enforcement point (`RbacPermissionEvaluator` tags the guarded
-organization/tenant target). Later stories (E3+) call the same helper
+organization/tenant/application/version target), and the artifact
+upload paths (`ArtifactService` tags the application, version, and
+pre-allocated artifact of every upload, session grant, and finalize —
+S5-01). Later stories (E3+) call the same helper
 as entities appear.
 
 ## Metrics and the `shipperdog_*` namespace
@@ -68,8 +71,8 @@ Prometheus registry renders underscores + `_seconds` units):
 | Prometheus name | Recorded by | Story |
 |---|---|---|
 | `shipperdog_authorization_decision_duration_seconds` | RBAC enforcement point, tag `outcome=allow\|deny` | S1-07 (SLO: <100 ms) |
-| `shipperdog_artifact_upload_duration_seconds` | reserved | E5 |
-| `shipperdog_artifact_validation_duration_seconds` | reserved | E5 |
+| `shipperdog_artifact_upload_duration_seconds` | Artifact upload service, tags `path=multipart\|resumable` and `outcome=success\|failure` (the failure leg records a store or insert failure after streaming began, not a rejected request) | S5-01 (issue #20) |
+| `shipperdog_artifact_validation_duration_seconds` | reserved | E5 (S5-05) |
 | `shipperdog_release_duration_seconds` | reserved | E9 |
 | `shipperdog_distribution_duration_seconds` | reserved | E13 |
 | `shipperdog_download_count` | reserved | E5/E9 |

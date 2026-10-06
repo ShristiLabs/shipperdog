@@ -29,7 +29,13 @@ services:
 
   gcs-emulator:
     image: fsouza/fake-gcs-server:1.56.1
-    command: ["-scheme", "http", "-host", "0.0.0.0", "-port", "4443"]
+    # -external-url (issue #20): the emulator advertises this host in
+    # the resumable-session URLs it grants — the API reaches it at
+    # gcs-emulator:4443 over the compose network, but the CLIENT that
+    # streams direct-to-storage bytes runs on the operator's machine,
+    # so the advertised URL must be host-reachable.
+    command:
+      ["-scheme", "http", "-host", "0.0.0.0", "-port", "4443", "-external-url", "${GCS_EXTERNAL_URL:-http://localhost:4443}"]
     ports:
       - "${GCS_EMULATOR_PORT:-4443}:4443"
 
@@ -48,6 +54,12 @@ services:
       REDIS_HOST: redis
       REDIS_PORT: "6379"
       GCS_EMULATOR_ENDPOINT: http://gcs-emulator:4443
+      # Artifact object storage (issue #20, ADR-0003): the API talks to
+      # the emulator over the compose network; production points
+      # ARTIFACT_STORAGE_EMULATOR_HOST at real GCS credentials instead
+      # (blank host = application default credentials).
+      ARTIFACT_STORAGE_EMULATOR_HOST: http://gcs-emulator:4443
+      ARTIFACT_STORAGE_BUCKET: ${ARTIFACT_STORAGE_BUCKET:-shipperdog-artifacts-local}
       # Observability baseline (issue #7): all management endpoints move
       # to the internal management port, which is published to the host
       # loopback only — /actuator/health and /actuator/prometheus are

@@ -391,3 +391,31 @@ serialization point is not a data path. Future children of versions
 — artifacts (E5) among them — inherit this standing by default and
 need a new amendment only if they break the every-row-hangs-off-one
 parent invariant.
+
+## Ninth amendment (2026-10-06): addressable, cross-parent children rejoin the seam
+
+Artifacts (E5, issue #20, V15) are the first children of versions that
+the eighth amendment's own rule pushes back out: a plain child is a
+table "whose every row hangs off exactly one seam-served parent and is
+never addressed by its own routes", and artifacts break that invariant
+twice. The artifact collection route addresses them directly —
+`POST /api/v1/artifacts` carries the version id in the request body
+(FRD-004's shape, PRD 19), so no version-parent route ever mediates
+the write — and the same-content detection of issue #20's fourth
+acceptance criterion reads artifacts across every version of the
+application, a query with no single parent to resolve first.
+
+The amendment's rule: **a child addressed by its own routes, or read
+across parents, carries the full owning-dimension snapshot
+(`organization_id` always, `tenant_id` for tenant-owned rows — the V12
+versions shape) and joins the seam through a scoped repository**;
+strictly single-parent children (version_tags, version_status_history)
+stay plain under the eighth amendment. Artifacts implement
+`OrganizationScope` and are served by `ArtifactScopedRepository`; the
+transient `artifact_upload_sessions` rows follow the same shape —
+ephemeral is not exempt from INV-001, and the seam is what makes
+finalize's scoped replay read work. This is not a relaxation of the
+plain-child doctrine but its boundary: joining the seam is strictly
+more isolation (the write guard and the forced predicate both apply),
+reserved for rows that cannot inherit a single parent's scope at the
+moment they are addressed.

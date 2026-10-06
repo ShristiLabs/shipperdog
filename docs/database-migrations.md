@@ -22,6 +22,7 @@ backend/src/main/resources/db/
     V12__version_management.sql
     V13__version_tags.sql
     V14__version_lifecycle.sql
+    V15__artifact_upload.sql
   seed/                 dev fixture, applied only when the seed location is active
     R__dev_seed.sql
 ```
@@ -210,6 +211,38 @@ backend/src/main/resources/db/
   commits only while the row's committed status still matches the
   source state the attempt read, so concurrent transitions can never
   double-commit or un-revoke a pulled version.
+- `V15__artifact_upload.sql` (S5-01, issue #20) completes the V1
+  `artifacts` table for the upload layer and adds the session table of
+  the resumable path. Artifacts join the seam with the full
+  owning-dimension snapshot — `organization_id` NOT NULL with
+  `REFERENCES organizations`, nullable `tenant_id` with `REFERENCES
+  tenants` (the V12 versions shape), backfilled from each artifact's
+  version — because they break the eighth amendment's plain-child
+  invariant twice: the body-addressed collection route
+  (`POST /api/v1/artifacts`) addresses them directly, and the
+  same-content detection reads them across every version of the
+  application (ADR-0002 ninth amendment). `build_number` becomes
+  nullable (FR-005: extracted metadata, pinned at upload only when a
+  CI client knows it) under `ck_artifacts_build_number_nonnegative`;
+  PostgreSQL's NULLs-distinct semantics keep V1's
+  `uq_artifacts_version_platform_build` the duplicate authority — a
+  pinned triple lands once, unpinned rows re-upload freely as NEW
+  artifacts (INV-003's no-replace corollary, the story's third
+  acceptance criterion). The #19 follow-up's narrower UNIQUE
+  `(version_id, platform)` was evaluated and REJECTED: it would 409
+  every re-upload and contradict that criterion. Seam predicates get
+  `idx_artifacts_tenant_id` plus the partial
+  `idx_artifacts_organization_scope` for null-tenant rows, and the
+  dedup probe gets `idx_artifacts_sha256`. The new
+  `artifact_upload_sessions` table (the >100 MB direct-to-storage
+  handoff) carries the same snapshot — ephemeral is not exempt from
+  INV-001 — with `uq_artifact_upload_sessions_artifact` and
+  `..._storage_key` (one session, one future artifact), the build
+  check mirrored, an `idx_..._expires_at` for the follow-up sweeper,
+  and a plain-uuid `created_by` with no foreign key (the
+  `idempotency_keys` precedent: transient rows do not wedge the user
+  lifecycle). No binaries anywhere (FR-007): metadata plus
+  `storage_key`; bytes live in object storage under the PRD 24 layout.
 
 ## Status and type columns
 

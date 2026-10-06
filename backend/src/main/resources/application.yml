@@ -11,6 +11,16 @@ spring:
     open-in-view: false
   flyway:
     locations: ${FLYWAY_LOCATIONS:classpath:db/migration}
+  servlet:
+    multipart:
+      # Artifact upload headroom (issue #20, S5-01): file parts buffer
+      # to disk past the servlet threshold, so a multi-hundred-MB
+      # upload never sits in heap. The precise artifact limit stays
+      # with the artifact module (ARTIFACT_MAX_UPLOAD_BYTES, which
+      # answers the exact 413); these caps only keep the servlet
+      # layer from rejecting the body before the module can answer.
+      max-file-size: ${ARTIFACT_MULTIPART_MAX_FILE_SIZE:2560MB}
+      max-request-size: ${ARTIFACT_MULTIPART_MAX_REQUEST_SIZE:2560MB}
 
 # OpenAPI contract surface (issue #8): generated from code by springdoc,
 # snapshotted at build time by the export test, and diffed against the
@@ -41,6 +51,26 @@ shipperdog:
     lockout-duration: ${AUTH_LOCKOUT_DURATION:PT15M}
     password-reset-ttl: ${AUTH_PASSWORD_RESET_TTL:PT30M}
     invitation-ttl: ${AUTH_INVITATION_TTL:P3D}
+  artifact:
+    # Object storage (issue #20, S5-01, FR-007/PRD 24, ADR-0003):
+    # binaries live in object storage under the PRD 24 layout,
+    # metadata in PostgreSQL. One client serves both targets: when
+    # the emulator host is set (local/CI, the compose GCS emulator)
+    # the GCS client talks to it without credentials; when blank it
+    # uses application default credentials against real GCS.
+    storage:
+      bucket: ${ARTIFACT_STORAGE_BUCKET:shipperdog-artifacts-local}
+      host: ${ARTIFACT_STORAGE_EMULATOR_HOST:}
+      project-id: ${ARTIFACT_STORAGE_PROJECT_ID:shipperdog-local}
+      create-bucket-if-absent: ${ARTIFACT_STORAGE_CREATE_BUCKET:true}
+    upload:
+      # The platform-wide artifact ceiling (413 beyond it, on both the
+      # multipart and the resumable-session paths), and the size above
+      # which the multipart path is refused in favor of a short-lived
+      # direct-to-storage upload session (the story's >100 MB rule).
+      max-bytes: ${ARTIFACT_MAX_UPLOAD_BYTES:2147483648}
+      resumable-threshold-bytes: ${ARTIFACT_RESUMABLE_THRESHOLD_BYTES:104857600}
+      session-ttl: ${ARTIFACT_UPLOAD_SESSION_TTL:PT10M}
 
 server:
   port: ${SERVER_PORT:8080}

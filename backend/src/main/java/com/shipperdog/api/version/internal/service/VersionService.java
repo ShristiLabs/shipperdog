@@ -6,6 +6,8 @@ import com.shipperdog.api.audit.AuditEventPublisher;
 import com.shipperdog.api.audit.AuditEventType;
 import com.shipperdog.api.config.CursorPageable;
 import com.shipperdog.api.config.TraceAttributes;
+import com.shipperdog.api.version.VersionArtifacts;
+import com.shipperdog.api.version.VersionArtifacts.VersionArtifactSlot;
 import com.shipperdog.api.version.VersionDistributionContributor;
 import com.shipperdog.api.version.VersionDistributionGuard;
 import com.shipperdog.api.version.VersionException;
@@ -165,6 +167,7 @@ public class VersionService implements VersionDistributionGuard {
     private final Clock clock;
     private final TraceAttributes trace;
     private final ObjectProvider<VersionDistributionContributor> distributionContributors;
+    private final ObjectProvider<VersionArtifacts> artifactsContributor;
 
     VersionService(
             VersionScopedRepository versions,
@@ -175,7 +178,8 @@ public class VersionService implements VersionDistributionGuard {
             AuditEventPublisher audit,
             Clock clock,
             TraceAttributes trace,
-            ObjectProvider<VersionDistributionContributor> distributionContributors) {
+            ObjectProvider<VersionDistributionContributor> distributionContributors,
+            ObjectProvider<VersionArtifacts> artifactsContributor) {
         this.versions = versions;
         this.registry = registry;
         this.tags = tags;
@@ -185,6 +189,7 @@ public class VersionService implements VersionDistributionGuard {
         this.clock = clock;
         this.trace = trace;
         this.distributionContributors = distributionContributors;
+        this.artifactsContributor = artifactsContributor;
     }
 
     // -------------------------------------------------------------------------
@@ -244,7 +249,7 @@ public class VersionService implements VersionDistributionGuard {
                 saved.getTenantId(),
                 applicationId,
                 detail);
-        return detailOf(saved, application.platforms(), Set.of());
+        return detailOf(saved, application.platforms(), Set.of(), List.of());
     }
 
     // -------------------------------------------------------------------------
@@ -278,8 +283,13 @@ public class VersionService implements VersionDistributionGuard {
         Page<VersionEntity> found = versions.findAllScoped(scope, new CursorPageable(offset, limit, NEWEST_FIRST));
         Map<UUID, Set<String>> tagsByVersion = tagsOfVersions(
                 found.getContent().stream().map(VersionEntity::getId).toList());
-        return found.map(version ->
-                viewOf(version, application.platforms(), tagsByVersion.getOrDefault(version.getId(), Set.of())));
+        Map<UUID, List<VersionArtifactSlot>> artifactsByVersion = artifactsOfVersions(
+                found.getContent().stream().map(VersionEntity::getId).toList());
+        return found.map(version -> viewOf(
+                version,
+                application.platforms(),
+                tagsByVersion.getOrDefault(version.getId(), Set.of()),
+                artifactsByVersion.getOrDefault(version.getId(), List.of())));
     }
 
     /**
@@ -293,7 +303,11 @@ public class VersionService implements VersionDistributionGuard {
     @Transactional(readOnly = true)
     public VersionDetail get(UUID applicationId, UUID versionId) {
         VersionEntity version = scopedVersionOf(applicationId, versionId);
-        return detailOf(version, profileOf(applicationId).platforms(), tagsOfVersion(version.getId()));
+        return detailOf(
+                version,
+                profileOf(applicationId).platforms(),
+                tagsOfVersion(version.getId()),
+                artifactsOfVersions(List.of(version.getId())).getOrDefault(version.getId(), List.of()));
     }
 
     // -------------------------------------------------------------------------
@@ -367,6 +381,8 @@ public class VersionService implements VersionDistributionGuard {
         for (VersionStatusHistoryEntity row : statusHistory.findByVersionIdOrderByOccurredAtAscIdAsc(version.getId())) {
             timeline.add(new StatusTransitionView(row.getStatus().name(), row.getReason(), row.getOccurredAt()));
         }
+        List<VersionArtifactSlot> artifacts =
+                artifactsOfVersions(List.of(version.getId())).getOrDefault(version.getId(), List.of());
         return new VersionHistoryView(
                 version.getId(),
                 version.getApplicationId(),
@@ -375,7 +391,7 @@ public class VersionService implements VersionDistributionGuard {
                 version.getCreatedAt(),
                 version.getUpdatedAt(),
                 List.copyOf(timeline),
-                List.of());
+                List.copyOf(artifacts));
     }
 
     /**
@@ -456,7 +472,11 @@ public class VersionService implements VersionDistributionGuard {
                 }
                 audit(event, actorId, version.getOrganizationId(), version.getTenantId(), applicationId, detail);
                 VersionEntity fresh = scopedVersionOf(applicationId, version.getId());
-                return detailOf(fresh, profileOf(applicationId).platforms(), tagsOfVersion(fresh.getId()));
+                return detailOf(
+                        fresh,
+                        profileOf(applicationId).platforms(),
+                        tagsOfVersion(fresh.getId()),
+                        artifactsOfVersions(List.of(fresh.getId())).getOrDefault(fresh.getId(), List.of()));
             }
         }
         // Unreachable against forward-only statuses; the deterministic
@@ -608,10 +628,13 @@ public class VersionService implements VersionDistributionGuard {
 
     /**
      * The list-item view: registry fields plus the version's tags
-     * (issue #18, sorted UPPER) and the per-platform artifact slots. The
-     * slot value is a list because the platform grouping is the shape E5
-     * fills (one artifact per platform per version, the story's
-     * technical note); it is empty in M1.
+     * (issue #18, sorted UPPER) and the per-platform artifact slots.
+     * The slot value is a list (a version may carry re-uploads of the
+     * same platform — issue #20's INV-003 rule that a re-upload is a
+     * NEW artifact); the chronological order is the history read's
+     * order, newest last. Slots the application has not registered
+     * carry no key; an artifact of an unregistered platform cannot
+     * exist (upload validates against the application's platform set).
      */
     public record VersionView(
             UUID id,
@@ -621,9 +644,10 @@ public class VersionService implements VersionDistributionGuard {
             List<String> tags,
             Instant createdAt,
             Instant updatedAt,
-            Map<String, List<Object>> artifactsByPlatform) {
+            Map<String, List<VersionArtifactSlot>> artifactsByPlatform) {
 
-        static VersionView from(VersionEntity version, List<String> platforms, Set<String> tags) {
+        static VersionView from(
+                VersionEntity version, List<String> platforms, Set<String> tags, List<VersionArtifactSlot> artifacts) {
             return new VersionView(
                     version.getId(),
                     version.getApplicationId(),
@@ -632,7 +656,7 @@ public class VersionService implements VersionDistributionGuard {
                     List.copyOf(tags),
                     version.getCreatedAt(),
                     version.getUpdatedAt(),
-                    emptySlots(platforms));
+                    slotsOf(platforms, artifacts));
         }
     }
 
@@ -648,10 +672,11 @@ public class VersionService implements VersionDistributionGuard {
             List<String> tags,
             Instant createdAt,
             Instant updatedAt,
-            Map<String, List<Object>> artifactsByPlatform,
+            Map<String, List<VersionArtifactSlot>> artifactsByPlatform,
             List<Object> releaseHistory) {
 
-        static VersionDetail from(VersionEntity version, List<String> platforms, Set<String> tags) {
+        static VersionDetail from(
+                VersionEntity version, List<String> platforms, Set<String> tags, List<VersionArtifactSlot> artifacts) {
             return new VersionDetail(
                     version.getId(),
                     version.getApplicationId(),
@@ -660,7 +685,7 @@ public class VersionService implements VersionDistributionGuard {
                     List.copyOf(tags),
                     version.getCreatedAt(),
                     version.getUpdatedAt(),
-                    emptySlots(platforms),
+                    slotsOf(platforms, artifacts),
                     List.of());
         }
     }
@@ -676,10 +701,11 @@ public class VersionService implements VersionDistributionGuard {
     /**
      * The history view (issue #19 AC5, FR-008): the version summary and
      * its chronological status timeline, plus the chronological
-     * artifact list — empty in the M1 kernel, filled by E5's upload
-     * path (S5-01), each entry carrying its platform and artifact
-     * status when that lands. Tags are deliberately absent: they are
-     * mutable metadata (S4-02), not history, and live in the detail.
+     * artifact list — filled since S5-01 (issue #20): every artifact
+     * the version ever carried, upload order, exactly as INV-003 and
+     * INV-006 keep them (nothing is ever replaced or removed). Tags
+     * are deliberately absent: they are mutable metadata (S4-02), not
+     * history, and live in the detail.
      */
     public record VersionHistoryView(
             UUID id,
@@ -689,7 +715,7 @@ public class VersionService implements VersionDistributionGuard {
             Instant createdAt,
             Instant updatedAt,
             List<StatusTransitionView> statusHistory,
-            List<Object> artifacts) {}
+            List<VersionArtifactSlot> artifacts) {}
 
     // -------------------------------------------------------------------------
     // Helpers: profiles, specifications, validation, audit
@@ -887,21 +913,51 @@ public class VersionService implements VersionDistributionGuard {
                         registry.reassignOwnership(applicationId, ownership.tenantId(), Instant.now(clock)));
     }
 
-    /** Empty artifact slot per platform of the application, in its order. */
-    private static Map<String, List<Object>> emptySlots(List<String> platforms) {
-        Map<String, List<Object>> slots = new LinkedHashMap<>();
+    /**
+     * The artifact slots of the requested versions through the read-side
+     * seam (issue #20): the artifact module's {@link VersionArtifacts}
+     * implementation answers inside the request's bound scope; with no
+     * implementation registered the map is empty and every slot renders
+     * empty — the same empty-safe contributor default as the
+     * distribution seam.
+     */
+    private Map<UUID, List<VersionArtifactSlot>> artifactsOfVersions(Collection<UUID> versionIds) {
+        if (versionIds.isEmpty()) {
+            return Map.of();
+        }
+        return artifactsContributor.stream()
+                .findFirst()
+                .map(contributor -> contributor.byVersionIds(versionIds))
+                .orElseGet(Map::of);
+    }
+
+    /**
+     * Groups the chronological artifact list into the per-platform
+     * slots, keyed by the application's registered platform order: the
+     * detail's promise since S4-01 — the slot list per platform is
+     * exactly the grouped surface the story asks for, newest last.
+     */
+    private static Map<String, List<VersionArtifactSlot>> slotsOf(
+            List<String> platforms, List<VersionArtifactSlot> artifacts) {
+        Map<String, List<VersionArtifactSlot>> slots = new LinkedHashMap<>();
         for (String platform : platforms) {
-            slots.put(platform, List.of());
+            slots.put(platform, new ArrayList<>());
+        }
+        for (VersionArtifactSlot artifact : artifacts) {
+            slots.computeIfAbsent(artifact.platform(), platform -> new ArrayList<>())
+                    .add(artifact);
         }
         return slots;
     }
 
-    private VersionView viewOf(VersionEntity version, List<String> platforms, Set<String> tags) {
-        return VersionView.from(version, platforms, tags);
+    private VersionView viewOf(
+            VersionEntity version, List<String> platforms, Set<String> tags, List<VersionArtifactSlot> artifacts) {
+        return VersionView.from(version, platforms, tags, artifacts);
     }
 
-    private VersionDetail detailOf(VersionEntity version, List<String> platforms, Set<String> tags) {
-        return VersionDetail.from(version, platforms, tags);
+    private VersionDetail detailOf(
+            VersionEntity version, List<String> platforms, Set<String> tags, List<VersionArtifactSlot> artifacts) {
+        return VersionDetail.from(version, platforms, tags, artifacts);
     }
 
     /** Trims and validates against the semver-style triple vocabulary. */

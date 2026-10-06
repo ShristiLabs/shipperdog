@@ -2,8 +2,11 @@ package com.shipperdog.api.version.internal.repository;
 
 import com.shipperdog.api.tenant.CrossTenantByDesign;
 import com.shipperdog.api.version.VersionAccess;
+import com.shipperdog.api.version.VersionAccess.VersionOwnership;
 import com.shipperdog.api.version.internal.entity.VersionEntity;
 import java.time.Instant;
+import java.util.List;
+import java.util.Optional;
 import java.util.UUID;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Modifying;
@@ -42,6 +45,18 @@ import org.springframework.data.repository.query.Param;
 public interface VersionRegistryRepository extends JpaRepository<VersionEntity, UUID>, VersionAccess {
 
     /**
+     * Registry lookup by id for ownership resolution (issue #20): a
+     * declared query, deliberately not the inherited (seam-enforced)
+     * {@code findById} — the artifact module's body-addressed routes
+     * and the RBAC evaluator's {@code version} targets resolve the
+     * owning dimension before any scope is bound, the same
+     * authorization-data character as the application registry's
+     * {@code findApplicationById}. Never an endpoint data path: the
+     * seam-served read follows once the scope binds.
+     */
+    Optional<VersionEntity> findVersionById(UUID id);
+
+    /**
      * The sanctioned ownership carry-along (issue #14 transition +
      * issue #17): sets the owning tenant of every version of the
      * application, or nulls it when the application becomes
@@ -55,4 +70,25 @@ public interface VersionRegistryRepository extends JpaRepository<VersionEntity, 
             @Param("applicationId") UUID applicationId,
             @Param("tenantId") UUID tenantId,
             @Param("updatedAt") Instant updatedAt);
+
+    /** Ownership resolution for the evaluator and artifact scope binding; tuples only. */
+    @Override
+    default Optional<VersionOwnership> ownershipOf(UUID versionId) {
+        return findVersionById(versionId)
+                .map(version -> new VersionOwnership(
+                        version.getId(),
+                        version.getApplicationId(),
+                        version.getOrganizationId(),
+                        version.getTenantId()));
+    }
+
+    /** Registry lookup by application (issue #20): ids only, never rows. */
+    @Override
+    default List<UUID> versionIdsOfApplication(UUID applicationId) {
+        return findIdsByApplicationId(applicationId);
+    }
+
+    /** The version ids of one application, for cross-version artifact reads. */
+    @Query("select v.id from VersionEntity v where v.applicationId = :applicationId")
+    List<UUID> findIdsByApplicationId(@Param("applicationId") UUID applicationId);
 }

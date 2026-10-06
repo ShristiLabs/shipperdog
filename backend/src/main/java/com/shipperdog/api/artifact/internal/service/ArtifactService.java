@@ -1,0 +1,735 @@
+package com.shipperdog.api.artifact.internal.service;
+
+import com.shipperdog.api.application.ApplicationAccess;
+import com.shipperdog.api.artifact.ArtifactException;
+import com.shipperdog.api.artifact.ArtifactStore;
+import com.shipperdog.api.artifact.internal.entity.ArtifactEntity;
+import com.shipperdog.api.artifact.internal.entity.ArtifactEntity.Platform;
+import com.shipperdog.api.artifact.internal.entity.ArtifactUploadSessionEntity;
+import com.shipperdog.api.artifact.internal.repository.ArtifactScopedRepository;
+import com.shipperdog.api.artifact.internal.repository.ArtifactUploadSessionScopedRepository;
+import com.shipperdog.api.artifact.internal.storage.ArtifactStorageProperties;
+import com.shipperdog.api.artifact.internal.storage.ArtifactUploadProperties;
+import com.shipperdog.api.audit.AuditEvent;
+import com.shipperdog.api.audit.AuditEventPublisher;
+import com.shipperdog.api.audit.AuditEventType;
+import com.shipperdog.api.config.CursorPageable;
+import com.shipperdog.api.config.MetricNames;
+import com.shipperdog.api.config.TraceAttributes;
+import com.shipperdog.api.tenant.TenantScopeExecutor;
+import com.shipperdog.api.version.VersionAccess;
+import com.shipperdog.api.version.VersionAccess.VersionOwnership;
+import com.shipperdog.api.version.VersionArtifacts;
+import com.shipperdog.api.version.VersionDistributionGuard;
+import com.shipperdog.api.version.VersionException;
+import io.micrometer.core.instrument.MeterRegistry;
+import io.micrometer.core.instrument.Timer;
+import java.io.IOException;
+import java.io.InputStream;
+import java.security.DigestInputStream;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
+import java.time.Clock;
+import java.time.Instant;
+import java.util.ArrayList;
+import java.util.Collection;
+import java.util.HexFormat;
+import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
+import java.util.List;
+import java.util.Locale;
+import java.util.Map;
+import java.util.Set;
+import java.util.UUID;
+import org.springframework.dao.DataIntegrityViolationException;
+import org.springframework.data.domain.Sort;
+import org.springframework.data.jpa.domain.Specification;
+import org.springframework.stereotype.Service;
+import org.springframework.web.multipart.MultipartFile;
+
+/**
+ * The artifact layer (issue #20, S5-01, FR-004/FR-007, PRD 8.5/24,
+ * INV-003): binaries stream into object storage under the PRD 24
+ * layout — the server allocates the artifact id BEFORE any byte moves,
+ * so the key is stable and never derives from user input — while
+ * PostgreSQL keeps the metadata row only (never bytes, FR-007). The
+ * SHA-256 is computed DURING the stream and the row is inserted after,
+ * which keeps {@code artifacts.sha256} NOT NULL by construction (the
+ * V1 column, the #2 expand/contract note's "hash before insert").
+ *
+ * <p>INV-003 — an uploaded artifact cannot be replaced — is structural:
+ * the {@link ArtifactStore} port has no overwrite and no delete; the
+ * store write is preconditioned write-once; the entity has no setters;
+ * and a re-upload of the same file is a NEW row with a NEW id and key
+ * (issue #20 AC3), with the identical checksum surfaced informationally
+ * as {@code duplicateOf} (AC4) — detected across every version of the
+ * application, because a re-uploaded binary is the same binary whether
+ * it landed under this version or a sibling.
+ *
+ * <p>Two paths share one set of guards (issue #20): the server-streamed
+ * multipart route for artifacts at or below the resumable threshold,
+ * and the direct-to-storage resumable session for larger ones (AC5,
+ * the >100 MB rule — enforced, not advisory: a multipart body above
+ * the threshold answers the 413 that points at the session path). The
+ * session handoff happens only after the same validation, the
+ * {@link VersionDistributionGuard} freeze check (issue #19's INV-004
+ * wiring: no artifacts onto a non-DRAFT-frozen version), and the
+ * archived-application guard ({@code APPLICATION_ARCHIVED}, the code
+ * issue #13 reserved for exactly this surface); finalize re-checks the
+ * freeze — a version can be revoked during the upload window — hashes
+ * the stored object (the server never saw the client's direct bytes),
+ * registers the row, and deletes the session. Session creation is
+ * audited ({@code ARTIFACT_UPLOAD_SESSION_CREATED}), and every
+ * registered artifact is audited as {@code ARTIFACT_UPLOADED} with
+ * actor, version, platform, size, and checksum (issue #20 AC6) and
+ * timed as {@code shipperdog.artifact.upload.duration} (AC7, PRD 28).
+ *
+ * <p>Tenant isolation (INV-001, ADR-0002): the artifact routes are
+ * body-addressed ({@code POST /api/v1/artifacts} carries the version
+ * id in the form, FR-004), so no route interceptor can bind the scope
+ * — the sanctioned {@link TenantScopeExecutor} establishes it once the
+ * version's owning dimension resolves through {@link VersionAccess},
+ * exactly the establishment the executor was built for (issue #13's
+ * creation routes). Every subsequent read and write composes through
+ * the seam inside that scope; an unknown or foreign version id is the
+ * standard concealed miss, indistinguishable. This service also
+ * implements {@link VersionArtifacts} — the version module's read-side
+ * seam — answering inside the request's already-bound scope for the
+ * version views and the history read.
+ *
+ * <p>Transactions: each repository call carries its own (the seam's
+ * write guard included); no transaction stays open across a storage
+ * stream — a multi-hundred-MB upload never pins a connection
+ * (streaming sits between the scoped pre-check phase and the scoped
+ * registration phase, each establishing its own scope binding; the
+ * executor is establish-only per execution, not per thread). A crash
+ * between the artifact insert and the session delete is healed by the
+ * finalize replay branch: session present, artifact present, answer
+ * the registered artifact and drop the stale session.
+ */
+@Service
+public class ArtifactService implements VersionArtifacts {
+
+    /** The upload allowlist (issue #20 AC1): extension to platform coherence. */
+    private static final Map<String, Platform> ALLOWED_EXTENSIONS =
+            Map.of(".ipa", Platform.IOS, ".apk", Platform.ANDROID, ".aab", Platform.ANDROID);
+
+    /** Artifacts store an opaque binary; no client media type is trusted. */
+    private static final String CONTENT_TYPE = "application/octet-stream";
+
+    /** Chronological order of every artifact read (upload time, then id). */
+    private static final Sort CHRONOLOGICAL =
+            Sort.by(Sort.Direction.ASC, "createdAt").and(Sort.by(Sort.Direction.ASC, "id"));
+
+    /** Page width of the paged-by-loop artifact reads; never truncates. */
+    private static final int READ_PAGE = 500;
+
+    private final ArtifactScopedRepository artifacts;
+    private final ArtifactUploadSessionScopedRepository sessions;
+    private final ArtifactStore store;
+    private final ApplicationAccess applications;
+    private final VersionAccess versions;
+    private final VersionDistributionGuard distributionGuard;
+    private final TenantScopeExecutor scopeExecutor;
+    private final AuditEventPublisher audit;
+    private final Clock clock;
+    private final TraceAttributes trace;
+    private final MeterRegistry meters;
+    private final ArtifactStorageProperties properties;
+    private final ArtifactUploadProperties uploadLimits;
+
+    ArtifactService(
+            ArtifactScopedRepository artifacts,
+            ArtifactUploadSessionScopedRepository sessions,
+            ArtifactStore store,
+            ApplicationAccess applications,
+            VersionAccess versions,
+            VersionDistributionGuard distributionGuard,
+            TenantScopeExecutor scopeExecutor,
+            AuditEventPublisher audit,
+            Clock clock,
+            TraceAttributes trace,
+            MeterRegistry meters,
+            ArtifactStorageProperties properties,
+            ArtifactUploadProperties uploadLimits) {
+        this.artifacts = artifacts;
+        this.sessions = sessions;
+        this.store = store;
+        this.applications = applications;
+        this.versions = versions;
+        this.distributionGuard = distributionGuard;
+        this.scopeExecutor = scopeExecutor;
+        this.audit = audit;
+        this.clock = clock;
+        this.trace = trace;
+        this.meters = meters;
+        this.properties = properties;
+        this.uploadLimits = uploadLimits;
+    }
+
+    // -------------------------------------------------------------------------
+    // The multipart path (AC1-AC4, AC6, AC7)
+    // -------------------------------------------------------------------------
+
+    /**
+     * Uploads an artifact through the server-streamed multipart route:
+     * everything validates before the first byte is stored — platform
+     * parse, file-name shape and extension allowlist (AC1: unknown
+     * extensions never reach storage), platform registered for the
+     * application, size ceiling, the >threshold rule that points at
+     * the session path (AC5), a pinned build's availability, the
+     * archived-application guard, and INV-004's freeze — then the bytes
+     * stream to storage through a SHA-256 digest, and the metadata row
+     * registers. Identical content elsewhere in the application
+     * surfaces as {@code duplicateOf} (AC4), informational only.
+     */
+    public ArtifactView upload(
+            UUID actorId, UUID versionId, String platformText, String fileName, Long buildNumber, MultipartFile file) {
+        Platform platform = parsePlatform(platformText);
+        String validatedName = requireArtifactFileName(fileName, platform);
+        requireBuildNumber(buildNumber);
+        if (file == null || file.isEmpty()) {
+            throw invalid("file is required and must not be empty");
+        }
+        if (file.getSize() > uploadLimits.maxBytes()) {
+            throw tooLarge();
+        }
+        if (file.getSize() > uploadLimits.resumableThresholdBytes()) {
+            throw new ArtifactException(
+                    ArtifactException.Code.ARTIFACT_TOO_LARGE,
+                    "artifacts larger than " + uploadLimits.resumableThresholdBytes()
+                            + " bytes upload through a resumable session (POST /api/v1/artifacts/upload-sessions)");
+        }
+        VersionOwnership ownership = ownershipOf(versionId);
+        ArtifactView registered = inScope(ownership, actorId, () -> {
+            requireUploadableApplication(ownership, platform);
+            distributionGuard.requireArtifactsMutable(ownership.applicationId(), versionId);
+            if (buildNumber != null && artifacts.existsScoped(pinnedBuild(versionId, platform, buildNumber))) {
+                throw buildTaken();
+            }
+            UUID artifactId = UUID.randomUUID();
+            String storageKey = keyOf(ownership, artifactId);
+            trace.application(ownership.applicationId());
+            trace.version(versionId);
+            trace.artifact(artifactId);
+            Timer.Sample sample = Timer.start(meters);
+            String sha256;
+            try (InputStream raw = file.getInputStream()) {
+                MessageDigest digest = sha256();
+                DigestInputStream digested = new DigestInputStream(raw, digest);
+                store.put(storageKey, digested, CONTENT_TYPE);
+                sha256 = HexFormat.of().formatHex(digest.digest());
+                sample.stop(timer("multipart", "success"));
+            } catch (IOException e) {
+                sample.stop(timer("multipart", "failure"));
+                throw new ArtifactException(ArtifactException.Code.STORAGE_UNAVAILABLE, "cannot read the upload body");
+            } catch (RuntimeException e) {
+                sample.stop(timer("multipart", "failure"));
+                throw e;
+            }
+            ArtifactEntity saved = register(
+                    artifactId,
+                    ownership,
+                    platform,
+                    validatedName,
+                    storageKey,
+                    sha256,
+                    file.getSize(),
+                    buildNumber,
+                    actorId);
+            auditUploaded(actorId, ownership, "multipart", saved);
+            return viewOf(saved, duplicatesOf(sha256, ownership.applicationId(), saved.getId()));
+        });
+        return registered;
+    }
+
+    // -------------------------------------------------------------------------
+    // The resumable path (AC5): session create, direct bytes, finalize
+    // -------------------------------------------------------------------------
+
+    /**
+     * Creates the short-lived direct-to-storage session (AC5): the
+     * same guards as the multipart path run first — the session is a
+     * handoff to an already-validated upload, not a bypass — then the
+     * artifact id and storage key allocate, the store grants the
+     * resumable session URL, and the session row records the handoff
+     * with its expiry. Audited as {@code ARTIFACT_UPLOAD_SESSION_CREATED}.
+     */
+    public UploadSessionView createSession(
+            UUID actorId, UUID versionId, String platformText, String fileName, Long buildNumber, Long sizeHint) {
+        Platform platform = parsePlatform(platformText);
+        String validatedName = requireArtifactFileName(fileName, platform);
+        requireBuildNumber(buildNumber);
+        if (sizeHint != null) {
+            if (sizeHint <= 0) {
+                throw invalid("sizeHint must be positive when present");
+            }
+            if (sizeHint > uploadLimits.maxBytes()) {
+                throw tooLarge();
+            }
+        }
+        VersionOwnership ownership = ownershipOf(versionId);
+        return inScope(ownership, actorId, () -> {
+            requireUploadableApplication(ownership, platform);
+            distributionGuard.requireArtifactsMutable(ownership.applicationId(), versionId);
+            if (buildNumber != null && artifacts.existsScoped(pinnedBuild(versionId, platform, buildNumber))) {
+                throw buildTaken();
+            }
+            UUID artifactId = UUID.randomUUID();
+            String storageKey = keyOf(ownership, artifactId);
+            String sessionUrl = store.createResumableSession(storageKey, CONTENT_TYPE);
+            Instant expiresAt = Instant.now(clock).plus(uploadLimits.sessionTtl());
+            ArtifactUploadSessionEntity session = sessions.saveScoped(new ArtifactUploadSessionEntity(
+                    ownership.organizationId(),
+                    ownership.tenantId(),
+                    versionId,
+                    artifactId,
+                    platform,
+                    validatedName,
+                    buildNumber,
+                    storageKey,
+                    sessionUrl,
+                    expiresAt,
+                    actorId));
+            trace.application(ownership.applicationId());
+            trace.version(versionId);
+            trace.artifact(artifactId);
+            Map<String, String> detail = new LinkedHashMap<>();
+            detail.put("platform", platform.name());
+            detail.put("fileName", validatedName);
+            detail.put("expiresAt", expiresAt.toString());
+            audit(AuditEventType.ARTIFACT_UPLOAD_SESSION_CREATED, actorId, ownership, artifactId, detail);
+            return new UploadSessionView(session.getId(), artifactId, versionId, sessionUrl, expiresAt);
+        });
+    }
+
+    /**
+     * Finalizes the session (AC5): the stored object is streamed back
+     * through a SHA-256 digest — the server never saw the client's
+     * direct bytes, so the checksum comes from the storage itself —
+     * then the artifact row registers, the session row disappears, and
+     * the outcome replays: a finalize against an already-registered
+     * artifact (retry, or the heal of a crash between insert and
+     * session delete) answers the registered view, 200 not 201. The
+     * freeze is re-checked (a version can be revoked mid-upload), the
+     * expiry enforced (410), and an unused session (no bytes) is a
+     * broken request, not a stored one.
+     */
+    public FinalizeView finalizeSession(UUID actorId, UUID artifactId, UUID versionId) {
+        VersionOwnership ownership = ownershipOf(versionId);
+        return inScope(ownership, actorId, () -> {
+            ArtifactUploadSessionEntity session =
+                    sessions.findOneScoped(sessionOf(artifactId)).orElse(null);
+            if (session == null) {
+                ArtifactEntity existing =
+                        artifacts.findScoped(artifactId).orElseThrow(ArtifactService::artifactMissing);
+                requireOwnVersion(existing, versionId);
+                return new FinalizeView(false, viewOf(existing, List.of()));
+            }
+            requireOwnVersion(session, versionId);
+            distributionGuard.requireArtifactsMutable(ownership.applicationId(), versionId);
+            if (Instant.now(clock).isAfter(session.getExpiresAt())) {
+                throw new ArtifactException(
+                        ArtifactException.Code.UPLOAD_SESSION_EXPIRED, "the upload session has expired");
+            }
+            ArtifactStore.StoredChecksum stored = store.hash(session.getStorageKey())
+                    .orElseThrow(() -> invalid("no bytes were uploaded to this session yet"));
+            if (stored.size() == 0) {
+                throw invalid("the uploaded artifact is empty");
+            }
+            if (stored.size() > uploadLimits.maxBytes()) {
+                throw tooLarge();
+            }
+            ArtifactEntity healed = artifacts.findScoped(artifactId).orElse(null);
+            if (healed != null) {
+                sessions.delete(session);
+                return new FinalizeView(
+                        false,
+                        viewOf(healed, duplicatesOf(healed.getSha256(), ownership.applicationId(), healed.getId())));
+            }
+            Timer.Sample sample = Timer.start(meters);
+            ArtifactEntity saved;
+            try {
+                saved = register(
+                        artifactId,
+                        ownership,
+                        session.getPlatform(),
+                        session.getFileName(),
+                        session.getStorageKey(),
+                        stored.sha256Hex(),
+                        stored.size(),
+                        session.getBuildNumber(),
+                        actorId);
+                sample.stop(timer("resumable", "success"));
+            } catch (RuntimeException e) {
+                sample.stop(timer("resumable", "failure"));
+                throw e;
+            }
+            sessions.delete(session);
+            auditUploaded(actorId, ownership, "resumable", saved);
+            return new FinalizeView(
+                    true, viewOf(saved, duplicatesOf(stored.sha256Hex(), ownership.applicationId(), saved.getId())));
+        });
+    }
+
+    // -------------------------------------------------------------------------
+    // VersionArtifacts: the version views' slot read
+    // -------------------------------------------------------------------------
+
+    /**
+     * The artifacts of the requested versions inside the request's
+     * bound scope, chronological (issue #20 filling the #17/#19
+     * promises): the version detail's per-platform slots and the
+     * history read's artifact list render this verbatim. Pages loop to
+     * completion — the read never silently truncates (the #16 lesson).
+     */
+    @Override
+    public Map<UUID, List<VersionArtifactSlot>> byVersionIds(Collection<UUID> versionIds) {
+        Map<UUID, List<VersionArtifactSlot>> byVersion = new LinkedHashMap<>();
+        if (versionIds == null || versionIds.isEmpty()) {
+            return byVersion;
+        }
+        List<ArtifactEntity> rows = new ArrayList<>();
+        long offset = 0;
+        while (true) {
+            List<ArtifactEntity> page = artifacts
+                    .findAllScoped(ofVersions(versionIds), new CursorPageable(offset, READ_PAGE, CHRONOLOGICAL))
+                    .getContent();
+            rows.addAll(page);
+            if (page.size() < READ_PAGE) {
+                break;
+            }
+            offset += READ_PAGE;
+        }
+        for (ArtifactEntity row : rows) {
+            byVersion
+                    .computeIfAbsent(row.getVersionId(), id -> new ArrayList<>())
+                    .add(new VersionArtifactSlot(
+                            row.getId(),
+                            row.getPlatform().name(),
+                            row.getFileName(),
+                            row.getSize(),
+                            row.getSha256(),
+                            row.getStatus().name(),
+                            row.getCreatedAt()));
+        }
+        return byVersion;
+    }
+
+    // -------------------------------------------------------------------------
+    // Views
+    // -------------------------------------------------------------------------
+
+    /**
+     * The artifact view (PRD 8.5's S5-01 slice): identity, platform,
+     * the stored binary's name, size, and SHA-256, the pinned-or-null
+     * build number, the lifecycle status (VALIDATING — S5-05's
+     * pipeline owns the later transitions), the uploader, and the
+     * server-derived storage key. {@code duplicateOf} carries the
+     * same-content detection (AC4): informational, never a rejection.
+     */
+    public record ArtifactView(
+            UUID id,
+            UUID versionId,
+            String platform,
+            String fileName,
+            long size,
+            String sha256,
+            Long buildNumber,
+            String status,
+            UUID uploadedBy,
+            String storageKey,
+            Instant uploadedAt,
+            List<DuplicateOf> duplicateOf) {
+
+        static ArtifactView from(ArtifactEntity artifact, List<DuplicateOf> duplicates) {
+            return new ArtifactView(
+                    artifact.getId(),
+                    artifact.getVersionId(),
+                    artifact.getPlatform().name(),
+                    artifact.getFileName(),
+                    artifact.getSize(),
+                    artifact.getSha256(),
+                    artifact.getBuildNumber(),
+                    artifact.getStatus().name(),
+                    artifact.getUploadedBy(),
+                    artifact.getStorageKey(),
+                    artifact.getCreatedAt(),
+                    List.copyOf(duplicates));
+        }
+    }
+
+    /** One same-content hit: where else this exact binary is registered. */
+    public record DuplicateOf(UUID artifactId, UUID versionId) {}
+
+    /** The upload-session handoff (AC5): where to stream, and until when. */
+    public record UploadSessionView(
+            UUID sessionId, UUID artifactId, UUID versionId, String uploadUrl, Instant expiresAt) {}
+
+    /** The finalize outcome: fresh registration (201) or state replay (200). */
+    public record FinalizeView(boolean created, ArtifactView artifact) {}
+
+    // -------------------------------------------------------------------------
+    // Helpers: guards, keys, registration, duplicates, audit, metric
+    // -------------------------------------------------------------------------
+
+    /** Establishes the version's owning scope and runs the work inside it (issue #13's executor). */
+    private <T> T inScope(VersionOwnership ownership, UUID actorId, java.util.function.Supplier<T> work) {
+        return ownership.tenantId() != null
+                ? scopeExecutor.inScope(ownership.tenantId(), actorId, work)
+                : scopeExecutor.inOrganizationScope(ownership.organizationId(), actorId, work);
+    }
+
+    /** The version's owning dimension, or the concealed miss. */
+    private VersionOwnership ownershipOf(UUID versionId) {
+        return versions.ownershipOf(versionId).orElseThrow(() -> versionMissing());
+    }
+
+    /**
+     * The application guards every upload shares: the application must
+     * exist (the concealed miss), must not be archived
+     * ({@code APPLICATION_ARCHIVED}, reserved for exactly this surface
+     * since issue #13), and must have registered the target platform —
+     * an ANDROID artifact of an iOS-only application is a broken
+     * request, not a storage problem.
+     */
+    private ApplicationAccess.ApplicationProfile requireUploadableApplication(
+            VersionOwnership ownership, Platform platform) {
+        ApplicationAccess.ApplicationProfile application = applications
+                .profileOf(ownership.applicationId())
+                .orElseThrow(() ->
+                        new VersionException(VersionException.Code.APPLICATION_NOT_FOUND, "application not found"));
+        if ("ARCHIVED".equals(application.status())) {
+            throw new ArtifactException(
+                    ArtifactException.Code.APPLICATION_ARCHIVED, "application is archived; no new artifacts");
+        }
+        if (!application.platforms().contains(platform.name())) {
+            throw invalid(platform.name() + " is not a registered platform of this application");
+        }
+        return application;
+    }
+
+    /**
+     * The PRD 24 storage key: /{organizationId}/{tenantId}/{applicationId}/
+     * {versionId}/{artifactId}/artifact — every segment a server-known
+     * id (the artifact id allocated before any byte moved), the tenant
+     * slot {@code _shared} for organization-owned versions. Addressing
+     * only, never authorization (PRD 24's own note).
+     */
+    private static String keyOf(VersionOwnership ownership, UUID artifactId) {
+        String tenantSegment =
+                ownership.tenantId() != null ? ownership.tenantId().toString() : "_shared";
+        return "%s/%s/%s/%s/%s/artifact"
+                .formatted(
+                        ownership.organizationId(),
+                        tenantSegment,
+                        ownership.applicationId(),
+                        ownership.versionId(),
+                        artifactId);
+    }
+
+    /** Inserts the metadata row; the pinned-build race answers the precise 409. */
+    private ArtifactEntity register(
+            UUID artifactId,
+            VersionOwnership ownership,
+            Platform platform,
+            String fileName,
+            String storageKey,
+            String sha256,
+            long size,
+            Long buildNumber,
+            UUID actorId) {
+        ArtifactEntity entity = new ArtifactEntity(
+                artifactId,
+                ownership.versionId(),
+                ownership.organizationId(),
+                ownership.tenantId(),
+                platform,
+                fileName,
+                storageKey,
+                sha256,
+                size,
+                buildNumber,
+                ArtifactEntity.Status.VALIDATING,
+                actorId);
+        try {
+            return artifacts.saveScoped(entity);
+        } catch (DataIntegrityViolationException e) {
+            if (buildNumber != null) {
+                throw buildTaken();
+            }
+            throw e;
+        }
+    }
+
+    /** The same-content detection (AC4): every other registration of this checksum in the application. */
+    private List<DuplicateOf> duplicatesOf(String sha256, UUID applicationId, UUID excludeArtifactId) {
+        Set<UUID> versionIds = new LinkedHashSet<>(versions.versionIdsOfApplication(applicationId));
+        if (versionIds.isEmpty()) {
+            return List.of();
+        }
+        return artifacts
+                .findAllScoped(
+                        sameContent(sha256, versionIds, excludeArtifactId),
+                        org.springframework.data.domain.PageRequest.of(0, 50))
+                .stream()
+                .map(row -> new DuplicateOf(row.getId(), row.getVersionId()))
+                .toList();
+    }
+
+    private void auditUploaded(UUID actorId, VersionOwnership ownership, String path, ArtifactEntity artifact) {
+        Map<String, String> detail = new LinkedHashMap<>();
+        detail.put("platform", artifact.getPlatform().name());
+        detail.put("fileName", artifact.getFileName());
+        detail.put("size", Long.toString(artifact.getSize()));
+        detail.put("sha256", artifact.getSha256());
+        detail.put("path", path);
+        audit(AuditEventType.ARTIFACT_UPLOADED, actorId, ownership, artifact.getId(), detail);
+    }
+
+    private void audit(
+            AuditEventType type,
+            UUID actorId,
+            VersionOwnership ownership,
+            UUID artifactId,
+            Map<String, String> detail) {
+        audit.publish(AuditEvent.builder(type)
+                .occurredAt(Instant.now(clock))
+                .userId(actorId)
+                .orgId(ownership.organizationId())
+                .tenantId(ownership.tenantId())
+                .applicationId(ownership.applicationId())
+                .versionId(ownership.versionId())
+                .artifactId(artifactId)
+                .success(true)
+                .detail(detail)
+                .build());
+    }
+
+    private Timer timer(String path, String outcome) {
+        return Timer.builder(MetricNames.ARTIFACT_UPLOAD_DURATION)
+                .tag("path", path)
+                .tag("outcome", outcome)
+                .register(meters);
+    }
+
+    private ArtifactView viewOf(ArtifactEntity artifact, List<DuplicateOf> duplicates) {
+        return ArtifactView.from(artifact, duplicates);
+    }
+
+    private static Platform parsePlatform(String platformText) {
+        if (platformText == null || platformText.isBlank()) {
+            throw invalid("platform is required (IOS or ANDROID)");
+        }
+        try {
+            return Platform.valueOf(platformText.trim().toUpperCase(Locale.ROOT));
+        } catch (IllegalArgumentException e) {
+            throw invalid("platform is IOS or ANDROID");
+        }
+    }
+
+    /**
+     * The client file name (AC1's pre-storage gate): a bare name of
+     * at most 255 characters whose extension is on the allowlist AND
+     * coherent with the platform — an {@code .ipa} of an ANDROID
+     * upload (or an unknown extension) is rejected before any byte is
+     * stored. The name is metadata only; the storage key never derives
+     * from it.
+     */
+    private static String requireArtifactFileName(String fileName, Platform platform) {
+        if (fileName == null || fileName.isBlank()) {
+            throw invalid("file name is required");
+        }
+        String trimmed = fileName.trim();
+        if (trimmed.length() > 255 || trimmed.contains("/") || trimmed.contains("\\") || trimmed.contains("\0")) {
+            throw invalid("file name is a bare name of at most 255 characters");
+        }
+        int dot = trimmed.lastIndexOf('.');
+        String extension = dot >= 0 ? trimmed.substring(dot).toLowerCase(Locale.ROOT) : "";
+        Platform implied = ALLOWED_EXTENSIONS.get(extension);
+        if (implied == null) {
+            throw new ArtifactException(
+                    ArtifactException.Code.ARTIFACT_FILE_TYPE_REJECTED,
+                    "the file type is not supported; expected .ipa, .apk, or .aab");
+        }
+        if (implied != platform) {
+            throw new ArtifactException(
+                    ArtifactException.Code.ARTIFACT_FILE_TYPE_REJECTED,
+                    trimmed + " does not match platform " + platform.name());
+        }
+        return trimmed;
+    }
+
+    private static void requireBuildNumber(Long buildNumber) {
+        if (buildNumber != null && buildNumber < 0) {
+            throw invalid("build number must not be negative");
+        }
+    }
+
+    private static Specification<ArtifactEntity> pinnedBuild(UUID versionId, Platform platform, long buildNumber) {
+        return (root, query, builder) -> builder.and(
+                builder.equal(root.get("versionId"), versionId),
+                builder.equal(root.get("platform"), platform),
+                builder.equal(root.get("buildNumber"), buildNumber));
+    }
+
+    private static Specification<ArtifactEntity> ofVersions(Collection<UUID> versionIds) {
+        return (root, query, builder) -> root.get("versionId").in(versionIds);
+    }
+
+    private static Specification<ArtifactEntity> sameContent(
+            String sha256, Collection<UUID> versionIds, UUID excludeId) {
+        return (root, query, builder) -> builder.and(
+                builder.equal(root.get("sha256"), sha256),
+                root.get("versionId").in(versionIds),
+                builder.notEqual(root.get("id"), excludeId));
+    }
+
+    private static Specification<ArtifactUploadSessionEntity> sessionOf(UUID artifactId) {
+        return (root, query, builder) -> builder.equal(root.get("artifactId"), artifactId);
+    }
+
+    /** A session or artifact of a different version is the concealed miss. */
+    private static void requireOwnVersion(ArtifactUploadSessionEntity session, UUID versionId) {
+        if (!session.getVersionId().equals(versionId)) {
+            throw artifactMissing();
+        }
+    }
+
+    private static void requireOwnVersion(ArtifactEntity artifact, UUID versionId) {
+        if (!artifact.getVersionId().equals(versionId)) {
+            throw artifactMissing();
+        }
+    }
+
+    private static ArtifactException artifactMissing() {
+        return new ArtifactException(ArtifactException.Code.ARTIFACT_NOT_FOUND, "artifact not found");
+    }
+
+    private static VersionException versionMissing() {
+        return new VersionException(VersionException.Code.NOT_FOUND, "version not found");
+    }
+
+    private static ArtifactException buildTaken() {
+        return new ArtifactException(
+                ArtifactException.Code.ARTIFACT_BUILD_TAKEN,
+                "the build number is already in use for this version and platform");
+    }
+
+    private static ArtifactException tooLarge() {
+        return new ArtifactException(
+                ArtifactException.Code.ARTIFACT_TOO_LARGE, "the artifact exceeds the maximum upload size");
+    }
+
+    private static ArtifactException invalid(String message) {
+        return new ArtifactException(ArtifactException.Code.INVALID_REQUEST, message);
+    }
+
+    private static MessageDigest sha256() {
+        try {
+            return MessageDigest.getInstance("SHA-256");
+        } catch (NoSuchAlgorithmException e) {
+            throw new IllegalStateException("SHA-256 is unavailable", e);
+        }
+    }
+}
