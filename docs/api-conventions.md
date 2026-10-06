@@ -167,6 +167,19 @@ shows `extraction.status = PENDING`; poll this route for the settled
 outcome. Details, including the stored extraction failure codes, live
 in [artifacts.md](artifacts.md).
 
+Since S5-05 (issue #24) the read also settles the validation tier:
+the same route answers the artifact's `validation` block (per-stage
+status/code/reason in FR-006 order, the `attempts` counter, and the
+structural `format` verdict), and the retry entry
+`POST /api/v1/artifacts/{artifactId}/revalidate?version_id={versionId}`
+re-drives it — permission-checked at the carried version
+(`app:artifacts:upload`), 202 with the artifact view (the attempt is
+scheduled, not awaited — poll the read), and 409
+`ARTIFACT_NOT_VALIDATABLE` for anything not FAILED or still
+VALIDATING, the PRD 18 transition table's own refusal. Details,
+including the stored validation failure codes, live in
+[artifacts.md](artifacts.md).
+
 **Multipart (at or below the resumable threshold).**
 `POST /api/v1/artifacts` with `multipart/form-data`:
 

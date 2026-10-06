@@ -131,7 +131,13 @@ class ArtifactExtractionIntegrationTest {
         assertThat(settled.get("versionName").asText()).isEqualTo(IpaFixtures.VERSION_NAME);
         assertThat(settled.get("minimumOs").asText()).isEqualTo(IpaFixtures.MINIMUM_OS);
         assertThat(settled.get("buildNumber").asLong()).isEqualTo(421L);
-        assertThat(settled.get("status").asText()).isEqualTo("VALIDATING");
+        // Since S5-05 (issue #24) the extraction tier hands a settled
+        // artifact to the validation pipeline, and this world matches
+        // every stage (registered identifier, version name, unexpired
+        // profile): the row settles READY. Await the terminal state so
+        // the assertion never races the async tail.
+        JsonNode validated = awaitValidation(uploaded, artifactId, "PASSED");
+        assertThat(validated.get("status").asText()).isEqualTo("READY");
 
         Map<String, Object> row = jdbc.queryForMap(
                 "SELECT bundle_id, version_name, minimum_os, build_number, extracted_metadata, extraction_error, status "
@@ -142,7 +148,7 @@ class ArtifactExtractionIntegrationTest {
         assertThat(row.get("minimum_os")).isEqualTo(IpaFixtures.MINIMUM_OS);
         assertThat(((Number) row.get("build_number")).longValue()).isEqualTo(421L);
         assertThat(row.get("extraction_error")).isNull();
-        assertThat(row.get("status")).isEqualTo("VALIDATING");
+        assertThat(row.get("status")).isEqualTo("READY");
         JsonNode document = mapper.readTree(String.valueOf(row.get("extracted_metadata")));
         assertThat(document.get("displayName").asText()).isEqualTo(IpaFixtures.DISPLAY_NAME);
         assertThat(document.get("parser").asText()).isEqualTo("ipa:dd-plist");
@@ -488,6 +494,21 @@ class ArtifactExtractionIntegrationTest {
     // -----------------------------------------------------------------------
     // Harness
     // -----------------------------------------------------------------------
+
+    /** Awaits the S5-05 validation outcome (issue #24) on the artifact read. */
+    private JsonNode awaitValidation(Uploaded uploaded, UUID artifactId, String outcome) throws InterruptedException {
+        long deadline = System.currentTimeMillis() + 20_000;
+        JsonNode last = null;
+        while (System.currentTimeMillis() < deadline) {
+            last = get(
+                    uploaded.token(), "/api/v1/artifacts/" + artifactId + "?version_id=" + uploaded.versionId(), 200);
+            if (outcome.equals(last.get("validation").get("status").asText())) {
+                return last;
+            }
+            Thread.sleep(100);
+        }
+        return last;
+    }
 
     private JsonNode awaitExtraction(Uploaded uploaded, UUID artifactId, String outcome) throws InterruptedException {
         long deadline = System.currentTimeMillis() + 20_000;

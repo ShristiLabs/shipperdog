@@ -161,6 +161,12 @@ class ArtifactUploadIntegrationTest {
         assertThat(stored.sha256Hex()).isEqualTo(sha256Of(bytes));
         assertThat(stored.size()).isEqualTo(bytes.length);
 
+        // Since S5-05 (issue #24) the validation pipeline follows
+        // extraction; this world's unsigned IPA settles FAILED at the
+        // SIGNING stage. Await the terminal state so the slot
+        // assertion never races the async tail.
+        awaitArtifactTerminal(uploaded.token(), versionId, artifactId);
+
         // The version surfaces the artifact: per-platform slot (the #17
         // promise E5 fills) and the history read's chronological list
         // (the #19 promise E5 fills).
@@ -168,7 +174,7 @@ class ArtifactUploadIntegrationTest {
         JsonNode slots = detail.get("artifactsByPlatform").get("IOS");
         assertThat(slots.size()).isEqualTo(1);
         assertThat(slots.get(0).get("id").asText()).isEqualTo(artifactId.toString());
-        assertThat(slots.get(0).get("status").asText()).isEqualTo("VALIDATING");
+        assertThat(slots.get(0).get("status").asText()).isEqualTo("FAILED");
         JsonNode history =
                 get(uploaded.token(), historyUri(appId, versionId), 200).get("artifacts");
         assertThat(history.size()).isEqualTo(1);
@@ -604,6 +610,22 @@ class ArtifactUploadIntegrationTest {
                 uploaderToken,
                 uploaderEmail,
                 IpaFixtures.unsignedIpa());
+    }
+
+    /** Awaits the S5-05 pipeline's terminal status (issue #24): not VALIDATING, not UPLOADING. */
+    private void awaitArtifactTerminal(String token, UUID versionId, UUID artifactId) throws InterruptedException {
+        long deadline = System.currentTimeMillis() + 20_000;
+        String last = "";
+        while (System.currentTimeMillis() < deadline) {
+            last = get(token, "/api/v1/artifacts/" + artifactId + "?version_id=" + versionId, 200)
+                    .get("status")
+                    .asText();
+            if (!"VALIDATING".equals(last) && !"UPLOADING".equals(last)) {
+                return;
+            }
+            Thread.sleep(100);
+        }
+        throw new AssertionError("artifact never left the async window; last status " + last);
     }
 
     private static String versionsUri(UUID applicationId) {

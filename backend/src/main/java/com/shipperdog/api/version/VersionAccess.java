@@ -57,6 +57,19 @@ public interface VersionAccess {
      */
     List<UUID> versionIdsOfApplication(UUID applicationId);
 
+    /**
+     * The version record's own name (issue #24, S5-05): the artifact
+     * validation pipeline's VERSION_MATCH stage compares the marketing
+     * version extracted from a binary against the name the version
+     * record carries — a mismatch fails the artifact (M1 rejects
+     * outright; no auto-amend proposal). The name only, never the
+     * row; the same registry-read character as {@link #ownershipOf}.
+     */
+    Optional<VersionRecord> recordOf(UUID versionId);
+
     /** The ownership tuple callers may resolve; never the row itself. */
     record VersionOwnership(UUID versionId, UUID applicationId, UUID organizationId, UUID tenantId) {}
+
+    /** The version-record name callers may resolve; never the row itself. */
+    record VersionRecord(UUID versionId, String versionName) {}
 }

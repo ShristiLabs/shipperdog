@@ -125,8 +125,13 @@ public final class IpaFixtures {
         return BinaryPropertyListWriter.writeToArray(infoPlistValues(BUILD));
     }
 
-    /** The provisioning profile's XML plist payload. */
+    /** The provisioning profile's XML plist payload (unexpired). */
     public static String profilePayload() {
+        return profilePayload("2031-01-01T00:00:00Z");
+    }
+
+    /** The profile payload with the given expiration instant (the expired-profile leg). */
+    public static String profilePayload(String expiration) {
         return "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n"
                 + "<!DOCTYPE plist PUBLIC \"-//Apple//DTD PLIST 1.0//EN\" "
                 + "\"http://www.apple.com/DTDs/PropertyList-1.0.dtd\">\n"
@@ -140,7 +145,9 @@ public final class IpaFixtures {
                 + "<key>TeamIdentifiers</key><array><string>"
                 + TEAM_ID
                 + "</string></array>"
-                + "<key>ExpirationDate</key><date>2031-01-01T00:00:00Z</date>"
+                + "<key>ExpirationDate</key><date>"
+                + expiration
+                + "</date>"
                 + "<key>Entitlements</key><dict>"
                 + "<key>application-identifier</key><string>"
                 + TEAM_ID
@@ -155,12 +162,40 @@ public final class IpaFixtures {
                 + "</dict></plist>";
     }
 
+    /** An IPA whose embedded profile expired long ago (issue #24's SIGNING_PROFILE_EXPIRED leg). */
+    public static byte[] expiredProfileIpa() throws IOException {
+        return ipa(infoPlist(), provisioningProfileOf(profilePayload("2020-01-01T00:00:00Z")));
+    }
+
+    /** The profile payload with no expiration date (issue #24's SIGNING_INCOHERENT leg). */
+    public static String profilePayloadWithoutExpiration() {
+        return profilePayload("2031-01-01T00:00:00Z")
+                .replace(
+                        "<key>ExpirationDate</key><date>2031-01-01T00:00:00Z</date>",
+                        "<key>NotAnExpirationDate</key><string>x</string>");
+    }
+
+    /** An IPA whose profile records no expiration (incoherent as stored signing material). */
+    public static byte[] incoherentProfileIpa() throws IOException {
+        return ipa(infoPlist(), provisioningProfileOf(profilePayloadWithoutExpiration()));
+    }
+
+    /** A signed IPA whose CFBundleVersion is not a plain integer (no numeric build comparison exists). */
+    public static byte[] nonNumericSignedIpa() throws IOException {
+        return ipa(BinaryPropertyListWriter.writeToArray(infoPlistValues("1.2.3-beta.1")), provisioningProfile());
+    }
+
     /** A fake CMS container: DER-ish noise around the XML payload. */
     public static byte[] provisioningProfile() {
-        byte[] payload = profilePayload().getBytes(StandardCharsets.UTF_8);
-        byte[] container = new byte[payload.length + 96];
+        return provisioningProfileOf(profilePayload());
+    }
+
+    /** The fake CMS container of an arbitrary profile payload. */
+    public static byte[] provisioningProfileOf(String payload) {
+        byte[] bytes = payload.getBytes(StandardCharsets.UTF_8);
+        byte[] container = new byte[bytes.length + 96];
         RANDOM.nextBytes(container);
-        System.arraycopy(payload, 0, container, 48, payload.length);
+        System.arraycopy(bytes, 0, container, 48, bytes.length);
         return container;
     }
 

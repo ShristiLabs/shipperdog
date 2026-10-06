@@ -82,6 +82,18 @@ shipperdog:
       queue-capacity: ${ARTIFACT_EXTRACTION_QUEUE_CAPACITY:200}
       max-entry-bytes: ${ARTIFACT_EXTRACTION_MAX_ENTRY_BYTES:16777216}
       storage-retry-attempts: ${ARTIFACT_EXTRACTION_STORAGE_RETRIES:3}
+    # Validation pipeline (issue #24, S5-05, FR-006): the seven-stage
+    # gate between upload and READY runs on its own bounded executor —
+    # separate from the extraction pool because the extraction job's
+    # settled phase is what schedules it (a shared queue would
+    # self-deadlock the hand-off). A full queue refuses loudly (the
+    # validation document records VALIDATION_QUEUE_FULL, the artifact
+    # stays VALIDATING), and storage hiccups retry a bounded number of
+    # times before the attempt records VALIDATION_UNAVAILABLE.
+    validation:
+      concurrency: ${ARTIFACT_VALIDATION_CONCURRENCY:2}
+      queue-capacity: ${ARTIFACT_VALIDATION_QUEUE_CAPACITY:200}
+      storage-retry-attempts: ${ARTIFACT_VALIDATION_STORAGE_RETRIES:3}
 
 server:
   port: ${SERVER_PORT:8080}

@@ -59,12 +59,13 @@ public class ArtifactEntity implements OrganizationScope, Persistable<UUID> {
      * Lifecycle vocabulary of the V1 baseline {@code artifact_status}
      * (PRD 18). UPLOADING is the pre-registration state of the
      * resumable path's session row; a registered artifact lands as
-     * VALIDATING — its bytes are stored and checksummed, and S5-05's
-     * validation pipeline owns every later transition (READY, FAILED;
-     * DISTRIBUTED and ARCHIVED follow distribution). S5-01 never moves
-     * an artifact past VALIDATING: no validation pipeline exists yet,
-     * and claiming READY without FR-006's checks would be a lie the
-     * registry refuses.
+     * VALIDATING — its bytes are stored and checksummed — and every
+     * later transition composes through the PRD 18 table of
+     * {@code ArtifactStateMachine} (issue #24, S5-05): the validation
+     * pipeline moves it READY or FAILED, a revalidation moves FAILED
+     * back to VALIDATING, and DISTRIBUTED/ARCHIVED follow distribution
+     * (E9/E13). PRD 18 has no REVOKED state: revocation is the E7
+     * authorization lifecycle of INV-007, never an artifact-row state.
      */
     public enum Status {
         UPLOADING,
@@ -143,6 +144,28 @@ public class ArtifactEntity implements OrganizationScope, Persistable<UUID> {
     /** The actionable failure or block record (jsonb, V16; issue #21 AC3). */
     @JdbcTypeCode(SqlTypes.JSON)
     private String extractionError;
+
+    /**
+     * The structural container verdict (V18, issue #24, S5-05): IPA on
+     * iOS, APK or AAB on Android — the S5-03 structural detection,
+     * never the file name's claim. Written ONCE by the validation
+     * pipeline's FORMAT stage (the binary is immutable, so the verdict
+     * cannot change; a divergent re-observation is a fault, loudly
+     * rejected). FR-006's channel rule (AAB is Play-only, direct
+     * download needs APK) is enforced at distribution time against
+     * this recorded fact — the upload of an AAB stays valid.
+     */
+    private String format;
+
+    /**
+     * The validation document (jsonb, V18, issue #24): the per-stage
+     * record of the LATEST pipeline attempt — outcome, attempts
+     * counter, every stage's status/reason in FR-006 order. Unlike the
+     * extraction documents this one is REWRITTEN per attempt (the row
+     * holds current state, the audit trail holds history).
+     */
+    @JdbcTypeCode(SqlTypes.JSON)
+    private String validation;
 
     @Enumerated(EnumType.STRING)
     @JdbcTypeCode(SqlTypes.NAMED_ENUM)
@@ -299,6 +322,16 @@ public class ArtifactEntity implements OrganizationScope, Persistable<UUID> {
         return extractionError;
     }
 
+    /** The structural container verdict (V18), or null before the first validation attempt. */
+    public String getFormat() {
+        return format;
+    }
+
+    /** The latest validation-attempt document (V18), or null before the first attempt. */
+    public String getValidation() {
+        return validation;
+    }
+
     /** The frozen-key provenance document, or null when none was asserted. */
     public String getProvenance() {
         return provenance;
@@ -385,6 +418,93 @@ public class ArtifactEntity implements OrganizationScope, Persistable<UUID> {
         if (extractionRecorded()) {
             throw new IllegalStateException("an extraction outcome is already recorded for artifact " + id);
         }
+    }
+
+    // -------------------------------------------------------------------------
+    // Validation writes (issue #24, S5-05): the state machine's clients
+    // -------------------------------------------------------------------------
+
+    /**
+     * The FORMAT stage's write-once verdict (V18): the binary is
+     * immutable, so the structural format cannot change between
+     * attempts — the first verdict stays, and a divergent
+     * re-observation is an {@link IllegalStateException} (a parser
+     * regression, never a data fact).
+     */
+    public void recordFormat(String structuralVerdict) {
+        if (this.format == null) {
+            this.format = structuralVerdict;
+            return;
+        }
+        if (!this.format.equals(structuralVerdict)) {
+            throw new IllegalStateException("artifact " + id + " already carries format " + this.format + "; "
+                    + structuralVerdict + " contradicts an immutable binary");
+        }
+    }
+
+    /**
+     * The pipeline's terminal write (issue #24): VALIDATING moves READY
+     * (every stage passed) or FAILED (a stage failed). A re-fail of an
+     * already-FAILED row (the extraction tier failed it first; the
+     * pipeline's METADATA stage then records why) is a legal no-op
+     * transition — the document is what the write carries. The
+     * transition itself composes through {@link
+     * com.shipperdog.api.artifact.internal.validation.ArtifactStateMachine},
+     * so nothing outside the PRD 18 table can move the status.
+     */
+    public void applyValidationOutcome(boolean ready, String validationDocument) {
+        Status target = ready ? Status.READY : Status.FAILED;
+        if (this.status != target) {
+            com.shipperdog.api.artifact.internal.validation.ArtifactStateMachine.requireLegal(this.status, target);
+            this.status = target;
+        }
+        this.validation = validationDocument;
+    }
+
+    /**
+     * The infra outcome (queue full, storage unreadable after retries,
+     * extraction still pending): the validation document records the
+     * block so the VALIDATING row is never a silent stall, and the
+     * status deliberately stays VALIDATING — infrastructure proved
+     * nothing about the binary.
+     */
+    public void noteValidationBlocked(String validationDocument) {
+        this.validation = validationDocument;
+    }
+
+    /**
+     * The revalidation entry transition (issue #24's retry scope):
+     * FAILED moves back to VALIDATING so the pipeline can re-run —
+     * deterministic stages reproduce their verdict, but the WORLD may
+     * have changed (a corrected registry identifier, recovered
+     * storage), and the retry is how the corrected fact wins. A row
+     * already VALIDATING is a no-op (an in-flight or blocked
+     * validation re-drives without a transition).
+     */
+    public void beginRevalidation() {
+        if (this.status == Status.VALIDATING) {
+            return;
+        }
+        com.shipperdog.api.artifact.internal.validation.ArtifactStateMachine.requireLegal(
+                this.status, Status.VALIDATING);
+        this.status = Status.VALIDATING;
+    }
+
+    /**
+     * Re-arms extraction after a BLOCKED outcome (issue #24): a BLOCKED
+     * record is an infra note, not a binary verdict — the queue-full or
+     * storage-unavailable marker clears so the write-once extraction
+     * guard can accept a real outcome when the re-drive runs. Legal
+     * only on a still-VALIDATING row whose recorded outcome is exactly
+     * the blocked shape ({@code extractionError} set, no document);
+     * a FAILED extraction outcome is immutable history.
+     */
+    public void clearExtractionBlock() {
+        if (this.status != Status.VALIDATING || this.extractedMetadata != null || this.extractionError == null) {
+            throw new IllegalStateException(
+                    "artifact " + id + " carries no extraction block to clear (status " + this.status + ")");
+        }
+        this.extractionError = null;
     }
 
     public UUID getUploadedBy() {

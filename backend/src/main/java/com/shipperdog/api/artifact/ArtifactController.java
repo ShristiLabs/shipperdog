@@ -185,6 +185,29 @@ public class ArtifactController {
         return artifacts.get(requireUserId(principal), artifactId, versionId);
     }
 
+    /**
+     * Re-drives validation (issue #24, S5-05 — the story's retry
+     * scope): a FAILED artifact moves back to VALIDATING and the
+     * pipeline re-runs; a blocked validation or extraction re-enters
+     * its tier where it stands. Deterministic stages reproduce their
+     * verdict, but a corrected world — a fixed registry identifier,
+     * recovered storage — wins through this retry. The {@code
+     * version_id} query parameter is the permission target (the same
+     * body-addressed shape as the read); anything not FAILED or
+     * still-VALIDATING answers 409 {@code ARTIFACT_NOT_VALIDATABLE},
+     * the PRD 18 table's own refusal. 202: the attempt is scheduled,
+     * not awaited — read the artifact back to watch it settle.
+     */
+    @PostMapping("/{artifactId}/revalidate")
+    @ResponseStatus(HttpStatus.ACCEPTED)
+    @PreAuthorize("hasPermission(#versionId, 'version', 'app:artifacts:upload')")
+    ArtifactView revalidate(
+            @AuthenticationPrincipal Object principal,
+            @PathVariable UUID artifactId,
+            @RequestParam("version_id") UUID versionId) {
+        return artifacts.revalidate(requireUserId(principal), artifactId, versionId);
+    }
+
     private static String originalName(MultipartFile file) {
         return file == null ? null : file.getOriginalFilename();
     }

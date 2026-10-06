@@ -58,5 +58,18 @@ public final class MetricNames {
      */
     public static final String ARTIFACT_EXTRACTION_DURATION = "shipperdog.artifact.extraction.duration";
 
+    /**
+     * Timer of every completed artifact validation attempt (issue #24,
+     * S5-05 — the reserved {@code artifact_validation_duration} of PRD
+     * 28), tagged {@code platform=IOS|ANDROID} and {@code
+     * outcome=success|failed|blocked}: success moved the artifact
+     * READY, failed moved it FAILED (a deterministic stage verdict),
+     * and blocked left it VALIDATING (infrastructure refused — queue
+     * full, storage unreadable after retries, or the extraction tier
+     * unsettled). The PRD 42 "artifact metadata processing < 30 sec"
+     * SLO observes the extraction meter plus THIS meter end to end.
+     */
+    public static final String ARTIFACT_VALIDATION_DURATION = "shipperdog.artifact.validation.duration";
+
     private MetricNames() {}
 }

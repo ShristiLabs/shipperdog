@@ -73,7 +73,7 @@ Prometheus registry renders underscores + `_seconds` units):
 | `shipperdog_authorization_decision_duration_seconds` | RBAC enforcement point, tag `outcome=allow\|deny` | S1-07 (SLO: <100 ms) |
 | `shipperdog_artifact_upload_duration_seconds` | Artifact upload service, tags `path=multipart\|resumable` and `outcome=success\|failure` (the failure leg records a store or insert failure after streaming began, not a rejected request) | S5-01 (issue #20) |
 | `shipperdog_artifact_extraction_duration_seconds` | Artifact metadata extraction job, tags `platform=IOS\|ANDROID` and `outcome=success\|failed-parse\|failed-infra` (the malformed-binary vs infra split; the PRD 42 "artifact metadata processing < 30 sec" SLO observes this meter) | S5-02 (issue #21) |
-| `shipperdog_artifact_validation_duration_seconds` | reserved | E5 (S5-05) |
+| `shipperdog_artifact_validation_duration_seconds` | Artifact validation pipeline (one timer per completed attempt), tags `platform=IOS\|ANDROID` and `outcome=success\|failed\|blocked` (the stage-failure vs infra-block split; the PRD 42 "artifact metadata processing < 30 sec" SLO observes the extraction meter plus this one end to end) | S5-05 (issue #24) |
 | `shipperdog_release_duration_seconds` | reserved | E9 |
 | `shipperdog_distribution_duration_seconds` | reserved | E13 |
 | `shipperdog_download_count` | reserved | E5/E9 |

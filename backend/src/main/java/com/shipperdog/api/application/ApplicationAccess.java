@@ -39,9 +39,21 @@ public interface ApplicationAccess {
 
     /**
      * The profile tuple: ownership, the registered platform set (the
-     * per-version artifact slots group by it), and the lifecycle status
-     * (the archived guard of version creation).
+     * per-version artifact slots group by it), the lifecycle status
+     * (the archived guard of version creation), and — since S5-05 —
+     * the registered platform identifiers the artifact validation
+     * pipeline's APPLICATION_MATCH stage compares against (issue #24:
+     * an uploaded bundle id or package name that differs from the
+     * registry's fails the artifact). {@code bundleId} serves IOS,
+     * {@code packageName} ANDROID (S3-01's registry rule); each is
+     * null for a platform the application did not register.
      */
     record ApplicationProfile(
-            UUID applicationId, UUID organizationId, UUID tenantId, List<String> platforms, String status) {}
+            UUID applicationId,
+            UUID organizationId,
+            UUID tenantId,
+            List<String> platforms,
+            String status,
+            String bundleId,
+            String packageName) {}
 }

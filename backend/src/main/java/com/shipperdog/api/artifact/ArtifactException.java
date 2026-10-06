@@ -37,6 +37,10 @@ public class ArtifactException extends RuntimeException {
                 HttpStatus.CONFLICT,
                 "ARTIFACT_BUILD_TAKEN",
                 "The build number is already in use for this version and platform."),
+        ARTIFACT_NOT_VALIDATABLE(
+                HttpStatus.CONFLICT,
+                "ARTIFACT_NOT_VALIDATABLE",
+                "Only a FAILED or still-VALIDATING artifact can be revalidated."),
         UPLOAD_SESSION_EXPIRED(
                 HttpStatus.GONE, "UPLOAD_SESSION_EXPIRED", "The upload session has expired; create a new one."),
         APPLICATION_ARCHIVED(

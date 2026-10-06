@@ -25,6 +25,7 @@ backend/src/main/resources/db/
     V15__artifact_upload.sql
     V16__artifact_extraction.sql
     V17__artifact_provenance.sql
+    V18__artifact_validation.sql
   seed/                 dev fixture, applied only when the seed location is active
     R__dev_seed.sql
 ```
@@ -281,6 +282,21 @@ backend/src/main/resources/db/
   (S12-03/04); only asserted members are stored — an absent claim is
   an absent key, never a fabricated value — and the column is written
   with the registration insert and never updated (INV-003).
+- `V18__artifact_validation.sql` (S5-05, issue #24) adds the
+  validation pipeline's two nullable columns on `artifacts`, nothing
+  dropped: `format` (varchar 8, CHECK-bounded to `IPA`/`APK`/`AAB`)
+  — the STRUCTURAL container verdict the pipeline's FORMAT stage
+  records once (the binary is immutable, so the verdict cannot
+  change; write-once in code, null until the first verdict) — and
+  `validation` (jsonb, object-type CHECK) — the per-stage record of
+  the LATEST attempt, REWRITTEN per attempt (outcome, attempts
+  counter, timings, and every stage's status/code/reason in FR-006
+  order) because the row carries current state while the audit trail
+  carries history. The `artifact_status` enum needs NO change: PRD
+  18's six values are exactly the V1 vocabulary — this story
+  formalizes the TRANSITIONS in code (`ArtifactStateMachine`), not
+  the labels, and PRD 18 has no REVOKED state (revocation is E7's
+  authorization lifecycle of INV-007, never an artifact-row state).
 
 ## Status and type columns
 

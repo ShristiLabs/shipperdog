@@ -304,6 +304,11 @@ class RbacPermissionEvaluatorTest {
             public List<UUID> versionIdsOfApplication(UUID application) {
                 return List.of();
             }
+
+            @Override
+            public Optional<VersionAccess.VersionRecord> recordOf(UUID id) {
+                return Optional.empty();
+            }
         };
     }
 
@@ -325,7 +330,9 @@ class RbacPermissionEvaluatorTest {
                                 ownership.organizationId(),
                                 ownership.tenantId(),
                                 List.of("IOS"),
-                                "ACTIVE"));
+                                "ACTIVE",
+                                "com.acme.banking",
+                                null));
             }
         };
     }

@@ -165,10 +165,11 @@ public interface ApplicationRegistryRepository extends JpaRepository<Application
     }
 
     /**
-     * Profile resolution for the version layer (issue #17): ownership
-     * plus the platform set and lifecycle status — tuples only, never
-     * the row, the same authorization-data character as ownership
-     * resolution.
+     * Profile resolution for the version layer (issue #17) and the
+     * artifact validation tier (issue #24, S5-05): ownership plus the
+     * platform set, lifecycle status, and the registered platform
+     * identifiers — tuples only, never the row, the same
+     * authorization-data character as ownership resolution.
      */
     @Override
     default Optional<ApplicationProfile> profileOf(UUID applicationId) {
@@ -178,6 +179,8 @@ public interface ApplicationRegistryRepository extends JpaRepository<Application
                         application.getOrganizationId(),
                         application.getTenantId(),
                         application.getPlatforms(),
-                        application.getStatus().name()));
+                        application.getStatus().name(),
+                        application.getBundleId(),
+                        application.getPackageName()));
     }
 }

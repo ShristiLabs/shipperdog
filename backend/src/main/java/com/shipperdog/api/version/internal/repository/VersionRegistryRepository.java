@@ -3,6 +3,7 @@ package com.shipperdog.api.version.internal.repository;
 import com.shipperdog.api.tenant.CrossTenantByDesign;
 import com.shipperdog.api.version.VersionAccess;
 import com.shipperdog.api.version.VersionAccess.VersionOwnership;
+import com.shipperdog.api.version.VersionAccess.VersionRecord;
 import com.shipperdog.api.version.internal.entity.VersionEntity;
 import java.time.Instant;
 import java.util.List;
@@ -86,6 +87,12 @@ public interface VersionRegistryRepository extends JpaRepository<VersionEntity, 
     @Override
     default List<UUID> versionIdsOfApplication(UUID applicationId) {
         return findIdsByApplicationId(applicationId);
+    }
+
+    /** The version-record name for the validation tier (issue #24): the name only, never the row. */
+    @Override
+    default Optional<VersionRecord> recordOf(UUID versionId) {
+        return findVersionById(versionId).map(version -> new VersionRecord(version.getId(), version.getVersionName()));
     }
 
     /** The version ids of one application, for cross-version artifact reads. */

@@ -7,6 +7,7 @@ import com.shipperdog.api.artifact.ArtifactStore;
 import com.shipperdog.api.artifact.ExtractedMetadata;
 import com.shipperdog.api.artifact.internal.entity.ArtifactEntity;
 import com.shipperdog.api.artifact.internal.repository.ArtifactScopedRepository;
+import com.shipperdog.api.artifact.internal.validation.ArtifactValidationService;
 import com.shipperdog.api.audit.AuditEvent;
 import com.shipperdog.api.audit.AuditEventPublisher;
 import com.shipperdog.api.audit.AuditEventType;
@@ -84,6 +85,8 @@ public class ArtifactExtractionService {
 
     private final List<ArtifactMetadataParser> parsers;
 
+    private final ArtifactValidationService validation;
+
     private final TenantScopeExecutor scopeExecutor;
 
     private final AuditEventPublisher audit;
@@ -102,6 +105,7 @@ public class ArtifactExtractionService {
             ArtifactScopedRepository artifacts,
             ArtifactStore store,
             List<ArtifactMetadataParser> parsers,
+            ArtifactValidationService validation,
             TenantScopeExecutor scopeExecutor,
             AuditEventPublisher audit,
             Clock clock,
@@ -112,6 +116,7 @@ public class ArtifactExtractionService {
         this.artifacts = artifacts;
         this.store = store;
         this.parsers = List.copyOf(parsers);
+        this.validation = validation;
         this.scopeExecutor = scopeExecutor;
         this.audit = audit;
         this.clock = clock;
@@ -300,6 +305,10 @@ public class ArtifactExtractionService {
                     metadata.versionName(),
                     metadata.bundleId(),
                     metadata.buildNumberRaw());
+            // The validation hand-off (issue #24, S5-05): the settled
+            // extraction is the pipeline's scheduling point, inside the
+            // same bound scope the write used.
+            validation.schedule(row, ownership);
             return null;
         });
     }
@@ -321,6 +330,12 @@ public class ArtifactExtractionService {
             detail.put("error", failure.getMessage());
             audit(artifactId, ownership, uploaderId, false, detail);
             timer(platform, OUTCOME_FAILED_PARSE).record(java.time.Duration.ZERO);
+            // The failed leg hands off too (issue #24): the pipeline's
+            // FORMAT or METADATA stage records WHY on the validation
+            // document — the row is already FAILED by the extraction
+            // tier, and applyValidationOutcome's same-target write is
+            // the legal no-op that carries the document.
+            validation.schedule(row, ownership);
             return null;
         });
     }
