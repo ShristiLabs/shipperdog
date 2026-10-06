@@ -250,6 +250,8 @@ class TesterGroupsIntegrationTest {
         UUID uatId = groupIdByName(tenantId, "UAT");
         UUID anaId = createTester(admin, orgId, "ana.groups@example.com", "Ana Groups");
         UUID boId = createTester(admin, orgId, "bo.groups@example.com", "Bo Groups");
+        linkTesterToTenant(admin, tenantId, anaId);
+        linkTesterToTenant(admin, tenantId, boId);
 
         JsonNode added =
                 post(admin, "/api/v1/tester-groups/" + pilotId + "/members", Map.of("testerId", anaId.toString()), 201);
@@ -271,7 +273,7 @@ class TesterGroupsIntegrationTest {
                 .as("testers per group, join-ordered")
                 .hasSize(2);
         assertThat(pilotMembers.get("items").get(0).get("email").asText()).isEqualTo("ana.groups@example.com");
-        assertThat(pilotMembers.get("items").get(0).get("status").asText()).isEqualTo("INVITED");
+        assertThat(pilotMembers.get("items").get(0).get("status").asText()).isEqualTo("ACTIVE");
         assertThat(pilotMembers.get("items").get(0).get("addedAt")).isNotNull();
 
         JsonNode firstMember = get(admin, "/api/v1/tester-groups/" + pilotId + "/members?limit=1", 200);
@@ -332,6 +334,8 @@ class TesterGroupsIntegrationTest {
         UUID tenantOne = createTenant(admin, "Span One", "span-one-external-1");
         UUID tenantTwo = createTenant(admin, "Span Two", "span-two-external-1");
         UUID testerId = createTester(admin, orgId, "spanning@example.com", "Spanning Tester");
+        linkTesterToTenant(admin, tenantOne, testerId);
+        linkTesterToTenant(admin, tenantTwo, testerId);
         UUID pilotOne = groupIdByName(tenantOne, "Pilot");
         UUID customTwo = UUID.fromString(
                 post(admin, "/api/v1/tester-groups", Map.of("tenantId", tenantTwo.toString(), "name", "Ring Zero"), 201)
@@ -406,6 +410,7 @@ class TesterGroupsIntegrationTest {
                         .get("id")
                         .asText());
         UUID testerId = createTester(admin, orgId, "roster@example.com", "Roster Tester");
+        linkTesterToTenant(admin, tenantId, testerId);
         post(admin, "/api/v1/tester-groups/" + doomedId + "/members", Map.of("testerId", testerId.toString()), 201);
 
         Recording conflict = put("/api/v1/tester-groups/" + keepId, admin, Map.of("name", "Doomed"));
@@ -439,18 +444,24 @@ class TesterGroupsIntegrationTest {
         UUID tenantId = createTenant(admin, "Deactful", "deactful-external-1");
         UUID pilotId = groupIdByName(tenantId, "Pilot");
         UUID existingTester = createTester(admin, orgId, "early@example.com", "Early Tester");
+        linkTesterToTenant(admin, tenantId, existingTester);
         post(
                 admin,
                 "/api/v1/tester-groups/" + pilotId + "/members",
                 Map.of("testerId", existingTester.toString()),
                 201);
+        // Linked before the deactivation: the group's own affiliation
+        // rule stays the rule under test (the S6-03 link route would
+        // refuse an unlinked tester's link first — this story's own
+        // suite covers that refusal).
+        UUID testerId = createTester(admin, orgId, "late@example.com", "Late Tester");
+        linkTesterToTenant(admin, tenantId, testerId);
         put(admin, "/api/v1/tenants/" + tenantId, Map.of("status", "DEACTIVATED"), 200);
 
         Recording newGroup =
                 post("/api/v1/tester-groups", admin, Map.of("tenantId", tenantId.toString(), "name", "Too Late"));
         assertThat(newGroup.status).isEqualTo(409);
         assertThat(newGroup.body.get("code").asText()).isEqualTo("TESTER_GROUP_TENANT_DEACTIVATED");
-        UUID testerId = createTester(admin, orgId, "late@example.com", "Late Tester");
         Recording newMember =
                 post("/api/v1/tester-groups/" + pilotId + "/members", admin, Map.of("testerId", testerId.toString()));
         assertThat(newMember.status).isEqualTo(409);
@@ -541,6 +552,7 @@ class TesterGroupsIntegrationTest {
         UUID tenantId = createTenant(admin, "Raceful", "raceful-external-1");
         UUID pilotId = groupIdByName(tenantId, "Pilot");
         UUID testerId = createTester(admin, orgId, "racing@example.com", "Racing Tester");
+        linkTesterToTenant(admin, tenantId, testerId);
 
         int threads = 8;
         ExecutorService pool = Executors.newFixedThreadPool(threads);
@@ -733,13 +745,37 @@ class TesterGroupsIntegrationTest {
         return UUID.fromString(created.get("id").asText());
     }
 
+    /**
+     * Creates a tester and completes their onboarding (the invitee
+     * registers, the person record turns ACTIVE) — since S6-03 a
+     * tester must be ACTIVE before a tenant can link them, and group
+     * membership requires the tenant link.
+     */
     private UUID createTester(String admin, UUID orgId, String email, String fullName) {
         JsonNode created = post(
                 admin,
                 "/api/v1/testers",
                 Map.of("organizationId", orgId.toString(), "email", email, "fullName", fullName),
                 201);
+        client.post()
+                .uri("/api/v1/auth/register")
+                .body(Map.of(
+                        "invitationToken",
+                        created.get("invitation").get("invitationToken").asText(),
+                        "email",
+                        email,
+                        "password",
+                        PASSWORD,
+                        "fullName",
+                        fullName))
+                .retrieve()
+                .body(String.class);
         return UUID.fromString(created.get("id").asText());
+    }
+
+    /** Links an ACTIVE tester to the tenant (S6-03) — group membership's precondition. */
+    private void linkTesterToTenant(String bearer, UUID tenantId, UUID testerId) {
+        post(bearer, "/api/v1/tenants/" + tenantId + "/testers", Map.of("testerId", testerId.toString()), 201);
     }
 
     private UUID groupIdByName(UUID tenantId, String name) {

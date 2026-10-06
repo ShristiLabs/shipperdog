@@ -14,7 +14,8 @@ import org.springframework.web.bind.annotation.RestControllerAdvice;
  * messages are logged, never echoed.
  */
 @Order(0)
-@RestControllerAdvice(assignableTypes = {TesterController.class, TesterGroupController.class})
+@RestControllerAdvice(
+        assignableTypes = {TesterController.class, TesterGroupController.class, TenantTesterMembershipController.class})
 public class TesterExceptionHandler {
 
     @ExceptionHandler(TesterException.class)

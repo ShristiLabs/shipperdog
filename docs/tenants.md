@@ -65,8 +65,11 @@ on the constraint is the final authority — no driver-message parsing).
   - **reversible** — `PUT /{id}` with `"status": "ACTIVE"` restores it;
   - **blocks new affiliations** — adding a membership to a deactivated
     tenant is `409 TENANT_DEACTIVATED` (the membership analog of "no
-    new invitations"); tester memberships (S6-03) and distributions
-    (S7) check the same state when they arrive — tester records
+    new invitations"); tester memberships check the same state since
+    S6-03 (new links and reactivations refuse; the suspend/reactivate
+    switch and removal continue — see
+    [tenant-tester memberships](tenant-tester-memberships.md)), and
+    distributions (S7) will check it when they arrive — tester records
     themselves (S6-01) carry no tenant dimension, so tenant
     deactivation does not touch them; tester groups (S6-02) extend
     the rule with `409 TESTER_GROUP_TENANT_DEACTIVATED` for new

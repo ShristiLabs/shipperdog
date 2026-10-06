@@ -56,6 +56,8 @@ public enum Permission {
     TENANT_TENANTS_UPDATE("tenant:tenants:update"),
     TENANT_MEMBERS_READ("tenant:members:read"),
     TENANT_MEMBERS_MANAGE("tenant:members:manage"),
+    TENANT_TESTERS_READ("tenant:testers:read"), // issue #28 (S6-03)
+    TENANT_TESTERS_MANAGE("tenant:testers:manage"), // issue #28 (S6-03)
     TENANT_APPLICATIONS_READ("tenant:applications:read"),
     TENANT_APPLICATIONS_DOWNLOAD("tenant:applications:download"),
     TENANT_FEEDBACK_CREATE("tenant:feedback:create"),

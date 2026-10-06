@@ -123,8 +123,8 @@ arrives through the version module's code as noted above.
 
 ## Tester (`TesterException.Code`)
 
-The tester onboarding surface (S6-01, issue #26) and tester groups
-(S6-02, issue #27).
+The tester onboarding surface (S6-01, issue #26), tester groups
+(S6-02, issue #27), and tenant-tester memberships (S6-03, issue #28).
 
 | Code | HTTP | Detail |
 |---|---|---|
@@ -137,3 +137,7 @@ The tester onboarding surface (S6-01, issue #26) and tester groups
 | `TESTER_GROUP_NOT_FOUND` | 404 | Tester group not found. (S6-02; also the concealed-denial shape for tester groups — a foreign tenant's or foreign organization's group is indistinguishable from a missing one, on every item-addressed route) |
 | `TESTER_GROUP_NAME_TAKEN` | 409 | A group with this name already exists in the tenant. (the `uq_tester_groups_tenant_name` guard; names are unique per tenant and creation is NOT idempotent — a lost race means another group owns the name now) |
 | `TESTER_GROUP_TENANT_DEACTIVATED` | 409 | The tenant is deactivated and takes no new tester groups or members. (the issue #9 affiliation rule extended to groups: reads, renames, deletions, and removals continue) |
+| `TENANT_DEACTIVATED` | 409 | The tenant is deactivated and takes no new tester affiliations. (S6-03; the shared public code of `TenantException.TENANT_DEACTIVATED`, the membership-route rendering: a deactivated tenant refuses NEW links and reactivations while the SUSPENDED/ACTIVE switch and removal of existing memberships continue) |
+| `TENANT_TESTER_MEMBERSHIP_NOT_FOUND` | 404 | Tenant tester membership not found. (S6-03; also the concealed-denial shape on every membership item route — a foreign tenant's membership row is indistinguishable from a missing one) |
+| `TESTER_NOT_ACTIVE` | 409 | Only an ACTIVE tester can be linked to a tenant. (S6-03; an `INVITED` or `SUSPENDED` person record cannot be linked — complete the onboarding or reactivate the tester first; the membership switch then varies independently) |
+| `TESTER_NOT_TENANT_MEMBER` | 409 | The tester is not an active member of the tenant. (S6-03; the group-membership precondition — joining a tenant's groups requires an ACTIVE `tenant_tester_memberships` row under an ACTIVE person record; a foreign organization's tester stays the concealed `TESTER_NOT_FOUND` instead) |

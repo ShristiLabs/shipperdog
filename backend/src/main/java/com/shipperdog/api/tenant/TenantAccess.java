@@ -1,5 +1,6 @@
 package com.shipperdog.api.tenant;
 
+import java.util.Collection;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -35,4 +36,14 @@ public interface TenantAccess {
      * only: existing data stays readable and administrable (issue #9).
      */
     boolean acceptsNewAffiliations(UUID tenantId);
+
+    /**
+     * Display summaries of the listed tenants (issue #28: the
+     * tenants-of-tester listing names each tenant and carries its
+     * lifecycle state). Unknown ids map to nothing.
+     */
+    Map<UUID, TenantSummary> tenantSummariesOf(Collection<UUID> tenantIds);
+
+    /** A tenant's display fields for cross-module views (issue #28). */
+    record TenantSummary(UUID id, String name, String status) {}
 }

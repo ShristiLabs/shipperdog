@@ -41,7 +41,7 @@ permission:
 | Role | Permissions |
 |---|---|
 | PLATFORM_ADMIN | `*` (wildcard; the `users.platform_admin` flag, PRD 7.1) |
-| ORG_ADMIN | `org:organizations:read` `org:organizations:update` `org:idp-configs:read` `org:idp-configs:write` `org:members:read` `org:members:invite` `org:members:manage` `org:testers:read` `org:testers:invite` `org:testers:manage` `org:tenants:create` `org:tenants:read` `tenant:tenants:read` `tenant:tenants:update` `tenant:members:read` `tenant:members:manage` `tenant:applications:read` `app:applications:read` `app:applications:write` `app:versions:read` `app:releases:read` `app:tester-groups:manage` `app:feedback:read` |
+| ORG_ADMIN | `org:organizations:read` `org:organizations:update` `org:idp-configs:read` `org:idp-configs:write` `org:members:read` `org:members:invite` `org:members:manage` `org:testers:read` `org:testers:invite` `org:testers:manage` `org:tenants:create` `org:tenants:read` `tenant:tenants:read` `tenant:tenants:update` `tenant:members:read` `tenant:members:manage` `tenant:testers:read` `tenant:testers:manage` `tenant:applications:read` `app:applications:read` `app:applications:write` `app:versions:read` `app:releases:read` `app:tester-groups:manage` `app:feedback:read` |
 | APP_OWNER | `app:applications:read` `app:applications:write` `app:versions:read` `app:versions:write` `app:artifacts:read` `app:releases:read` `app:releases:manage` `app:feedback:read` |
 | DEVELOPER | `app:artifacts:read` `app:artifacts:upload` `app:versions:read` `app:releases:read` |
 | QA_ENGINEER | `app:applications:read` `app:versions:read` `app:releases:read` `app:releases:approve-qa` `app:tester-groups:manage` `app:feedback:read` |
@@ -49,7 +49,7 @@ permission:
 | SECURITY_REVIEWER | `app:applications:read` `app:versions:read` `app:releases:read` `app:releases:approve-security` |
 | COMPLIANCE_REVIEWER | `app:applications:read` `app:versions:read` `app:releases:read` `app:releases:approve-compliance` |
 | VIEWER | `app:applications:read` `app:versions:read` `app:releases:read` |
-| TENANT_ADMIN | `tenant:tenants:read` `tenant:members:read` `tenant:members:manage` `tenant:applications:read` |
+| TENANT_ADMIN | `tenant:tenants:read` `tenant:members:read` `tenant:members:manage` `tenant:testers:read` `tenant:testers:manage` `tenant:applications:read` |
 | TENANT_TESTER | `tenant:applications:read` `tenant:applications:download` `tenant:feedback:create` |
 | ORG_MEMBER | (none — membership only; deny-by-default) |
 
@@ -112,7 +112,11 @@ password-reset pair) matched by the security chain's `permitAll`.
   `TesterGroupAccess` hop — groups are tenant-scoped seam rows — and
   an app-scope check at a `tester` target (the groups-per-tester
   listing) resolves the person record's owning organization the same
-  way the org-scope hop does.
+  way the org-scope hop does. The tenant-tester membership routes
+  (S6-03, issue #28) introduce no new target type: the tenant-path
+  routes check `tenant:testers:*` at the plain `tenant` target, and
+  the org-grain tenants-of-tester listing checks `org:testers:read`
+  at the `tester` target through the existing hop.
   Creation-time checks evaluate at the
   future owner tenant for tenant-owned registrations and at the owning
   organization for organization-shared ones, so
@@ -283,6 +287,22 @@ documented in [Tester groups](tester-groups.md).
 | PUT | `/api/v1/tenants/{id}/members/{userId}/status` | `tenant:members:manage` | `200` member view; `ACTIVE`/`SUSPENDED` transition (suspending revokes sessions); `404` unknown tenant/member; `400` invalid status |
 | DELETE | `/api/v1/tenants/{id}/members/{userId}` | `tenant:members:manage` | `204`; `404` unknown tenant/member |
 | GET | `/api/v1/tenants/{id}/applications` | `tenant:applications:read` | `200` the tenant's own applications, cursor-paginated (S2-03; registry management is S3-01) |
+
+### Tenant-tester membership endpoints (S6-03)
+
+The portal-access join — separate vocabulary from the console-member
+routes above on purpose (`tenant:testers:*` vs `tenant:members:*`):
+a tester holds no tenant role, and a console member is not a tester
+(see [Tenant-tester memberships](tenant-tester-memberships.md)).
+
+| Method | Path | Permission | Result |
+|---|---|---|---|
+| POST | `/api/v1/tenants/{id}/testers` | `tenant:testers:manage` | `201 {linked:true}` (born `ACTIVE`); duplicate link idempotent `200 {linked:false}`; re-link of a retained REVOKED row `200 {reactivated:true}`; `409 TESTER_NOT_ACTIVE` (INVITED/SUSPENDED person record) / `TENANT_DEACTIVATED` (new affiliations only); `404` unknown/foreign tester or tenant; honors `Idempotency-Key` |
+| GET | `/api/v1/tenants/{id}/testers` | `tenant:testers:read` | `200` the EFFECTIVE view by default (person record ACTIVE and membership ACTIVE — tenant-scoped visibility); `status=ACTIVE|SUSPENDED|REVOKED` the administrative view; `status=ALL` every retained row (history); cursor-paginated, rows carry both statuses and `effectiveAccess` |
+| GET | `/api/v1/tenants/{id}/testers/{testerId}` | `tenant:testers:read` | `200` membership view with `testerStatus`, `membershipStatus`, `effectiveAccess`; `404 TENANT_TESTER_MEMBERSHIP_NOT_FOUND` |
+| PUT | `/api/v1/tenants/{id}/testers/{testerId}/status` | `tenant:testers:manage` | `200` membership view; `ACTIVE`/`SUSPENDED` transition (live-query effectiveness — excluded on the next request); `409 TESTER_INVALID_TRANSITION` on a REVOKED row (re-link instead) — the switch continues on a deactivated tenant |
+| DELETE | `/api/v1/tenants/{id}/testers/{testerId}` | `tenant:testers:manage` | `204`, idempotent; removal RETAINS the row REVOKED (history preserved), never deletes |
+| GET | `/api/v1/testers/{id}/tenants` | `org:testers:read` (`tester` target) | `200` the tester's tenants across their own organization, link-ordered, history included — one working set (the org-grain form, the groups-per-tester precedent) |
 
 Error responses use the platform's problem+json envelope with stable
 codes (see the [error code registry](error-codes.md)).

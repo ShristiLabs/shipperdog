@@ -154,6 +154,17 @@ the deletion with `name` and `membersRemoved`; and
 `TESTER_GROUP_MEMBER_ADDED`/`TESTER_GROUP_MEMBER_REMOVED` —
 issue #27/S6-02: a membership change, carrying `groupId` and
 `testerId` — idempotent replays and no-op removals write nothing),
+tenant-tester membership (`TENANT_TESTER_MEMBERSHIP_CREATED` —
+issue #28/S6-03: a tester linked, carrying `tenantId`, `testerId`,
+and `status` (`reactivated=true` marks a re-link of a retained
+REVOKED row); `TENANT_TESTER_MEMBERSHIP_STATUS_CHANGED` —
+issue #28/S6-03: the reversible suspend/reactivate switch with
+`status.before`/`status.after` (no-op switches audit with equal
+before/after, mirroring tenant updates);
+`TENANT_TESTER_MEMBERSHIP_REMOVED` — issue #28/S6-03: removal, which
+RETAINS the row REVOKED — never a delete — with
+`status.before`/`status.after=REVOKED`; idempotent re-removals write
+nothing),
 and
 platform (`ACCESS_DENIED`, S1-06).
 

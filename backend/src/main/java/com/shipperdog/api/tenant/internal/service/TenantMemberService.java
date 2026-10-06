@@ -17,6 +17,7 @@ import com.shipperdog.api.tenant.internal.repository.TenantMemberScopedRepositor
 import com.shipperdog.api.tenant.internal.repository.TenantRepository;
 import java.time.Clock;
 import java.time.Instant;
+import java.util.Collection;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -60,6 +61,8 @@ public class TenantMemberService implements TenantAccess {
     private final TenantMemberScopedRepository scopedMembers;
     private final UserDirectory directory;
     private final SessionRevocation sessions;
+    private final TenantMemberWriteAttempt writes;
+    private final TenantMemberConflictResolver conflicts;
     private final AuditEventPublisher audit;
     private final Clock clock;
 
@@ -69,6 +72,8 @@ public class TenantMemberService implements TenantAccess {
             TenantMemberScopedRepository scopedMembers,
             UserDirectory directory,
             SessionRevocation sessions,
+            TenantMemberWriteAttempt writes,
+            TenantMemberConflictResolver conflicts,
             AuditEventPublisher audit,
             Clock clock) {
         this.tenants = tenants;
@@ -76,6 +81,8 @@ public class TenantMemberService implements TenantAccess {
         this.scopedMembers = scopedMembers;
         this.directory = directory;
         this.sessions = sessions;
+        this.writes = writes;
+        this.conflicts = conflicts;
         this.audit = audit;
         this.clock = clock;
     }
@@ -126,6 +133,21 @@ public class TenantMemberService implements TenantAccess {
                 .orElse(false);
     }
 
+    @Override
+    @Transactional(readOnly = true)
+    public Map<UUID, TenantSummary> tenantSummariesOf(Collection<UUID> tenantIds) {
+        if (tenantIds.isEmpty()) {
+            return Map.of();
+        }
+        return tenants.findAllById(tenantIds).stream()
+                .collect(Collectors.toMap(
+                        TenantEntity::getId,
+                        tenant -> new TenantSummary(
+                                tenant.getId(),
+                                tenant.getName(),
+                                tenant.getStatus().name())));
+    }
+
     // -------------------------------------------------------------------------
     // Module API (TenantController)
     // -------------------------------------------------------------------------
@@ -170,9 +192,17 @@ public class TenantMemberService implements TenantAccess {
      * role is {@code 409 TENANT_MEMBER_EXISTS} (role changes belong to
      * {@link #assignRole}). Adding any member to a DEACTIVATED tenant
      * is blocked (the affiliation rule carried from issue #9). The
-     * unique constraint is the final authority on races.
+     * unique constraint is the final authority on races: deliberately
+     * NOT transactional since issue #28 — the insert runs in
+     * {@link TenantMemberWriteAttempt}'s own transaction, so a lost
+     * {@code uq_tenant_members_tenant_user} race rolls that back and
+     * is answered here with the concurrent winner re-derived on a
+     * fresh transaction ({@link TenantMemberConflictResolver}). The
+     * former in-transaction catch could not return the idempotent
+     * answer: PostgreSQL had already aborted the transaction and the
+     * commit failed with UnexpectedRollbackException (500) — the dead
+     * catch carried from issues #26/#27.
      */
-    @Transactional
     public MemberAssignment addMember(UUID tenantId, UUID targetUserId, TenantRole role, UUID actorId) {
         TenantEntity tenant = mustFindTenant(tenantId);
         if (!directory.userExists(targetUserId)) {
@@ -191,35 +221,20 @@ public class TenantMemberService implements TenantAccess {
             throw new TenantException(
                     TenantException.Code.TENANT_DEACTIVATED, "cannot add members to a deactivated tenant");
         }
-        TenantMemberEntity membership = new TenantMemberEntity(tenantId, targetUserId, role);
         try {
-            scopedMembers.saveScoped(membership);
+            TenantMemberEntity membership = writes.attempt(actorId, tenantId, targetUserId, role);
+            return new MemberAssignment(viewOf(tenantId, membership), true);
         } catch (DataIntegrityViolationException e) {
             // Lost race on uq_tenant_members_tenant_user: the winner's
-            // row decides between the idempotent and conflict paths.
-            TenantMemberEntity winner =
-                    scopedMembers.findOneScoped(userEquals(targetUserId)).orElse(null);
+            // row decides between the idempotent and conflict paths —
+            // read on a fresh transaction (this thread holds none open).
+            TenantMemberEntity winner = conflicts.winnerOf(targetUserId).orElse(null);
             if (winner != null && winner.getRole() == role) {
                 return new MemberAssignment(viewOf(tenantId, winner), false);
             }
             throw new TenantException(
                     TenantException.Code.MEMBER_EXISTS, "user is already a member with a different role");
         }
-        audit.publish(new AuditEvent(
-                AuditEventType.TENANT_MEMBER_ADDED,
-                Instant.now(clock),
-                actorId,
-                null,
-                tenantId,
-                true,
-                Map.of(
-                        "userId",
-                        targetUserId.toString(),
-                        "role",
-                        role.name(),
-                        "status",
-                        membership.getStatus().name())));
-        return new MemberAssignment(viewOf(tenantId, membership), true);
     }
 
     /**

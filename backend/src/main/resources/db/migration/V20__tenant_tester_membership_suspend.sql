@@ -1,0 +1,39 @@
+-- V20__tenant_tester_membership_suspend.sql
+-- Tenant-tester memberships: the suspend state (issue #28, S6-03).
+--
+-- Conventions (see docs/database-migrations.md):
+--   * Expand-only, forward-only (ADR-0001): one enum value appended;
+--     nothing is dropped, altered destructively, renamed, or removed.
+--   * Enum values are never removed or renamed; the appended value is
+--     not used by any statement in this migration (PostgreSQL forbids
+--     using a value added in the same transaction; the application
+--     assigns it).
+--
+-- Design decisions recorded for reviewers:
+--
+-- The V1 baseline already carries the whole table —
+-- tenant_tester_memberships (tenant_id, tester_id, status
+-- membership_status, created_at, updated_at; PK (tenant_id, tester_id);
+-- idx_ttm_tester_id) — exactly PRD 13's sketch, so this migration
+-- touches only the vocabulary: membership_status (ACTIVE/REVOKED)
+-- gains SUSPENDED, the tester_status and tenant_member_status (V8)
+-- vocabulary precedent. The issue's scope names three operations —
+-- create/suspend/remove — and removal must preserve history, so the
+-- three states stay distinct: ACTIVE is effective, SUSPENDED parks the
+-- membership reversibly (the tester stays linked, history intact, and
+-- revocation semantics stay S6-04's), REVOKED is removal (the row is
+-- retained as the historical record; a re-link reactivates it).
+--
+-- Index posture (the issue's technical note names
+-- (tenant_id, tester_id, status)): the composite primary key's prefix
+-- (tenant_id, tester_id) already serves the hot authorization lookup —
+-- an equality probe on the pair that reads the row (and therefore its
+-- status) in one index descent; status filtering happens on the
+-- fetched row, so a separate (tenant_id, tester_id, status) index
+-- would repeat the PK prefix and add nothing the probe needs. The
+-- reverse direction (tenants-of-tester) is served by idx_ttm_tester_id
+-- (V1). Tenant-grain listings (all memberships of one tenant) walk the
+-- same PK prefix. No new index is created; revisit with S7-01/S7-03
+-- when the authorization chain's cache strategy lands.
+
+ALTER TYPE membership_status ADD VALUE IF NOT EXISTS 'SUSPENDED';

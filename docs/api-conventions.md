@@ -125,10 +125,15 @@ header for same-role duplicates), `POST /api/v1/applications`
 `POST /api/v1/artifacts` and `POST /api/v1/artifacts/upload-sessions`
 (S5-01, issue #20), `POST /api/v1/testers` (S6-01, idempotent even
 without the header: a duplicate pending invite returns the existing
-tester `200` instead of re-minting), and `POST /api/v1/tester-groups`
+tester `200` instead of re-minting), `POST /api/v1/tester-groups`
 plus `POST /api/v1/tester-groups/{id}/members` (S6-02; the membership
 route is idempotent even without the header — a duplicate pair answers
-the existing membership `200 {added:false}`). The artifact finalize route is
+the existing membership `200 {added:false}`), and
+`POST /api/v1/tenants/{id}/testers` (S6-03; idempotent even without
+the header — a duplicate link of an ACTIVE/SUSPENDED membership
+answers the existing row `200 {linked:false}`, and a re-link of a
+retained REVOKED row reactivates it `200 {reactivated:true}`). The
+artifact finalize route is
 deliberately NOT in
 the registry: its terminal state is the replay answer — a retry
 answers the registered artifact `200 created=false`, exactly like the

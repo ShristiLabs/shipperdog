@@ -61,10 +61,12 @@ import org.springframework.transaction.annotation.Transactional;
  *
  * <p>Deactivated tenants block NEW groups and NEW memberships (the
  * issue #9 affiliation rule) but stay administrable: renames, deletes,
- * removals, and reads continue. Tenant-membership validation of group
- * members arrives with S6-03 ({@code tenant_tester_memberships} rows);
- * S6-02 validates the tester's existence within the group's owning
- * organization.
+ * removals, and reads continue. Since S6-03 (issue #28), group
+ * membership additionally requires the tester to be an
+ * effectively-active member of the group's tenant (an ACTIVE
+ * {@code tenant_tester_memberships} row under an ACTIVE person
+ * record); the tester's existence within the group's owning
+ * organization was the S6-02 grain.
  */
 @Service
 public class TesterGroupService implements TesterGroupAccess, TesterGroupProvisioning {
@@ -79,6 +81,7 @@ public class TesterGroupService implements TesterGroupAccess, TesterGroupProvisi
     private final TesterGroupWriteAttempt writes;
     private final TesterGroupMembershipAttempt membership;
     private final TesterGroupMembershipConflictResolver membershipConflicts;
+    private final TenantTesterMembershipService tenantMemberships;
     private final AuditEventPublisher audit;
     private final Clock clock;
     private final TraceAttributes trace;
@@ -94,6 +97,7 @@ public class TesterGroupService implements TesterGroupAccess, TesterGroupProvisi
             TesterGroupWriteAttempt writes,
             TesterGroupMembershipAttempt membership,
             TesterGroupMembershipConflictResolver membershipConflicts,
+            TenantTesterMembershipService tenantMemberships,
             AuditEventPublisher audit,
             Clock clock,
             TraceAttributes trace) {
@@ -107,6 +111,7 @@ public class TesterGroupService implements TesterGroupAccess, TesterGroupProvisi
         this.writes = writes;
         this.membership = membership;
         this.membershipConflicts = membershipConflicts;
+        this.tenantMemberships = tenantMemberships;
         this.audit = audit;
         this.clock = clock;
         this.trace = trace;
@@ -423,9 +428,13 @@ public class TesterGroupService implements TesterGroupAccess, TesterGroupProvisi
 
     /**
      * The tester must exist within the group tenant's owning
-     * organization — the S6-02 grain (tenant-membership validation is
-     * S6-03's {@code tenant_tester_memberships}). A foreign
-     * organization's tester is indistinguishable from a missing one.
+     * organization — a foreign organization's tester is
+     * indistinguishable from a missing one — AND (since S6-03, issue
+     * #28) be an effectively-active member of the group's tenant: an
+     * {@code ACTIVE} {@code tenant_tester_memberships} row under an
+     * {@code ACTIVE} person record. A visible-but-unlinked or suspended
+     * tester answers the explicit conflict; the concealment above stays
+     * reserved for foreign/missing testers.
      */
     private void requireTesterOfOwningOrganization(TesterGroupEntity group, UUID testerId) {
         TesterEntity tester = testers.findById(testerId)
@@ -435,6 +444,7 @@ public class TesterGroupService implements TesterGroupAccess, TesterGroupProvisi
         if (owningOrganization == null || !owningOrganization.equals(tester.getOrganizationId())) {
             throw new TesterException(TesterException.Code.NOT_FOUND, "tester not found");
         }
+        tenantMemberships.requireEffectivelyActiveMember(group.getTenantId(), testerId);
     }
 
     private static String requireName(String rawName) {
