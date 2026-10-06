@@ -31,6 +31,11 @@
          (fsouza/fake-gcs-server) and production GCS. OSS, Apache-2.0,
          version-pinned here. -->
     <google-cloud-storage.version>2.72.0</google-cloud-storage.version>
+    <!-- dd-plist (issue #21, S5-02): the proven OSS Apple property-list
+         library (MIT) — reads and writes both binary and XML plists, so
+         the IPA parser never hand-rolls bplist decoding and the test
+         fixtures generate real binary plists programmatically. -->
+    <dd-plist.version>1.29</dd-plist.version>
   </properties>
 
   <dependencyManagement>
@@ -132,6 +137,16 @@
       <groupId>com.google.cloud</groupId>
       <artifactId>google-cloud-storage</artifactId>
       <version>${google-cloud-storage.version}</version>
+    </dependency>
+    <!-- Apple property-list parsing (issue #21, S5-02, FR-005): IPA
+         metadata lives in binary Info.plist files and XML provisioning
+         profiles; dd-plist is the pinned, proven parser for both
+         formats (the issue's technical notes name it; hand-rolled
+         bplist decoding is explicitly avoided). -->
+    <dependency>
+      <groupId>com.googlecode.plist</groupId>
+      <artifactId>dd-plist</artifactId>
+      <version>${dd-plist.version}</version>
     </dependency>
     <dependency>
       <groupId>org.flywaydb</groupId>

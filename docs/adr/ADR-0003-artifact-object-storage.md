@@ -89,6 +89,22 @@ for organization-owned versions; addressing is never authorization
 decision). Writes are preconditioned write-once (`doesNotExist`),
 belt-and-braces under keys that cannot collide.
 
+## Amendment: the read side (issue #21, S5-02)
+
+The port ADR-0003 left "S5-02/03 read metadata back" as a promise now
+kept: the port gains `sizeOf` and a ranged `read(key, offset, length)`
+— no whole-object stream, no download URL. The shape follows the
+consumer: IPA (and APK/AAB from S5-03) are ZIPs, and a ZIP's index is
+its central directory at the END of the object, so the parser needs
+backward seeks and kilobyte slices, not a byte stream. `sizeOf` is a
+metadata call (no content read); `read` is a seek-bounded channel
+read. The no-whole-binary discipline of the write side now holds on
+the read side structurally, and INV-003 is untouched (the additions
+read only). The download tier (S8-04) will add its own surface when
+that story arrives — serving bytes to testers is a different concern
+from parsing them, and merging the two would couple an SLO-sensitive
+parser path to a CDN-shaped delivery path.
+
 ## Consequences
 
 - One dependency (`com.google.cloud:google-cloud-storage`) joins the

@@ -145,7 +145,7 @@ curl -X POST $API/api/v1/organizations \
      -d '{"name":"Acme Industries"}'
 ```
 
-## Artifact uploads (S5-01)
+## Artifact uploads (S5-01) and the artifact read (S5-02)
 
 Artifact binaries (FR-004/FR-007, PRD 24) upload through two routes,
 both permission-checked at the **version** they carry — the artifact
@@ -154,6 +154,18 @@ surface is body-addressed, so `POST /api/v1/artifacts` and
 form/body (not the path), the evaluator resolves it version ->
 application -> owning tenant/organization, and denials conceal as the
 uniform 404 (`app:artifacts:upload`, held by `DEVELOPER`).
+
+Since S5-02 (issue #21) the same surface has its read:
+`GET /api/v1/artifacts/{artifactId}?version_id={versionId}` is
+permission-checked at the carried version
+(`app:artifacts:read`), answers the artifact view with its extraction
+tier, and conceals the same way — a foreign version answers the
+version target's `VERSION_NOT_FOUND`, an unknown artifact under the
+caller's own version answers `ARTIFACT_NOT_FOUND`. Extracted metadata
+parses asynchronously post-upload (FR-005): an upload response always
+shows `extraction.status = PENDING`; poll this route for the settled
+outcome. Details, including the stored extraction failure codes, live
+in [artifacts.md](artifacts.md).
 
 **Multipart (at or below the resumable threshold).**
 `POST /api/v1/artifacts` with `multipart/form-data`:

@@ -71,6 +71,17 @@ shipperdog:
       max-bytes: ${ARTIFACT_MAX_UPLOAD_BYTES:2147483648}
       resumable-threshold-bytes: ${ARTIFACT_RESUMABLE_THRESHOLD_BYTES:104857600}
       session-ttl: ${ARTIFACT_UPLOAD_SESSION_TTL:PT10M}
+    # Metadata extraction (issue #21, S5-02, FR-005): parsing runs
+    # async post-upload on a bounded executor — a full queue refuses
+    # loudly (the artifact's extraction_error records it) instead of
+    # accepting unbounded backlog, storage hiccups retry a bounded
+    # number of times, and the per-entry cap keeps a zip bomb from
+    # becoming an allocation.
+    extraction:
+      concurrency: ${ARTIFACT_EXTRACTION_CONCURRENCY:2}
+      queue-capacity: ${ARTIFACT_EXTRACTION_QUEUE_CAPACITY:200}
+      max-entry-bytes: ${ARTIFACT_EXTRACTION_MAX_ENTRY_BYTES:16777216}
+      storage-retry-attempts: ${ARTIFACT_EXTRACTION_STORAGE_RETRIES:3}
 
 server:
   port: ${SERVER_PORT:8080}

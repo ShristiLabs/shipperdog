@@ -511,7 +511,7 @@ class ArtifactUploadIntegrationTest {
     @Test
     void uploadPermissionResolvesThroughTheVersionTarget() throws Exception {
         Uploaded uploaded = uploadWorld("au-perm");
-        byte[] bytes = payload(256);
+        byte[] bytes = IpaFixtures.unsignedIpa();
 
         // DEVELOPER holds app:artifacts:upload — the story's user.
         String developerToken = loginOfOrgRoleIn(uploaded.orgId(), "au-perm-dev@example.com", "DEVELOPER");
@@ -576,7 +576,7 @@ class ArtifactUploadIntegrationTest {
         }
     }
 
-    private Uploaded uploadWorld(String suffix) {
+    private Uploaded uploadWorld(String suffix) throws java.io.IOException {
         UUID orgId = createOrg("Au " + suffix + " Corp");
         String ownerEmail = "au-" + suffix + "-owner@example.com";
         String ownerToken = loginOfOrgRoleIn(orgId, ownerEmail, "APP_OWNER");
@@ -591,8 +591,19 @@ class ArtifactUploadIntegrationTest {
                 "com.au." + suffix.replace("-", ""),
                 List.of("IOS", "ANDROID"));
         UUID versionId = createVersion(ownerToken, appId, "1.0.0");
+        // Since S5-02 the stored bytes are parsed asynchronously; the
+        // suite's status assertions hold deterministically only for a
+        // REAL (parseable) IPA, so the shared fixture is one.
         return new Uploaded(
-                orgId, tenantId, appId, versionId, ownerToken, ownerEmail, uploaderToken, uploaderEmail, payload(2048));
+                orgId,
+                tenantId,
+                appId,
+                versionId,
+                ownerToken,
+                ownerEmail,
+                uploaderToken,
+                uploaderEmail,
+                IpaFixtures.unsignedIpa());
     }
 
     private static String versionsUri(UUID applicationId) {

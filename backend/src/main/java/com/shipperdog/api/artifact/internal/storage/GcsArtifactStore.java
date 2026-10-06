@@ -29,6 +29,7 @@ import java.security.NoSuchAlgorithmException;
 import java.time.Duration;
 import java.util.HexFormat;
 import java.util.Optional;
+import java.util.OptionalLong;
 import java.util.concurrent.atomic.AtomicBoolean;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -161,6 +162,38 @@ public class GcsArtifactStore implements ArtifactStore {
             }
         } catch (StorageException | IOException | NoSuchAlgorithmException e) {
             throw unavailable("cannot read object at " + storageKey, e);
+        }
+    }
+
+    @Override
+    public OptionalLong sizeOf(String storageKey) {
+        try {
+            BlobInfo info = storage.get(BlobId.of(properties.bucket(), storageKey));
+            return info == null ? OptionalLong.empty() : OptionalLong.of(info.getSize());
+        } catch (StorageException e) {
+            throw unavailable("cannot stat object at " + storageKey, e);
+        }
+    }
+
+    @Override
+    public byte[] read(String storageKey, long offset, int length) {
+        BlobId id = BlobId.of(properties.bucket(), storageKey);
+        try (ReadChannel reader = storage.reader(id)) {
+            reader.seek(offset);
+            reader.limit(offset + length);
+            ByteBuffer buffer = ByteBuffer.allocate(length);
+            while (buffer.hasRemaining()) {
+                int read = reader.read(buffer);
+                if (read < 0) {
+                    throw unavailable(
+                            "object at " + storageKey + " ended inside the requested range [" + offset + ", "
+                                    + (offset + length) + ")",
+                            null);
+                }
+            }
+            return buffer.array();
+        } catch (StorageException | IOException e) {
+            throw unavailable("cannot read range from object at " + storageKey, e);
         }
     }
 

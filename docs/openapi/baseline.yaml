@@ -1044,6 +1044,7 @@ paths:
           - VERSION_DISTRIBUTION_REVOKED
           - ARTIFACT_UPLOAD_SESSION_CREATED
           - ARTIFACT_UPLOADED
+          - ARTIFACT_METADATA_EXTRACTED
       - name: applicationId
         in: query
         required: false
@@ -1091,6 +1092,31 @@ paths:
             '*/*':
               schema:
                 $ref: "#/components/schemas/PageResponseAuditEventView"
+  /api/v1/artifacts/{artifactId}:
+    get:
+      tags:
+      - artifact-controller
+      operationId: get_3
+      parameters:
+      - name: artifactId
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - name: version_id
+        in: query
+        required: true
+        schema:
+          type: string
+          format: uuid
+      responses:
+        "200":
+          description: OK
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/ArtifactView"
   /api/v1/applications/{id}/tenants:
     get:
       tags:
@@ -1124,7 +1150,7 @@ paths:
     get:
       tags:
       - version-controller
-      operationId: get_3
+      operationId: get_4
       parameters:
       - name: applicationId
         in: path
@@ -1322,13 +1348,9 @@ components:
       properties:
         string:
           type: boolean
-        binary:
-          type: boolean
-        pojo:
+        floatingPointNumber:
           type: boolean
         valueNode:
-          type: boolean
-        missingNode:
           type: boolean
         nodeType:
           type: string
@@ -1342,6 +1364,10 @@ components:
           - OBJECT
           - POJO
           - STRING
+        missingNode:
+          type: boolean
+        pojo:
+          type: boolean
         integralNumber:
           type: boolean
         short:
@@ -1361,11 +1387,11 @@ components:
           deprecated: true
         boolean:
           type: boolean
+        binary:
+          type: boolean
         number:
           type: boolean
         container:
-          type: boolean
-        floatingPointNumber:
           type: boolean
         empty:
           type: boolean
@@ -1559,6 +1585,12 @@ components:
         buildNumber:
           type: integer
           format: int64
+        bundleId:
+          type: string
+        versionName:
+          type: string
+        minimumOs:
+          type: string
         status:
           type: string
         uploadedBy:
@@ -1569,10 +1601,14 @@ components:
         uploadedAt:
           type: string
           format: date-time
+        extraction:
+          $ref: "#/components/schemas/ExtractionView"
         duplicateOf:
           type: array
           items:
             $ref: "#/components/schemas/DuplicateOf"
+        duplicateOfTruncated:
+          type: boolean
     DuplicateOf:
       type: object
       properties:
@@ -1582,6 +1618,15 @@ components:
         versionId:
           type: string
           format: uuid
+    ExtractionView:
+      type: object
+      properties:
+        status:
+          type: string
+        errorCode:
+          type: string
+        errorMessage:
+          type: string
     FinalizeRequest:
       type: object
       description: The version id the finalized artifact belongs to.
@@ -1714,6 +1759,17 @@ components:
         uploadedAt:
           type: string
           format: date-time
+        buildNumber:
+          type: integer
+          format: int64
+        bundleId:
+          type: string
+        versionName:
+          type: string
+        minimumOs:
+          type: string
+        extraction:
+          type: string
     VersionDetail:
       type: object
       properties:
@@ -1888,6 +1944,7 @@ components:
           - VERSION_DISTRIBUTION_REVOKED
           - ARTIFACT_UPLOAD_SESSION_CREATED
           - ARTIFACT_UPLOADED
+          - ARTIFACT_METADATA_EXTRACTED
         occurredAt:
           type: string
           format: date-time

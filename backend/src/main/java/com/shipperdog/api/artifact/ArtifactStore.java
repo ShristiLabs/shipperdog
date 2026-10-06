@@ -2,6 +2,7 @@ package com.shipperdog.api.artifact;
 
 import java.io.InputStream;
 import java.util.Optional;
+import java.util.OptionalLong;
 
 /**
  * The object-storage port of the artifact module (issue #20, S5-01,
@@ -22,7 +23,14 @@ import java.util.Optional;
  * <p>Callers stream: {@link #put} consumes the given stream without
  * buffering it whole (the request part is disk-buffered by the servlet
  * layer), and {@link #hash} streams the object back through a digest
- * — no method of this port ever exposes a byte array of the binary.
+ * — no method of this port ever exposes a whole-artifact byte array.
+ * The read side (issue #21, S5-02 — the gap ADR-0003 left for this
+ * story) is deliberately RANGED, not whole-object: the IPA parser
+ * needs the ZIP central directory (at the end of the object) and a
+ * handful of small entries, so {@link #sizeOf} plus {@link #read}
+ * fetch kilobytes out of a multi-hundred-MB binary instead of
+ * streaming it — the same no-whole-binary discipline as the write
+ * side, in seekable form.
  */
 public interface ArtifactStore {
 
@@ -63,6 +71,27 @@ public interface ArtifactStore {
      *     fails
      */
     Optional<StoredChecksum> hash(String storageKey);
+
+    /**
+     * The stored object's byte count from metadata — no content is
+     * read (issue #21, S5-02: the ZIP reader sizes its backward scan
+     * for the end-of-central-directory record without fetching the
+     * binary). Empty when no object exists at the key.
+     */
+    OptionalLong sizeOf(String storageKey);
+
+    /**
+     * Reads exactly {@code length} bytes of the stored object starting
+     * at {@code offset} (issue #21, S5-02): the ranged read the IPA
+     * parser's central-directory walk is built on. Partial reads are
+     * the caller's contract violation (the central directory declared
+     * the offsets); implementations answer what the store returns or
+     * fail with STORAGE_UNAVAILABLE.
+     *
+     * @throws ArtifactException STORAGE_UNAVAILABLE when the store
+     *     fails or the range leaves the object
+     */
+    byte[] read(String storageKey, long offset, int length);
 
     /** The checksum tuple {@link #hash} answers. */
     record StoredChecksum(String sha256Hex, long size) {}
