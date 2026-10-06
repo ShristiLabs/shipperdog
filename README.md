@@ -14,7 +14,7 @@ subsequent story builds on.
 |---|---|
 | `backend/` | Spring Boot modular-monolith API (Java 25, single Maven module) |
 | `frontend/` | Admin console — React 19 + TypeScript + MUI (Vite; S2-04) |
-| `cli/` | Developer CLI (placeholder until S5-06) |
+| `cli/` | Developer CLI — Go 1.26, artifact upload/inspect + login (S5-06) |
 | `infrastructure/` | Local docker compose stack |
 | `docs/` | Developer documentation |
 | `.github/workflows/` | GitHub Actions CI |
@@ -68,6 +68,15 @@ The dev profile seeds a bootstrap admin (`dev@shipperdog.local` /
 curl -s -X POST http://localhost:8080/api/v1/auth/login \
   -H 'Content-Type: application/json' \
   -d '{"email":"dev@shipperdog.local","password":"shipperdog-dev-admin"}'
+```
+
+The developer CLI (S5-06) drives the same API from the terminal —
+mint a PAT with the seeded admin above (`POST /api/v1/auth/tokens`),
+then see [cli/README.md](cli/README.md) for `login`, `artifact
+upload`, and the inspect commands:
+
+```bash
+cd cli && go build -o /tmp/shipperdog . && /tmp/shipperdog login
 ```
 
 Tear down (and drop the local database volume):
@@ -126,13 +135,17 @@ compose default, which is local-only exactly like the database password.
 
 ## CI
 
-Two gates run on every pull request and on pushes to `main`:
+Three gates run on every pull request and on pushes to `main`:
 
 - `.github/workflows/ci.yml` (backend-ci) runs `mvn verify` (format
   check, build, tests) plus the OpenAPI export/breaking-diff below.
 - `.github/workflows/frontend-ci.yml` (frontend-ci, S2-04) runs the
   console's lint, strict-typecheck build, and Vitest suite under
   Node 22 with npm caching.
+- `.github/workflows/cli-ci.yml` (cli-ci, S5-06) runs the Go CLI's
+  golangci-lint gate, unit tests (including the endpoint contract test
+  against the OpenAPI baseline), build, and a linux/darwin amd64/arm64
+  cross-compile matrix publishing version-stamped binary tarballs.
 
 Since S1-08 the backend build also
 exports the generated OpenAPI contract (`backend/target/openapi.yaml`,

@@ -39,6 +39,22 @@ services:
     ports:
       - "${GCS_EMULATOR_PORT:-4443}:4443"
 
+  # Direct-to-storage session URLs (S5-01/S5-06): fake-gcs-server
+  # builds the resumable session Location from the REQUEST Host header
+  # (its -external-url does not apply there), so the API must dial the
+  # emulator as "localhost:4443" for the URLs it hands the CLI to be
+  # reachable from the operator's machine. This forwarder shares the
+  # API's network namespace and bridges localhost:4443 to the emulator
+  # service (issue #25; upstream behavior at fsouza/fake-gcs-server
+  # v1.56.1, internal/urlhelper).
+  gcs-forward:
+    image: alpine/socat:1.8.1.3
+    network_mode: service:api
+    command: "tcp-listen:4443,fork,reuseaddr tcp:gcs-emulator:4443"
+    depends_on:
+      - api
+      - gcs-emulator
+
   api:
     build:
       context: ../backend
@@ -53,12 +69,14 @@ services:
       AUTH_JWT_SECRET: ${AUTH_JWT_SECRET:-shipperdog-local-dev-jwt-secret-0123456789abcdef}
       REDIS_HOST: redis
       REDIS_PORT: "6379"
-      GCS_EMULATOR_ENDPOINT: http://gcs-emulator:4443
-      # Artifact object storage (issue #20, ADR-0003): the API talks to
-      # the emulator over the compose network; production points
+      GCS_EMULATOR_ENDPOINT: http://localhost:4443
+      # Artifact object storage (issue #20, ADR-0003): the API reaches
+      # the emulator through the localhost forwarder (gcs-forward) so
+      # the direct-to-storage session URLs it grants carry the
+      # operator-reachable published port. Production points
       # ARTIFACT_STORAGE_EMULATOR_HOST at real GCS credentials instead
       # (blank host = application default credentials).
-      ARTIFACT_STORAGE_EMULATOR_HOST: http://gcs-emulator:4443
+      ARTIFACT_STORAGE_EMULATOR_HOST: http://localhost:4443
       ARTIFACT_STORAGE_BUCKET: ${ARTIFACT_STORAGE_BUCKET:-shipperdog-artifacts-local}
       # Observability baseline (issue #7): all management endpoints move
       # to the internal management port, which is published to the host
