@@ -22,6 +22,7 @@ import java.time.Duration;
 import java.time.Instant;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.UUID;
 import org.springframework.data.domain.Page;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
@@ -56,7 +57,12 @@ import org.springframework.transaction.annotation.Transactional;
  * the issue's "next token refresh at the latest". Demotions revoke
  * refresh families through the {@link SessionRevocation} surface, and
  * refresh/PAT use re-checks the user's status so a DISABLED account
- * cannot keep an existing session alive.
+ * cannot keep an existing session alive. Since S6-04, tester
+ * deactivation reaches this same discipline from the tester module:
+ * the deactivating transaction revokes the account's refresh families
+ * through {@link SessionRevocation}, and every later refresh/PAT use
+ * re-checks the tester record so a DEACTIVATED tester is dead at all
+ * token surfaces on the very next request.
  */
 @Service
 @Transactional
@@ -148,7 +154,20 @@ public class TokenService implements SessionRevocation {
                     Map.of("kind", "refresh", "reason", "organization_deactivated"));
             throw invalidRefresh();
         }
-        if (suspendedTesterBlocksUser(record.getUserId())) {
+        Optional<TesterAccounts.Block> testerBlock = testerBlockFor(record.getUserId());
+        if (testerBlock.isPresent() && testerBlock.get() == TesterAccounts.Block.DEACTIVATED) {
+            // S6-04: deactivation is revocation, not parking — the family
+            // is revoked so no session survives the decision (the
+            // account-disabled posture), not merely refused a rotation.
+            refreshTokens.revokeFamily(record.getFamilyId(), now);
+            audit(
+                    AuditEventType.TOKEN_REFRESHED,
+                    record.getUserId(),
+                    false,
+                    Map.of("kind", "refresh", "reason", "tester_deactivated"));
+            throw invalidRefresh();
+        }
+        if (testerBlock.isPresent()) {
             // S6-01: a SUSPENDED tester's existing session must not survive
             // suspension either — refresh is refused (reversible, so the
             // family is NOT revoked; platform admins stay exempt).
@@ -223,18 +242,19 @@ public class TokenService implements SessionRevocation {
 
     /**
      * Authenticates a raw PAT bearer credential, or returns null when it is
-     * unknown, revoked, or expired, or the owner is disabled or a suspended
-     * tester (S6-01). Used by the PAT authentication filter; never throws
-     * for a bad token. The {@code last_used_at} bookkeeping write is
-     * throttled to at most one per minute so authenticated requests do not
-     * turn into per-request database writes.
+     * unknown, revoked, or expired, or the owner is disabled or a
+     * suspended/deactivated tester (S6-01/S6-04). Used by the PAT
+     * authentication filter; never throws for a bad token. The
+     * {@code last_used_at} bookkeeping write is throttled to at most one
+     * per minute so authenticated requests do not turn into per-request
+     * database writes.
      */
     public Authentication authenticatePat(String rawToken) {
         return pats.findByTokenHash(SecureTokens.sha256Hex(rawToken))
                 .filter(pat -> pat.getRevokedAt() == null)
                 .filter(pat -> pat.getExpiresAt() == null || pat.getExpiresAt().isAfter(Instant.now(clock)))
                 .filter(pat -> !userDisabled(pat.getUserId()))
-                .filter(pat -> !suspendedTesterBlocksUser(pat.getUserId()))
+                .filter(pat -> testerBlockFor(pat.getUserId()).isEmpty())
                 .map(pat -> {
                     Instant now = Instant.now(clock);
                     if (pat.getLastUsedAt() == null || pat.getLastUsedAt().isBefore(now.minus(Duration.ofMinutes(1)))) {
@@ -278,11 +298,15 @@ public class TokenService implements SessionRevocation {
         return !platformAdmin && organizations.loginBlockedFor(userId);
     }
 
-    /** Suspended-tester block (S6-01) with the same platform-admin exemption. */
-    private boolean suspendedTesterBlocksUser(UUID userId) {
+    /**
+     * The tester-record block (S6-01 suspension, S6-04 deactivation)
+     * with the same platform-admin exemption: empty when the user is
+     * not a blocked tester.
+     */
+    private Optional<TesterAccounts.Block> testerBlockFor(UUID userId) {
         boolean platformAdmin =
                 users.findById(userId).map(UserEntity::isPlatformAdmin).orElse(false);
-        return !platformAdmin && testerAccounts.loginBlockedFor(userId);
+        return platformAdmin ? Optional.empty() : testerAccounts.loginBlockFor(userId);
     }
 
     /** S1-05: DISABLED accounts keep neither refresh sessions nor PATs. */

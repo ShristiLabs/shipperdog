@@ -335,6 +335,17 @@ Guards and side effects:
   suspended member loses tenant permissions on the next request, and
   the organization overlay (the owning organization's roles) is
   untouched by suspension.
+- **Tester deactivation (S6-04, issue #29).** Deactivating a tester
+  (`DISABLED`) is revocation, not parking: the tester's login, refresh,
+  and PAT use are refused (audit reason `tester_deactivated`), the
+  linked account's refresh families are revoked in the deactivating
+  transaction (reason `tester_deactivated`), and every ACTIVE
+  tenant-tester membership cascades to SUSPENDED — so the two-switches
+  rule (person record ACTIVE AND membership ACTIVE) denies every
+  effective-access decision on the next evaluation. Reactivation
+  restores nothing silently: each membership waits for its per-tenant
+  re-enable. See [testers](testers.md) for the full semantics and the
+  revocation latency SLA.
 - **Disabled accounts.** A `DISABLED` user cannot refresh (the refresh
   family is revoked on the attempt) and cannot use PATs — existing
   sessions do not outlive the disable.

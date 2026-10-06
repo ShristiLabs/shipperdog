@@ -4,6 +4,7 @@ import com.shipperdog.api.audit.AuditEvent;
 import com.shipperdog.api.audit.AuditEventPublisher;
 import com.shipperdog.api.audit.AuditEventType;
 import com.shipperdog.api.config.CursorPageable;
+import com.shipperdog.api.identity.SessionRevocation;
 import com.shipperdog.api.identity.TesterInvitations;
 import com.shipperdog.api.notification.EmailSender;
 import com.shipperdog.api.organization.OrganizationAccess;
@@ -21,6 +22,7 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
+import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
@@ -39,7 +41,10 @@ import org.springframework.transaction.annotation.Transactional;
  *
  * <p>Status model: INVITED (pre-account, created here, activated only
  * by the accept flow), ACTIVE (account linked), SUSPENDED (reversible
- * access park; blocks login and refresh). Transitions are enforced in
+ * access park; blocks login and refresh), DISABLED (S6-04 deactivation
+ * — the revocation posture: irreversible-by-default offboarding that
+ * cascades membership suspension, kills refresh families, and requires
+ * a mandatory audited reason). Transitions are enforced in
  * {@link #changeStatus} and audited; INVITED -> ACTIVE belongs to the
  * accept flow alone.
  */
@@ -56,6 +61,18 @@ public class TesterService implements TesterOnboarding, TesterAccounts, TesterAc
     private final TesterConflictResolver conflicts;
     private final TesterCreationAttempt creation;
 
+    /**
+     * Both resolved lazily like {@code OrganizationService}'s
+     * SessionRevocation binding (the demotion precedent): TokenService
+     * constructor-injects this service's {@link TesterAccounts} seam,
+     * and the membership service's TenantAccess chain reaches back
+     * around to identity, so direct constructor injections here would
+     * close cycles Spring cannot satisfy.
+     */
+    private final ObjectProvider<TenantTesterMembershipService> memberships;
+
+    private final ObjectProvider<SessionRevocation> sessions;
+
     TesterService(
             TesterRepository testers,
             TesterInvitations invitations,
@@ -65,7 +82,9 @@ public class TesterService implements TesterOnboarding, TesterAccounts, TesterAc
             Clock clock,
             AuditEventPublisher audit,
             TesterConflictResolver conflicts,
-            TesterCreationAttempt creation) {
+            TesterCreationAttempt creation,
+            ObjectProvider<TenantTesterMembershipService> memberships,
+            ObjectProvider<SessionRevocation> sessions) {
         this.testers = testers;
         this.invitations = invitations;
         this.organizations = organizations;
@@ -75,6 +94,8 @@ public class TesterService implements TesterOnboarding, TesterAccounts, TesterAc
         this.audit = audit;
         this.conflicts = conflicts;
         this.creation = creation;
+        this.memberships = memberships;
+        this.sessions = sessions;
     }
 
     /**
@@ -179,28 +200,72 @@ public class TesterService implements TesterOnboarding, TesterAccounts, TesterAc
     }
 
     /**
-     * Status lifecycle (acceptance criterion 4): ACTIVE <-> SUSPENDED
-     * through this surface; INVITED -> ACTIVE belongs to the accept
-     * flow alone, and no transition out of INVITED is offered here (the
-     * pre-account record has no access to park).
+     * Status lifecycle (issue #26 criterion 4; issue #29 revocation):
+     * ACTIVE <-> SUSPENDED is the reversible park switch; any of
+     * ACTIVE/SUSPENDED/INVITED -> DISABLED is DEACTIVATION — the
+     * revocation posture (FR-010, INV-007), which demands a reason,
+     * cascades every ACTIVE membership to SUSPENDED (retained, never
+     * deleted), and revokes the linked account's refresh families so
+     * no existing session outlives the decision. DISABLED -> ACTIVE is
+     * the explicit re-enable: only for testers that own an account, and
+     * memberships stay SUSPENDED — restoration is a manual per-tenant
+     * re-enable, never silent. INVITED -> ACTIVE belongs to the accept
+     * flow alone.
      */
     @Transactional
-    public TesterEntity changeStatus(UUID actor, UUID testerId, TesterEntity.Status target) {
+    public TesterEntity changeStatus(UUID actor, UUID testerId, TesterEntity.Status target, String reason) {
         TesterEntity tester = requireTester(testerId);
         TesterEntity.Status before = tester.getStatus();
         boolean allowed = (before == TesterEntity.Status.ACTIVE && target == TesterEntity.Status.SUSPENDED)
-                || (before == TesterEntity.Status.SUSPENDED && target == TesterEntity.Status.ACTIVE);
+                || (before == TesterEntity.Status.SUSPENDED && target == TesterEntity.Status.ACTIVE)
+                || target == TesterEntity.Status.DISABLED
+                || (before == TesterEntity.Status.DISABLED
+                        && target == TesterEntity.Status.ACTIVE
+                        && tester.getUserId() != null);
         if (!allowed) {
             throw new TesterException(
                     TesterException.Code.INVALID_TRANSITION,
-                    "transition " + before + " -> " + target + " is not allowed");
+                    "transition " + before + " -> " + target + " is not allowed"
+                            + (before == TesterEntity.Status.DISABLED && target == TesterEntity.Status.ACTIVE
+                                    ? " (a tester that never accepted onboarding cannot be reactivated)"
+                                    : ""));
+        }
+        String cleanReason = normalizeReason(reason);
+        if (target == TesterEntity.Status.DISABLED && cleanReason == null) {
+            // FR-024: deactivation is the emergency/offboarding gesture;
+            // the audit trail must say why.
+            throw new TesterException(
+                    TesterException.Code.INVALID_REQUEST,
+                    "a reason (1-500 characters) is required to deactivate a tester");
+        }
+        if (cleanReason != null && cleanReason.length() > 500) {
+            throw new TesterException(
+                    TesterException.Code.INVALID_REQUEST, "the lifecycle reason exceeds 500 characters");
         }
         tester.setStatus(target);
         TesterEntity saved = testers.save(tester);
         Map<String, String> change = new LinkedHashMap<>();
         change.put("from", before.name());
         change.put("to", target.name());
-        audit.publish(AuditEvent.builder(AuditEventType.TESTER_STATUS_CHANGED)
+        if (cleanReason != null) {
+            change.put("reason", cleanReason);
+        }
+        AuditEventType type = AuditEventType.TESTER_STATUS_CHANGED;
+        if (target == TesterEntity.Status.DISABLED) {
+            type = AuditEventType.TESTER_DEACTIVATED;
+            int suspended = memberships.getObject().suspendForTesterDeactivation(actor, testerId, cleanReason);
+            change.put("suspendedMemberships", Integer.toString(suspended));
+            if (tester.getUserId() != null) {
+                // The demotion/SessionRevocation discipline (S1-05):
+                // deactivation must not be outlived by sessions issued
+                // before it.
+                sessions.getObject().revokeRefreshTokens(tester.getUserId(), "tester_deactivated");
+                change.put("refreshFamiliesRevoked", "true");
+            }
+        } else if (before == TesterEntity.Status.DISABLED) {
+            type = AuditEventType.TESTER_REACTIVATED;
+        }
+        audit.publish(AuditEvent.builder(type)
                 .userId(actor)
                 .orgId(tester.getOrganizationId())
                 .occurredAt(Instant.now(clock))
@@ -248,13 +313,19 @@ public class TesterService implements TesterOnboarding, TesterAccounts, TesterAc
                 detail(tester, false));
     }
 
-    /** Suspended testers block login and refresh (uniform 401 upstream). */
+    /**
+     * Suspended and deactivated testers block login, refresh, and PAT
+     * use (uniform 401 / null authentication upstream); the block kind
+     * distinguishes the audit reason only.
+     */
     @Override
     @Transactional(readOnly = true)
-    public boolean loginBlockedFor(UUID userId) {
-        return testers.findByUserId(userId)
-                .map(tester -> tester.getStatus() == TesterEntity.Status.SUSPENDED)
-                .orElse(false);
+    public Optional<TesterAccounts.Block> loginBlockFor(UUID userId) {
+        return testers.findByUserId(userId).flatMap(tester -> switch (tester.getStatus()) {
+            case SUSPENDED -> Optional.of(TesterAccounts.Block.SUSPENDED);
+            case DISABLED -> Optional.of(TesterAccounts.Block.DEACTIVATED);
+            default -> Optional.empty();
+        });
     }
 
     @Override
@@ -290,6 +361,15 @@ public class TesterService implements TesterOnboarding, TesterAccounts, TesterAc
             throw new TesterException(TesterException.Code.INVALID_REQUEST, "fullName is required (max 200 chars)");
         }
         return name;
+    }
+
+    /** Audit-grade reason: trimmed; null when absent or blank. Length is capped at 500 for every transition. */
+    private static String normalizeReason(String reason) {
+        if (reason == null) {
+            return null;
+        }
+        String clean = reason.trim();
+        return clean.isEmpty() ? null : clean;
     }
 
     private static TesterEntity.Status parseStatus(String status) {

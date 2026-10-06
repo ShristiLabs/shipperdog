@@ -93,8 +93,17 @@ module's public `OrganizationAccess` surface.
   access tokens (a suspended PAT authenticates as unknown, a uniform
   401). Same uniform 401 and distinct audit reason
   (`tester_suspended`); platform administrators are exempt like the
-  deactivation block. Suspension is reversible and revokes nothing;
-  full revocation semantics arrive with S6-04.
+  deactivation block. Suspension is reversible and revokes nothing.
+- Tester deactivation (S6-04, issue #29): a user whose tester record is
+  DISABLED is refused the same way with audit reason
+  `tester_deactivated` — and unlike suspension, the deactivating
+  transaction already revoked every refresh family through the
+  `SessionRevocation` surface (`TOKEN_REVOKED`, reason
+  `tester_deactivated`), so a pre-deactivation refresh token trips
+  reuse detection rather than parking. Access tokens are stateless
+  15-minute JWTs and die at expiry (the revocation SLA — see
+  [testers](testers.md)); every stateful surface (login, refresh, PAT,
+  authorization decisions) denies on the very next request.
 - Password reset tokens are single-use with a 30-minute TTL. Until the
   notification module exists (S12-02), the reset link is emitted on a
   WARN log line; treat local logs as sensitive. Confirming a reset
