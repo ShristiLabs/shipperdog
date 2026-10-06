@@ -751,6 +751,24 @@ paths:
             '*/*':
               schema:
                 $ref: "#/components/schemas/OrganizationResponse"
+  /api/v1/authorization/decisions:
+    post:
+      tags:
+      - authorization-decision-controller
+      operationId: inspect
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/InspectRequest"
+        required: true
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DecisionView"
   /api/v1/auth/tokens:
     get:
       tags:
@@ -1549,6 +1567,7 @@ paths:
           - TENANT_TESTER_MEMBERSHIP_CREATED
           - TENANT_TESTER_MEMBERSHIP_STATUS_CHANGED
           - TENANT_TESTER_MEMBERSHIP_REMOVED
+          - AUTHORIZATION_DECISION
       - name: applicationId
         in: query
         required: false
@@ -1944,11 +1963,7 @@ components:
     JsonNode:
       type: object
       properties:
-        string:
-          type: boolean
         floatingPointNumber:
-          type: boolean
-        valueNode:
           type: boolean
         nodeType:
           type: string
@@ -1962,11 +1977,17 @@ components:
           - OBJECT
           - POJO
           - STRING
+        string:
+          type: boolean
+        integralNumber:
+          type: boolean
         missingNode:
+          type: boolean
+        valueNode:
           type: boolean
         pojo:
           type: boolean
-        integralNumber:
+        number:
           type: boolean
         short:
           type: boolean
@@ -1988,8 +2009,6 @@ components:
         binary:
           type: boolean
         container:
-          type: boolean
-        number:
           type: boolean
         empty:
           type: boolean
@@ -2094,6 +2113,55 @@ components:
           type: string
         effectiveAccess:
           type: boolean
+    InspectRequest:
+      type: object
+      description: "The decision context to inspect: the subject user, the addressed\
+        \ tenant/application/version/artifact ids (any subset), the optional platform\
+        \ (IOS|ANDROID), and the action (LIST_APPLICATIONS|READ_ARTIFACT|DOWNLOAD)."
+      properties:
+        userId:
+          type: string
+          format: uuid
+        tenantId:
+          type: string
+          format: uuid
+        applicationId:
+          type: string
+          format: uuid
+        versionId:
+          type: string
+          format: uuid
+        artifactId:
+          type: string
+          format: uuid
+        platform:
+          type: string
+        action:
+          type: string
+    DecisionView:
+      type: object
+      properties:
+        allowed:
+          type: boolean
+        reason:
+          type: string
+        failingLayer:
+          type: string
+        chain:
+          type: array
+          items:
+            $ref: "#/components/schemas/LayerView"
+    LayerView:
+      type: object
+      properties:
+        layer:
+          type: string
+        status:
+          type: string
+        reason:
+          type: string
+        detail:
+          type: string
     CreatePatRequest:
       type: object
       properties:
@@ -2742,6 +2810,7 @@ components:
           - TENANT_TESTER_MEMBERSHIP_CREATED
           - TENANT_TESTER_MEMBERSHIP_STATUS_CHANGED
           - TENANT_TESTER_MEMBERSHIP_REMOVED
+          - AUTHORIZATION_DECISION
         occurredAt:
           type: string
           format: date-time

@@ -36,6 +36,7 @@ public enum Permission {
     // platform scope
     PLATFORM_ORGANIZATIONS_CREATE("platform:organizations:create"),
     PLATFORM_AUDIT_READ("platform:audit:read"),
+    PLATFORM_AUTHORIZATION_INSPECT("platform:authorization:inspect"), // issue #30 (S7-01)
 
     // org scope
     ORG_ORGANIZATIONS_READ("org:organizations:read"),

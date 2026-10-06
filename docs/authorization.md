@@ -132,6 +132,134 @@ password-reset pair) matched by the security chain's `permitAll`.
   from the snapshot, so deactivation strips effective permissions
   without touching memberships.
 
+## The layered authorization engine (S7-01)
+
+Since S7-01 a second engine lives beside RBAC, deliberately:
+`AuthorizationService.decide(context)` walks PRD 11's chain —
+User → Organization → Tenant → Application → Version → Artifact →
+Distribution — as seven ordered `AuthorizationLayer` beans, so
+entitlement logic for resource access exists exactly once and cannot
+be bypassed. The two engines answer different questions: RBAC (above)
+decides who may call the console's management surface; the layered
+engine decides which resources a subject may reach — the catalog a
+tenant sees, the artifacts a version yields. Console-role authority
+feeds the layered engine as one entitlement contributor, so a single
+evaluation authority decides resource access while RBAC keeps
+guarding management actions.
+
+**The decision.** `AuthorizationContext` carries the structured
+inputs (subject, the addressed tenant/application/version/artifact
+ids, an optional platform pin, the action: `LIST_APPLICATIONS`,
+`READ_ARTIFACT`, or `DOWNLOAD`) — the seam the S14-04 ABAC engine
+extends later. Layers resolve their inputs through the modules'
+public ports (`Ownership` tuples, version lifecycle state, artifact
+state, the two-switches membership) with per-decision memoization —
+the `UserRolesSnapshot` discipline, one indexed point lookup per
+fact. The first failing layer short-circuits with a
+`DenialReason` (internal: audit trail and inspection only); the
+result carries the evaluated chain — every layer PASSED, FAILED, or
+SKIPPED (not applicable, or short-circuited). The engine fails
+closed: a layer fault is a denial with reason `ENGINE_FAULT`, never
+an allow and never a 500.
+
+**Layer semantics** (PRD 12's worked example in parentheses):
+
+- **USER** — the subject exists (authentication itself is the
+  security chain's 401, never a decision; "Is John authenticated?").
+- **ORGANIZATION** — the chain's owning organization (the addressed
+  tenant's, or the addressed application's) exists and is ACTIVE;
+  organization deactivation strips resource access the same request
+  it strips RBAC roles. Platform administrators pass by wildcard.
+- **TENANT** — resolves HOW the subject reaches the chain: the
+  PLATFORM wildcard, the ORGANIZATION dimension (an organization
+  role reaching an organization-shared application, S3-02), or the
+  TENANT dimension — either the tester persona (a linked tester
+  person record whose access is EFFECTIVE: person record ACTIVE AND
+  membership ACTIVE, both switches live-queried every decision) or
+  the console persona (a tenant role or the owning organization's
+  overlay role). A pure tester without a tenant-addressed context
+  denies here; so does anyone with neither membership nor role.
+- **APPLICATION** ("Does the tenant have Banking?") — the S3-03
+  visibility question per addressed application: tenant-owned by the
+  resolved tenant, or organization-shared with an ACTIVE
+  authorization mapping (`visibleToTenant`, the single-item twin of
+  the catalog union). The ORGANIZATION dimension checks the
+  application belongs to the subject's organization; the PLATFORM
+  wildcard checks existence. Lifecycle is not this layer's question
+  (an ARCHIVED application stays readable; writes are RBAC 409s).
+  For `LIST_APPLICATIONS` the layer is skipped by design: the set
+  form IS the sanctioned union the catalog listing runs.
+- **VERSION** ("Is the version authorized?") — existence under the
+  addressed application (a mismatch is the concealed miss), the
+  lifecycle fact (a REVOKED version blocks `DOWNLOAD` per INV-007 /
+  S4-03 while reads stay available per INV-006), then the FR-011
+  entitlement seam: every registered `AuthorizationEntitlement`
+  contributor is asked (union semantics). S7-01 registers exactly
+  one — the role overlay (`RoleOverlayEntitlement`: the subject
+  holding `app:artifacts:read` or `tenant:applications:download` at
+  the owning organization/tenant, or the platform wildcard). S7-02
+  registers the `version_access` grant contributor (explicit /
+  app-wide / tag / latest-N) — until it lands, a pure tester denies
+  `ENTITLEMENT_MISSING` at this layer: INV-005 deny-by-default is
+  the engine's resting state, not an omission.
+- **ARTIFACT** ("Is the Android artifact available?") — existence
+  under the addressed version, the platform pin when the request
+  carries one, and availability: downloads require READY or
+  DISTRIBUTED (PRD 18); reads carry no availability gate (a
+  VALIDATING artifact is readable — the read-back surface is where
+  extraction settles).
+- **DISTRIBUTION** ("Is distribution active?") — consults every
+  registered `AuthorizationDistributionPolicy` contributor and
+  denies when any blocks. The M1 kernel registers none (no writer
+  of the `distribution` table exists yet), so every download passes
+  this layer today; M2's release model registers the real policy
+  (window, channel status, ring targeting) against this seam — the
+  same dependency inversion as `VersionDistributionContributor`.
+
+**Opaque denials at the API layer.** `require(context,
+concealTarget)` decides and throws the route's concealed not-found
+shape on denial — the conceal target is the ROUTE's addressing,
+never the failing layer, so a denial cannot leak which check failed:
+the catalog route conceals everything as `TENANT_NOT_FOUND`; the
+artifact read conceals version-grain denials as `VERSION_NOT_FOUND`
+and artifact-grain ones (unknown or foreign artifact, platform
+mismatch, not distributable) as `ARTIFACT_NOT_FOUND` — exactly the
+two miss shapes the route has always produced (byte-for-byte the
+genuine miss; see [Opaque denials](#opaque-denials-prd-12)).
+
+**Decision-guarded surfaces (issue #30 AC1).** The tenant catalog
+listing (`GET /api/v1/tenants/{id}/applications`) and the artifact
+fetch (`GET /api/v1/artifacts/{artifactId}?version_id=...`) run the
+engine before serving data. The contract is structural: a
+`@DecisionGuarded` class must depend on `AuthorizationService` and
+must not shortcut eligibility through other modules' internals or
+the `@CrossTenantByDesign` carriers (an architecture test enforces
+both); its own module's repositories stay usable — serving the page
+the decision authorized is data access, and the catalog's visibility
+union IS the application layer's set form. New tenant-scoped
+read/download surfaces join by marking and calling the engine.
+
+**Audited, timed decisions.** Every decision — allow and deny alike —
+emits an `AUTHORIZATION_DECISION` audit event carrying the action,
+the outcome, the failing layer and reason when denied, a compact
+chain summary, the addressed resource ids, and (attached by the
+audit binding) the request's correlation id (PRD 27). Decisions are
+timed on the shared `shipperdog.authorization.decision.duration`
+meter tagged `engine=layered` beside the RBAC evaluator's leg
+(`engine` absent = rbac), so the PRD 42 under-100 ms SLO observes
+both engines; only the layer walk is timed (the audit write happens
+after the clock stops).
+
+**The inspection API** (issue #30 AC5):
+
+| Method | Path | Permission | Result |
+|---|---|---|---|
+| POST | `/api/v1/authorization/decisions` | `platform:authorization:inspect` | `200` the decision for the supplied context: `allowed`, `reason` and `failingLayer` when denied, and the full evaluated `chain` (layer/status/reason/detail); `400 INVALID_REQUEST` on a missing subject or unknown action; runs live, serves no resource data, and each inspection is itself an audited decision (the audited user is the inspected subject) |
+
+Reason codes and the evaluated chain reach exactly two places — the
+audit trail and this platform-administrator surface — never an HTTP
+error response.
+
 ## Opaque denials (PRD 12)
 
 Since S1-08 denials render through the platform's single error envelope
@@ -419,4 +547,11 @@ owning modules land (the registry since S3-01; `app:versions:read` and
 `app:versions:write` since S4-01; `app:artifacts:upload` since S5-01;
 the rest of E5 onward). The authorization engine series
 (S7-01..S7-05) builds policy administration on this catalog without
-changing the enforcement point.
+changing the enforcement point. Since S7-01 the layered engine
+([above](#the-layered-authorization-engine-s7-01)) consumes the
+catalog through the role-overlay contributor: S7-02's grants
+(`version_access`, FR-011's four shapes) register as the second
+entitlement contributor, S7-03 exposes the decision API with caching
+against the latency SLO, and S14-04's ABAC attributes widen
+`AuthorizationContext` — the structured-inputs seam this story
+leaves open.

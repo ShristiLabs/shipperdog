@@ -423,6 +423,11 @@ class RbacPermissionEvaluatorTest {
             public Optional<UUID> owningOrganizationOf(UUID id) {
                 return Optional.ofNullable(ownership.get(id));
             }
+
+            @Override
+            public Optional<UUID> testerIdOfUser(UUID userId) {
+                return Optional.empty();
+            }
         };
     }
 
@@ -455,6 +460,11 @@ class RbacPermissionEvaluatorTest {
             public Optional<VersionAccess.VersionRecord> recordOf(UUID id) {
                 return Optional.empty();
             }
+
+            @Override
+            public Optional<VersionAccess.VersionState> stateOf(UUID id) {
+                return Optional.empty();
+            }
         };
     }
 
@@ -480,6 +490,11 @@ class RbacPermissionEvaluatorTest {
                                 "com.acme.banking",
                                 null));
             }
+
+            @Override
+            public boolean visibleToTenant(UUID applicationId, UUID tenantId) {
+                return false;
+            }
         };
     }
 
@@ -494,6 +509,11 @@ class RbacPermissionEvaluatorTest {
             @Override
             public Optional<ApplicationAccess.ApplicationProfile> profileOf(UUID id) {
                 return Optional.empty();
+            }
+
+            @Override
+            public boolean visibleToTenant(UUID applicationId, UUID tenantId) {
+                return false;
             }
         };
     }
@@ -517,7 +537,7 @@ class RbacPermissionEvaluatorTest {
     private static RequestRoleGrants grants(UserRolesSnapshot snapshot) {
         return new RequestRoleGrants(null, null, null) {
             @Override
-            UserRolesSnapshot snapshot(UUID userId) {
+            public UserRolesSnapshot snapshot(UUID userId) {
                 return snapshot;
             }
         };

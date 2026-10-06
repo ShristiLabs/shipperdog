@@ -26,14 +26,20 @@ public class RequestRoleGrants {
 
     private UserRolesSnapshot cached;
 
-    RequestRoleGrants(PlatformAdmins platformAdmins, OrganizationAccess organizations, TenantAccess tenants) {
+    public RequestRoleGrants(PlatformAdmins platformAdmins, OrganizationAccess organizations, TenantAccess tenants) {
         this.platformAdmins = platformAdmins;
         this.organizations = organizations;
         this.tenants = tenants;
     }
 
-    /** The snapshot for the user, loading it on first use in this request. */
-    UserRolesSnapshot snapshot(UUID userId) {
+    /**
+     * The snapshot for the user, loading it on first use in this
+     * request. Public within the module's internal packages: the
+     * layered engine (S7-01) resolves the same per-request snapshot
+     * the RBAC evaluator does, so one request costs one snapshot
+     * however many decisions it makes.
+     */
+    public UserRolesSnapshot snapshot(UUID userId) {
         UserRolesSnapshot current = cached;
         if (current == null || !current.userId().equals(userId)) {
             current = new UserRolesSnapshot(

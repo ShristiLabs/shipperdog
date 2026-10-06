@@ -29,7 +29,10 @@ package com.shipperdog.api.config;
  *       ({@code approval_duration})</li>
  *   <li>{@link #AUTHORIZATION_DECISION_DURATION} — recorded since this
  *       issue by the RBAC enforcement point (SLO: under 100 ms, PRD
- *       section 42)</li>
+ *       section 42); since S7-01 (issue #30) the layered authorization
+ *       engine records the same meter tagged {@code engine=layered}
+ *       (the RBAC leg carries no engine tag), so the SLO observes both
+ *       engines as one metric family</li>
  * </ul>
  */
 public final class MetricNames {

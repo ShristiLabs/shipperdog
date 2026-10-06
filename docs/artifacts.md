@@ -25,7 +25,12 @@ the form/body/query (never the path), the permission evaluator
 resolves it version -> application -> owning tenant/organization, and
 every denial conceals as the uniform 404 of that target (a foreign
 version answers `VERSION_NOT_FOUND`; an unknown artifact under your
-own version answers `ARTIFACT_NOT_FOUND`).
+own version answers `ARTIFACT_NOT_FOUND`). Since S7-01 (issue #30)
+the read is additionally decision-guarded: the layered authorization
+engine decides the subject's PRD 11 chain before the scoped data
+read (deny-by-default; a pure tester denies until S7-02's grants),
+rendering the same two conceal grains — see
+[authorization](authorization.md).
 
 ## Artifact states and extraction (S5-02, issue #21)
 
