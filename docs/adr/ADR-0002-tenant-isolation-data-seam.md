@@ -449,3 +449,38 @@ person record stays a plain organization-scoped parent exactly like
 organizations themselves. The consequence line above is corrected by
 this amendment rather than edited in place (decision records are
 append-only history).
+
+## Eleventh amendment (2026-10-06): tester groups join the seam; junctions may inherit a parent's scope
+
+The tenth amendment reserved this landing: `tester_groups` (S6-02,
+issue #27, V1's tables) ARE tenant-scoped user data — the entity
+implements `TenantScope`, its endpoint repository extends the seam,
+and group routes bind the request's tenant context through the same
+route-interceptor authority applications use (the group's owning
+tenant, resolved via the tester module's public `TesterGroupAccess`).
+Nothing about the plain-child doctrine changes for the groups
+themselves.
+
+The new question the landing forces is the junction:
+`tester_group_members(group_id, tester_id)` carries NO tenant column
+(PRD 13 — the V1 composite-PK precedent), so it cannot implement
+`TenantScope` and cannot ride the seam's predicate. The amendment's
+rule: **a junction whose every row belongs to exactly one
+tenant-scoped parent is reached only THROUGH that parent** — the
+service loads the group through the seam under the request's bound
+context first, then addresses the junction by that group's id, so
+cross-tenant junction rows are unreachable by construction (the
+delete path removes children before the guarded parent delete). The
+tester-direction read (`idx_tgm_tester_id`) is organization-grain by
+nature — a tester's groups span the organization's tenants — and runs
+through a `@CrossTenantByDesign` catalog constrained to the tester's
+own organization's tenants, the same review-critical carve-out the
+authorization engine's role resolution uses, with the caller's
+permission checked at the tester target before any row moves.
+
+Consequences: `TenantScope` remains the marker for rows with their own
+tenant dimension; future junctions over tenant-scoped parents
+(`version_access`-style) follow the via-parent rule; and the groups
+catalog joins `TenantMemberRepository` on the review-critical list —
+it must never serve endpoint data paths, only ownership hops and the
+organization-grain listing.

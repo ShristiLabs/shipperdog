@@ -73,6 +73,12 @@ public class AuthorizationExceptionHandler {
             // caller failed a permission check rather than addressing a
             // nonexistent version).
             case "version" -> "VERSION_NOT_FOUND";
+            // Since S6-02 (issue #27) the tester-group routes check the
+            // 'tester-group' target: a concealed denial must render
+            // exactly like the tester module's genuine group miss
+            // (TESTER_GROUP_NOT_FOUND), never a code that would leak
+            // which check failed.
+            case "tester-group" -> "TESTER_GROUP_NOT_FOUND";
             default -> ApiError.NOT_FOUND.name();
         };
     }

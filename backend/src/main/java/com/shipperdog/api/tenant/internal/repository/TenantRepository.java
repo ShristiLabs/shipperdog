@@ -1,6 +1,7 @@
 package com.shipperdog.api.tenant.internal.repository;
 
 import com.shipperdog.api.tenant.internal.entity.TenantEntity;
+import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 import org.springframework.data.domain.Page;
@@ -17,6 +18,9 @@ public interface TenantRepository extends JpaRepository<TenantEntity, UUID> {
 
     /** Within-organization identifier guard (uq_tenants_org_name). */
     boolean existsByOrganizationIdAndName(UUID organizationId, String name);
+
+    /** The organization's tenants, unpaged (issue #27 TenantAccess hop). */
+    List<TenantEntity> findByOrganizationId(UUID organizationId);
 
     /** Organization-scoped listing (issue #9); organizations own their tenants. */
     Page<TenantEntity> findByOrganizationIdOrderByCreatedAtAscIdAsc(UUID organizationId, Pageable pageable);

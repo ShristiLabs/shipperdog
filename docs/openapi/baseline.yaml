@@ -33,11 +33,68 @@ paths:
             '*/*':
               schema:
                 $ref: "#/components/schemas/TesterResponse"
+  /api/v1/tester-groups/{id}:
+    get:
+      tags:
+      - tester-group-controller
+      operationId: get
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      responses:
+        "200":
+          description: OK
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/GroupResponse"
+    put:
+      tags:
+      - tester-group-controller
+      operationId: rename
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RenameRequest"
+        required: true
+      responses:
+        "200":
+          description: OK
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/GroupResponse"
+    delete:
+      tags:
+      - tester-group-controller
+      operationId: delete
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      responses:
+        "204":
+          description: No Content
   /api/v1/tenants/{id}:
     get:
       tags:
       - tenant-controller
-      operationId: get
+      operationId: get_1
       parameters:
       - name: id
         in: path
@@ -142,7 +199,7 @@ paths:
     get:
       tags:
       - organization-controller
-      operationId: get_1
+      operationId: get_2
       parameters:
       - name: id
         in: path
@@ -356,11 +413,116 @@ paths:
             '*/*':
               schema:
                 $ref: "#/components/schemas/ReinviteResponse"
+  /api/v1/tester-groups:
+    get:
+      tags:
+      - tester-group-controller
+      operationId: list_1
+      parameters:
+      - name: tenantId
+        in: query
+        required: false
+        schema:
+          type: string
+          format: uuid
+      - name: testerId
+        in: query
+        required: false
+        schema:
+          type: string
+          format: uuid
+      - name: limit
+        in: query
+        required: false
+        schema:
+          type: string
+      - name: cursor
+        in: query
+        required: false
+        schema:
+          type: string
+      responses:
+        "200":
+          description: OK
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/PageResponseGroupResponse"
+    post:
+      tags:
+      - tester-group-controller
+      operationId: create_1
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateRequest"
+        required: true
+      responses:
+        "200":
+          description: OK
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/GroupResponse"
+  /api/v1/tester-groups/{id}/members:
+    get:
+      tags:
+      - tester-group-controller
+      operationId: listMembers
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - name: limit
+        in: query
+        required: false
+        schema:
+          type: string
+      - name: cursor
+        in: query
+        required: false
+        schema:
+          type: string
+      responses:
+        "200":
+          description: OK
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/PageResponseMemberView"
+    post:
+      tags:
+      - tester-group-controller
+      operationId: addMember
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/MemberAddRequest"
+        required: true
+      responses:
+        "200":
+          description: OK
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/MemberAddedResponse"
   /api/v1/tenants:
     get:
       tags:
       - tenant-controller
-      operationId: list_1
+      operationId: list_2
       parameters:
       - name: organizationId
         in: query
@@ -393,7 +555,7 @@ paths:
     post:
       tags:
       - tenant-controller
-      operationId: create_1
+      operationId: create_2
       requestBody:
         content:
           application/json:
@@ -411,7 +573,7 @@ paths:
     get:
       tags:
       - tenant-controller
-      operationId: listMembers
+      operationId: listMembers_1
       parameters:
       - name: id
         in: path
@@ -439,7 +601,7 @@ paths:
     post:
       tags:
       - tenant-controller
-      operationId: addMember
+      operationId: addMember_1
       parameters:
       - name: id
         in: path
@@ -464,7 +626,7 @@ paths:
     get:
       tags:
       - organization-controller
-      operationId: list_2
+      operationId: list_3
       parameters:
       - name: limit
         in: query
@@ -486,7 +648,7 @@ paths:
     post:
       tags:
       - organization-controller
-      operationId: create_2
+      operationId: create_3
       requestBody:
         content:
           application/json:
@@ -792,7 +954,7 @@ paths:
     get:
       tags:
       - application-controller
-      operationId: list_3
+      operationId: list_4
       parameters:
       - name: organizationId
         in: query
@@ -820,7 +982,7 @@ paths:
     post:
       tags:
       - application-controller
-      operationId: create_3
+      operationId: create_4
       requestBody:
         content:
           application/json:
@@ -893,7 +1055,7 @@ paths:
     get:
       tags:
       - version-controller
-      operationId: list_4
+      operationId: list_5
       parameters:
       - name: applicationId
         in: path
@@ -931,7 +1093,7 @@ paths:
     post:
       tags:
       - version-controller
-      operationId: create_4
+      operationId: create_5
       parameters:
       - name: applicationId
         in: path
@@ -1012,7 +1174,7 @@ paths:
     get:
       tags:
       - application-controller
-      operationId: get_2
+      operationId: get_3
       parameters:
       - name: id
         in: path
@@ -1055,7 +1217,7 @@ paths:
     get:
       tags:
       - tester-controller
-      operationId: get_3
+      operationId: get_4
       parameters:
       - name: id
         in: path
@@ -1074,7 +1236,7 @@ paths:
     get:
       tags:
       - tenant-applications-controller
-      operationId: list_5
+      operationId: list_6
       parameters:
       - name: id
         in: path
@@ -1103,7 +1265,7 @@ paths:
     get:
       tags:
       - organization-controller
-      operationId: listMembers_1
+      operationId: listMembers_2
       parameters:
       - name: id
         in: path
@@ -1214,6 +1376,11 @@ paths:
           - TESTER_INVITED
           - TESTER_ACTIVATED
           - TESTER_STATUS_CHANGED
+          - TESTER_GROUP_CREATED
+          - TESTER_GROUP_UPDATED
+          - TESTER_GROUP_DELETED
+          - TESTER_GROUP_MEMBER_ADDED
+          - TESTER_GROUP_MEMBER_REMOVED
       - name: applicationId
         in: query
         required: false
@@ -1265,7 +1432,7 @@ paths:
     get:
       tags:
       - artifact-controller
-      operationId: get_4
+      operationId: get_5
       parameters:
       - name: artifactId
         in: path
@@ -1290,7 +1457,7 @@ paths:
     get:
       tags:
       - application-tenant-authorization-controller
-      operationId: list_6
+      operationId: list_7
       parameters:
       - name: id
         in: path
@@ -1319,7 +1486,7 @@ paths:
     get:
       tags:
       - version-controller
-      operationId: get_5
+      operationId: get_6
       parameters:
       - name: applicationId
         in: path
@@ -1365,11 +1532,32 @@ paths:
             '*/*':
               schema:
                 $ref: "#/components/schemas/VersionHistoryView"
+  /api/v1/tester-groups/{id}/members/{testerId}:
+    delete:
+      tags:
+      - tester-group-controller
+      operationId: removeMember
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - name: testerId
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      responses:
+        "204":
+          description: No Content
   /api/v1/tenants/{id}/members/{userId}:
     delete:
       tags:
       - tenant-controller
-      operationId: removeMember
+      operationId: removeMember_1
       parameters:
       - name: id
         in: path
@@ -1390,7 +1578,7 @@ paths:
     delete:
       tags:
       - organization-controller
-      operationId: removeMember_1
+      operationId: removeMember_2
       parameters:
       - name: id
         in: path
@@ -1456,6 +1644,28 @@ components:
         invitation:
           type: object
           additionalProperties: {}
+    RenameRequest:
+      type: object
+      properties:
+        name:
+          type: string
+    GroupResponse:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        tenantId:
+          type: string
+          format: uuid
+        name:
+          type: string
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
     UpdateRequest:
       type: object
       properties:
@@ -1542,8 +1752,6 @@ components:
     JsonNode:
       type: object
       properties:
-        floatingPointNumber:
-          type: boolean
         nodeType:
           type: string
           enum:
@@ -1586,6 +1794,8 @@ components:
         boolean:
           type: boolean
         binary:
+          type: boolean
+        floatingPointNumber:
           type: boolean
         container:
           type: boolean
@@ -1655,11 +1865,20 @@ components:
     MemberAddRequest:
       type: object
       properties:
-        userId:
+        testerId:
           type: string
           format: uuid
-        role:
+    MemberAddedResponse:
+      type: object
+      properties:
+        groupId:
           type: string
+          format: uuid
+        testerId:
+          type: string
+          format: uuid
+        added:
+          type: boolean
     CreatePatRequest:
       type: object
       properties:
@@ -2103,13 +2322,13 @@ components:
             $ref: "#/components/schemas/TesterResponse"
         next_cursor:
           type: string
-    PageResponseTenantResponse:
+    PageResponseGroupResponse:
       type: object
       properties:
         items:
           type: array
           items:
-            $ref: "#/components/schemas/TenantResponse"
+            $ref: "#/components/schemas/GroupResponse"
         next_cursor:
           type: string
     PageResponseMemberView:
@@ -2119,6 +2338,15 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/MemberView"
+        next_cursor:
+          type: string
+    PageResponseTenantResponse:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/TenantResponse"
         next_cursor:
           type: string
     PageResponseApplicationView:
@@ -2243,6 +2471,11 @@ components:
           - TESTER_INVITED
           - TESTER_ACTIVATED
           - TESTER_STATUS_CHANGED
+          - TESTER_GROUP_CREATED
+          - TESTER_GROUP_UPDATED
+          - TESTER_GROUP_DELETED
+          - TESTER_GROUP_MEMBER_ADDED
+          - TESTER_GROUP_MEMBER_REMOVED
         occurredAt:
           type: string
           format: date-time

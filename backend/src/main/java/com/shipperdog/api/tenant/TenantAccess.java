@@ -1,5 +1,6 @@
 package com.shipperdog.api.tenant;
 
+import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
@@ -20,6 +21,13 @@ public interface TenantAccess {
 
     /** The organization that owns the tenant, or empty when unknown. */
     Optional<UUID> owningOrganizationId(UUID tenantId);
+
+    /**
+     * The organization's tenants (issue #27: the groups-per-tester
+     * listing spans the tester's organization's tenants — an
+     * organization-grain read no single tenant context can scope).
+     */
+    List<UUID> tenantIdsOfOrganization(UUID organizationId);
 
     /**
      * Whether the tenant accepts NEW affiliations — members (since S2-03)

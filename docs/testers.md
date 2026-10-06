@@ -129,6 +129,8 @@ INVITED --accept--> ACTIVE <--suspend/reactivate--> SUSPENDED
 |---|---|---|
 | `shipperdog.tester.invitation-ttl` | `TESTER_INVITATION_TTL` | `P7D` |
 | `shipperdog.tester.portal-base-url` | `TESTER_PORTAL_BASE_URL` | `http://localhost:5173` |
+| `shipperdog.tester.default-groups` | `TESTER_DEFAULT_GROUPS` | PRD 8.9's examples (see [tester groups](tester-groups.md)) |
 
 The portal base URL prefixes the accept link; the tester-facing
-portal experience arrives with E8.
+portal experience arrives with E8. The default-groups list seeds
+tenant creation with starter groups (S6-02).

@@ -22,7 +22,14 @@ public class TesterException extends RuntimeException {
                 HttpStatus.CONFLICT,
                 "TESTER_INVITATION_IN_FLIGHT",
                 "A concurrent invitation for this tester is in flight; retry."),
-        INVALID_TRANSITION(HttpStatus.CONFLICT, "TESTER_INVALID_TRANSITION", "The status transition is not allowed.");
+        INVALID_TRANSITION(HttpStatus.CONFLICT, "TESTER_INVALID_TRANSITION", "The status transition is not allowed."),
+        GROUP_NOT_FOUND(HttpStatus.NOT_FOUND, "TESTER_GROUP_NOT_FOUND", "Tester group not found."),
+        NAME_TAKEN(
+                HttpStatus.CONFLICT, "TESTER_GROUP_NAME_TAKEN", "A group with this name already exists in the tenant."),
+        TENANT_DEACTIVATED(
+                HttpStatus.CONFLICT,
+                "TESTER_GROUP_TENANT_DEACTIVATED",
+                "The tenant is deactivated and takes no new tester groups or members.");
 
         final HttpStatus httpStatus;
         final String code;

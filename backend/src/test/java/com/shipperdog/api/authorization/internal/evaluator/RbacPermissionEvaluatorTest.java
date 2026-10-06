@@ -134,6 +134,76 @@ class RbacPermissionEvaluatorTest {
     }
 
     @Test
+    void testerGroupTargetsResolveTheOwningTenantWithTheOrganizationOverlay() {
+        UUID userId = UUID.randomUUID();
+        UUID owningOrg = UUID.randomUUID();
+        UUID foreignOrg = UUID.randomUUID();
+        UUID tenant = UUID.randomUUID();
+        UUID groupId = UUID.randomUUID();
+        UUID foreignGroupId = UUID.randomUUID();
+        Authentication auth = jwtAuth(userId);
+        TenantAccess ownedByOrg = owningOrg(tenant, owningOrg);
+
+        // QA_ENGINEER is an organization role (issue #5 matrix): the
+        // overlay carries app:tester-groups:manage into the group's
+        // tenant (S6-02, issue #27).
+        RbacPermissionEvaluator qaEngineer = evaluator(
+                unknownApplications(),
+                unknownVersions(),
+                unknownTesters(),
+                testerGroups(Map.of(groupId, tenant, foreignGroupId, UUID.randomUUID())),
+                grants(new UserRolesSnapshot(
+                        userId, false, Map.of(owningOrg, OrgRole.QA_ENGINEER), Map.of(), ownedByOrg)));
+        assertThat(qaEngineer.hasPermission(auth, groupId, "tester-group", "app:tester-groups:manage"))
+                .as("the owning organization's QA engineer manages the group through the tenant overlay")
+                .isTrue();
+        assertThatThrownBy(() ->
+                        qaEngineer.hasPermission(auth, foreignGroupId, "tester-group", "app:tester-groups:manage"))
+                .as("a group of another organization's tenant is a concealed miss")
+                .isInstanceOf(ConcealedResourceAccessDeniedException.class);
+        assertThatThrownBy(() ->
+                        qaEngineer.hasPermission(auth, UUID.randomUUID(), "tester-group", "app:tester-groups:manage"))
+                .as("an unknown group is a concealed miss")
+                .isInstanceOf(ConcealedResourceAccessDeniedException.class);
+
+        // An organization VIEWER holds no app:tester-groups:manage anywhere.
+        RbacPermissionEvaluator viewer = evaluator(
+                unknownApplications(),
+                unknownVersions(),
+                unknownTesters(),
+                testerGroups(Map.of(groupId, tenant)),
+                grants(new UserRolesSnapshot(userId, false, Map.of(owningOrg, OrgRole.VIEWER), Map.of(), ownedByOrg)));
+        assertThatThrownBy(() -> viewer.hasPermission(auth, groupId, "tester-group", "app:tester-groups:manage"))
+                .as("read-only org roles cannot manage groups (concealed denial)")
+                .isInstanceOf(ConcealedResourceAccessDeniedException.class);
+
+        // The groups-per-tester listing's hop: an app-scope grant at a
+        // tester target resolves the person record's owning
+        // organization (same shape as the org-scope tester hop).
+        UUID testerId = UUID.randomUUID();
+        RbacPermissionEvaluator orgAdmin = evaluator(
+                unknownApplications(),
+                unknownVersions(),
+                testers(Map.of(testerId, owningOrg)),
+                unknownTesterGroups(),
+                grants(new UserRolesSnapshot(
+                        userId, false, Map.of(owningOrg, OrgRole.ORG_ADMIN), Map.of(), ownedByOrg)));
+        assertThat(orgAdmin.hasPermission(auth, testerId, "tester", "app:tester-groups:manage"))
+                .as("the owning organization's admin lists a tester's groups")
+                .isTrue();
+        RbacPermissionEvaluator foreignQa = evaluator(
+                unknownApplications(),
+                unknownVersions(),
+                testers(Map.of(testerId, owningOrg)),
+                unknownTesterGroups(),
+                grants(new UserRolesSnapshot(
+                        userId, false, Map.of(foreignOrg, OrgRole.QA_ENGINEER), Map.of(), ownedByOrg)));
+        assertThatThrownBy(() -> foreignQa.hasPermission(auth, testerId, "tester", "app:tester-groups:manage"))
+                .as("a QA engineer of another organization cannot reach the tester's grants (concealed denial)")
+                .isInstanceOf(ConcealedResourceAccessDeniedException.class);
+    }
+
+    @Test
     void tenantScopeGrantsUnionTheTenantRoleAndTheOwningOrganizationRole() {
         UUID userId = UUID.randomUUID();
         UUID tenant = UUID.randomUUID();
@@ -303,14 +373,40 @@ class RbacPermissionEvaluatorTest {
     /** Evaluator under test with registry stubs including the tester hop (issue #26). */
     private static RbacPermissionEvaluator evaluator(
             ApplicationAccess applications, VersionAccess versions, TesterAccess testers, RequestRoleGrants grants) {
+        return evaluator(applications, versions, testers, unknownTesterGroups(), grants);
+    }
+
+    /** Evaluator under test with registry stubs including the tester-group hop (issue #27). */
+    private static RbacPermissionEvaluator evaluator(
+            ApplicationAccess applications,
+            VersionAccess versions,
+            TesterAccess testers,
+            com.shipperdog.api.tester.TesterGroupAccess testerGroups,
+            RequestRoleGrants grants) {
         return new RbacPermissionEvaluator(
                 grants,
                 applications,
                 versions,
                 testers,
+                testerGroups,
                 new AuditLogger(event -> {}, Clock.systemUTC()),
                 new SimpleMeterRegistry(),
                 new TraceAttributes(ObservationRegistry.NOOP));
+    }
+
+    /** Tester-group registry stub resolving nothing (the group hop stays inert). */
+    private static com.shipperdog.api.tester.TesterGroupAccess unknownTesterGroups() {
+        return testerGroups(Map.of());
+    }
+
+    /** Tester-group registry stub resolving the given group-to-tenant map (issue #27). */
+    private static com.shipperdog.api.tester.TesterGroupAccess testerGroups(Map<UUID, UUID> ownership) {
+        return new com.shipperdog.api.tester.TesterGroupAccess() {
+            @Override
+            public Optional<UUID> owningTenantOf(UUID id) {
+                return Optional.ofNullable(ownership.get(id));
+            }
+        };
     }
 
     /** Tester registry stub resolving nothing (the tester hop stays inert). */
@@ -443,6 +539,11 @@ class RbacPermissionEvaluatorTest {
             }
 
             @Override
+            public List<UUID> tenantIdsOfOrganization(UUID organizationId) {
+                return List.of();
+            }
+
+            @Override
             public boolean acceptsNewAffiliations(UUID tenantId) {
                 return false;
             }
@@ -464,6 +565,11 @@ class RbacPermissionEvaluatorTest {
             @Override
             public Optional<UUID> owningOrganizationId(UUID tenant) {
                 return tenant.equals(tenantId) ? Optional.of(organizationId) : Optional.empty();
+            }
+
+            @Override
+            public List<UUID> tenantIdsOfOrganization(UUID organization) {
+                return organization.equals(organizationId) ? List.of(tenantId) : List.of();
             }
 
             @Override

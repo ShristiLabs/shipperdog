@@ -139,6 +139,21 @@ so a revalidation trail reads attempt by attempt;
 accepted (`FAILED -> VALIDATING`, a blocked validation re-driven, or
 a blocked extraction re-armed), carrying `versionId` and `artifactId`
 entity references with the `status` the row carried at acceptance),
+tester (`TESTER_INVITED` — issue #26/S6-01: an onboarding invitation
+minted (create or re-invite, `reinvited=true` distinguishing the
+latter), carrying the `email` and `testerId` entity reference;
+`TESTER_ACTIVATED` — issue #26/S6-01: acceptance linked the account
+and flipped the record; `TESTER_STATUS_CHANGED` — issue #26/S6-01:
+the suspend/reactivate switch with `from`/`to`),
+tester group (`TESTER_GROUP_CREATED` — issue #27/S6-02: a group
+created, carrying `name` and the tenant entity reference
+(`seeded=true` marks tenant-creation seeding);
+`TESTER_GROUP_UPDATED` — issue #27/S6-02: a rename with
+`name.before`/`name.after`; `TESTER_GROUP_DELETED` — issue #27/S6-02:
+the deletion with `name` and `membersRemoved`; and
+`TESTER_GROUP_MEMBER_ADDED`/`TESTER_GROUP_MEMBER_REMOVED` —
+issue #27/S6-02: a membership change, carrying `groupId` and
+`testerId` — idempotent replays and no-op removals write nothing),
 and
 platform (`ACCESS_DENIED`, S1-06).
 

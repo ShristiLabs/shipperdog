@@ -54,6 +54,11 @@ Current contents:
   the INVITED/ACTIVE/SUSPENDED lifecycle with login/refresh/PAT
   suspension, email delivery through the notification seam, and
   TESTER_* configuration.
+- [Tester groups](tester-groups.md) — tenant-scoped tester collections
+  (S6-02): group CRUD on the isolation seam, idempotent membership
+  add/remove over the composite-PK junction, default-group seeding on
+  tenant creation, and the testers-per-group / groups-per-tester
+  listings.
 - [Observability](observability.md) — tracing/metrics/logs baseline,
   correlation model, `shipperdog_*` metric namespace, Prometheus +
   Grafana local stack, and the management-port security posture

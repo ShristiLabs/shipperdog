@@ -123,7 +123,8 @@ arrives through the version module's code as noted above.
 
 ## Tester (`TesterException.Code`)
 
-The tester onboarding surface (S6-01, issue #26).
+The tester onboarding surface (S6-01, issue #26) and tester groups
+(S6-02, issue #27).
 
 | Code | HTTP | Detail |
 |---|---|---|
@@ -133,3 +134,6 @@ The tester onboarding surface (S6-01, issue #26).
 | `TESTER_ALREADY_ACTIVE` | 409 | The tester has already accepted onboarding. (re-inviting an ACTIVE tester; the account exists, a fresh invitation is meaningless) |
 | `TESTER_INVALID_TRANSITION` | 409 | The status transition is not allowed. (the manual lifecycle allows only `ACTIVE <-> SUSPENDED` — `INVITED -> ACTIVE` belongs to the accept flow alone, and nothing leaves `INVITED` or enters `DISABLED` through this surface; also the answer for re-inviting a SUSPENDED tester) |
 | `TESTER_INVITATION_IN_FLIGHT` | 409 | A concurrent invitation for this tester is in flight; retry. (a lost concurrent re-invite on `uq_user_invitations_pending_tester`; the retry revokes the winner's invitation and mints fresh — the one-live-token invariant holds) |
+| `TESTER_GROUP_NOT_FOUND` | 404 | Tester group not found. (S6-02; also the concealed-denial shape for tester groups — a foreign tenant's or foreign organization's group is indistinguishable from a missing one, on every item-addressed route) |
+| `TESTER_GROUP_NAME_TAKEN` | 409 | A group with this name already exists in the tenant. (the `uq_tester_groups_tenant_name` guard; names are unique per tenant and creation is NOT idempotent — a lost race means another group owns the name now) |
+| `TESTER_GROUP_TENANT_DEACTIVATED` | 409 | The tenant is deactivated and takes no new tester groups or members. (the issue #9 affiliation rule extended to groups: reads, renames, deletions, and removals continue) |

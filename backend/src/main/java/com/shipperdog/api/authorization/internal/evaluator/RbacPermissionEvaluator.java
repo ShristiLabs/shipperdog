@@ -13,6 +13,7 @@ import com.shipperdog.api.identity.AuthenticatedPrincipal;
 import com.shipperdog.api.organization.OrgRole;
 import com.shipperdog.api.tenant.TenantRole;
 import com.shipperdog.api.tester.TesterAccess;
+import com.shipperdog.api.tester.TesterGroupAccess;
 import com.shipperdog.api.version.VersionAccess;
 import io.micrometer.core.instrument.MeterRegistry;
 import io.micrometer.core.instrument.Timer;
@@ -77,6 +78,7 @@ public class RbacPermissionEvaluator implements PermissionEvaluator {
     private final ApplicationAccess applications;
     private final VersionAccess versions;
     private final TesterAccess testers;
+    private final TesterGroupAccess testerGroups;
     private final AuditLogger audit;
     private final MeterRegistry meters;
     private final TraceAttributes trace;
@@ -86,6 +88,7 @@ public class RbacPermissionEvaluator implements PermissionEvaluator {
             ApplicationAccess applications,
             VersionAccess versions,
             TesterAccess testers,
+            TesterGroupAccess testerGroups,
             AuditLogger audit,
             MeterRegistry meters,
             TraceAttributes trace) {
@@ -93,6 +96,7 @@ public class RbacPermissionEvaluator implements PermissionEvaluator {
         this.applications = applications;
         this.versions = versions;
         this.testers = testers;
+        this.testerGroups = testerGroups;
         this.audit = audit;
         this.meters = meters;
         this.trace = trace;
@@ -123,6 +127,8 @@ public class RbacPermissionEvaluator implements PermissionEvaluator {
                 trace.version(id);
             } else if ("tester".equals(targetType)) {
                 trace.tester(id);
+            } else if ("tester-group".equals(targetType)) {
+                trace.testerGroup(id);
             }
         }
         // SLO measurability from day one (PRD sections 28 and 42):
@@ -206,9 +212,12 @@ public class RbacPermissionEvaluator implements PermissionEvaluator {
      * to owner exactly once, here; {@code tenant} targets are the
      * creation-time check at the future owner tenant; {@code
      * organization} targets are the creation-time check at the owning
-     * organization of an organization-shared application. Unknown
-     * targets deny (concealment is added by the caller of this
-     * evaluator).
+     * organization of an organization-shared application. Since E6,
+     * {@code tester} targets (S6-02, issue #27: the groups-per-tester
+     * listing) resolve the person record's owning organization, and
+     * {@code tester-group} targets resolve the group's owning tenant
+     * with the owning-organization overlay. Unknown targets deny
+     * (concealment is added by the caller of this evaluator).
      */
     private boolean appGrants(UserRolesSnapshot snapshot, UUID targetId, String targetType, Permission required) {
         if (targetId == null) {
@@ -234,6 +243,26 @@ public class RbacPermissionEvaluator implements PermissionEvaluator {
         }
         if ("organization".equals(targetType)) {
             return orgGrants(snapshot, targetId, required);
+        }
+        if ("tester".equals(targetType)) {
+            // S6-02 (issue #27): app-scope grants at a tester target
+            // (the groups-per-tester listing) resolve the person
+            // record's owning organization — the same hop the org-scope
+            // tester check performs above.
+            return testers.owningOrganizationOf(targetId)
+                    .map(organizationId -> orgGrants(snapshot, organizationId, required))
+                    .orElse(false);
+        }
+        if ("tester-group".equals(targetType)) {
+            // S6-02 (issue #27): app-scope grants at a tester-group
+            // target resolve the group's owning tenant (with the owning
+            // organization's role overlaid by tenantGrants, the union
+            // acceptance criterion 4 established) — groups are
+            // tenant-scoped seam rows per ADR-0002's tenth amendment.
+            return testerGroups
+                    .owningTenantOf(targetId)
+                    .map(tenantId -> tenantGrants(snapshot, tenantId, required))
+                    .orElse(false);
         }
         return false;
     }

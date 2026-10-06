@@ -9,6 +9,7 @@ import com.shipperdog.api.organization.OrganizationAccess;
 import com.shipperdog.api.tenant.TenantException;
 import com.shipperdog.api.tenant.internal.entity.TenantEntity;
 import com.shipperdog.api.tenant.internal.repository.TenantRepository;
+import com.shipperdog.api.tester.TesterGroupProvisioning;
 import java.time.Clock;
 import java.time.Instant;
 import java.util.LinkedHashMap;
@@ -52,6 +53,7 @@ public class TenantService {
     private final TenantRepository tenants;
     private final OrganizationAccess organizations;
     private final TenantConflictResolver conflicts;
+    private final TesterGroupProvisioning testerGroups;
     private final AuditEventPublisher audit;
     private final Clock clock;
     private final TraceAttributes trace;
@@ -60,12 +62,14 @@ public class TenantService {
             TenantRepository tenants,
             OrganizationAccess organizations,
             TenantConflictResolver conflicts,
+            TesterGroupProvisioning testerGroups,
             AuditEventPublisher audit,
             Clock clock,
             TraceAttributes trace) {
         this.tenants = tenants;
         this.organizations = organizations;
         this.conflicts = conflicts;
+        this.testerGroups = testerGroups;
         this.audit = audit;
         this.clock = clock;
         this.trace = trace;
@@ -111,6 +115,11 @@ public class TenantService {
         // convention); the request's trace already carries the owning
         // organization from the guarded target.
         trace.tenant(tenant.getId());
+        // Default tester groups are part of the tenant's provisioning
+        // (issue #27, S6-02): seeded inside this transaction through the
+        // tester module's callback, so a seeding failure fails the whole
+        // creation — a tenant never lands half-provisioned.
+        testerGroups.seedDefaultGroups(tenant.getId(), actorId);
         Map<String, String> created = new LinkedHashMap<>();
         created.put("name", validatedName);
         created.put("externalId", validatedExternalId);
