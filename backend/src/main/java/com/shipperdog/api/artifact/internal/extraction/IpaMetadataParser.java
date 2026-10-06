@@ -92,6 +92,9 @@ public class IpaMetadataParser implements ArtifactMetadataParser {
         }
         Signing signing = signingOf(zip, infoPlist);
         long durationMs = (System.nanoTime() - startedAt) / 1_000_000;
+        // The Android-only fields (targetOs, format, signatureBlocks)
+        // are null here by design: an IPA is an IPA, and its signing
+        // tier is the provisioning profile above.
         return new ExtractedMetadata(
                 bundleId,
                 versionName,
@@ -99,7 +102,10 @@ public class IpaMetadataParser implements ArtifactMetadataParser {
                 buildNumberRaw,
                 minimumOs,
                 displayName,
+                null,
+                null,
                 signing,
+                null,
                 Instant.now(),
                 durationMs,
                 PARSER);

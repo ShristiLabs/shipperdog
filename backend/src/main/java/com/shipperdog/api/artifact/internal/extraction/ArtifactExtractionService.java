@@ -13,7 +13,6 @@ import com.shipperdog.api.audit.AuditEventType;
 import com.shipperdog.api.config.MetricNames;
 import com.shipperdog.api.config.TraceAttributes;
 import com.shipperdog.api.tenant.TenantScopeExecutor;
-import com.shipperdog.api.version.VersionAccess;
 import com.shipperdog.api.version.VersionAccess.VersionOwnership;
 import io.micrometer.core.instrument.MeterRegistry;
 import io.micrometer.core.instrument.Timer;
@@ -85,8 +84,6 @@ public class ArtifactExtractionService {
 
     private final List<ArtifactMetadataParser> parsers;
 
-    private final VersionAccess versions;
-
     private final TenantScopeExecutor scopeExecutor;
 
     private final AuditEventPublisher audit;
@@ -105,7 +102,6 @@ public class ArtifactExtractionService {
             ArtifactScopedRepository artifacts,
             ArtifactStore store,
             List<ArtifactMetadataParser> parsers,
-            VersionAccess versions,
             TenantScopeExecutor scopeExecutor,
             AuditEventPublisher audit,
             Clock clock,
@@ -116,7 +112,6 @@ public class ArtifactExtractionService {
         this.artifacts = artifacts;
         this.store = store;
         this.parsers = List.copyOf(parsers);
-        this.versions = versions;
         this.scopeExecutor = scopeExecutor;
         this.audit = audit;
         this.clock = clock;
@@ -133,9 +128,10 @@ public class ArtifactExtractionService {
      * uploader, storage key, and platform — so the job never re-reads
      * the artifact before establishing its own scope.
      *
-     * <p>Platforms without a parser (ANDROID until S5-03) schedule
-     * nothing: there is no code to run, and pretending otherwise
-     * would record failures against artifacts nothing can parse.
+     * <p>Platforms without a registered parser (none today: IOS and
+     * ANDROID both carry one since S5-03) schedule nothing: there is
+     * no code to run, and pretending otherwise would record failures
+     * against artifacts nothing can parse.
      */
     public void schedule(ArtifactEntity artifact, VersionOwnership ownership) {
         Optional<ArtifactMetadataParser> parser = parserFor(artifact.getPlatform());
@@ -290,6 +286,9 @@ public class ArtifactExtractionService {
             detail.put("versionName", metadata.versionName() == null ? "-" : metadata.versionName());
             detail.put("buildNumber", metadata.buildNumber() == null ? "-" : Long.toString(metadata.buildNumber()));
             detail.put("minimumOs", metadata.minimumOs() == null ? "-" : metadata.minimumOs());
+            if (metadata.format() != null) {
+                detail.put("format", metadata.format());
+            }
             detail.put("parser", metadata.parser());
             detail.put("durationMs", Long.toString(metadata.durationMs()));
             audit(artifactId, ownership, uploaderId, true, detail);
@@ -375,7 +374,13 @@ public class ArtifactExtractionService {
     // Documents, audit, metric, scope, sleep
     // -------------------------------------------------------------------------
 
-    /** The jsonb document of a successful extraction (V16 {@code extracted_metadata}). */
+    /**
+     * The jsonb document of a successful extraction (V16 {@code
+     * extracted_metadata}). The S5-03 Android keys (targetOs, format,
+     * signingBlocks) appear only when a parser produced them, so an
+     * iOS document is byte-shaped exactly as S5-02 wrote it — the
+     * additive-only rule of the shared record.
+     */
     private static String metadataDocument(ExtractedMetadata metadata) {
         Map<String, Object> document = new LinkedHashMap<>();
         document.put("bundleId", metadata.bundleId());
@@ -383,6 +388,12 @@ public class ArtifactExtractionService {
         document.put("buildNumberRaw", metadata.buildNumberRaw());
         document.put("minimumOs", metadata.minimumOs());
         document.put("displayName", metadata.displayName());
+        if (metadata.targetOs() != null) {
+            document.put("targetOs", metadata.targetOs());
+        }
+        if (metadata.format() != null) {
+            document.put("format", metadata.format());
+        }
         if (metadata.signing() != null) {
             Map<String, Object> signing = new LinkedHashMap<>();
             signing.put("profileName", metadata.signing().profileName());
@@ -397,6 +408,12 @@ public class ArtifactExtractionService {
             document.put("signing", signing);
         } else {
             document.put("signing", null);
+        }
+        if (metadata.signatureBlocks() != null) {
+            Map<String, Object> blocks = new LinkedHashMap<>();
+            blocks.put("v2SignatureBlock", metadata.signatureBlocks().v2SignatureBlock());
+            blocks.put("v3SignatureBlock", metadata.signatureBlocks().v3SignatureBlock());
+            document.put("signingBlocks", blocks);
         }
         document.put("extractedAt", metadata.extractedAt().toString());
         document.put("durationMs", metadata.durationMs());

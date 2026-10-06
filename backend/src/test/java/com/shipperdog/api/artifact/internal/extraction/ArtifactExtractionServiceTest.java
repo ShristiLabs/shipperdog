@@ -31,14 +31,14 @@ import org.springframework.scheduling.concurrent.ThreadPoolTaskExecutor;
  * #21): the bounded queue's loud refusal (the artifact records
  * EXTRACTION_QUEUE_FULL and stays VALIDATING), the write-once guard
  * (a double schedule never rewrites a row), and the no-parser skip
- * (ANDROID artifacts schedule nothing until S5-03 lands). The end-to-
- * end legs live in the container-backed integration suite.
+ * (a platform with no registered parser schedules nothing — IOS and
+ * ANDROID both carry parsers since S5-03, so this test registers only
+ * one of them and proves the net still holds). The end-to-end legs
+ * live in the container-backed integration suite.
  */
 class ArtifactExtractionServiceTest {
 
     private final ArtifactScopedRepository artifacts = mock(ArtifactScopedRepository.class);
-
-    private final VersionAccess versions = mock(VersionAccess.class);
 
     @SuppressWarnings("unchecked")
     private final TenantScopeExecutor scopeExecutor = mock(TenantScopeExecutor.class);
@@ -164,7 +164,6 @@ class ArtifactExtractionServiceTest {
                 artifacts,
                 mock(com.shipperdog.api.artifact.ArtifactStore.class),
                 java.util.List.of(parser),
-                versions,
                 scopeExecutor,
                 audit,
                 Clock.systemUTC(),

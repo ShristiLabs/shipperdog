@@ -31,9 +31,22 @@ import java.util.Map;
  *       parser never knows which case it is in.
  *   <li>{@code minimumOs} — {@code MinimumOSVersion} on iOS,
  *       {@code minSdkVersion} on Android, as the platform spells it.
+ *   <li>{@code targetOs} — Android-only (S5-03): {@code
+ *       targetSdkVersion}, stored in the jsonb document for M3's Play
+ *       target-API policy checks; null on iOS.
+ *   <li>{@code format} — Android-only (S5-03): the STRUCTURALLY
+ *       detected format, {@code "APK"} or {@code "AAB"} — never the
+ *       file name's claim; rides in the jsonb document so FR-006's
+ *       channel-format rules (AAB is Play-only) can act on it. Null
+ *       on iOS (an IPA is an IPA).
  *   <li>{@code signing} — null when the binary carries no embedded
  *       provisioning profile (unsigned/ad-hoc builds): fields stored
  *       only, verification is S5-05 (the issue's own scope line).
+ *   <li>{@code signatureBlocks} — Android-only (S5-03): APK v2/v3
+ *       signing-block PAIR PRESENCE, detected structurally and stored
+ *       without any verification (S5-05 owns judging signatures);
+ *       null on iOS. AABs carry JAR signatures in {@code META-INF}
+ *       that this marker deliberately does not chase.
  *   <li>{@code parser} — attribution string (e.g.
  *       {@code "ipa:dd-plist:1.29"}) so a stored document always says
  *       which code produced it.
@@ -51,7 +64,10 @@ public record ExtractedMetadata(
         String buildNumberRaw,
         String minimumOs,
         String displayName,
+        String targetOs,
+        String format,
         Signing signing,
+        SignatureBlocks signatureBlocks,
         Instant extractedAt,
         long durationMs,
         String parser) {
@@ -74,4 +90,16 @@ public record ExtractedMetadata(
             List<String> teamIdentifiers,
             Instant expiresAt,
             Map<String, Object> entitlements) {}
+
+    /**
+     * The Android signing markers S5-03 stores without verifying
+     * (issue #22 AC1): whether the APK carries an APK Signature Scheme
+     * v2 (block id {@code 0x7109871a}) or v3 (block id {@code
+     * 0xf05368c0}) pair in its signing block. Presence is detected
+     * structurally by walking the block's pairs with ranged reads;
+     * the signatures themselves are never read or validated (S5-05
+     * owns that, and v1 JAR signatures in {@code META-INF} are
+     * deliberately out of scope).
+     */
+    public record SignatureBlocks(boolean v2SignatureBlock, boolean v3SignatureBlock) {}
 }
