@@ -314,8 +314,12 @@ class AuthorizationGrantsIntegrationTest {
     void expiredGrantsNeverAuthorizeAndTheTtlIsVisible() throws Exception {
         World world = world("s702-ttl");
         TesterPerson john = testerOf(world, "s702-ttl@example.com", "Ttl Viewer");
-        String soon =
-                java.time.Instant.now().plus(java.time.Duration.ofHours(1)).toString();
+        // Microsecond precision: PostgreSQL timestamptz round-trips
+        // exactly there, so the created view equals the request.
+        String soon = java.time.Instant.now()
+                .plus(java.time.Duration.ofHours(1))
+                .truncatedTo(java.time.temporal.ChronoUnit.MICROS)
+                .toString();
         JsonNode created = createGrant(
                 world.platformAdmin(), world, explicitRequest(world, john.testerId(), world.versionId, soon), 201);
         UUID grantId = UUID.fromString(created.get("grant").get("id").asText());
