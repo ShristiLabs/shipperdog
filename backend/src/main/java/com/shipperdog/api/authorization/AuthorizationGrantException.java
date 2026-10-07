@@ -31,6 +31,10 @@ public class AuthorizationGrantException extends RuntimeException {
                 HttpStatus.CONFLICT,
                 "AUTHORIZATION_GRANT_CONFLICT",
                 "A different grant for this tester, application, and shape already exists."),
+        GRANT_REVOKED(
+                HttpStatus.CONFLICT,
+                "AUTHORIZATION_GRANT_REVOKED",
+                "The grant is revoked; grant access again with a new grant."),
         TENANT_DEACTIVATED(
                 HttpStatus.CONFLICT, "TENANT_DEACTIVATED", "The tenant is deactivated and takes no new grants.");
 

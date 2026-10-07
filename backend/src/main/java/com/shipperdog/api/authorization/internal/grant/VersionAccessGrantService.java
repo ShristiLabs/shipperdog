@@ -72,10 +72,24 @@ import org.springframework.transaction.annotation.Transactional;
  * transactional).
  *
  * <p><strong>Every mutation audits</strong> actor + reason (issue
- * #31 acceptance criterion 7): CREATED, EXPIRY_CHANGED, DELETED carry
+ * #31 acceptance criterion 7): CREATED, EXPIRY_CHANGED, REVOKED carry
  * the grant's shape, target, and expiry state; the reason is
  * mandatory (1..1000 characters, trimmed — the revoke-distribution
  * precedent). Idempotent replays write and audit nothing.
+ *
+ * <p><strong>Revocation (S7-04, issue #33, INV-007):</strong> removal
+ * is a state flip, never a row death. The DELETE route revokes — the
+ * row is retained {@code REVOKED} with {@code revokedAt}/{@code
+ * revokedBy}/{@code revocationReason} on it (a repeat is idempotent,
+ * the S6-03 retained-row precedent), the decision-input cache's
+ * grant-set key drops write-through so the NEXT decision answers
+ * without the grant (the immediacy contract), and re-granting the
+ * same identity mints a NEW row — the revoked twin stays for the
+ * auditors ("what did tester X have on date Y", PRD 16). The V22
+ * partial unique index scopes duplicate identity to ACTIVE rows, so
+ * the idempotent-create replay and the expiry conflict consider
+ * exactly the rows that authorize. Terminal writes answer 409
+ * AUTHORIZATION_GRANT_REVOKED (the S4-03 terminal-state precedent).
  */
 @Service
 public class VersionAccessGrantService {
@@ -132,7 +146,7 @@ public class VersionAccessGrantService {
     /** Create outcome: {@code created} distinguishes 201 from the idempotent 200 replay. */
     public record CreateResult(GrantView view, boolean created) {}
 
-    /** The grant as the API serves it. */
+    /** The grant as the API serves it, with the V22 revocation facts. */
     public record GrantView(
             UUID id,
             UUID tenantId,
@@ -143,6 +157,10 @@ public class VersionAccessGrantService {
             String tag,
             Integer latestN,
             Instant expiresAt,
+            String status,
+            Instant revokedAt,
+            UUID revokedBy,
+            String revocationReason,
             UUID createdBy,
             Instant createdAt,
             Instant updatedAt) {
@@ -158,11 +176,59 @@ public class VersionAccessGrantService {
                     grant.getTag(),
                     grant.getLatestN(),
                     grant.getExpiresAt(),
+                    grant.getStatus().name(),
+                    grant.getRevokedAt(),
+                    grant.getRevokedBy(),
+                    grant.getRevocationReason(),
                     grant.getCreatedBy(),
                     grant.getCreatedAt(),
                     grant.getUpdatedAt());
         }
     }
+
+    /**
+     * One revocation-report entry (issue #33 acceptance criterion 5):
+     * a grant the tester has LOST — revoked, or active-but-expired
+     * (evaluation-time, never swept) — with the timestamps and actors
+     * both directions: who granted and when, who revoked and when and
+     * why.
+     */
+    public record RevocationReportEntry(
+            UUID id,
+            UUID applicationId,
+            String accessType,
+            UUID versionId,
+            String tag,
+            Integer latestN,
+            String state,
+            Instant grantedAt,
+            UUID grantedBy,
+            Instant expiresAt,
+            Instant revokedAt,
+            UUID revokedBy,
+            String revocationReason) {
+
+        static RevocationReportEntry of(VersionAccessGrantEntity grant) {
+            String state = grant.getStatus() == VersionAccessGrantEntity.Status.REVOKED ? "REVOKED" : "EXPIRED";
+            return new RevocationReportEntry(
+                    grant.getId(),
+                    grant.getApplicationId(),
+                    grant.getAccessType().name(),
+                    grant.getVersionId(),
+                    grant.getTag(),
+                    grant.getLatestN(),
+                    state,
+                    grant.getCreatedAt(),
+                    grant.getCreatedBy(),
+                    grant.getExpiresAt(),
+                    grant.getRevokedAt(),
+                    grant.getRevokedBy(),
+                    grant.getRevocationReason());
+        }
+    }
+
+    /** The bulk-revocation outcome: how many ACTIVE grants the pass revoked. */
+    public record BulkRevocationResult(int revokedCount) {}
 
     /** One effective-access entry: the version, its contributors, and its TTL. */
     public record EffectiveEntryView(
@@ -279,20 +345,29 @@ public class VersionAccessGrantService {
     }
 
     // -------------------------------------------------------------------------
-    // Expiry and removal (acceptance criterion 5's TTL; removal is CRUD)
+    // Expiry and revocation (the TTL administration; removal = S7-04's
+    // state flip, never a delete)
     // -------------------------------------------------------------------------
 
     /**
      * Changes a grant's expiry (extend, shorten, or clear to
      * never-expires): the TTL administration point. Idempotent for
      * the same value (no write, no audit — the platform's replay
-     * discipline).
+     * discipline). A REVOKED grant is terminal history — the change
+     * answers {@code 409 AUTHORIZATION_GRANT_REVOKED} (the S4-03
+     * terminal-state precedent); renewal after revocation is a NEW
+     * grant, not a resurrection.
      */
     @Transactional
     public GrantView changeExpiry(UUID actorId, UUID tenantId, UUID grantId, Instant expiresAt, String reason) {
         requireReason(reason);
         Instant next = requireFutureExpiry(expiresAt);
         VersionAccessGrantEntity grant = mustFind(tenantId, grantId);
+        if (grant.getStatus() == VersionAccessGrantEntity.Status.REVOKED) {
+            throw new AuthorizationGrantException(
+                    AuthorizationGrantException.Code.GRANT_REVOKED,
+                    "the grant is revoked; grant access again with a new grant");
+        }
         if (sameInstant(grant.getExpiresAt(), next)) {
             return GrantView.of(grant);
         }
@@ -319,32 +394,148 @@ public class VersionAccessGrantService {
     }
 
     /**
-     * Removes a grant: the row is deleted and the removal audited
-     * with actor + reason (the audit trail IS the history — rows are
-     * not retained, unlike tenant-tester memberships, because a
-     * deleted grant authorizes nothing and its history lives in the
-     * append-only audit store; S7-04 builds the revocation FLOWS
-     * above this primitive).
+     * Revokes a grant (S7-04, issue #33, INV-007 — the DELETE route's
+     * semantics since this story): the row is RETAINED with a status
+     * flip to REVOKED plus the revocation facts (revokedAt, revokedBy,
+     * the mandatory reason), the decision-input cache's grant-set key
+     * drops write-through so the very next decision answers without
+     * the grant (the immediacy contract, acceptance criterion 1), and
+     * the mutation audits actor + reason + before/after (FR-024). A
+     * repeat on an already-revoked row is idempotent — no write, no
+     * audit (the S6-03 retained-row precedent); no code path deletes
+     * grant rows.
      */
     @Transactional
-    public void delete(UUID actorId, UUID tenantId, UUID grantId, String reason) {
+    public GrantView revoke(UUID actorId, UUID tenantId, UUID grantId, String reason) {
         requireReason(reason);
         VersionAccessGrantEntity grant = mustFind(tenantId, grantId);
-        grants.delete(grant);
+        if (grant.getStatus() == VersionAccessGrantEntity.Status.REVOKED) {
+            return GrantView.of(grant);
+        }
+        grant.revoke(actorId, reason.trim(), Instant.now(clock));
+        VersionAccessGrantEntity saved = grants.saveScoped(grant);
         // Write-through (S7-03, AC2): the drop rides this transaction
-        // at before-commit — revocation immediacy is the point.
+        // at before-commit — revocation immediacy is the point; the
+        // loader's ACTIVE-only filter keeps the refill correct.
         decisionCache.invalidateGrantSet(tenantId, grant.getTesterId());
-        Map<String, String> detail = new LinkedHashMap<>(shapeDetail(grant));
-        detail.put("testerId", String.valueOf(grant.getTesterId()));
-        audit.record(AuditEvent.builder(AuditEventType.AUTHORIZATION_GRANT_DELETED)
+        Map<String, String> detail = new LinkedHashMap<>(shapeDetail(saved));
+        detail.put("testerId", String.valueOf(saved.getTesterId()));
+        detail.put("expiresAt", String.valueOf(saved.getExpiresAt()));
+        detail.put("status.before", "ACTIVE");
+        detail.put("status.after", "REVOKED");
+        audit.record(AuditEvent.builder(AuditEventType.AUTHORIZATION_GRANT_REVOKED)
                 .userId(actorId)
                 .tenantId(tenantId)
-                .applicationId(grant.getApplicationId())
-                .versionId(grant.getVersionId())
+                .applicationId(saved.getApplicationId())
+                .versionId(saved.getVersionId())
                 .success(true)
                 .detail(detail)
                 .reason(reason.trim())
                 .build());
+        return GrantView.of(saved);
+    }
+
+    /**
+     * The bulk revocation pass (issue #33, folding #32's follow-up):
+     * every ACTIVE grant the tester holds through the tenant — the
+     * whole tester-grain oversharing correction in ONE transaction,
+     * one mandatory reason, optionally narrowed to one application.
+     * Each flip audits individually (FR-024: every security-sensitive
+     * operation); the cache drop is ONE grant-set key because the
+     * cached unit is exactly the tester x tenant set the pass empties
+     * (the S7-03 family design — the write-through stays correct at
+     * any fan-out). Repeatable: a second pass revokes nothing and
+     * answers zero. Revocation stays administrable on a deactivated
+     * tenant (the tenant lifecycle's existing-data rule).
+     */
+    @Transactional
+    public BulkRevocationResult bulkRevoke(
+            UUID actorId, UUID tenantId, UUID testerId, UUID applicationId, String reason) {
+        UUID organizationId = requireKnownTenant(tenantId);
+        requireReason(reason);
+        UUID visibleTester = requireTesterOfOrganization(testerId, organizationId);
+        if (!memberships.membershipExists(tenantId, visibleTester)) {
+            throw new AuthorizationGrantException(
+                    AuthorizationGrantException.Code.MEMBERSHIP_NOT_FOUND,
+                    "the tester holds no membership row with the tenant");
+        }
+        if (applicationId != null) {
+            requireVisibleApplication(applicationId, tenantId);
+        }
+        Specification<VersionAccessGrantEntity> active = (root, query, criteria) -> criteria.and(
+                criteria.equal(root.get("testerId"), visibleTester),
+                applicationId == null
+                        ? criteria.conjunction()
+                        : criteria.equal(root.get("applicationId"), applicationId),
+                criteria.equal(root.get("status"), VersionAccessGrantEntity.Status.ACTIVE));
+        List<VersionAccessGrantEntity> toRevoke = grants.findAllScoped(
+                        active, new CursorPageable(0, Integer.MAX_VALUE, LISTING_ORDER))
+                .getContent();
+        Instant now = Instant.now(clock);
+        for (VersionAccessGrantEntity grant : toRevoke) {
+            grant.revoke(actorId, reason.trim(), now);
+            VersionAccessGrantEntity saved = grants.saveScoped(grant);
+            Map<String, String> detail = new LinkedHashMap<>(shapeDetail(saved));
+            detail.put("testerId", String.valueOf(saved.getTesterId()));
+            detail.put("expiresAt", String.valueOf(saved.getExpiresAt()));
+            detail.put("status.before", "ACTIVE");
+            detail.put("status.after", "REVOKED");
+            detail.put("bulk", "true");
+            audit.record(AuditEvent.builder(AuditEventType.AUTHORIZATION_GRANT_REVOKED)
+                    .userId(actorId)
+                    .tenantId(tenantId)
+                    .applicationId(saved.getApplicationId())
+                    .versionId(saved.getVersionId())
+                    .success(true)
+                    .detail(detail)
+                    .reason(reason.trim())
+                    .build());
+        }
+        // ONE drop covers the pass: the cached unit is the tester x
+        // tenant grant set — every flipped row lived in that key.
+        decisionCache.invalidateGrantSet(tenantId, visibleTester);
+        return new BulkRevocationResult(toRevoke.size());
+    }
+
+    /**
+     * The revocation report (issue #33 acceptance criterion 5): given
+     * a tester, the grants they have LOST through this tenant —
+     * revoked rows and active-but-expired ones (evaluation-time,
+     * INV-006: nothing is swept) — each with both directions of
+     * provenance (grantedAt/grantedBy, expiresAt, and the revocation
+     * facts). Creation-ordered, cursor-paginated, tenant-grain on the
+     * grants path; concealment mirrors the effective view (a foreign
+     * or unlinked tester is the genuine miss's shape).
+     */
+    @Transactional(readOnly = true)
+    public Page<RevocationReportEntry> revocationReport(
+            UUID tenantId, UUID testerId, UUID applicationId, long offset, int limit) {
+        UUID organizationId = requireKnownTenant(tenantId);
+        UUID visibleTester = requireTesterOfOrganization(testerId, organizationId);
+        if (!memberships.membershipExists(tenantId, visibleTester)) {
+            throw new AuthorizationGrantException(
+                    AuthorizationGrantException.Code.MEMBERSHIP_NOT_FOUND,
+                    "the tester holds no membership row with the tenant");
+        }
+        if (applicationId != null) {
+            requireVisibleApplication(applicationId, tenantId);
+        }
+        Instant now = Instant.now(clock);
+        Specification<VersionAccessGrantEntity> lost = (root, query, criteria) -> {
+            List<Predicate> predicates = new ArrayList<>();
+            predicates.add(criteria.equal(root.get("testerId"), visibleTester));
+            if (applicationId != null) {
+                predicates.add(criteria.equal(root.get("applicationId"), applicationId));
+            }
+            predicates.add(criteria.or(
+                    criteria.equal(root.get("status"), VersionAccessGrantEntity.Status.REVOKED),
+                    criteria.and(
+                            criteria.isNotNull(root.get("expiresAt")),
+                            criteria.lessThanOrEqualTo(root.get("expiresAt"), now))));
+            return criteria.and(predicates.toArray(Predicate[]::new));
+        };
+        return grants.findAllScoped(lost, new CursorPageable(offset, limit, LISTING_ORDER))
+                .map(RevocationReportEntry::of);
     }
 
     // -------------------------------------------------------------------------
@@ -589,11 +780,19 @@ public class VersionAccessGrantService {
                         AuthorizationGrantException.Code.GRANT_NOT_FOUND, "grant not found"));
     }
 
-    /** The stored grant with the same identity, if any (the working set per subject is small). */
+    /**
+     * The stored grant with the same identity, if any (the working set
+     * per subject is small) — ACTIVE rows only since S7-04: the
+     * duplicate authority (V22's partial unique index) scopes identity
+     * to the rows that authorize, so a revoked twin neither replays
+     * nor conflicts; a re-grant mints a new row (issue #33 acceptance
+     * criterion 4).
+     */
     private VersionAccessGrantEntity findSameGrant(
             UUID tenantId, UUID testerId, UUID applicationId, AccessType shape, ResolvedTarget target) {
         return catalog.findByTenantIdAndTesterIdAndApplicationId(tenantId, testerId, applicationId).stream()
-                .filter(grant -> grant.getAccessType() == shape
+                .filter(grant -> grant.getStatus() == VersionAccessGrantEntity.Status.ACTIVE
+                        && grant.getAccessType() == shape
                         && sameId(grant.getVersionId(), target.versionId())
                         && java.util.Objects.equals(grant.getTag(), target.tag())
                         && java.util.Objects.equals(grant.getLatestN(), target.latestN()))

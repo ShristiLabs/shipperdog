@@ -40,6 +40,16 @@ import org.springframework.data.domain.Persistable;
  * mutation of which carries actor + reason (issue #31 acceptance
  * criterion 7).
  *
+ * <p><strong>Revocation (S7-04, issue #33, INV-007):</strong> removal
+ * is a state flip, never a row death — the row carries {@code status}
+ * (ACTIVE authorizes, REVOKED never does, whatever its expiry says)
+ * with the revocation facts on the row itself ({@code revokedAt},
+ * {@code revokedBy}, {@code revocationReason}) so the revocation
+ * report answers from the data. The V22 unique index scopes duplicate
+ * identity to ACTIVE rows: a re-grant after revocation mints a NEW
+ * row and the revoked twin stays for the auditors (the S6-03
+ * retained-row precedent; no code path deletes grant rows).
+ *
  * <p>Tenant-scoped user data (ADR-0002): the row implements
  * {@link TenantScope} — the granting tenant owns it — so the endpoint
  * surface goes through the isolation seam
@@ -74,6 +84,18 @@ public class VersionAccessGrantEntity implements TenantScope, Persistable<UUID> 
         GROUP
     }
 
+    /**
+     * The V22 revocation switch (the {@code version_access_status}
+     * vocabulary): ACTIVE grants authorize (subject to expiry and the
+     * engine's chain), a REVOKED grant never does — terminal, like the
+     * version lifecycle's REVOKED (the only way back is a NEW grant
+     * row, which the partial unique index admits).
+     */
+    public enum Status {
+        ACTIVE,
+        REVOKED
+    }
+
     @Id
     @GeneratedValue(strategy = GenerationType.UUID)
     private UUID id;
@@ -101,6 +123,16 @@ public class VersionAccessGrantEntity implements TenantScope, Persistable<UUID> 
 
     private Instant expiresAt;
 
+    @Enumerated(EnumType.STRING)
+    @JdbcTypeCode(SqlTypes.NAMED_ENUM)
+    private Status status;
+
+    private Instant revokedAt;
+
+    private UUID revokedBy;
+
+    private String revocationReason;
+
     private UUID createdBy;
 
     private Instant createdAt;
@@ -112,7 +144,8 @@ public class VersionAccessGrantEntity implements TenantScope, Persistable<UUID> 
     /**
      * A new grant: the shape's target is carried by the matching
      * field; the service has validated the pairing before building
-     * the row.
+     * the row. Born {@link Status#ACTIVE} (V22's default); only the
+     * revoke transition ever changes the status.
      */
     public VersionAccessGrantEntity(
             UUID tenantId,
@@ -133,6 +166,21 @@ public class VersionAccessGrantEntity implements TenantScope, Persistable<UUID> 
         this.latestN = latestN;
         this.expiresAt = expiresAt;
         this.createdBy = createdBy;
+        this.status = Status.ACTIVE;
+    }
+
+    /**
+     * The S7-04 revocation transition (INV-007): flips the row to
+     * {@link Status#REVOKED} with the revocation facts. Terminal — a
+     * second call on an already-revoked row is the caller's no-op to
+     * check (the service answers idempotently), and re-granting mints
+     * a NEW row rather than reactivating this one.
+     */
+    public void revoke(UUID revokedBy, String reason, Instant revokedAt) {
+        this.status = Status.REVOKED;
+        this.revokedBy = revokedBy;
+        this.revocationReason = reason;
+        this.revokedAt = revokedAt;
     }
 
     @PrePersist
@@ -181,6 +229,22 @@ public class VersionAccessGrantEntity implements TenantScope, Persistable<UUID> 
 
     public void setExpiresAt(Instant expiresAt) {
         this.expiresAt = expiresAt;
+    }
+
+    public Status getStatus() {
+        return status;
+    }
+
+    public Instant getRevokedAt() {
+        return revokedAt;
+    }
+
+    public UUID getRevokedBy() {
+        return revokedBy;
+    }
+
+    public String getRevocationReason() {
+        return revocationReason;
     }
 
     public UUID getCreatedBy() {

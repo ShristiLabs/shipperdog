@@ -62,5 +62,13 @@ public enum AuditEventType {
     AUTHORIZATION_DECISION,
     AUTHORIZATION_GRANT_CREATED,
     AUTHORIZATION_GRANT_EXPIRY_CHANGED,
-    AUTHORIZATION_GRANT_DELETED
+    /**
+     * The S7-02 removal primitive's event; no writer emits it since
+     * S7-04 (issue #33) turned removal into revocation — the constant
+     * stays for the historical rows the audit store already holds
+     * (values are never removed once used).
+     */
+    @Deprecated
+    AUTHORIZATION_GRANT_DELETED,
+    AUTHORIZATION_GRANT_REVOKED
 }

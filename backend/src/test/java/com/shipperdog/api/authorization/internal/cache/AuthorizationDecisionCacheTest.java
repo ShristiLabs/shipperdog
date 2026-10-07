@@ -178,6 +178,67 @@ class AuthorizationDecisionCacheTest {
     }
 
     @Test
+    void aVersionedBodyMissingItsGrantsArrayIsCorruptNeverAnEmptyHit() {
+        // Folded #32 reviewer follow-up (L1): a v1 body WITHOUT the
+        // grants array must degrade to the live loader — parsing it as
+        // an empty hit would silently answer "no grants" (deny by
+        // staleness) on a payload the writer never produces.
+        when(values.get(anyString())).thenReturn("{\"v\":1}");
+        when(grants.findByTenantIdAndTesterId(TENANT, TESTER)).thenReturn(List.of(grant(AccessType.APPLICATION)));
+
+        assertThat(cache.grantsOf(TENANT, TESTER)).hasSize(1);
+        verify(redis).delete(anyString());
+        assertThat(count("grants", "degraded")).isEqualTo(1);
+        assertThat(count("grants", "hit")).isZero();
+    }
+
+    @Test
+    void aVersionedBodyMissingItsTenantsArrayIsCorruptNeverAnEmptyHit() {
+        when(values.get(anyString())).thenReturn("{\"v\":1}");
+        when(memberships.tenantIdsOfTester(TESTER)).thenReturn(List.of(TENANT));
+
+        assertThat(cache.tenantsOfTester(TESTER)).containsExactly(TENANT);
+        assertThat(count("tenants-of-tester", "degraded")).isEqualTo(1);
+        assertThat(count("tenants-of-tester", "hit")).isZero();
+    }
+
+    @Test
+    void theConcatenatedGrantsWireFormatRoundTripsThroughParse() {
+        // Folded #32 reviewer follow-up (L2): the serializer is
+        // deliberate JSON concatenation, safe only because every
+        // string it emits is a UUID, an enum name, or a V13 tag
+        // ([A-Z0-9][A-Z0-9_-]{0,49}) — none can contain a character
+        // JSON would escape. The round trip across the legal
+        // vocabulary pins the invariant; widening any vocabulary
+        // moves to a structured writer first.
+        VersionAccessGrantEntity tag = new VersionAccessGrantEntity(
+                TENANT,
+                TESTER,
+                APPLICATION,
+                AccessType.TAG,
+                null,
+                ("A9" + "-_B1".repeat(12)).substring(0, 50),
+                null,
+                java.time.Instant.parse("2027-03-04T05:06:07.123456Z"),
+                null);
+        VersionAccessGrantEntity appWide = grant(AccessType.APPLICATION);
+        when(values.get(anyString())).thenReturn(null);
+        when(grants.findByTenantIdAndTesterId(TENANT, TESTER)).thenReturn(List.of(tag, appWide));
+
+        cache.grantsOf(TENANT, TESTER);
+
+        org.mockito.ArgumentCaptor<String> payload = org.mockito.ArgumentCaptor.forClass(String.class);
+        verify(values).set(startsWith("shipperdog:auth:v1:grants:"), payload.capture(), eq(TTL));
+        tools.jackson.databind.JsonNode parsed = new tools.jackson.databind.ObjectMapper().readTree(payload.getValue());
+        assertThat(parsed.get("v").asInt()).isEqualTo(1);
+        assertThat(parsed.get("grants").isArray()).isTrue();
+
+        when(values.get(anyString())).thenReturn(payload.getValue());
+        assertThat(cache.grantsOf(TENANT, TESTER)).containsExactly(CachedGrant.of(tag), CachedGrant.of(appWide));
+        assertThat(count("grants", "hit")).isEqualTo(1);
+    }
+
+    @Test
     void aFuturePayloadVersionIsCorruptByDefinition() {
         when(values.get(anyString())).thenReturn("{\"v\":2,\"grants\":[]}");
 

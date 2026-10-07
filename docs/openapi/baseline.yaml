@@ -807,6 +807,31 @@ paths:
             '*/*':
               schema:
                 $ref: "#/components/schemas/GrantCreatedResponse"
+  /api/v1/tenants/{id}/authorization-grants/bulk-revoke:
+    post:
+      tags:
+      - authorization-grant-controller
+      operationId: bulkRevoke
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/BulkRevokeRequest"
+        required: true
+      responses:
+        "200":
+          description: OK
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/BulkRevocationResult"
   /api/v1/organizations:
     get:
       tags:
@@ -1537,7 +1562,7 @@ paths:
     delete:
       tags:
       - authorization-grant-controller
-      operationId: delete_1
+      operationId: revoke
       parameters:
       - name: id
         in: path
@@ -1559,6 +1584,47 @@ paths:
       responses:
         "204":
           description: No Content
+  /api/v1/tenants/{id}/authorization-grants/revocation-report:
+    get:
+      tags:
+      - authorization-grant-controller
+      operationId: revocationReport
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - name: testerId
+        in: query
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - name: applicationId
+        in: query
+        required: false
+        schema:
+          type: string
+          format: uuid
+      - name: limit
+        in: query
+        required: false
+        schema:
+          type: string
+      - name: cursor
+        in: query
+        required: false
+        schema:
+          type: string
+      responses:
+        "200":
+          description: OK
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/PageResponseRevocationReportEntry"
   /api/v1/tenants/{id}/authorization-grants/effective:
     get:
       tags:
@@ -1803,6 +1869,7 @@ paths:
           - AUTHORIZATION_GRANT_CREATED
           - AUTHORIZATION_GRANT_EXPIRY_CHANGED
           - AUTHORIZATION_GRANT_DELETED
+          - AUTHORIZATION_GRANT_REVOKED
       - name: applicationId
         in: query
         required: false
@@ -2205,6 +2272,16 @@ components:
         expiresAt:
           type: string
           format: date-time
+        status:
+          type: string
+        revokedAt:
+          type: string
+          format: date-time
+        revokedBy:
+          type: string
+          format: uuid
+        revocationReason:
+          type: string
         createdBy:
           type: string
           format: uuid
@@ -2242,8 +2319,6 @@ components:
     JsonNode:
       type: object
       properties:
-        container:
-          type: boolean
         nodeType:
           type: string
           enum:
@@ -2286,6 +2361,8 @@ components:
         boolean:
           type: boolean
         binary:
+          type: boolean
+        container:
           type: boolean
         floatingPointNumber:
           type: boolean
@@ -2399,6 +2476,23 @@ components:
           $ref: "#/components/schemas/GrantView"
         created:
           type: boolean
+    BulkRevokeRequest:
+      type: object
+      properties:
+        testerId:
+          type: string
+          format: uuid
+        applicationId:
+          type: string
+          format: uuid
+        reason:
+          type: string
+    BulkRevocationResult:
+      type: object
+      properties:
+        revokedCount:
+          type: integer
+          format: int32
     InspectRequest:
       type: object
       description: "The decision context to inspect: the subject user, the addressed\
@@ -2973,6 +3067,53 @@ components:
             $ref: "#/components/schemas/GrantView"
         next_cursor:
           type: string
+    PageResponseRevocationReportEntry:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/RevocationReportEntry"
+        next_cursor:
+          type: string
+    RevocationReportEntry:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        applicationId:
+          type: string
+          format: uuid
+        accessType:
+          type: string
+        versionId:
+          type: string
+          format: uuid
+        tag:
+          type: string
+        latestN:
+          type: integer
+          format: int32
+        state:
+          type: string
+        grantedAt:
+          type: string
+          format: date-time
+        grantedBy:
+          type: string
+          format: uuid
+        expiresAt:
+          type: string
+          format: date-time
+        revokedAt:
+          type: string
+          format: date-time
+        revokedBy:
+          type: string
+          format: uuid
+        revocationReason:
+          type: string
     EffectiveAccessView:
       type: object
       properties:
@@ -3198,6 +3339,7 @@ components:
           - AUTHORIZATION_GRANT_CREATED
           - AUTHORIZATION_GRANT_EXPIRY_CHANGED
           - AUTHORIZATION_GRANT_DELETED
+          - AUTHORIZATION_GRANT_REVOKED
         occurredAt:
           type: string
           format: date-time

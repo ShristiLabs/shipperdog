@@ -29,6 +29,7 @@ backend/src/main/resources/db/
     V19__tester_onboarding.sql
     V20__tenant_tester_membership_suspend.sql
     V21__version_access_grants.sql
+    V22__grant_revocation.sql
   seed/                 dev fixture, applied only when the seed location is active
     R__dev_seed.sql
 ```
@@ -377,6 +378,27 @@ backend/src/main/resources/db/
   (tester_id, application_id) the shared-application decision probe,
   and `idx_versions_application_sort` (application_id, sort_key) the
   latest-N rank counts over V12's sort key.
+
+- `V22__grant_revocation.sql` (S7-04, issue #33) turns grant removal
+  into revocation (INV-007): removal is row state, never row death.
+  New enum type `version_access_status` (`ACTIVE`, `REVOKED` — the
+  `membership_status` precedent); the `status` column arrives NOT
+  NULL `DEFAULT 'ACTIVE'`, which IS the backfill (V21 rows are all
+  ACTIVE by construction). The revocation facts ride the row —
+  `revoked_at` (timestamptz), `revoked_by` (FK to `users`), and
+  `revocation_reason` (varchar(1000), the FR-024 mandatory reason
+  kept on the row so the revocation report answers from the data) —
+  shape-guarded by `ck_version_access_revocation_shape` (all three
+  set or none: revocation is all-or-nothing). The one constraint
+  replacement follows the V21 drop-and-recreate precedent and drops
+  no data: `uq_version_access_grant` is recreated as a PARTIAL
+  unique index over the same full identity (`NULLS NOT DISTINCT`
+  carries over) scoped `WHERE status = 'ACTIVE'` — the duplicate
+  authority behind idempotent create and the 409 renewal conflict
+  now admits a re-grant after revocation as a NEW row while the
+  revoked twin stays retained for auditors. Expand-only and
+  forward-only (ADR-0001): additive columns, one enum type, checks,
+  and the index swap; no code path deletes `version_access` rows.
 
 ## Status and type columns
 
