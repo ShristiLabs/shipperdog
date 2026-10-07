@@ -113,6 +113,20 @@ services:
       api:
         condition: service_started
 
+  # Tester portal (issue #35): a SEPARATE app and container from the
+  # console — testers never load admin routes (issue AC1/AC5). Same
+  # nginx /api proxying pattern; port 5174 mirrors the portal's Vite
+  # dev server, and the API's invitation links point here
+  # (TESTER_PORTAL_BASE_URL).
+  portal:
+    build:
+      context: ../portal
+    ports:
+      - "${PORTAL_PORT:-5174}:80"
+    depends_on:
+      api:
+        condition: service_started
+
   prometheus:
     # Scrapes the API's internal management port over the compose
     # network (api:8081); the UI is loopback-only for the operator.

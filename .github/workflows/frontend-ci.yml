@@ -1,9 +1,12 @@
 name: frontend-ci
 
-# Console gate (issue #12): lint, typecheck, build, and unit tests on
-# every PR and main push, mirroring backend-ci. Kept to a single job on
-# the Node 22 LTS image with npm caching — the full gate runs in about
-# a minute so it never queues behind backend-ci.
+# Console gate (issue #12) and, since issue #35, the tester portal's:
+# lint, typecheck, build, and unit tests on every PR and main push,
+# mirroring backend-ci. Each app is a single job on the Node 22 LTS
+# image with npm caching — both gates run in about a minute so they
+# never queue behind backend-ci. The portal is a separate app and
+# bundle from the console; its job mirrors this one so neither app's
+# gate can pass on the other's green.
 on:
   pull_request:
   push:
@@ -37,3 +40,32 @@ jobs:
 
       - name: Unit tests
         run: npm test
+
+  portal-lint-typecheck-build-test:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: portal
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: portal/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Build (includes strict typecheck)
+        run: npm run build
+
+      - name: Unit tests
+        run: npm test
+

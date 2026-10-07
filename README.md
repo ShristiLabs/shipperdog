@@ -44,6 +44,10 @@ http://localhost:5173 — same origin as the API through the compose
 proxy, so the seeded admin above signs in directly. See
 [docs/frontend.md](docs/frontend.md).
 
+The tester portal (S8-01) is a separate app served at
+http://localhost:5174 — testers sign in there, and invitation accept
+links point at this origin. See [docs/portal.md](docs/portal.md).
+
 Verify the API (management endpoints live on the internal port, published
 loopback-only — never on the public API port):
 
