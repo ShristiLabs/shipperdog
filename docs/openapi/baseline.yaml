@@ -1732,6 +1732,22 @@ paths:
         schema:
           type: string
           format: uuid
+      - name: limit
+        in: query
+        required: false
+        schema:
+          type: string
+      - name: cursor
+        in: query
+        required: false
+        schema:
+          type: string
+      - name: versionId
+        in: query
+        required: false
+        schema:
+          type: string
+          format: uuid
       responses:
         "200":
           description: OK
@@ -2342,6 +2358,8 @@ components:
     JsonNode:
       type: object
       properties:
+        floatingPointNumber:
+          type: boolean
         nodeType:
           type: string
           enum:
@@ -2386,8 +2404,6 @@ components:
         binary:
           type: boolean
         container:
-          type: boolean
-        floatingPointNumber:
           type: boolean
         empty:
           type: boolean
@@ -3171,6 +3187,8 @@ components:
           type: string
         status:
           type: string
+        sortKey:
+          type: string
         sourceGrantIds:
           type: array
           items:
@@ -3197,6 +3215,16 @@ components:
             $ref: "#/components/schemas/OrganizationResponse"
         next_cursor:
           type: string
+    ApplicationCardView:
+      type: object
+      properties:
+        applicationId:
+          type: string
+          format: uuid
+        name:
+          type: string
+        status:
+          type: string
     EligibilityView:
       type: object
       properties:
@@ -3206,6 +3234,8 @@ components:
         applicationId:
           type: string
           format: uuid
+        application:
+          $ref: "#/components/schemas/ApplicationCardView"
         effectiveAccess:
           type: boolean
         resolvedAt:
@@ -3215,6 +3245,8 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/Entry"
+        next_cursor:
+          type: string
     Entry:
       type: object
       properties:
@@ -3226,6 +3258,27 @@ components:
         status:
           type: string
         expiresAt:
+          type: string
+          format: date-time
+        platforms:
+          type: array
+          items:
+            $ref: "#/components/schemas/SlotView"
+    SlotView:
+      type: object
+      properties:
+        platform:
+          type: string
+        artifactId:
+          type: string
+          format: uuid
+        buildNumber:
+          type: integer
+          format: int64
+        sizeBytes:
+          type: integer
+          format: int64
+        uploadedAt:
           type: string
           format: date-time
     DownloadDecisionView:
@@ -3243,16 +3296,6 @@ components:
         platform:
           type: string
         storageKey:
-          type: string
-    ApplicationCardView:
-      type: object
-      properties:
-        applicationId:
-          type: string
-          format: uuid
-        name:
-          type: string
-        status:
           type: string
     CatalogCardView:
       type: object

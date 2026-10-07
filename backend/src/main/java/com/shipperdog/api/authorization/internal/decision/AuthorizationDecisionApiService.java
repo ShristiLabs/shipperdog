@@ -89,6 +89,14 @@ public class AuthorizationDecisionApiService {
     /** The registry's platform order the catalog card resolves and serializes in. */
     private static final List<String> PLATFORM_ORDER = List.of("IOS", "ANDROID");
 
+    /**
+     * The version-history page's fixed default (issue #37's technical
+     * note: testers rarely scroll past 20, but releases accumulate);
+     * an explicit {@code limit} still bounds through the platform's
+     * [1, 100] rule.
+     */
+    private static final int HISTORY_PAGE_SIZE = 20;
+
     private final AuthorizationService authorization;
     private final ApplicationAccess applications;
     private final ArtifactAccess artifacts;
@@ -127,19 +135,47 @@ public class AuthorizationDecisionApiService {
             UUID applicationId, UUID versionId, UUID artifactId, String platform, String storageKey) {}
 
     /**
-     * The caller's authorized version set for one application: the
-     * effective-access entries the portal's version-history page
-     * renders (FR-013) — newest first, each carrying the entry's TTL
-     * (the nearest contributing grant expiry; null when a contributor
-     * never expires). {@code effectiveAccess} is the two-switches
-     * flag; a suspended caller keeps their entries listed but the
-     * flag false (the engine denies their downloads regardless).
+     * The caller's authorized version set for one application (FR-013,
+     * the S8-03 version-history page's data path): the effective-access
+     * entries — newest first by the version sort key — each carrying
+     * the entry's TTL (the nearest contributing grant expiry; null when
+     * a contributor never expires) and the per-platform installable
+     * slots the page renders as platform rows (build number, size,
+     * upload date — AC4). The history page's default page size is the
+     * story's fixed 20 (testers rarely scroll past, but releases
+     * accumulate); {@code next_cursor} follows the platform envelope.
+     * {@code application} carries the header facts a deep link cannot
+     * know from the catalog card; {@code effectiveAccess} is the
+     * two-switches flag.
      */
     public record EligibilityView(
-            UUID tenantId, UUID applicationId, boolean effectiveAccess, Instant resolvedAt, List<Entry> entries) {}
+            UUID tenantId,
+            UUID applicationId,
+            ApplicationCardView application,
+            boolean effectiveAccess,
+            Instant resolvedAt,
+            List<Entry> entries,
 
-    /** One authorized version of the application. */
-    public record Entry(UUID versionId, String versionName, String status, Instant expiresAt) {}
+            @JsonInclude(JsonInclude.Include.NON_NULL) @JsonProperty("next_cursor")
+            String nextCursor) {}
+
+    /**
+     * One authorized version of the application, with the platform
+     * rows: one slot per platform carrying a distributable artifact —
+     * the newest one, which is the artifact a download would serve
+     * (S8-04 wires the entry point; the slot here is the metadata the
+     * tester compares builds with).
+     */
+    public record Entry(
+            UUID versionId,
+            String versionName,
+            String status,
+            Instant expiresAt,
+
+            @JsonProperty("platforms") List<SlotView> platforms) {}
+
+    /** One platform row of a history entry (AC4). */
+    public record SlotView(String platform, UUID artifactId, Long buildNumber, long sizeBytes, Instant uploadedAt) {}
 
     /**
      * The caller's authorized application catalog (issue #36, S8-02):
@@ -228,15 +264,25 @@ public class AuthorizationDecisionApiService {
      * application: the LIST decision over the tenant (the set form's
      * sanctioned skip of the per-item application layer), the
      * application's visibility to the tenant, then the effective-set
-     * computation. A console caller with no linked tester record
-     * answers effectiveAccess=false and an empty set (their
-     * tester-persona reach is nothing). A suspended tester conceals
-     * entirely — the LIST decision's tenant layer denies before this
-     * resolution runs, so they learn nothing (stricter than the admin
-     * view, which lists retained grants to administrators).
+     * computation — the S8-03 history page's data path. Entries carry
+     * the per-platform installable slots and page at the story's
+     * fixed default of 20 (the technical note) through the platform
+     * cursor envelope. An optional {@code versionId} narrows the set
+     * to that one version — the portal's deep-link probe (AC5): a
+     * version absent from the CALLER's effective set (unknown, a
+     * foreign application's, or simply unauthorized) conceals as the
+     * version grain's genuine miss, byte-for-byte (§12), so a shared
+     * build link leaks nothing to a tester without the grant. A
+     * console caller with no linked tester record answers
+     * effectiveAccess=false and an empty set (their tester-persona
+     * reach is nothing). A suspended tester conceals entirely — the
+     * LIST decision's tenant layer denies before this resolution
+     * runs, so they learn nothing (stricter than the admin view,
+     * which lists retained grants to administrators).
      */
     @Transactional(readOnly = true)
-    public EligibilityView eligibility(UUID subject, UUID tenantId, UUID applicationId) {
+    public EligibilityView eligibility(
+            UUID subject, UUID tenantId, UUID applicationId, String limit, String cursor, UUID versionId) {
         AuthorizationDecision list =
                 authorization.decideForApi(AuthorizationContext.listApplications(subject, tenantId));
         if (!list.allowed()) {
@@ -245,17 +291,76 @@ public class AuthorizationDecisionApiService {
         if (!decisionInputs.visibleToTenant(applicationId, tenantId)) {
             throw new ConcealedResourceAccessDeniedException("application");
         }
+        ApplicationAccess.ApplicationSummary summary =
+                applications.summaryOf(applicationId).orElse(null);
+        if (summary == null) {
+            throw new ConcealedResourceAccessDeniedException("application");
+        }
+        ApplicationCardView application = new ApplicationCardView(applicationId, summary.name(), summary.status());
         UUID testerId = testers.testerIdOfUser(subject).orElse(null);
         if (testerId == null) {
-            return new EligibilityView(tenantId, applicationId, false, Instant.now(clock), List.of());
+            return new EligibilityView(
+                    tenantId, applicationId, application, false, Instant.now(clock), List.of(), null);
         }
         VersionAccessGrantService.EffectiveAccessView effective =
                 grants.resolveEffective(tenantId, testerId, applicationId);
-        List<Entry> entries = effective.entries().stream()
-                .map(entry -> new Entry(entry.versionId(), entry.versionName(), entry.status(), entry.expiresAt()))
+        List<VersionAccessGrantService.EffectiveEntryView> authorized = effective.entries();
+        if (versionId != null) {
+            authorized = authorized.stream()
+                    .filter(entry -> entry.versionId().equals(versionId))
+                    .toList();
+            if (authorized.isEmpty()) {
+                // The deep-link probe's miss: not in the caller's set
+                // — for ANY reason — is the version grain's genuine
+                // miss shape, never a distinguishable denial.
+                throw new ConcealedResourceAccessDeniedException("version");
+            }
+        }
+        ListQuery query =
+                ListQuery.of(limit != null && !limit.isBlank() ? limit : String.valueOf(HISTORY_PAGE_SIZE), cursor);
+        int from = (int) Math.min(query.offset(), authorized.size());
+        int to = (int) Math.min(query.offset() + query.limit(), authorized.size());
+        List<VersionAccessGrantService.EffectiveEntryView> page = authorized.subList(from, to);
+        Map<UUID, List<ArtifactAccess.InstallableSlot>> slots = artifacts.installableSlotsOfVersions(page.stream()
+                .map(VersionAccessGrantService.EffectiveEntryView::versionId)
+                .toList());
+        List<Entry> entries = page.stream()
+                .map(entry -> new Entry(
+                        entry.versionId(),
+                        entry.versionName(),
+                        entry.status(),
+                        entry.expiresAt(),
+                        slotViewsOf(slots.getOrDefault(entry.versionId(), List.of()))))
                 .toList();
+        boolean hasMore = to < authorized.size();
         return new EligibilityView(
-                tenantId, applicationId, effective.effectiveAccess(), effective.resolvedAt(), entries);
+                tenantId,
+                applicationId,
+                application,
+                effective.effectiveAccess(),
+                effective.resolvedAt(),
+                entries,
+                hasMore ? CursorCodec.encode(query.offset() + query.limit()) : null);
+    }
+
+    /** Maps the artifact module's slots into the API's serialized form, in the registry's platform order. */
+    private List<SlotView> slotViewsOf(List<ArtifactAccess.InstallableSlot> slots) {
+        Map<String, ArtifactAccess.InstallableSlot> byPlatform = new LinkedHashMap<>();
+        for (ArtifactAccess.InstallableSlot slot : slots) {
+            byPlatform.put(slot.platform(), slot);
+        }
+        return PLATFORM_ORDER.stream()
+                .filter(byPlatform::containsKey)
+                .map(platform -> {
+                    ArtifactAccess.InstallableSlot slot = byPlatform.get(platform);
+                    return new SlotView(
+                            slot.platform(),
+                            slot.artifactId(),
+                            slot.buildNumber(),
+                            slot.sizeBytes(),
+                            slot.uploadedAt());
+                })
+                .toList();
     }
 
     /**
@@ -299,13 +404,16 @@ public class AuthorizationDecisionApiService {
         }
 
         // One working set per application: the merged newest-first
-        // entries with each entry's tenant dimension.
+        // entries with each entry's tenant dimension. Grants dedupe
+        // BEFORE the visibility probe (the #36 review's low finding,
+        // folded here): the probe is the cached read, and one grant
+        // per application is all the reach a dimension contributes.
         Map<UUID, List<DimensionalEntry>> entriesByApplication = new LinkedHashMap<>();
         for (UUID tenantId : sanctionedTenants) {
             List<UUID> applicationIds = decisionInputs.grantsOf(tenantId, testerId).stream()
                     .map(CachedGrant::applicationId)
-                    .filter(applicationId -> decisionInputs.visibleToTenant(applicationId, tenantId))
                     .distinct()
+                    .filter(applicationId -> decisionInputs.visibleToTenant(applicationId, tenantId))
                     .sorted()
                     .toList();
             for (UUID applicationId : applicationIds) {
@@ -318,7 +426,8 @@ public class AuthorizationDecisionApiService {
                 List<DimensionalEntry> merged =
                         entriesByApplication.computeIfAbsent(applicationId, key -> new ArrayList<>());
                 for (VersionAccessGrantService.EffectiveEntryView entry : effective) {
-                    merged.add(new DimensionalEntry(tenantId, entry.versionId(), entry.versionName(), entry.status()));
+                    merged.add(new DimensionalEntry(
+                            tenantId, entry.versionId(), entry.versionName(), entry.status(), entry.sortKey()));
                 }
             }
         }
@@ -344,8 +453,15 @@ public class AuthorizationDecisionApiService {
      * Builds one application's card from its merged newest-first
      * entries across tenant dimensions, or empty when no platform
      * resolves to an installable version (the no-dead-cards rule).
-     * The first dimension encountered is the card's primary addressing;
-     * later dimensions only fill platforms the primary cannot resolve.
+     * The merged entries order GLOBALLY by the version sort key
+     * descending (the #36 review's medium finding, folded by #37):
+     * with the same shared application granted through two tenants
+     * holding divergent version windows, the first dimension's
+     * newest is not necessarily the pair's newest, so the latest-
+     * authorized pick and the per-platform resolution both walk the
+     * globally newest-first order. The stable sort keeps the
+     * deterministic insertion order (sanctioned tenants sorted, then
+     * applications sorted) as the tiebreak — byte-stable cards.
      */
     private Optional<CatalogCardView> cardOf(UUID applicationId, List<DimensionalEntry> merged) {
         ApplicationAccess.ApplicationSummary summary =
@@ -353,12 +469,15 @@ public class AuthorizationDecisionApiService {
         if (summary == null) {
             return Optional.empty();
         }
+        List<DimensionalEntry> newestFirst = merged.stream()
+                .sorted(Comparator.comparing(DimensionalEntry::sortKey).reversed())
+                .toList();
         Map<UUID, Set<String>> platformsByVersion = artifacts.distributablePlatformsOfVersions(
-                merged.stream().map(DimensionalEntry::versionId).toList());
+                newestFirst.stream().map(DimensionalEntry::versionId).toList());
         List<PlatformCardView> platforms = new ArrayList<>();
         Set<String> resolvedPlatforms = new HashSet<>();
         for (String platform : PLATFORM_ORDER) {
-            for (DimensionalEntry entry : merged) {
+            for (DimensionalEntry entry : newestFirst) {
                 if (platformsByVersion.getOrDefault(entry.versionId(), Set.of()).contains(platform)) {
                     platforms.add(
                             new PlatformCardView(platform, entry.tenantId(), entry.versionId(), entry.versionName()));
@@ -370,7 +489,7 @@ public class AuthorizationDecisionApiService {
         if (resolvedPlatforms.isEmpty()) {
             return Optional.empty(); // authorized but nothing installable
         }
-        DimensionalEntry latest = merged.getFirst();
+        DimensionalEntry latest = newestFirst.getFirst();
         return Optional.of(new CatalogCardView(
                 latest.tenantId(),
                 new ApplicationCardView(applicationId, summary.name(), summary.status()),
@@ -379,7 +498,7 @@ public class AuthorizationDecisionApiService {
     }
 
     /** One effective entry with the tenant dimension it resolved through. */
-    private record DimensionalEntry(UUID tenantId, UUID versionId, String versionName, String status) {}
+    private record DimensionalEntry(UUID tenantId, UUID versionId, String versionName, String status, String sortKey) {}
 
     /** The artifact-grain denial reasons (the artifact read route's own set). */
     private static boolean artifactGrain(AuthorizationDecision decision) {

@@ -189,6 +189,63 @@ class AuthorizationDecisionCatalogIntegrationTest {
     }
 
     @Test
+    void crossDimensionLatestAuthorizedVersionOrdersGloballyBySortKey() throws Exception {
+        // The #36 review's medium finding, pinned by #37: the same
+        // organization-shared application granted through TWO tenants
+        // with divergent windows must carry the PAIR's newest version
+        // as the card's latest — the global sort-key merge — never
+        // whichever tenant dimension happens to iterate first.
+        World world = world("s803-order", "Banking", "ANDROID", null);
+        Map<String, Object> shared = new LinkedHashMap<>();
+        shared.put("ownershipScope", "ORGANIZATION");
+        shared.put("organizationId", world.orgId.toString());
+        shared.put("name", "Shared Wallet");
+        shared.put("platforms", List.of("ANDROID"));
+        shared.put("packageName", AndroidFixtures.PACKAGE + ".wallet");
+        UUID sharedApp = UUID.fromString(post(world.platformAdmin(), "/api/v1/applications", shared, 201)
+                .get("id")
+                .asText());
+        UUID tenantB = UUID.fromString(post(
+                        world.platformAdmin(),
+                        "/api/v1/tenants",
+                        Map.of(
+                                "organizationId", world.orgId.toString(),
+                                "name", "Banking s803-order-b",
+                                "externalId", "ext-s803-order-b"),
+                        201)
+                .get("id")
+                .asText());
+        post(world.platformAdmin(), "/api/v1/applications/" + sharedApp + "/tenants/" + world.tenantId, Map.of(), 201);
+        post(world.platformAdmin(), "/api/v1/applications/" + sharedApp + "/tenants/" + tenantB, Map.of(), 201);
+        UUID v712 = createVersion(world, sharedApp, "7.12.0");
+        UUID v711 = createVersion(world, sharedApp, "7.11.0");
+        String walletPackage = AndroidFixtures.PACKAGE + ".wallet";
+        readyAndroidArtifactForPackage(world, v712, walletPackage, "7.12.0", "421");
+        readyAndroidArtifactForPackage(world, v711, walletPackage, "7.11.0", "420");
+        TesterPerson tester = testerOf(world, "s803-order@example.com", "Order Viewer");
+        post(
+                world.platformAdmin(),
+                "/api/v1/tenants/" + tenantB + "/testers",
+                Map.of("testerId", tester.testerId().toString()),
+                201);
+
+        // Dimension A: the newest window. Dimension B: the older
+        // version, pinned explicitly. Whichever UUID order the
+        // sanctioned tenants iterate in, the merged card reads the
+        // globally newest authorized version.
+        grantLatestNOf(world, world.tenantId, tester, sharedApp, 1);
+        grantExplicitVersionIn(world, tenantB, tester, sharedApp, v711);
+
+        JsonNode card = get(tester.token(), CATALOG_URI, 200).get("items").get(0);
+        assertThat(card.get("application").get("name").asString()).isEqualTo("Shared Wallet");
+        assertThat(card.get("latestAuthorizedVersion").get("versionName").asText())
+                .as("the cross-dimension latest is the global newest, not the first dimension's")
+                .isEqualTo("7.12.0");
+        assertThat(platformOf(card, "ANDROID").get("versionName").asText()).isEqualTo("7.12.0");
+        assertThat(platformOf(card, "ANDROID").get("versionId").asText()).isEqualTo(v712.toString());
+    }
+
+    @Test
     void tagGrantPinsTheCardToTheCurrentlyTaggedVersion() throws Exception {
         World world = world("s802-tag", "Banking", "ANDROID", null);
         TesterPerson tester = testerOf(world, "s802-ac2c@example.com", "Ac Two C");
@@ -469,6 +526,33 @@ class AuthorizationDecisionCatalogIntegrationTest {
 
     private UUID grantExplicitVersion(World world, TesterPerson tester) {
         return grantExplicitVersionOf(world, tester, world.applicationId, world.versionId);
+    }
+
+    /** The cross-dimension leg: the grant rides the SPECIFIED tenant (issue #37's ordering pin). */
+    private UUID grantExplicitVersionIn(
+            World world, UUID grantingTenantId, TesterPerson tester, UUID applicationId, UUID versionId) {
+        Map<String, Object> body = new LinkedHashMap<>();
+        body.put("testerId", tester.testerId().toString());
+        body.put("applicationId", applicationId.toString());
+        body.put("accessType", "EXPLICIT_VERSION");
+        body.put("versionId", versionId.toString());
+        body.put("reason", "one specific version");
+        return UUID.fromString(
+                post(world.platformAdmin(), "/api/v1/tenants/" + grantingTenantId + "/authorization-grants", body, 201)
+                        .get("grant")
+                        .get("id")
+                        .asText());
+    }
+
+    /** The cross-dimension leg: the window rides the SPECIFIED tenant (issue #37's ordering pin). */
+    private void grantLatestNOf(World world, UUID grantingTenantId, TesterPerson tester, UUID applicationId, int n) {
+        Map<String, Object> body = new LinkedHashMap<>();
+        body.put("testerId", tester.testerId().toString());
+        body.put("applicationId", applicationId.toString());
+        body.put("accessType", "LATEST_N");
+        body.put("latestN", n);
+        body.put("reason", "the newest " + n);
+        post(world.platformAdmin(), "/api/v1/tenants/" + grantingTenantId + "/authorization-grants", body, 201);
     }
 
     private UUID grantExplicitVersionOf(World world, TesterPerson tester, UUID applicationId, UUID versionId) {

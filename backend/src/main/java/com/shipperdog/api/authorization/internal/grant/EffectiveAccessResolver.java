@@ -58,11 +58,18 @@ final class EffectiveAccessResolver {
     record GrantShape(
             UUID grantId, AccessType accessType, UUID versionId, String tag, Integer latestN, Instant expiresAt) {}
 
-    /** One authorized version: its catalog facts, its contributing grants, and its TTL. */
+    /**
+     * One authorized version: its catalog facts (including the
+     * normalized {@code sortKey} — the cross-dimension merge order the
+     * portal catalog needs when more than one tenant grants the same
+     * application, issue #37 folding the #36 review's ordering
+     * finding), its contributing grants, and its TTL.
+     */
     record EffectiveEntry(
             UUID versionId,
             String versionName,
             String status,
+            String sortKey,
             List<UUID> sourceGrantIds,
             Instant expiresAt,
             boolean expires) {}
@@ -115,6 +122,7 @@ final class EffectiveAccessResolver {
                             version.versionId(),
                             version.versionName(),
                             version.status(),
+                            version.sortKey(),
                             List.copyOf(sources),
                             anyNeverExpires ? null : nearestExpiry,
                             !anyNeverExpires));

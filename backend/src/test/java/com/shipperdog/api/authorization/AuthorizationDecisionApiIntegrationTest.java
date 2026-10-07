@@ -252,6 +252,217 @@ class AuthorizationDecisionApiIntegrationTest {
     }
 
     // -----------------------------------------------------------------------
+    // S8-03 (issue #37): the version-history views' data path — the
+    // eligibility route's platform slots, INV-006 listing semantics,
+    // cursor paging at the story's default, and the deep-link probe.
+    // -----------------------------------------------------------------------
+
+    @Test
+    void historyListsTheAuthorizedSetWithPlatformRowsWhileNewerVersionsArrive() throws Exception {
+        World world = world("s803-history");
+        readyAndroidArtifact(world);
+        UUID v711 = createVersion(world, "7.11.0");
+        UUID v710 = createVersion(world, "7.10.0");
+        UUID v79 = createVersion(world, "7.9.0");
+        TesterPerson john = testerOf(world, "s803-history@example.com", "History Viewer");
+        grantLatestN(world, john, 4);
+
+        // AC1: the latest-4 window lists exactly the four authorized
+        // versions, newest first by the sort key.
+        JsonNode history = get(john.token(), eligibilityUri(world), 200);
+        assertThat(versionNamesOf(history)).containsExactly("7.12.0", "7.11.0", "7.10.0", "7.9.0");
+        assertThat(history.get("application").get("name").asString()).isEqualTo("Banking");
+
+        // AC4: the platform rows carry the artifact's build metadata —
+        // build number from extraction, size, upload date — and the
+        // artifactless versions list no rows (never a fabricated slot).
+        JsonNode newest = history.get("entries").get(0);
+        assertThat(newest.get("platforms").size()).isEqualTo(1);
+        JsonNode slot = newest.get("platforms").get(0);
+        assertThat(slot.get("platform").asString()).isEqualTo("ANDROID");
+        assertThat(slot.get("buildNumber").asLong()).isEqualTo(Long.parseLong(AndroidFixtures.VERSION_CODE));
+        assertThat(slot.get("sizeBytes").asLong()).isPositive();
+        assertThat(slot.hasNonNull("uploadedAt")).isTrue();
+        assertThat(history.get("entries").get(1).get("platforms").size()).isZero();
+
+        // AC1's INV-006 test: a FIFTH version arrives and the window
+        // slides — still exactly four listed, the oldest dropped
+        // (FR-011 consistency, AC2's visible latest-N behavior).
+        createVersion(world, "8.0.0");
+        JsonNode slid = get(john.token(), eligibilityUri(world), 200);
+        assertThat(versionNamesOf(slid)).containsExactly("8.0.0", "7.12.0", "7.11.0", "7.10.0");
+
+        // The explicit old-version grant survives every newer arrival
+        // (INV-006: history remains; the window never evicts it).
+        grantExplicitVersion(world, john, v79);
+        JsonNode withOld = get(john.token(), eligibilityUri(world), 200);
+        assertThat(versionNamesOf(withOld)).containsExactly("8.0.0", "7.12.0", "7.11.0", "7.10.0", "7.9.0");
+
+        // The cursor envelope pages at the story's default of 20. An
+        // app-wide grant covers every version, so the set grows past
+        // the page: 5 above plus 18 older arrivals.
+        assertThat(withOld.hasNonNull("next_cursor")).isFalse(); // 5 of 5, no next page
+        grantApplication(world, john);
+        for (int i = 0; i < 18; i++) {
+            createVersion(world, String.format("6.%d.0", i));
+        }
+        JsonNode full = get(john.token(), eligibilityUri(world), 200);
+        assertThat(full.get("entries").size()).isEqualTo(20);
+        assertThat(full.hasNonNull("next_cursor")).isTrue();
+        JsonNode rest = get(
+                john.token(),
+                eligibilityPageUriOf(
+                        world.tenantId,
+                        world.applicationId,
+                        null,
+                        full.get("next_cursor").asString()),
+                200);
+        assertThat(rest.get("entries").size()).isEqualTo(3);
+        assertThat(rest.hasNonNull("next_cursor")).isFalse();
+    }
+
+    @Test
+    void historyKeepsArchivedAndRevokedVersionsBadgedAndDropsGrantRevokedCoverage() throws Exception {
+        World world = world("s803-badges");
+        readyAndroidArtifactFor(world, world.versionId, "7.12.0", "421");
+        UUID v711 = createVersion(world, "7.11.0");
+        UUID v710 = createVersion(world, "7.10.0");
+        TesterPerson john = testerOf(world, "s803-badges@example.com", "Badge Viewer");
+        grantExplicitVersion(world, john, world.versionId);
+        UUID archivedGrant = grantExplicitVersion(world, john, v711);
+        grantExplicitVersion(world, john, v710);
+
+        // AC3: ARCHIVED stays listed and badged (INV-006's soft
+        // terminal — readable forever, the platform rows intact).
+        post(
+                world.platformAdmin(),
+                "/api/v1/applications/" + world.applicationId + "/versions/" + v711 + "/archive",
+                Map.of(),
+                200);
+        // REVOKED: version revocation blocks new downloads (the
+        // engine's S8-04 concern) but history remains, badged.
+        post(
+                world.platformAdmin(),
+                revokeUri(world, v710),
+                Map.of("reason", "bad build, pulled from distribution"),
+                200);
+
+        JsonNode history = get(john.token(), eligibilityUri(world), 200);
+        assertThat(versionNamesOf(history)).containsExactly("7.12.0", "7.11.0", "7.10.0");
+        assertThat(statusOf(history, "7.11.0")).isEqualTo("ARCHIVED");
+        assertThat(statusOf(history, "7.10.0")).isEqualTo("REVOKED");
+        assertThat(statusOf(history, "7.12.0")).isEqualTo("DRAFT");
+
+        // Deny-by-default: revoking the ARCHIVED version's grant
+        // drops it from THIS tester's view on the next call (the
+        // engine's write-through cache drop) — version state and
+        // grant state are independent axes.
+        revokeGrant(world, archivedGrant, "rotate the beta cohort");
+        JsonNode dropped = get(john.token(), eligibilityUri(world), 200);
+        assertThat(versionNamesOf(dropped)).containsExactly("7.12.0", "7.10.0");
+    }
+
+    @Test
+    void historyDeepLinkProbeConcealsEveryUnauthorizedVersionIdentically() throws Exception {
+        World world = world("s803-probe");
+        readyAndroidArtifact(world);
+        UUID ungrantedSibling = createVersion(world, "7.11.0");
+        TesterPerson john = testerOf(world, "s803-probe@example.com", "Probe Viewer");
+        grantExplicitVersion(world, john);
+
+        // The authorized deep link resolves: one entry, its rows.
+        JsonNode probed =
+                get(john.token(), eligibilityProbeUriOf(world.tenantId, world.applicationId, world.versionId), 200);
+        assertThat(probed.get("entries").size()).isEqualTo(1);
+        assertThat(probed.get("entries").get(0).get("versionName").asString()).isEqualTo(AndroidFixtures.VERSION_NAME);
+        assertThat(probed.get("entries").get(0).get("platforms").size()).isEqualTo(1);
+
+        // AC5: an unauthorized REAL version (a sibling with no grant),
+        // a foreign application's version, and an unknown id all
+        // render the version grain's genuine miss — byte-identical.
+        Map<String, Object> unauthorized = problemOf(
+                getRaw(john.token(), eligibilityProbeUriOf(world.tenantId, world.applicationId, ungrantedSibling)));
+        Map<String, Object> unknown = problemOf(
+                getRaw(john.token(), eligibilityProbeUriOf(world.tenantId, world.applicationId, UUID.randomUUID())));
+        UUID foreignApp = UUID.fromString(post(
+                        world.platformAdmin(),
+                        "/api/v1/applications",
+                        Map.of(
+                                "tenantId",
+                                world.tenantId.toString(),
+                                "name",
+                                "Foreign Payments",
+                                "platforms",
+                                List.of("ANDROID"),
+                                "packageName",
+                                "com.acme.payments"),
+                        201)
+                .get("id")
+                .asText());
+        UUID foreignVersion = UUID.fromString(post(
+                        world.platformAdmin(),
+                        "/api/v1/applications/" + foreignApp + "/versions",
+                        Map.of("versionName", "2.0.0"),
+                        201)
+                .get("id")
+                .asText());
+        Map<String, Object> foreign =
+                problemOf(getRaw(john.token(), eligibilityProbeUriOf(world.tenantId, foreignApp, foreignVersion)));
+        assertThat(unauthorized.get("code")).isEqualTo("VERSION_NOT_FOUND");
+        assertThat(unauthorized).containsAllEntriesOf(unknown);
+        assertThat(unauthorized).containsAllEntriesOf(foreign);
+    }
+
+    @Test
+    void historyEntryCarriesTheNearestGrantExpiryAsItsTtl() throws Exception {
+        World world = world("s803-ttl");
+        TesterPerson john = testerOf(world, "s803-ttl@example.com", "Ttl Viewer");
+        java.time.Instant expiresAt = java.time.Instant.now().plusSeconds(7_200);
+        Map<String, Object> body = new LinkedHashMap<>();
+        body.put("testerId", john.testerId().toString());
+        body.put("applicationId", world.applicationId.toString());
+        body.put("accessType", "EXPLICIT_VERSION");
+        body.put("versionId", world.versionId.toString());
+        body.put("expiresAt", expiresAt.toString());
+        body.put("reason", "a time-boxed build review");
+        post(world.platformAdmin(), "/api/v1/tenants/" + world.tenantId + "/authorization-grants", body, 201);
+
+        JsonNode history = get(john.token(), eligibilityUri(world), 200);
+        assertThat(history.get("entries").size()).isEqualTo(1);
+        String entryTtl = history.get("entries").get(0).get("expiresAt").asString();
+        // The S7-04 microsecond-truncation rule: PostgreSQL timestamptz
+        // carries microseconds, the JVM's clock can carry nanos — the
+        // stored expiry compares after truncation, never raw.
+        assertThat(java.time.Instant.parse(entryTtl))
+                .as("the entry's TTL is the nearest contributing grant expiry")
+                .isEqualTo(expiresAt.truncatedTo(java.time.temporal.ChronoUnit.MICROS));
+    }
+
+    @Test
+    void suspendedTesterConcealsOnEveryHistorySurface() throws Exception {
+        // The engine's tenant layer denies a suspended tester BEFORE
+        // the set resolves: the list and the deep-link probe both
+        // conceal at the tenant grain, and the tester learns nothing
+        // — not even that the version exists (stricter than the admin
+        // view, which still lists retained grants).
+        World world = world("s803-suspended");
+        TesterPerson john = testerOf(world, "s803-suspended@example.com", "Suspended Viewer");
+        grantExplicitVersion(world, john);
+        put(
+                world.platformAdmin(),
+                "/api/v1/testers/" + john.testerId() + "/status",
+                Map.of("status", "SUSPENDED"),
+                200);
+
+        Map<String, Object> list = problemOf(getRaw(john.token(), eligibilityUri(world)));
+        Map<String, Object> probe = problemOf(
+                getRaw(john.token(), eligibilityProbeUriOf(world.tenantId, world.applicationId, world.versionId)));
+        assertThat(list.get("code")).isEqualTo("TENANT_NOT_FOUND");
+        assertThat(probe.get("code")).isEqualTo("TENANT_NOT_FOUND");
+        assertThat(list).containsAllEntriesOf(probe);
+    }
+
+    // -----------------------------------------------------------------------
     // AC2: write-through invalidation through a warm cache
     // -----------------------------------------------------------------------
 
@@ -574,18 +785,39 @@ class AuthorizationDecisionApiIntegrationTest {
         return names;
     }
 
+    /** The entry's lifecycle status badge, by version name. */
+    private static String statusOf(JsonNode eligibility, String versionName) {
+        for (JsonNode entry : eligibility.get("entries")) {
+            if (versionName.equals(entry.get("versionName").asString())) {
+                return entry.get("status").asString();
+            }
+        }
+        throw new AssertionError("no history entry named " + versionName);
+    }
+
     private UUID grantExplicitVersion(World world, TesterPerson tester) {
+        return grantExplicitVersion(world, tester, world.versionId);
+    }
+
+    private UUID grantExplicitVersion(World world, TesterPerson tester, UUID versionId) {
         Map<String, Object> body = new LinkedHashMap<>();
         body.put("testerId", tester.testerId().toString());
         body.put("applicationId", world.applicationId.toString());
         body.put("accessType", "EXPLICIT_VERSION");
-        body.put("versionId", world.versionId.toString());
+        body.put("versionId", versionId.toString());
         body.put("reason", "one specific version");
         return UUID.fromString(
                 post(world.platformAdmin(), "/api/v1/tenants/" + world.tenantId + "/authorization-grants", body, 201)
                         .get("grant")
                         .get("id")
                         .asText());
+    }
+
+    private void revokeGrant(World world, UUID grantId, String reason) {
+        delete(
+                world.platformAdmin(),
+                "/api/v1/tenants/" + world.tenantId + "/authorization-grants/" + grantId + "?reason=" + reason,
+                204);
     }
 
     private void grantLatestN(World world, TesterPerson tester, int n) {
@@ -595,6 +827,15 @@ class AuthorizationDecisionApiIntegrationTest {
         body.put("accessType", "LATEST_N");
         body.put("latestN", n);
         body.put("reason", "the newest " + n);
+        post(world.platformAdmin(), "/api/v1/tenants/" + world.tenantId + "/authorization-grants", body, 201);
+    }
+
+    private void grantApplication(World world, TesterPerson tester) {
+        Map<String, Object> body = new LinkedHashMap<>();
+        body.put("testerId", tester.testerId().toString());
+        body.put("applicationId", world.applicationId.toString());
+        body.put("accessType", "APPLICATION");
+        body.put("reason", "the whole application");
         post(world.platformAdmin(), "/api/v1/tenants/" + world.tenantId + "/authorization-grants", body, 201);
     }
 
@@ -615,6 +856,21 @@ class AuthorizationDecisionApiIntegrationTest {
         return "/api/v1/authorization/decisions/eligibility?tenantId=" + tenantId + "&applicationId=" + applicationId;
     }
 
+    private String eligibilityPageUriOf(UUID tenantId, UUID applicationId, String limit, String cursor) {
+        String uri = eligibilityUriOf(tenantId, applicationId);
+        if (limit != null) {
+            uri += "&limit=" + limit;
+        }
+        if (cursor != null) {
+            uri += "&cursor=" + cursor;
+        }
+        return uri;
+    }
+
+    private String eligibilityProbeUriOf(UUID tenantId, UUID applicationId, UUID versionId) {
+        return eligibilityUriOf(tenantId, applicationId) + "&versionId=" + versionId;
+    }
+
     private String revokeUri(World world, UUID versionId) {
         return "/api/v1/applications/" + world.applicationId + "/versions/" + versionId + "/revoke-distribution";
     }
@@ -628,15 +884,23 @@ class AuthorizationDecisionApiIntegrationTest {
     }
 
     private UUID readyAndroidArtifact(World world) throws Exception {
+        return readyAndroidArtifactFor(
+                world, world.versionId, AndroidFixtures.VERSION_NAME, AndroidFixtures.VERSION_CODE);
+    }
+
+    /** The per-version upload the S8-03 history tests need (any version, its own build number). */
+    private UUID readyAndroidArtifactFor(World world, UUID versionId, String versionName, String versionCode)
+            throws Exception {
         org.springframework.util.MultiValueMap<String, Object> parts =
                 new org.springframework.util.LinkedMultiValueMap<>();
-        parts.add("version_id", world.versionId.toString());
+        parts.add("version_id", versionId.toString());
         parts.add("platform", "ANDROID");
         parts.add(
-                "file", new org.springframework.core.io.ByteArrayResource(AndroidFixtures.aabVersionCodeInManifest()) {
+                "file",
+                new org.springframework.core.io.ByteArrayResource(AndroidFixtures.signedApk(versionName, versionCode)) {
                     @Override
                     public String getFilename() {
-                        return "banking.aab";
+                        return "banking.apk";
                     }
                 });
         Recording uploaded = exchange("/api/v1/artifacts", world.platformAdmin(), HttpMethod.POST, parts);
@@ -645,10 +909,7 @@ class AuthorizationDecisionApiIntegrationTest {
         long deadline = System.currentTimeMillis() + 20_000;
         String status = "";
         while (System.currentTimeMillis() < deadline) {
-            status = get(
-                            world.platformAdmin(),
-                            "/api/v1/artifacts/" + artifactId + "?version_id=" + world.versionId,
-                            200)
+            status = get(world.platformAdmin(), "/api/v1/artifacts/" + artifactId + "?version_id=" + versionId, 200)
                     .get("status")
                     .asString();
             if ("READY".equals(status)) {
@@ -718,6 +979,11 @@ class AuthorizationDecisionApiIntegrationTest {
 
     private Recording getRaw(String token, String uri) {
         return exchange(uri, token, HttpMethod.GET, null);
+    }
+
+    private void delete(String token, String uri, int expectedStatus) {
+        Recording response = exchange(uri, token, HttpMethod.DELETE, null);
+        assertThat(response.status).as("DELETE %s: %s", uri, response.body).isEqualTo(expectedStatus);
     }
 
     private static Map<String, Object> problemOf(Recording recording) {

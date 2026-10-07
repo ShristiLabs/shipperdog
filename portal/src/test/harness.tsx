@@ -56,6 +56,62 @@ export function seedCatalog(items: unknown[] = [], nextCursor?: string): void {
   });
 }
 
+/** The history fixture world (issue #37): the tenant/application ids the
+ * pages address, plus helpers that stub the eligibility listing. */
+export const HISTORY_TENANT_ID = "30000000-0000-4000-8000-000000000030";
+export const HISTORY_APPLICATION_ID = "10000000-0000-4000-8000-000000000001";
+
+function historyBody(entries: unknown[], nextCursor?: string): Record<string, unknown> {
+  const body: Record<string, unknown> = {
+    tenantId: HISTORY_TENANT_ID,
+    applicationId: HISTORY_APPLICATION_ID,
+    application: {
+      applicationId: HISTORY_APPLICATION_ID,
+      name: "Banking",
+      status: "ACTIVE",
+    },
+    effectiveAccess: true,
+    resolvedAt: "2026-10-07T00:00:00Z",
+    entries,
+  };
+  if (nextCursor) body.next_cursor = nextCursor;
+  return body;
+}
+
+/** The history page's response body, for sequence stubs (retry tests). */
+export function historyResponseBody(entries: unknown[] = [], nextCursor?: string): Record<string, unknown> {
+  return historyBody(entries, nextCursor);
+}
+
+/**
+ * Stubs the version-history listing (S8-03). Call AFTER
+ * installFetchRouter (it unshifts onto the live table, like
+ * seedSession). The router matches paths, not query strings, so the
+ * history stub answers both the paged listing and the versionId
+ * probe — every history page makes exactly one of the two calls.
+ */
+export function seedHistory(entries: unknown[] = [], nextCursor?: string): void {
+  routeTable.unshift({
+    method: "GET",
+    url: "/api/v1/authorization/decisions/eligibility",
+    status: 200,
+    body: historyBody(entries, nextCursor),
+  });
+}
+
+/** The deep-link probe's stub: 200 with entries, or the concealed miss. */
+export function seedHistoryProbe(status: number, entries: unknown[] = []): void {
+  routeTable.unshift({
+    method: "GET",
+    url: "/api/v1/authorization/decisions/eligibility",
+    status,
+    body:
+      status === 200
+        ? historyBody(entries)
+        : { title: "Not Found", status, code: "VERSION_NOT_FOUND", detail: "Resource not found." },
+  });
+}
+
 export interface SequencedResponse {
   status: number;
   body?: unknown;

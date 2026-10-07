@@ -44,18 +44,24 @@ portal/src/
   api/          client.ts (fetch wrapper + single-flight refresh),
                 problem.ts (RFC 7807 decoding), auth.ts (raw auth
                 endpoints), catalog.ts (the S8-02 catalog contract:
-                card types + cursor paging)
+                card types + cursor paging), history.ts (the S8-03
+                history contract: entry/slot types, cursor paging,
+                the versionId deep-link probe)
   auth/         tokenStore.ts (session storage), AuthContext.tsx
                 (session lifecycle + silent refresh), RequireAuth.tsx
                 (route guard), tokenStore.test.ts,
                 AuthContext.test.tsx (silent-refresh timer)
-  components/   ToastContext.tsx (error toast convention)
+  components/   ToastContext.tsx (error toast convention),
+                HistoryEntryCard.tsx (one authorized version: badge,
+                TTL, platform rows), NotFoundPage.tsx (the opaque
+                404 page)
   layout/       PortalLayout.tsx (app bar, tester identity, logout)
   pages/        LoginPage, AcceptInvitationPage, HomePage (the S8-02
-                My Applications catalog), HomePage.test.tsx (catalog
-                states)
+                My Applications catalog), ApplicationPage (the S8-03
+                version history), VersionPage (the S8-03 version
+                deep link), and their .test.tsx suites
   test/         harness.tsx (providers + fetch router; seedSession/
-                seedCatalog stubs), setup.ts
+                seedCatalog/seedHistory stubs), setup.ts
 portal/e2e/     portal-verify.mjs (Playwright smoke vs compose stack)
 ```
 
@@ -65,7 +71,9 @@ The portal consumes the identity module's endpoints
 ([authentication](authentication.md)); for authentication it adds
 none and needs no portal-specific backend routes. Since S8-02 the
 home screen also consumes the decision API's self-scoped catalog
-(GET /api/v1/authorization/decisions/applications,
+(GET /api/v1/authorization/decisions/applications), and since S8-03
+the version-history views consume its eligibility listing (GET
+/api/v1/authorization/decisions/eligibility,
 [authorization](authorization.md)).
 
 - **Login:** `POST /api/v1/auth/login` with email + password.
@@ -122,6 +130,43 @@ tester (INV-005 resting state), rendered as guidance, not an error.
   code, trace id) with a Retry; a mid-session refresh failure keeps
   the last good page beneath the error card.
 
+## Version history (S8-03)
+
+Tapping a catalog card opens the application's version history at
+`/applications/:tenantId/:applicationId` — the authorized versions
+FR-013 names, server-computed by the decision API's eligibility
+listing ([authorization](authorization.md)): newest first by the
+version sort key, each row with its lifecycle badge (Draft, Active,
+**Archived**, **Revoked**), the entry's access TTL when a
+contributing grant has one, and the per-platform rows the issue's
+acceptance criteria pin — platform, build number from artifact
+extraction, size, and upload date (the newest distributable artifact
+per platform, which is the build a download would serve). The
+download entry itself arrives with S8-04.
+
+- **INV-006 semantics.** Old versions stay listed while a grant
+  covers them: ARCHIVED and REVOKED versions remain visible with
+  their badges (a revoked version blocks new downloads — the engine's
+  rule — but history remains), and revoking the GRANT drops the
+  version from this tester's view on the next read (deny-by-default).
+  A latest-N window lists exactly the N newest working-set versions:
+  when a newer build arrives, the oldest slides out unless an
+  explicit grant pins it.
+- **Paging.** The history pages at 20 versions (the story's fixed
+  default) through the same cursor envelope as the catalog — Load
+  more follows `next_cursor`.
+- **Deep links.** Each version is shareable at
+  `/applications/:tenantId/:applicationId/versions/:versionId` — the
+  URL a tester passes along when reproducing an issue. The page
+  probes the version against the caller's authorized set server-side:
+  an authorized id renders the version detail; an unknown,
+  unauthorized, or foreign-application id renders the SAME opaque 404
+  page (no hint which check failed, §12). An unauthenticated visit
+  parks the deep link in the login `from` marker and returns to it
+  after sign-in. Applications the tester cannot reach render the same
+  404 page on the history route itself.
+
 The authenticated shell shows the tester's identity in the app bar
-beside the catalog. Version history (S8-03) and the install/download
-flow (S8-04) build on the same card contract.
+beside the catalog. The install/download flow (S8-04) builds on the
+same contracts (the eligibility slots name the artifact a download
+decision would authorize).

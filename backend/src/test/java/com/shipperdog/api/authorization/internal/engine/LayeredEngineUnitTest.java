@@ -302,6 +302,11 @@ class LayeredEngineUnitTest {
             }
 
             @Override
+            public Map<UUID, List<InstallableSlot>> installableSlotsOfVersions(Collection<UUID> versionIds) {
+                return Map.of(); // the engine walk never renders history rows
+            }
+
+            @Override
             public Optional<IssuanceInputs> issuanceInputsOf(UUID versionId, String platform) {
                 return artifactKnown && artifactPlatform.equals(platform)
                         ? Optional.of(new IssuanceInputs(ARTIFACT, VERSION, platform, artifactStatus, "test/key"))

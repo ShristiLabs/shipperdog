@@ -93,18 +93,32 @@ public class AuthorizationDecisionApiController {
     }
 
     /**
-     * The caller's authorized versions of the application: the
-     * effective-access entries (newest first, with each entry's TTL),
-     * self-scoped — no source-grant attribution, no administrative
-     * detail. An unknown or invisible tenant/application conceals as
-     * the genuine miss; a caller with no grants sees an empty set.
-     * Self-scoped like the download route: the engine decides.
+     * The caller's authorized versions of the application (FR-013,
+     * the S8-03 version-history page's data path): the effective-
+     * access entries newest first by the version sort key, each with
+     * its TTL and its per-platform installable slots (the newest
+     * distributable artifact's build number, size, and upload date),
+     * paged at the story's default 20 through the platform cursor
+     * envelope — self-scoped, no source-grant attribution, no
+     * administrative detail. An optional {@code versionId} narrows
+     * the answer to that one version: the portal's deep-link probe,
+     * whose miss (unknown, foreign, or unauthorized) conceals as the
+     * version grain's genuine miss. An unknown or invisible
+     * tenant/application conceals as the genuine miss; a caller with
+     * no grants sees an empty set. Self-scoped like the download
+     * route: the engine decides.
      */
     @GetMapping("/eligibility")
     @PreAuthorize("isAuthenticated()")
     EligibilityView eligibility(
-            @AuthenticationPrincipal Object principal, @RequestParam UUID tenantId, @RequestParam UUID applicationId) {
-        return decisions.eligibility(requireSubject(principal, "tenant"), tenantId, applicationId);
+            @AuthenticationPrincipal Object principal,
+            @RequestParam UUID tenantId,
+            @RequestParam UUID applicationId,
+            @RequestParam(required = false) String limit,
+            @RequestParam(required = false) String cursor,
+            @RequestParam(required = false) UUID versionId) {
+        return decisions.eligibility(
+                requireSubject(principal, "tenant"), tenantId, applicationId, limit, cursor, versionId);
     }
 
     /**

@@ -12,10 +12,13 @@
 // catalog's honest empty state (S8-02: a grantless linked tester sees
 // nothing by design, INV-005 — the card data path itself is proven by
 // the backend catalog suite over the real stack, since a distributable
-// artifact cannot be minted from plain-node Playwright), log out, and
-// sign back in with the credentials just set. Also checks the failure
-// paths (opaque 401, missing token card, anonymous redirect) and fails
-// on any unexpected console error.
+// artifact cannot be minted from plain-node Playwright), the S8-03
+// version-history deep links over a granted latest-N window (the
+// authorized list, the authorized version view, and the opaque 404
+// both an unauthorized and an unknown version id render), log out,
+// and sign back in with the credentials just set. Also checks the
+// failure paths (opaque 401, missing token card, anonymous redirect)
+// and fails on any unexpected console error.
 import { chromium } from "playwright";
 
 const PORTAL = "http://localhost:5174";
@@ -143,6 +146,91 @@ try {
   await page.getByTestId("login-submit").click();
   await page.getByTestId("catalog-empty").waitFor({ timeout: 15_000 });
   record("standard login works for the activated tester", true);
+
+  // 6b. S8-03 golden path: provision a tenant + application + version
+  // through the admin API, link the tester, and grant a latest-N
+  // window. Artifacts stay out of plain-node e2e scope (the #36
+  // precedent — the card/slot data path is proven by the backend
+  // suites over the real stack), so the assertions ride the DEEP
+  // LINKS: the authorized history lists exactly the granted versions,
+  // and an unauthorized version id renders the opaque 404 page.
+  const admin = login.accessToken;
+  const tenant = await api("/api/v1/tenants", {
+    method: "POST",
+    headers: { Authorization: `Bearer ${admin}` },
+    body: JSON.stringify({
+      organizationId: me.orgId,
+      name: `E2E History ${Date.now()}`,
+      externalId: `e2e-history-${Date.now()}`,
+    }),
+  });
+  const application = await api("/api/v1/applications", {
+    method: "POST",
+    headers: { Authorization: `Bearer ${admin}` },
+    body: JSON.stringify({
+      tenantId: tenant.id,
+      name: "E2E History Banking",
+      platforms: ["ANDROID"],
+      packageName: "com.e2e.history.banking",
+    }),
+  });
+  const v712 = await api(`/api/v1/applications/${application.id}/versions`, {
+    method: "POST",
+    headers: { Authorization: `Bearer ${admin}` },
+    body: JSON.stringify({ versionName: "7.12.0" }),
+  });
+  const v711 = await api(`/api/v1/applications/${application.id}/versions`, {
+    method: "POST",
+    headers: { Authorization: `Bearer ${admin}` },
+    body: JSON.stringify({ versionName: "7.11.0" }),
+  });
+  await api(`/api/v1/tenants/${tenant.id}/testers`, {
+    method: "POST",
+    headers: { Authorization: `Bearer ${admin}` },
+    body: JSON.stringify({ testerId: created.id }),
+  });
+  await api(`/api/v1/tenants/${tenant.id}/authorization-grants`, {
+    method: "POST",
+    headers: { Authorization: `Bearer ${admin}` },
+    body: JSON.stringify({
+      testerId: created.id,
+      applicationId: application.id,
+      accessType: "LATEST_N",
+      latestN: 1,
+      reason: "e2e history golden path",
+    }),
+  });
+
+  // The authorized deep link lists exactly the window (newest only —
+  // the FR-011 consistency), each version honestly artifactless.
+  const historyRoute = `/applications/${tenant.id}/${application.id}`;
+  await page.goto(PORTAL + historyRoute, { waitUntil: "networkidle" });
+  await page.getByTestId("history-list").waitFor({ timeout: 15_000 });
+  const historyText = (await page.getByTestId("history-list").textContent()) ?? "";
+  record(
+    "version history deep link lists exactly the granted window",
+    historyText.includes("7.12.0") && !historyText.includes("7.11.0") && historyText.includes("Banking"),
+  );
+  await page.screenshot({ path: "/tmp/s8-03-history.png" });
+
+  // The authorized version deep link renders; the unauthorized
+  // sibling and an unknown id both render the SAME opaque 404 page.
+  await page.goto(`${PORTAL}${historyRoute}/versions/${v712.id}`, { waitUntil: "networkidle" });
+  await page.getByTestId(`history-entry-${v712.id}`).waitFor({ timeout: 15_000 });
+  record("authorized version deep link renders the version", true);
+  await page.goto(`${PORTAL}${historyRoute}/versions/${v711.id}`, { waitUntil: "networkidle" });
+  await page.getByTestId("not-found-page").waitFor({ timeout: 15_000 });
+  const missText = (await page.getByTestId("not-found-page").textContent()) ?? "";
+  await page.goto(`${PORTAL}${historyRoute}/versions/00000000-0000-4000-8000-0000000000ff`, {
+    waitUntil: "networkidle",
+  });
+  await page.getByTestId("not-found-page").waitFor({ timeout: 15_000 });
+  const unknownText = (await page.getByTestId("not-found-page").textContent()) ?? "";
+  record(
+    "unauthorized and unknown version deep links render the same opaque 404",
+    missText === unknownText && missText.includes("not authorized"),
+  );
+  await page.screenshot({ path: "/tmp/s8-03-404.png" });
 
   // 7. Missing token renders the honest card, not a crash.
   await page.goto(PORTAL + "/accept-invitation", { waitUntil: "networkidle" });

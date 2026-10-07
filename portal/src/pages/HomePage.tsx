@@ -22,6 +22,7 @@ import {
   Typography,
 } from "@mui/material";
 import { useState } from "react";
+import { Link as RouterLink } from "react-router-dom";
 import { ApiError } from "../api/problem";
 import { fetchCatalogPage, type CatalogCard } from "../api/catalog";
 import { useAuth } from "../auth/AuthContext";
@@ -48,8 +49,9 @@ export default function HomePage() {
   async function handleRefresh() {
     setRefreshing(true);
     try {
+      // Invalidation refetches the active query — one refetch, not two
+      // (the #36 review's double-refetch finding, folded by #37).
       await queryClient.invalidateQueries({ queryKey: ["catalog"] });
-      await catalog.refetch();
     } finally {
       setRefreshing(false);
     }
@@ -100,12 +102,18 @@ export default function HomePage() {
   );
 }
 
-/** One application card: name, latest authorized version, per-platform availability. */
+/** One application card: name, latest authorized version, per-platform
+ * availability — and the navigation into the S8-03 version history. */
 function CatalogCardView({ card }: { card: CatalogCard }) {
   const { application, latestAuthorizedVersion, platforms } = card;
   const archived = application.status === "ARCHIVED";
   return (
-    <Card data-testid={`catalog-card-${application.applicationId}`}>
+    <Card
+      data-testid={`catalog-card-${application.applicationId}`}
+      component={RouterLink}
+      to={`/applications/${card.tenantId}/${application.applicationId}`}
+      sx={{ textDecoration: "none", color: "inherit" }}
+    >
       <CardContent>
         <Stack spacing={1}>
           <Stack direction="row" spacing={1} sx={{ alignItems: "center" }}>
