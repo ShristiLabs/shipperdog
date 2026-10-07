@@ -416,7 +416,15 @@ class AuthorizationDecisionApiIntegrationTest {
     void historyEntryCarriesTheNearestGrantExpiryAsItsTtl() throws Exception {
         World world = world("s803-ttl");
         TesterPerson john = testerOf(world, "s803-ttl@example.com", "Ttl Viewer");
-        java.time.Instant expiresAt = java.time.Instant.now().plusSeconds(7_200);
+        // Micro-precise from the start: the storage wire rounds
+        // sub-microsecond nanos to the nearest micro (pgjdbc), while
+        // truncatedTo floors — a nanosecond-bearing clock value makes
+        // the equality a ~50/50 rounding-direction lottery (the CI
+        // flake this pin removed). A micro-exact input leaves both
+        // conversions nothing to disagree about; the rule under test
+        // is unchanged.
+        java.time.Instant expiresAt =
+                java.time.Instant.now().plusSeconds(7_200).truncatedTo(java.time.temporal.ChronoUnit.MICROS);
         Map<String, Object> body = new LinkedHashMap<>();
         body.put("testerId", john.testerId().toString());
         body.put("applicationId", world.applicationId.toString());
