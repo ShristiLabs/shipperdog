@@ -112,10 +112,10 @@ shipperdog:
     # identity machinery but carry their own TTL (the issue's 7-day
     # default; the platform invitation TTL above stays 3 days). The
     # portal base URL prefixes the accept link in the invitation
-    # email; the tester portal itself arrives with E8, so the default
-    # points at the local console origin.
+    # email; the portal ships on its own origin (issue #35), distinct
+    # from the console's 5173.
     invitation-ttl: ${TESTER_INVITATION_TTL:P7D}
-    portal-base-url: ${TESTER_PORTAL_BASE_URL:http://localhost:5173}
+    portal-base-url: ${TESTER_PORTAL_BASE_URL:http://localhost:5174}
     # Default tester groups seeded on every tenant creation (issue #27,
     # S6-02, PRD 8.9's examples; the seeded rows are ordinary editable
     # groups). Comma-separated; empty skips seeding.

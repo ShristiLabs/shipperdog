@@ -13,10 +13,10 @@ import org.springframework.boot.context.properties.ConfigurationProperties;
  *                       single use, default 7 days per the issue's
  *                       acceptance criteria (distinct from the platform
  *                       invitation TTL the identity module owns)
- * @param portalBaseUrl  base URL of the tester-facing accept page the
- *                       invitation email links to; the portal experience
- *                       itself arrives with E8, so the default points at
- *                       the local console origin
+ * @param portalBaseUrl  base URL of the tester portal the invitation
+ *                       email's accept link points at; the portal ships
+ *                       on its own origin (issue #35), distinct from
+ *                       the console's 5173
  * @param defaultGroups  names seeded as tester groups on every tenant
  *                       creation (issue #27, PRD 8.9's examples); the
  *                       seeded rows are ordinary editable groups. An
@@ -27,7 +27,7 @@ import org.springframework.boot.context.properties.ConfigurationProperties;
 public record TesterProperties(Duration invitationTtl, String portalBaseUrl, List<String> defaultGroups) {
 
     static final Duration DEFAULT_INVITATION_TTL = Duration.ofDays(7);
-    static final String DEFAULT_PORTAL_BASE_URL = "http://localhost:5173";
+    static final String DEFAULT_PORTAL_BASE_URL = "http://localhost:5174";
 
     /** PRD 8.9's example groups, the story's configurable seed list. */
     static final List<String> DEFAULT_GROUPS =

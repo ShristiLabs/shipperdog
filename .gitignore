@@ -12,6 +12,10 @@ frontend/node_modules/
 frontend/dist/
 frontend/coverage/
 frontend/*.tsbuildinfo
+portal/node_modules/
+portal/dist/
+portal/coverage/
+portal/*.tsbuildinfo
 
 # Environment (secrets never belong in the repo)
 .env

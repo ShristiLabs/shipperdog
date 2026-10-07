@@ -45,6 +45,14 @@ Frontend (from `frontend/`, since S2-04 — see [docs/frontend.md]):
 - test-cmd: `npm test` (Vitest, happy-dom)
 - Node >= 22.12; all dependencies exact-pinned with a committed lockfile.
 
+Tester portal (from `portal/`, since S8-01 — see [docs/portal.md]):
+
+- fmt-check/lint: `npm run lint` (eslint; no auto-format step)
+- build-cmd: `npm run build` (strict tsc typecheck + Vite bundle)
+- test-cmd: `npm test` (Vitest, happy-dom)
+- Node >= 22.12; exact-pinned deps with committed lockfile; separate
+  app/bundle from the console (no cross-imports), dev server :5174.
+
 CLI (from `cli/`, since S5-06 — see [docs/cli.md]):
 
 - fmt-cmd: `gofmt -w .` (checked via the lint gate)
@@ -71,10 +79,11 @@ CLI (from `cli/`, since S5-06 — see [docs/cli.md]):
 |---|---|---|
 | backend | backend/ | Spring Boot application, single Maven module |
 | frontend | frontend/ | Admin console: React 19 + TS strict + MUI 9 + React Query 5 + Router 7 on Vite 7 (S2-04) |
+| portal | portal/ | Tester portal: React 19 + TS strict + MUI 9 + React Query 5 + Router 7 on Vite 7, separate app on :5174 (S8-01) |
 | cli | cli/ | Go 1.26 developer CLI: login, artifact upload/list/view/revalidate, version list (S5-06) |
 | infrastructure | infrastructure/ | local docker compose stack (API, console, data, observability) |
 | docs | docs/ | developer docs |
-| workflows | .github/workflows/ | GitHub Actions CI (backend-ci + frontend-ci + cli-ci) |
+| workflows | .github/workflows/ | GitHub Actions CI (backend-ci + frontend-ci incl. portal job + cli-ci) |
 
 ## Reviewers / CODEOWNERS
 

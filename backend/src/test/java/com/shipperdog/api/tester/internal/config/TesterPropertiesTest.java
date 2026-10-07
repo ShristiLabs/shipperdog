@@ -20,7 +20,7 @@ class TesterPropertiesTest {
         assertThat(new TesterProperties(null, null, null).defaultGroups())
                 .containsExactly("Internal QA", "Tenant QA", "UAT", "Pilot", "Executive Beta", "External Beta");
         assertThat(new TesterProperties(null, null, null).invitationTtl()).isEqualTo(Duration.ofDays(7));
-        assertThat(new TesterProperties(null, null, null).portalBaseUrl()).isEqualTo("http://localhost:5173");
+        assertThat(new TesterProperties(null, null, null).portalBaseUrl()).isEqualTo("http://localhost:5174");
     }
 
     @Test

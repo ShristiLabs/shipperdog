@@ -48,6 +48,11 @@ Current contents:
   ids, cursor pagination), token storage and silent refresh, role-aware
   navigation probes, screens including the application console, CI
   gate, and local development.
+- [Tester portal](portal.md) — the tester-facing app in `portal/`
+  (S8-01): a separate React/MUI bundle on :5174 with tester login,
+  the invitation-accept entry, silent refresh with the narrowed
+  /auth/me retry, session isolation from the console, and the honest
+  empty home.
 - [Audit logging](audit.md) — append-only audit trail, transactional
   persistence, redaction, correlation ids, and the admin query API
   (S1-06).
