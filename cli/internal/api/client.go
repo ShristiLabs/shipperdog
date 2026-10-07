@@ -80,8 +80,9 @@ func newCorrelationID() string {
 }
 
 // request performs one API call. pathTemplate is one of the constants
-// in endpoints.go; query may be nil; body may be nil.
-func (c *Client) request(ctx context.Context, method, pathTemplate string, args []string, query url.Values, contentType string, body io.Reader, operation string) ([]byte, http.Header, error) {
+// in endpoints.go; query may be nil; body may be nil; extraHeaders may
+// be nil.
+func (c *Client) request(ctx context.Context, method, pathTemplate string, args []string, query url.Values, contentType string, body io.Reader, operation string, extraHeaders map[string]string) ([]byte, http.Header, error) {
 	u := c.BaseURL + expand(pathTemplate, args...)
 	if len(query) > 0 {
 		u += "?" + query.Encode()
@@ -95,6 +96,9 @@ func (c *Client) request(ctx context.Context, method, pathTemplate string, args 
 	}
 	req.Header.Set("Accept", "application/json")
 	req.Header.Set("X-Correlation-Id", newCorrelationID())
+	for key, value := range extraHeaders {
+		req.Header.Set(key, value)
+	}
 	if c.Token != "" {
 		req.Header.Set("Authorization", "Bearer "+c.Token)
 	}
@@ -118,6 +122,12 @@ func (c *Client) request(ctx context.Context, method, pathTemplate string, args 
 // callJSON performs a request whose body (if any) is JSON and whose
 // response is decoded into out.
 func (c *Client) callJSON(ctx context.Context, method, pathTemplate string, args []string, query url.Values, in any, out any, operation string) error {
+	return c.callJSONHeaders(ctx, method, pathTemplate, args, query, in, out, operation, nil)
+}
+
+// callJSONHeaders is callJSON with extra request headers (e.g. the
+// Idempotency-Key of a designated POST).
+func (c *Client) callJSONHeaders(ctx context.Context, method, pathTemplate string, args []string, query url.Values, in any, out any, operation string, extraHeaders map[string]string) error {
 	var body io.Reader
 	contentType := ""
 	if in != nil {
@@ -128,7 +138,7 @@ func (c *Client) callJSON(ctx context.Context, method, pathTemplate string, args
 		body = bytes.NewReader(encoded)
 		contentType = "application/json"
 	}
-	data, _, err := c.request(ctx, method, pathTemplate, args, query, contentType, body, operation)
+	data, _, err := c.request(ctx, method, pathTemplate, args, query, contentType, body, operation, extraHeaders)
 	if err != nil {
 		return err
 	}

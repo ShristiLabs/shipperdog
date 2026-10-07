@@ -67,6 +67,12 @@ func ExitCode(err error) int {
 		if trace := apiErr.TraceID(); trace != "" {
 			fmt.Fprintf(os.Stderr, "trace_id: %s\n", trace)
 		}
+		if len(apiErr.Problem.Errors) > 0 {
+			fmt.Fprintln(os.Stderr, "reasons:")
+			for _, key := range sortedKeys(apiErr.Problem.Errors) {
+				fmt.Fprintf(os.Stderr, "  %s: %s\n", key, apiErr.Problem.Errors[key])
+			}
+		}
 		switch {
 		case apiErr.Network:
 			return exitcode.Network

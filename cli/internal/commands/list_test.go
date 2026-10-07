@@ -216,6 +216,7 @@ func TestLoginReadsTokenFromPipedStdin(t *testing.T) {
 		return map[string]any{"id": "u-9", "email": "piped@example.com"}
 	})
 	f.start()
+	t.Setenv("HOME", t.TempDir())
 	t.Setenv(config.EnvToken, "")
 
 	tmp := filepath.Join(t.TempDir(), "stdin")

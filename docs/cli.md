@@ -1,8 +1,10 @@
-# CLI (S5-06, issue #25)
+# CLI (S5-06 issue #25; releases S9-06 issue #60)
 
 The developer-side companion (PRD 20): `shipperdog login`, `artifact
-upload/list/view/revalidate`, `version list` — the surface CI pipelines
-drive. Implementation lives in `cli/` (Go 1.26, ADR-0004); user-facing
+upload/list/view/revalidate`, `version list`, and the release verbs —
+`release create/list/get/transition/promote`, `release manifest` — the
+surface CI pipelines drive. Implementation lives in `cli/` (Go 1.26,
+ADR-0004); user-facing
 usage, install, credentials handling, and the exit-code table live in
 [cli/README.md](../cli/README.md). This page records the developer-side
 design.
@@ -36,6 +38,12 @@ design.
 | `artifact revalidate` | `POST /api/v1/artifacts/{id}/revalidate?version_id=` (202 async; 409 `ARTIFACT_NOT_VALIDATABLE` maps to exit 4) |
 | `artifact list` | `GET /api/v1/applications?organizationId=` + `GET /api/v1/applications/{id}/versions` walks; one row per artifact slot |
 | `version list` | `GET /api/v1/applications/{id}/versions` (`tag`/`include` pass through) |
+| `release create` | `POST /api/v1/releases` (one `Idempotency-Key` per invocation; artifacts auto-selected from the version's READY slots — newest per platform, `--artifact` overrides — targets from `--tenants`/`--groups`, ring, optional environment) |
+| `release list` | `GET /api/v1/releases?applicationId=…` (`versionId` — resolved from name — `status`, `tenantId` filters; cursor-walked) |
+| `release get` | `GET /api/v1/releases/{id}?applicationId=…` |
+| `release transition` | `POST /api/v1/releases/{id}/transitions` (client mirrors the PRD 17 vocabulary and the FAILED/ROLLED_BACK reason rule; the server is the authority) |
+| `release promote` | successive `POST …/transitions` walking PRD 17's forward path to PROMOTED; the first refusal (409 current/attempted, 422 policy seam) stops the walk with the reason list and exit 4 |
+| `release manifest` | `GET /api/v1/releases/{id}/manifest?applicationId=…` (+`format=yaml` for the compliance export) |
 
 Name resolution: application and version arguments accept a UUID
 (direct read) or a name (resolved through the caller's organization
@@ -49,6 +57,23 @@ default version window: `artifact list` is an inventory and defaults to
 the full window (`--include archived,revoked`), while `version list`
 defaults to the server's working set (DRAFT/ACTIVE) like the API's own
 default.
+
+Release references resolve the same way (`R-1028`, `r1028`, `1028`, or
+a uuid): every release route is application-addressed for permissions,
+so `--app` reads directly while an unqualified reference walks the
+caller's visible applications for exactly one match — the quotable-id
+form walks each application's listing (the release API exposes no
+quotable-id filter); a uuid probes each application's detail read,
+where a foreign id conceals as the standard 404.
+
+`release promote` semantics: PRD 17 offers exactly one forward edge
+from every pre-PROMOTED state, so the walk is deterministic — the
+command is a sequence of ordinary transition calls, never a bypass.
+Refusals render the problem+json `errors` member as a reason list
+(the 409 carries `current`/`attempted`; E10's approval and gate
+policies will refuse through the same member, keyed by contributor)
+and the command exits 4. `release get` renders gates and approvals as
+not-yet-reported until their owning stories land (S10-01, S10-03).
 
 The CLI mirrors the server's upload routing rule locally
 (`--multipart-limit`, default 100 MiB =
@@ -77,6 +102,9 @@ version-stamped tarballs as workflow-run artifacts.
 
 ## Deferred
 
-- Release/distribution commands (S9-06), CI action packaging (S12-03),
-  and browser-flow login (PATs are the M1 credential; `SHIPPERDOG_TOKEN`
-  already covers the scripted, no-disk case).
+- Gate-result submission (`shipperdog gate result`, S10-03's ingestion
+  contract — S9-06's issue anticipated the API; it lands with E10, whose
+  story owns both the endpoint and the CLI wiring), manifest diff and
+  environment commands, CI action packaging (S12-03), and browser-flow
+  login (PATs are the M1 credential; `SHIPPERDOG_TOKEN` already covers
+  the scripted, no-disk case).

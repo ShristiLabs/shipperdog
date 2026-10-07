@@ -15,10 +15,11 @@ var apiBaseFlag string
 func NewRoot() *cobra.Command {
 	root := &cobra.Command{
 		Use:   "shipperdog",
-		Short: "ShipperDog developer CLI - upload and inspect artifacts from the terminal",
-		Long: "The ShipperDog developer-side companion (PRD 20): script uploads and\n" +
-			"inspections without curl and JSON. Credentials live in ~/.shipperdog/credentials\n" +
-			"(0600) after `shipperdog login`; SHIPPERDOG_API overrides the endpoint.",
+		Short: "ShipperDog developer CLI - artifacts and releases from the terminal",
+		Long: "The ShipperDog developer-side companion (PRD 20): script uploads, inspections,\n" +
+			"and the release path (create, drive, promote) without curl and JSON.\n" +
+			"Credentials live in ~/.shipperdog/credentials (0600) after `shipperdog login`;\n" +
+			"SHIPPERDOG_API overrides the endpoint.",
 		SilenceUsage:  true,
 		SilenceErrors: true,
 		Version:       buildinfo.Version,
@@ -30,7 +31,7 @@ func NewRoot() *cobra.Command {
 		return &UsageError{msg: err.Error()}
 	})
 
-	root.AddCommand(newLoginCmd(), newLogoutCmd(), newArtifactCmd(), newVersionCmd())
+	root.AddCommand(newLoginCmd(), newLogoutCmd(), newArtifactCmd(), newVersionCmd(), newReleaseCmd())
 	return root
 }
 
