@@ -430,9 +430,12 @@ class AuthorizationDecisionApiIntegrationTest {
         JsonNode history = get(john.token(), eligibilityUri(world), 200);
         assertThat(history.get("entries").size()).isEqualTo(1);
         String entryTtl = history.get("entries").get(0).get("expiresAt").asString();
+        // The S7-04 microsecond-truncation rule: PostgreSQL timestamptz
+        // carries microseconds, the JVM's clock can carry nanos — the
+        // stored expiry compares after truncation, never raw.
         assertThat(java.time.Instant.parse(entryTtl))
                 .as("the entry's TTL is the nearest contributing grant expiry")
-                .isEqualTo(expiresAt);
+                .isEqualTo(expiresAt.truncatedTo(java.time.temporal.ChronoUnit.MICROS));
     }
 
     @Test
