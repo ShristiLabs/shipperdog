@@ -33,6 +33,7 @@ backend/src/main/resources/db/
     V23__artifact_download_count.sql
     V24__release_model.sql
     V25__release_state_history.sql
+    V26__release_manifest.sql
   seed/                 dev fixture, applied only when the seed location is active
     R__dev_seed.sql
 ```
@@ -458,6 +459,23 @@ backend/src/main/resources/db/
   behavioral, not declarative. Rows pre-dating V25 (dev only) begin
   their timeline with the first post-V25 transition — history is
   recorded going forward, never reconstructed.
+- `V26__release_manifest.sql` (S9-03, issue #57) adds
+  `release_manifests` — the PRD 16 frozen reproducibility document:
+  the complete record of what a release ships, deep-copied at the
+  APPROVED crossing and never updated (the freeze joins the
+  transition's transaction through the S9-02 event hook). One row per
+  release EVER: `uq_release_manifests_release` is the immutability
+  authority, and the repository declares insert and read operations
+  only. `content` is jsonb for queryability, but the stored `sha256`
+  is over the application's canonical serialization (object keys
+  sorted recursively, ISO-8601 instants, nulls included) — jsonb
+  re-orders keys on storage, so byte-stability lives in the code and
+  read-time verification re-canonicalizes before comparing. A pure
+  child of the seam-served release (the V25 doctrine): no snapshot
+  columns, no seam repository. `frozen_by` is a bare uuid (the V25
+  actor_id precedent; the audit event keeps the full who). No
+  backfill, by design: a manifest is a transition-time act, and a
+  retro-frozen document would carry a falsified freeze time.
 
 ## Status and type columns
 

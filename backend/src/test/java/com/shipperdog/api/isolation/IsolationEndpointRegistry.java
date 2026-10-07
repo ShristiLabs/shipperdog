@@ -385,6 +385,38 @@ final class IsolationEndpointRegistry {
                         404,
                         side -> "/api/v1/releases/" + UUID.randomUUID() + "/history?applicationId="
                                 + UUID.randomUUID()),
+                // The frozen-manifest route (S9-03): the same miss-shape
+                // rationale — the seeded world holds no release, so own
+                // and miss probes share the route's miss shape, and
+                // concealment of a REAL foreign release's manifest is
+                // pinned with live releases by the S9-03 manifest suite.
+                surface(
+                        "/api/v1/releases/{releaseId}/manifest",
+                        side -> "/api/v1/releases/" + UUID.randomUUID() + "/manifest?applicationId="
+                                + side.applicationId(),
+                        404,
+                        404,
+                        side -> "/api/v1/releases/" + UUID.randomUUID() + "/manifest?applicationId="
+                                + UUID.randomUUID()),
+                // The manifest diff route (S9-03): both sides of the diff
+                // address random releases in the seeded world; the live
+                // concealment proof belongs to the manifest suite.
+                surface(
+                        "/api/v1/releases/{releaseId}/manifest/diff",
+                        side -> "/api/v1/releases/"
+                                + UUID.randomUUID()
+                                + "/manifest/diff?applicationId="
+                                + side.applicationId()
+                                + "&otherReleaseId="
+                                + UUID.randomUUID(),
+                        404,
+                        404,
+                        side -> "/api/v1/releases/"
+                                + UUID.randomUUID()
+                                + "/manifest/diff?applicationId="
+                                + UUID.randomUUID()
+                                + "&otherReleaseId="
+                                + UUID.randomUUID()),
 
                 // Authorization grants ---------------------------------------------
                 surface(

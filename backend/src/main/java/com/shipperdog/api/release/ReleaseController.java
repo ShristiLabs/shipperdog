@@ -4,6 +4,9 @@ import com.shipperdog.api.config.Idempotent;
 import com.shipperdog.api.config.ListQuery;
 import com.shipperdog.api.config.PageResponse;
 import com.shipperdog.api.identity.AuthenticatedPrincipal;
+import com.shipperdog.api.release.internal.manifest.ReleaseManifestService;
+import com.shipperdog.api.release.internal.manifest.ReleaseManifestService.ManifestDiffView;
+import com.shipperdog.api.release.internal.manifest.ReleaseManifestService.ManifestView;
 import com.shipperdog.api.release.internal.service.ReleaseService;
 import com.shipperdog.api.release.internal.service.ReleaseService.ArtifactSlot;
 import com.shipperdog.api.release.internal.service.ReleaseService.CreateCommand;
@@ -12,9 +15,13 @@ import com.shipperdog.api.release.internal.service.ReleaseService.ReleaseView;
 import com.shipperdog.api.release.internal.service.ReleaseService.TargetCommand;
 import io.swagger.v3.oas.annotations.media.Schema;
 import java.util.List;
+import java.util.Locale;
+import java.util.Map;
 import java.util.UUID;
 import org.springframework.data.domain.Page;
 import org.springframework.http.HttpStatus;
+import org.springframework.http.MediaType;
+import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.security.oauth2.jwt.Jwt;
@@ -63,6 +70,15 @@ import org.springframework.web.bind.annotation.RestController;
  * {@code GET /api/v1/releases/{id}/history} returns the append-only
  * transition timeline with every crossing's actor, reason, and
  * timestamp ({@code app:releases:read}).
+ *
+ * <p>The manifest (issue #57, S9-03, PRD 16) composes on the state
+ * machine's event hook: every APPROVED crossing freezes the release's
+ * immutable document (deep-copied values, content-hashed, audited),
+ * and {@code GET /api/v1/releases/{id}/manifest} serves the STORED
+ * document in JSON (default) or YAML ({@code format=yaml}), with
+ * {@code GET /api/v1/releases/{id}/manifest/diff?otherReleaseId=…}
+ * answering what moved between two freezes ({@code app:releases:read}
+ * both).
  */
 @RestController
 @RequestMapping("/api/v1/releases")
@@ -70,8 +86,11 @@ public class ReleaseController {
 
     private final ReleaseService releases;
 
-    ReleaseController(ReleaseService releases) {
+    private final ReleaseManifestService manifests;
+
+    ReleaseController(ReleaseService releases, ReleaseManifestService manifests) {
         this.releases = releases;
+        this.manifests = manifests;
     }
 
     /**
@@ -183,6 +202,64 @@ public class ReleaseController {
     ReleaseService.ReleaseHistoryView history(
             @AuthenticationPrincipal Object principal, @PathVariable UUID releaseId, @RequestParam UUID applicationId) {
         return releases.history(requireUserId(principal), applicationId, releaseId);
+    }
+
+    /**
+     * The release's frozen manifest (issue #57 AC3, PRD 16): the STORED
+     * document read back — never recomputed from live rows — verified
+     * against its recorded SHA-256 before serving. The response is the
+     * storage metadata (digest, frozen moment, the actor who crossed
+     * into APPROVED) beside the deep-copied PRD 16 document: artifact
+     * pins, targets, ring, environment, rollout, required approvals,
+     * and the configuration snapshot. {@code format=yaml} renders the
+     * same stored document as YAML (the compliance export); the default
+     * JSON is the same bytes' first serialization. A release that has
+     * not crossed into APPROVED answers the honest
+     * {@code 404 RELEASE_MANIFEST_NOT_FOUND}; a foreign release
+     * conceals exactly like an unknown id.
+     */
+    @GetMapping("/{releaseId}/manifest")
+    @PreAuthorize("hasPermission(#applicationId, 'application', 'app:releases:read')")
+    ResponseEntity<?> manifest(
+            @AuthenticationPrincipal Object principal,
+            @PathVariable UUID releaseId,
+            @RequestParam UUID applicationId,
+            @RequestParam(required = false) String format) {
+        ManifestView view = manifests.manifest(requireUserId(principal), applicationId, releaseId);
+        String render =
+                format == null || format.isBlank() ? "json" : format.trim().toLowerCase(Locale.ROOT);
+        if ("json".equals(render)) {
+            return ResponseEntity.ok().contentType(MediaType.APPLICATION_JSON).body(view);
+        }
+        if ("yaml".equals(render)) {
+            return ResponseEntity.ok()
+                    .contentType(MediaType.parseMediaType("application/yaml"))
+                    .body(manifests.yaml(view));
+        }
+        throw new ReleaseException(
+                ReleaseException.Code.INVALID_REQUEST,
+                "the request is invalid",
+                Map.of("format", "format must be json or yaml"));
+    }
+
+    /**
+     * The diff between this release's frozen manifest and another's of
+     * the same application (issue #57 AC5): the artifact pins, target
+     * set, and configuration blocks that moved between the two APPROVED
+     * freezes — a statement about two frozen moments, never about live
+     * state. Both sides must have frozen manifests (the honest
+     * {@code 404 RELEASE_MANIFEST_NOT_FOUND} otherwise); a foreign
+     * otherReleaseId conceals exactly like an unknown id; diffing a
+     * release against itself is the 400 keyed by {@code otherReleaseId}.
+     */
+    @GetMapping("/{releaseId}/manifest/diff")
+    @PreAuthorize("hasPermission(#applicationId, 'application', 'app:releases:read')")
+    ManifestDiffView manifestDiff(
+            @AuthenticationPrincipal Object principal,
+            @PathVariable UUID releaseId,
+            @RequestParam UUID applicationId,
+            @RequestParam UUID otherReleaseId) {
+        return manifests.diff(requireUserId(principal), applicationId, releaseId, otherReleaseId);
     }
 
     private static UUID requireUserId(Object principal) {

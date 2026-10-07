@@ -6,8 +6,10 @@ from a version's artifacts, targeting tenants + tester groups + a ring,
 so distribution is an explicit governed act rather than "upload and
 hope". This page covers the model, the creation API and its validation,
 the reads, the lifecycle (S9-02, issue #56: PRD 17's state machine,
-its transitions API, history, and the rolled-back download cutoff), and
-the two distribution probes the S9-01 landing bound.
+its transitions API, history, and the rolled-back download cutoff),
+the frozen manifest (S9-03, issue #57: PRD 16's reproducibility
+document and its diff), and the two distribution probes the S9-01
+landing bound.
 
 ## Model
 
@@ -25,8 +27,9 @@ Status:      DRAFT
 
 - **DRAFT is the state creation writes**; the full state machine (PRD
   17) has run since S9-02 — see [the lifecycle](#lifecycle--the-state-machine-s9-02).
-  The manifest (PRD 16) is S9-03; approvals and promotion behavior
-  (PRD 8.10's rings) are E10.
+  The manifest (PRD 16) has run since S9-03 — see
+  [the frozen manifest](#the-frozen-manifest-s9-03); approvals and
+  promotion behavior (PRD 8.10's rings) are E10.
 - **One release per application and version** (V1's
   `uq_releases_application_version` is the authority; a duplicate is the
   precise `409 RELEASE_ALREADY_EXISTS`). A version can exist without a
@@ -220,6 +223,79 @@ the record the S9-05 dashboard renders; nothing ever updates or deletes
 a row (PRD P5). A release of another application conceals exactly like
 an unknown id.
 
+## The frozen manifest (S9-03)
+
+Every release carries PRD 16's reproducibility artifact: a complete,
+immutable record of WHAT it ships, frozen at the moment the state
+machine crosses into APPROVED and never touched again. The manifest
+answers the compliance question — "exactly what did Acme receive on
+October 4?" — from its own stored bytes:
+
+```text
+Manifest of R-1001
+Release:        Banking 7.12.0 (R-1001)
+Artifacts:      IOS build 421, sha256 a1a1…, 1024 bytes, ios-421.ipa
+Targets:        Acme (groups: Pilot Group), Contoso
+Ring:           tenant-pilot (Tenant Pilot, position 2)
+Environment:    null                       (S9-04 owns environments)
+Rollout:        percentage null            (E10 owns staged rollouts)
+Configuration:  configVersion/featureFlags/tenantConfig null
+                (S9-04's versioned config, resolved values when it lands)
+Approval:       required []                (S10-01 owns approval policies)
+sha256:         63061b4b…                  (canonical content digest)
+frozenAt/By:    the APPROVED crossing's moment and actor
+```
+
+- **Freeze = the APPROVED crossing** (AC1). S9-02 reserved exactly this
+  composition seam: a listener on `ReleaseTransitionedEvent` freezes
+  inside the crossing's committing transaction, so a release is never
+  APPROVED without its manifest and an assembly failure rolls the
+  whole crossing back. Immutability is structural — V26's
+  one-per-release unique constraint, an insert-and-read-only
+  repository, an entity without setters, and a forward-only graph that
+  cannot re-enter APPROVED. There is no mutation route (PUT/POST on
+  the manifest path answer 405); `RELEASE_MANIFEST_IMMUTABLE` (409)
+  exists so any future surface attempting a re-freeze answers loudly
+  instead of overwriting.
+- **Deep copy, never lazy references** (AC2). Artifacts are pinned by
+  CONTENT (sha256, build number, byte size, filename, upload moment —
+  the INV-003-immutable fields), targets by tenant id with their group
+  selections, the ring by its frozen code/name/position, the
+  application and version by name-at-freeze. The environment, rollout
+  percentage, configuration values, and required approvals carry
+  their PRD 16 keys with honest `null`/empty values until their owning
+  stories land (S9-04, E10, S10-01) — the document's shape is complete
+  from day one, and a manifest frozen today stays a valid document of
+  its time forever. When S9-04 lands, the freeze stores RESOLVED
+  config values, not pointers (the story's technical note).
+- **Stored, never recomputed** (AC3). `GET
+  /api/v1/releases/{id}/manifest?applicationId=…` serves the stored
+  document; a later application rename or any world drift cannot
+  rewrite history. `format=yaml` renders the same stored document as
+  YAML (`application/yaml`) — one document, two serializations; the
+  default JSON is the other. A release that has not crossed into
+  APPROVED answers the honest `404 RELEASE_MANIFEST_NOT_FOUND`; a
+  foreign release conceals as the standard `RELEASE_NOT_FOUND`,
+  byte-identical to an unknown id.
+- **The digest** is the SHA-256 over the canonical serialization
+  (object keys sorted recursively, ISO-8601 instants, nulls included
+  — jsonb's key reordering never reaches the hash). It is recorded in
+  the freeze's `RELEASE_MANIFEST_FROZEN` audit event (AC4), and every
+  read re-derives it from the stored content: a mismatch is the loud
+  `500 RELEASE_MANIFEST_CORRUPT` — the platform detects drift loudly
+  and never serves, repairs, or rewrites a document that fails
+  verification (INV-003/004 discipline applied to the manifest
+  itself; an operator investigates).
+- **The diff** (AC5): `GET /api/v1/releases/{id}/manifest/diff?
+  applicationId=…&otherReleaseId=…` answers what moved between two
+  APPROVED freezes of the same application — artifact pins per
+  platform (ADDED/REMOVED/CHANGED with both sha256/build facts), the
+  target set (tenants added/removed, per-tenant group changes), and
+  the ring/environment/rollout/configuration blocks that differ. A
+  statement about two frozen moments, never about live state; the
+  path release is the FROM side, `otherReleaseId` the TO; a self-diff
+  is the `400` keyed by `otherReleaseId`.
+
 ### The rolled-back download cutoff (AC4)
 
 The authorization engine's distribution layer (S7-01) reserved a
@@ -256,6 +332,9 @@ See [error codes](error-codes.md) for the registry; the release
 section carries `RELEASE_NOT_FOUND`, `RELEASE_ALREADY_EXISTS`,
 `RELEASE_RING_UNKNOWN`, `RELEASE_TARGETS_INVALID` (the platform's first
 422 family, with the `errors` member), `RELEASE_ARTIFACT_NOT_READY`,
-and the transition family (S9-02): `RELEASE_TRANSITION_INVALID` (409,
+the transition family (S9-02): `RELEASE_TRANSITION_INVALID` (409,
 current/attempted), `RELEASE_TRANSITION_REASON_REQUIRED` (422), and
-`RELEASE_TRANSITION_BLOCKED` (422, the policy seam).
+`RELEASE_TRANSITION_BLOCKED` (422, the policy seam), and the manifest
+family (S9-03): `RELEASE_MANIFEST_NOT_FOUND` (404, the honest
+state-dependent miss), `RELEASE_MANIFEST_IMMUTABLE` (409), and
+`RELEASE_MANIFEST_CORRUPT` (500, the loud integrity failure).
