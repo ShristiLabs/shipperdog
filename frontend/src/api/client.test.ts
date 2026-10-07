@@ -2,7 +2,13 @@
  * query encoding, and the single-flight refresh-retry loop are the
  * pieces every console screen depends on. */
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { apiFetch, ensureFreshTokens, pageFetch, SESSION_EXPIRED_EVENT } from "./client";
+import {
+  apiFetch,
+  apiFetchText,
+  ensureFreshTokens,
+  pageFetch,
+  SESSION_EXPIRED_EVENT,
+} from "./client";
 import { tokenStore } from "../auth/tokenStore";
 
 type FetchMock = ReturnType<typeof vi.fn>;
@@ -182,6 +188,73 @@ describe("apiFetch auth", () => {
     const calls = fetchMock.mock.calls as Array<[string]>;
     expect(calls.filter(([url]) => url.endsWith("/auth/refresh"))).toHaveLength(1);
     window.removeEventListener(SESSION_EXPIRED_EVENT, expired);
+  });
+});
+
+describe("apiFetchText (non-JSON bodies, S9-05)", () => {
+  it("returns the raw text body with the accept header carried", async () => {
+    tokenStore.save("access-1", "refresh-1", 900);
+    fetchMock.mockResolvedValueOnce(
+      new Response("releaseRef: R-101\n", {
+        status: 200,
+        headers: { "Content-Type": "application/yaml" },
+      }),
+    );
+    const yaml = await apiFetchText("/releases/r-1/manifest?format=yaml", {
+      accept: "application/yaml",
+    });
+    expect(yaml).toBe("releaseRef: R-101\n");
+    const init = fetchMock.mock.calls[0]?.[1] as RequestInit;
+    const headers = init.headers as Record<string, string>;
+    expect(headers.Accept).toBe("application/yaml");
+    expect(headers.Authorization).toBe("Bearer access-1");
+  });
+
+  it("defaults to the JSON accept header and decodes problem+json errors", async () => {
+    fetchMock.mockResolvedValueOnce(
+      jsonResponse(404, {
+        title: "Not Found",
+        status: 404,
+        code: "RELEASE_MANIFEST_NOT_FOUND",
+        detail: "no manifest is frozen for this release",
+      }),
+    );
+    const error = await apiFetchText("/releases/r-1/manifest").catch(
+      (cause: unknown) => cause,
+    );
+    expect(error).toMatchObject({
+      status: 404,
+      code: "RELEASE_MANIFEST_NOT_FOUND",
+      detail: "no manifest is frozen for this release",
+    });
+  });
+
+  it("refreshes once on 401 and retries the text request", async () => {
+    tokenStore.save("stale-access", "refresh-1", 900);
+    fetchMock.mockImplementation(
+      async (input: RequestInfo | URL, init?: RequestInit) => {
+        const url = String(input);
+        if (url.endsWith("/auth/refresh")) {
+          return jsonResponse(200, {
+            accessToken: "fresh-access",
+            refreshToken: "refresh-2",
+            tokenType: "Bearer",
+            expiresInSeconds: 900,
+          });
+        }
+        const headers = (init?.headers ?? {}) as Record<string, string>;
+        if (headers.Authorization === "Bearer stale-access") {
+          return jsonResponse(401, { title: "Unauthorized", status: 401, code: "UNAUTHENTICATED" });
+        }
+        return new Response("recovered: true\n", { status: 200 });
+      },
+    );
+
+    const yaml = await apiFetchText("/releases/r-1/manifest?format=yaml", {
+      accept: "application/yaml",
+    });
+    expect(yaml).toBe("recovered: true\n");
+    expect(tokenStore.get()?.accessToken).toBe("fresh-access");
   });
 });
 

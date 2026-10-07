@@ -6,6 +6,8 @@ import ConsoleLayout from "./layout/ConsoleLayout";
 import ApplicationDetailPage from "./pages/ApplicationDetailPage";
 import ApplicationsPage from "./pages/ApplicationsPage";
 import LoginPage from "./pages/LoginPage";
+import ReleaseDetailPage from "./pages/ReleaseDetailPage";
+import ReleasesPage from "./pages/ReleasesPage";
 import TenantMembersPage from "./pages/TenantMembersPage";
 import TenantsPage from "./pages/TenantsPage";
 
@@ -28,6 +30,12 @@ export default function App() {
             <Route path="tenants/:tenantId/members" element={<TenantMembersPage />} />
             <Route path="applications" element={<ApplicationsPage />} />
             <Route path="applications/:applicationId" element={<ApplicationDetailPage />} />
+            <Route path="releases" element={<ReleasesPage />} />
+            <Route path="releases/:applicationId" element={<ReleasesPage />} />
+            <Route
+              path="releases/:applicationId/:releaseId"
+              element={<ReleaseDetailPage />}
+            />
           </Route>
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
