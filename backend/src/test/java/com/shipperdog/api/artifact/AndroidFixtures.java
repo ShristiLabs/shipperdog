@@ -106,6 +106,17 @@ public final class AndroidFixtures {
         return bytes.toByteArray();
     }
 
+    /**
+     * The S8-04 streaming leg: a SIGNED, release-shaped APK padded
+     * with an incompressible dex payload entry — the padded bulk the
+     * download proxy serves, in the only shape the pipeline settles
+     * READY (the SIGNING stage fails an unsigned APK with
+     * SIGNING_ABSENT, so padding alone is not a valid fixture).
+     */
+    public static byte[] signedPaddedApk(int paddingBytes) throws IOException {
+        return withSigningBlock(paddedApk(paddingBytes), true, true);
+    }
+
     /** An APK whose manifest is the given AXML bytes. */
     public static byte[] apk(byte[] manifest) throws IOException {
         ByteArrayOutputStream bytes = new ByteArrayOutputStream();

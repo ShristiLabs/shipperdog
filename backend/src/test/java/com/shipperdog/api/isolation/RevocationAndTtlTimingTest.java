@@ -21,11 +21,14 @@ import org.junit.jupiter.api.Test;
  *       decides ALLOW while live and flips to the concealed denial at
  *       its expiry — evaluation-time, nothing swept; the revocation
  *       report lists it as EXPIRED with the expiry timestamp.</li>
- *   <li><strong>URLs are bounded by TTL</strong>: M1 issues no URLs
- *       (S8-04 signs the issuance inputs); the ALLOW carries a storage
- *       key REFERENCE and the entry's TTL — the bound the signer will
- *       honor. The signed-URL half is the documented S8-04 bound, per
- *       docs/authorization.md's immediacy model.</li>
+ *   <li><strong>URLs are bounded by TTL</strong>: since S8-04 the
+ *       issuance route mints signed URLs whose TTL sits at or under
+ *       the cache TTL (the startup-enforced bound, both 15-minute
+ *       defaults) — so a revoked grant blocks the NEXT issuance
+ *       immediately (write-through) and no URL outlives the
+ *       degraded-mode staleness backstop. The URL half is pinned by
+ *       the S8-04 download suite; here the grant-side immediacy is
+ *       the proof.</li>
  *   <li><strong>Bulk revocation is immediate for the whole set</strong>
  *       (the folded #32/#33 follow-up): one pass, next decisions deny
  *       for every formerly granted version.</li>
@@ -110,9 +113,10 @@ class RevocationAndTtlTimingTest extends IsolationScenarioHarness {
         assertThat(lost.get("state").asString()).isEqualTo("EXPIRED");
         assertThat(Instant.parse(lost.get("expiresAt").asString())).isEqualTo(expiresAt);
 
-        // M1 issues no URLs: the ALLOW's issuance input was a storage
-        // key reference plus the TTL above — the bound S8-04's signer
-        // will honor (the signed-URL TTL half is S8-04's story).
+        // Since S8-04 the issuance route mints the URL whose TTL
+        // honors exactly this entry TTL shape: bounded at or under the
+        // cache TTL (the pinned S8-04 bound; the download suite proves
+        // the URL's own expiry and the next-issuance immediacy).
     }
 
     @Test

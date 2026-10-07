@@ -30,6 +30,7 @@ backend/src/main/resources/db/
     V20__tenant_tester_membership_suspend.sql
     V21__version_access_grants.sql
     V22__grant_revocation.sql
+    V23__artifact_download_count.sql
   seed/                 dev fixture, applied only when the seed location is active
     R__dev_seed.sql
 ```
@@ -399,6 +400,16 @@ backend/src/main/resources/db/
   revoked twin stays retained for auditors. Expand-only and
   forward-only (ADR-0001): additive columns, one enum type, checks,
   and the index swap; no code path deletes `version_access` rows.
+
+- `V23__artifact_download_count.sql` (S8-04, issue #38) adds the
+  per-artifact download counter: `artifacts.download_count`
+  (`BIGINT NOT NULL DEFAULT 0`, the default IS the backfill — no
+  downloads existed before issuance did). One increment per ALLOWED
+  download issuance, written only by the entity's guarded
+  `recordDownloadIssued()`; the `DOWNLOAD_ISSUED` audit trail (not
+  this column) remains the history of record, and the
+  `shipperdog.download.count` metric is the live signal. Purely
+  expand-only: one additive column, nothing dropped or tightened.
 
 ## Status and type columns
 

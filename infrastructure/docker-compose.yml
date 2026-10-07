@@ -78,6 +78,15 @@ services:
       # (blank host = application default credentials).
       ARTIFACT_STORAGE_EMULATOR_HOST: http://localhost:4443
       ARTIFACT_STORAGE_BUCKET: ${ARTIFACT_STORAGE_BUCKET:-shipperdog-artifacts-local}
+      # Tester downloads (issue #38, S8-04, ADR-0003's download-tier
+      # amendment): emulator deployments mint backend-proxy URLs — the
+      # HMAC key below is the minting credential (local-only default,
+      # the same policy as AUTH_JWT_SECRET; production injects a real
+      # secret and mints GCS V4 URLs instead, never reading this key).
+      # The TTL is startup-bounded at or under both the decision-cache
+      # TTL and the 15-minute FR-014 ceiling.
+      ARTIFACT_DOWNLOAD_URL_TTL: ${ARTIFACT_DOWNLOAD_URL_TTL:-PT15M}
+      ARTIFACT_DOWNLOAD_PROXY_SIGNING_KEY: ${ARTIFACT_DOWNLOAD_PROXY_SIGNING_KEY:-shipperdog-local-download-key}
       # Observability baseline (issue #7): all management endpoints move
       # to the internal management port, which is published to the host
       # loopback only — /actuator/health and /actuator/prometheus are

@@ -286,6 +286,68 @@ final class IsolationEndpointRegistry {
                         404,
                         side -> "/api/v1/artifacts/" + UUID.randomUUID() + "?version_id=" + side.versionId()),
 
+                // The download issuance (S8-04): the engine's DOWNLOAD
+                // decision is the route's entire authority (the #37
+                // follow-up's relaxation — no console RBAC gate), and
+                // neither matrix persona holds a download entitlement
+                // (ORG_ADMIN/TENANT_ADMIN carry neither
+                // app:artifacts:read nor tenant:applications:download),
+                // so the concealed version miss IS the own answer for
+                // both — exactly the artifact read's own shape, for the
+                // entitlement layer's reason instead of the evaluator's.
+                // The ALLOW path (the URL, its TTL, the audit and
+                // counter) is pinned with live grants by the S8-04
+                // download suite, like the grant suites pin theirs.
+                surface(
+                        "/api/v1/artifacts/{artifactId}/download",
+                        side -> "/api/v1/artifacts/" + side.artifactId() + "/download?version_id=" + side.versionId(),
+                        404,
+                        404,
+                        side -> "/api/v1/artifacts/" + UUID.randomUUID() + "/download?version_id=" + side.versionId()),
+
+                // The emulator-mode download proxy (S8-04): anonymous
+                // by design — the HMAC token in the path IS the
+                // credential, minted only by an engine ALLOW at
+                // issuance. The seeded world mints none, so every
+                // persona's own answer, the foreign probe, and the
+                // genuine miss are the SAME uniform 404: the parity
+                // proof here is that a token guess cannot even reveal
+                // that downloads exist (INV-005 applied to the one
+                // surface whose callers are anonymous). The
+                // valid-token legs (stream, expiry, tamper) are the
+                // S8-04 download suite's.
+                new Entry() {
+                    @Override
+                    public String method() {
+                        return "GET";
+                    }
+
+                    @Override
+                    public String template() {
+                        return "/api/v1/downloads/{token}";
+                    }
+
+                    @Override
+                    public String uri(IsolationScenarioHarness.IsolatedTenant side) {
+                        return "/api/v1/downloads/" + UUID.randomUUID();
+                    }
+
+                    @Override
+                    public int ownOrgAdmin() {
+                        return 404;
+                    }
+
+                    @Override
+                    public int ownTenantAdmin() {
+                        return 404;
+                    }
+
+                    @Override
+                    public String missUri(IsolationScenarioHarness.IsolatedTenant actorSide) {
+                        return "/api/v1/downloads/" + UUID.randomUUID();
+                    }
+                },
+
                 // Authorization grants ---------------------------------------------
                 surface(
                         "/api/v1/tenants/{id}/authorization-grants",

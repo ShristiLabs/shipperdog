@@ -84,6 +84,21 @@ shipperdog:
       max-bytes: ${ARTIFACT_MAX_UPLOAD_BYTES:2147483648}
       resumable-threshold-bytes: ${ARTIFACT_RESUMABLE_THRESHOLD_BYTES:104857600}
       session-ttl: ${ARTIFACT_UPLOAD_SESSION_TTL:PT10M}
+    # The download tier (issue #38, S8-04, FR-014): signed-URL issuance
+    # for tester downloads. The TTL is bounded twice at startup, both
+    # fail-fast: at or under the authorization decision-input cache TTL
+    # (the S7-04 rule — write-through invalidation makes revocation
+    # immediate in the healthy path, and the cache TTL is the
+    # degraded-mode backstop a minted URL must never outlive; both
+    # default 15 minutes) and at or under FR-014's hard 15-minute
+    # ceiling. The proxy key backs the emulator-mode proxy URL (the
+    # ADR-0003 download-tier amendment; unused in production, where GCS
+    # V4 signing is the mechanism) — the local default is a dev-only
+    # value exactly like the JWT secret's local default; production
+    # supplies a real secret through the environment.
+    download:
+      url-ttl: ${ARTIFACT_DOWNLOAD_URL_TTL:PT15M}
+      proxy-signing-key: ${ARTIFACT_DOWNLOAD_PROXY_SIGNING_KEY:shipperdog-local-download-key}
     # Metadata extraction (issue #21, S5-02, FR-005): parsing runs
     # async post-upload on a bounded executor — a full queue refuses
     # loudly (the artifact's extraction_error records it) instead of

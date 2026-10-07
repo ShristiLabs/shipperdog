@@ -27,14 +27,31 @@ import org.springframework.http.HttpMethod;
  *       — all fail closed (401/404, never content). Buckets are
  *       private by default (PRD 24); the only bytes the API serves are
  *       its own JSON.</li>
+ *   <li><strong>The decision is the only download answer</strong>: an
+ *       authorized tester's ALLOW carries the artifact id and NO
+ *       storage key (S8-04 closed the S7-03 stopgap — the storage key
+ *       is server-internal since signed URLs became the binary's only
+ *       egress), and every persona without a grant — including the
+ *       platform administrator's own persona and the owning tenant's
+ *       admin — receives the concealed miss.</li>
+ *   <li><strong>The API never serves storage without a signed URL</strong>:
+ *       the issuance route mints a URL only on an engine ALLOW; the
+ *       URL (the emulator-mode proxy token) is the ONLY path that
+ *       streams bytes, every guess against it fails closed with the
+ *       uniform 404, and direct object-storage guesses against the
+ *       API host — the storage-key path itself, bucket-style paths —
+ *       all fail closed. Buckets are private by default (PRD 24);
+ *       the only bytes the API serves are its own JSON and
+ *       decision-minted URLs.</li>
  *   <li><strong>The console-grade artifact read stays guarded</strong>:
  *       the artifact metadata route requires the version-addressed
  *       permission, and a foreign artifact id renders the artifact
  *       module's concealed miss.</li>
- *   <li><strong>The artifact storage key is not a URL</strong>: the
- *       storage key reference in an ALLOW is an opaque reference, and
- *       requesting it as a path on the API answers 401/404 — existence
- *       of the object never becomes reachability through the API.</li>
+ *   <li><strong>The artifact storage key is not a URL and not a
+ *       client-visible fact</strong>: no download payload carries it,
+ *       and requesting the key as a path on the API answers 401/404 —
+ *       existence of the object never becomes reachability through
+ *       the API.</li>
  * </ul>
  */
 class ExplicitAuthorizationBypassTest extends IsolationScenarioHarness {
@@ -46,19 +63,27 @@ class ExplicitAuthorizationBypassTest extends IsolationScenarioHarness {
         UUID grantId = grantExplicitVersion(
                 side.tenantAdminToken(), side.tenantId(), side.testerId(), side.applicationId(), side.versionId());
 
-        // The authorized tester: ALLOW carries the issuance inputs only
-        // (the view is the decision itself — artifact + storage key).
+        // The authorized tester: ALLOW carries the artifact id and NO
+        // storage key — the S7-03 stopgap is closed; the issuance
+        // route consumes the key server-side and hands back a URL.
         var allowed = get(side.testerToken(), downloadUri(side.tenantId(), side.versionId()), 200);
         UUID artifactId = UUID.fromString(allowed.get("artifactId").asText());
         assertThat(artifactId).isEqualTo(side.artifactId());
-        String storageKey = allowed.get("storageKey").asText();
-        assertThat(storageKey)
-                .as("the ALLOW carries the storage key reference for S8-04 to sign")
-                .isNotBlank();
-        assertThat(storageKey)
-                .as("the storage key is an opaque reference, never a resolvable URL")
-                .doesNotStartWith("http://")
-                .doesNotStartWith("https://");
+        assertThat(allowed.has("storageKey"))
+                .as("the storage key is server-internal since S8-04")
+                .isFalse();
+
+        // The issuance itself: the granted tester mints the URL; the
+        // storage key never appears anywhere a client can read, and
+        // the fetch of the minted URL streams the bytes (the proxy
+        // token is the credential — no session, no role).
+        var issued = get(side.testerToken(), issuanceUri(side.artifactId(), side.versionId()), 200);
+        assertThat(issued.get("url").asString()).startsWith("/api/v1/downloads/");
+        assertThat(issued.has("storageKey")).isFalse();
+        Recording fetched = exchange(issued.get("url").asString(), null, HttpMethod.GET, null);
+        assertThat(fetched.status())
+                .as("the minted URL streams the stored bytes")
+                .isEqualTo(200);
 
         // Personas without ENGINE authority receive the concealed miss:
         // the decision API is self-scoped engine territory — a tenant
@@ -78,9 +103,13 @@ class ExplicitAuthorizationBypassTest extends IsolationScenarioHarness {
 
         // Revoking the grant removes the only authority (INV-007's
         // immediacy half is pinned in the timing test; here the
-        // no-bypass closure: after revocation NO persona downloads).
+        // no-bypass closure: after revocation NO persona downloads and
+        // NO new URL is minted — a previously minted URL lives to its
+        // own TTL by design, bounded at or under the cache TTL).
         revokeGrant(side.tenantAdminToken(), side.tenantId(), grantId, "suite-bypass-proof");
         assertThat(codeOf(getRaw(side.testerToken(), downloadUri(side.tenantId(), side.versionId()))))
+                .isEqualTo("VERSION_NOT_FOUND");
+        assertThat(codeOf(getRaw(side.testerToken(), issuanceUri(side.artifactId(), side.versionId()))))
                 .isEqualTo("VERSION_NOT_FOUND");
 
         // The console-grade artifact read stays guarded: the platform
@@ -105,12 +134,13 @@ class ExplicitAuthorizationBypassTest extends IsolationScenarioHarness {
         // artifact id as a content suffix — all fail closed. The API
         // serves its own JSON only; object bytes live behind S8-04's
         // signed URLs (buckets private by default, PRD 24).
+        String storageKey = "%s/%s/%s/%s/%s/artifact"
+                .formatted(side.organizationId(), side.tenantId(), side.applicationId(), side.versionId(), artifactId);
         List<String> storageGuesses = List.of(
                 "/" + storageKey,
                 "/storage/" + storageKey,
                 "/api/v1/storage/" + storageKey,
                 "/download/" + storageKey,
-                "/api/v1/artifacts/" + side.artifactId() + "/download",
                 "/api/v1/artifacts/" + side.artifactId() + "/content",
                 "/api/v1/versions/" + side.versionId() + "/download",
                 "/api/v1/download?artifactId=" + side.artifactId(),
@@ -122,6 +152,16 @@ class ExplicitAuthorizationBypassTest extends IsolationScenarioHarness {
                         .as("storage guess %s (authenticated=%s) must fail closed", guess, token != null)
                         .isIn(400, 401, 404);
             }
+        }
+
+        // The proxy token guesses: never-minted and malformed tokens
+        // both answer the SAME uniform 404 — the one anonymous surface
+        // fails closed exactly like the rest.
+        for (String guess : List.of("/api/v1/downloads/" + UUID.randomUUID(), "/api/v1/downloads/not-a-token")) {
+            Recording answer = exchange(guess, null, HttpMethod.GET, null);
+            assertThat(answer.status())
+                    .as("proxy guess %s must fail closed", guess)
+                    .isEqualTo(404);
         }
 
         // And the storage key does not exist as a reachable route even

@@ -142,7 +142,7 @@ contributing grant has one, and the per-platform rows the issue's
 acceptance criteria pin — platform, build number from artifact
 extraction, size, and upload date (the newest distributable artifact
 per platform, which is the build a download would serve). The
-download entry itself arrives with S8-04.
+download entry itself arrives with S8-04 (next section).
 
 - **INV-006 semantics.** Old versions stay listed while a grant
   covers them: ARCHIVED and REVOKED versions remain visible with
@@ -167,6 +167,43 @@ download entry itself arrives with S8-04.
   404 page on the history route itself.
 
 The authenticated shell shows the tester's identity in the app bar
-beside the catalog. The install/download flow (S8-04) builds on the
-same contracts (the eligibility slots name the artifact a download
-decision would authorize).
+beside the catalog. The install/download flow (S8-04, next section)
+builds on the same contracts (the eligibility slots name the artifact
+a download decision would authorize).
+
+## Downloads and install guidance (S8-04)
+
+Each version-history platform row (and the deep-linked version page)
+carries a per-platform Download button (`DownloadFlow`) for the slot's
+artifact. The button calls the artifact module's issuance route
+(`src/api/downloads.ts` -> `GET /api/v1/artifacts/{artifactId}/
+download?version_id=`): the engine's DOWNLOAD decision for the caller
+is the route's entire authority (no console permission gate — the
+relaxation [authorization](authorization.md) documents), and an ALLOW
+answers the routed channel and behavior, the short-lived signed URL,
+its expiry, and the download facts — never the storage key.
+
+- **Server-resolved guidance.** The issuance answer carries the
+  channel routing table's resolved `behavior`, and the portal renders
+  it — never re-deriving platform rules client-side: Android direct
+  (`OPEN_SIGNED_URL`) shows the one-time "install unknown apps"
+  consent guidance before the URL opens; iOS direct
+  (`OPEN_SIGNED_URL_ADHOC`) shows the ad-hoc/enterprise provisioning
+  note; the TestFlight placeholder row (`DEEP_LINK_TESTFLIGHT`) is
+  carried for the M2/M3 distribution model and unreachable from V1's
+  always-DIRECT downloads. The guidance dialog also shows the file
+  name, size, and the URL's remaining minutes.
+- **The URL is the credential.** Continue opens the URL through the
+  browser (`window.location.assign`): emulator deployments answer an
+  API-relative path the nginx `/api` proxy serves same-origin;
+  production answers an absolute GCS V4 URL. No portal code sits on
+  the fetch path.
+- **Opaque denials.** A concealed denial (no grant, revoked version,
+  nothing installable for the platform) renders the same problem
+  envelope every portal surface shows — stable code, no layer hints —
+  with a Retry and Close.
+- **Tests.** `DownloadFlow.test.tsx` covers the guidance legs and
+  denial rendering; the e2e script (`e2e/portal-verify.mjs` plus the
+  `apk-fixture.mjs` signed-APK minter) uploads a real fixture through
+  the API, settles it READY, and proves the browser download is
+  byte-identical (sha256) with the artifact's file name.

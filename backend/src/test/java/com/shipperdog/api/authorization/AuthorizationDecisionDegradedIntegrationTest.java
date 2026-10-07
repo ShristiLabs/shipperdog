@@ -161,11 +161,16 @@ class AuthorizationDecisionDegradedIntegrationTest {
                 new org.springframework.util.LinkedMultiValueMap<>();
         parts.add("version_id", versionId.toString());
         parts.add("platform", "ANDROID");
+        // Since S8-04 the direct channel serves APK only (the S5-05
+        // format rule): a SIGNED APK, so the download decision
+        // resolves a distributable installable.
         parts.add(
-                "file", new org.springframework.core.io.ByteArrayResource(AndroidFixtures.aabVersionCodeInManifest()) {
+                "file",
+                new org.springframework.core.io.ByteArrayResource(
+                        AndroidFixtures.signedApk(AndroidFixtures.VERSION_NAME, AndroidFixtures.VERSION_CODE)) {
                     @Override
                     public String getFilename() {
-                        return "banking.aab";
+                        return "banking.apk";
                     }
                 });
         Recording uploaded = exchange("/api/v1/artifacts", platformAdmin, HttpMethod.POST, parts);
@@ -204,7 +209,9 @@ class AuthorizationDecisionDegradedIntegrationTest {
         post(platformAdmin, "/api/v1/tenants/" + tenantId + "/authorization-grants", grant, 201);
         JsonNode allowed = get(testerToken, download, 200);
         assertThat(allowed.get("artifactId").asString()).isEqualTo(artifactId.toString());
-        assertThat(allowed.get("storageKey").asString()).endsWith("/" + artifactId + "/artifact");
+        assertThat(allowed.has("storageKey"))
+                .as("since S8-04 the storage key is server-internal (issue #38)")
+                .isFalse();
 
         // The eligibility listing answers live as well (empty before,
         // the granted version after).

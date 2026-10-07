@@ -43,12 +43,14 @@ import org.springframework.transaction.annotation.Transactional;
  *   <li><strong>Download decision</strong> — "can I fetch version V
  *       on platform P through tenant T?" The layered engine decides
  *       the full PRD 11/12 chain (audited with
- *       {@code surface=decision-api}); an ALLOW carries the signed-
- *       URL issuance inputs — the artifact id and its object-storage
- *       key reference (acceptance criterion 4) — which S8-04 mints
- *       the download URL from. NOT a public third-party authorize
- *       endpoint (out of scope by the story) and not a URL minter:
- *       the decision is the API, the signing is S8-04's.</li>
+ *       {@code surface=decision-api}); an ALLOW carries the artifact
+ *       id the download would serve (the tester-visible half of the
+ *       issuance inputs). The storage key reference left this
+ *       payload with S8-04 — never expose {@code storage_key} to
+ *       clients; the artifact module's issuance route consumes it
+ *       server-side and mints the URL. NOT a public third-party
+ *       authorize endpoint (out of scope by the story) and not a URL
+ *       minter: the decision is the API, the signing is S8-04's.</li>
  *   <li><strong>Eligibility listing</strong> — "which versions of
  *       application A can I see?" (FR-013's version-history page).
  *       The set form the engine sanctions: the LIST_APPLICATIONS
@@ -126,13 +128,18 @@ public class AuthorizationDecisionApiService {
     }
 
     /**
-     * The ALLOWED download decision's payload: the issuance inputs
-     * S8-04 signs — the artifact id and the storage key reference —
-     * beside the addressing the caller supplied (the application the
-     * engine derived, the version, the platform).
+     * The ALLOWED download decision's payload: the addressing the
+     * caller supplied (the application the engine derived, the
+     * version, the platform) plus the artifact id an ALLOW resolves
+     * to — the tester-visible half of the issuance inputs. The
+     * storage key reference left this payload with S8-04 (issue #38's
+     * technical note: never expose {@code storage_key} to clients;
+     * signed URLs are the binary's only egress): the download
+     * ISSUANCE route ({@code GET /api/v1/artifacts/{id}/download})
+     * consumes it server-side and mints the URL — this route stays
+     * the decision, never the URL.
      */
-    public record DownloadDecisionView(
-            UUID applicationId, UUID versionId, UUID artifactId, String platform, String storageKey) {}
+    public record DownloadDecisionView(UUID applicationId, UUID versionId, UUID artifactId, String platform) {}
 
     /**
      * The caller's authorized version set for one application (FR-013,
@@ -254,8 +261,7 @@ public class AuthorizationDecisionApiService {
                                 .orElse(null),
                         versionId,
                         inputs.artifactId(),
-                        pinned,
-                        inputs.storageKey()))
+                        pinned))
                 .orElseThrow(() -> new ConcealedResourceAccessDeniedException("artifact"));
     }
 

@@ -155,6 +155,12 @@ try {
   // LINKS: the authorized history lists exactly the granted versions,
   // and an unauthorized version id renders the opaque 404 page.
   const admin = login.accessToken;
+  // Unique identifiers per run: the compose database persists across
+  // e2e runs, and both the application name and its package name are
+  // org-unique (S3-01). The fixture manifest carries the same package
+  // (the pipeline's APPLICATION_MATCH stage demands the agreement).
+  const runStamp = Date.now();
+  const packageName = `com.e2e.history.banking.s${runStamp}`; // segments start with a letter (registry rule)
   const tenant = await api("/api/v1/tenants", {
     method: "POST",
     headers: { Authorization: `Bearer ${admin}` },
@@ -169,9 +175,9 @@ try {
     headers: { Authorization: `Bearer ${admin}` },
     body: JSON.stringify({
       tenantId: tenant.id,
-      name: "E2E History Banking",
+      name: `E2E History Banking ${runStamp}`,
       platforms: ["ANDROID"],
-      packageName: "com.e2e.history.banking",
+      packageName,
     }),
   });
   const v712 = await api(`/api/v1/applications/${application.id}/versions`, {
@@ -206,10 +212,15 @@ try {
   const historyRoute = `/applications/${tenant.id}/${application.id}`;
   await page.goto(PORTAL + historyRoute, { waitUntil: "networkidle" });
   await page.getByTestId("history-list").waitFor({ timeout: 15_000 });
+  // The window assertion reads the LIST (entries only); the app name
+  // lives in the page header beside it — the #37 script's latent
+  // mismatch (the name was asserted against the list, where it never
+  // rendered), surfaced by this story's first full e2e run.
   const historyText = (await page.getByTestId("history-list").textContent()) ?? "";
+  const headerText = (await page.getByTestId("history-title").textContent()) ?? "";
   record(
     "version history deep link lists exactly the granted window",
-    historyText.includes("7.12.0") && !historyText.includes("7.11.0") && historyText.includes("Banking"),
+    historyText.includes("7.12.0") && !historyText.includes("7.11.0") && headerText.includes("Banking"),
   );
   await page.screenshot({ path: "/tmp/s8-03-history.png" });
 
@@ -231,6 +242,80 @@ try {
     missText === unknownText && missText.includes("not authorized"),
   );
   await page.screenshot({ path: "/tmp/s8-03-404.png" });
+
+  // 6c. S8-04 golden path: upload a real signed APK through the API,
+  // let the validation pipeline settle it READY, then download it
+  // through the browser — guidance screen, minted URL, byte-identical
+  // payload (the mandate's end-to-end download proof).
+  const { signedApk } = await import("./apk-fixture.mjs");
+  const apkBytes = signedApk({
+    packageName,
+    versionName: "7.12.0",
+    versionCode: 4200 + Math.floor(Math.random() * 1000),
+  });
+  const form = new FormData();
+  form.set("version_id", v712.id);
+  form.set("platform", "ANDROID");
+  form.set("file", new Blob([apkBytes], { type: "application/vnd.android.package-archive" }), "banking.apk");
+  const uploadResponse = await fetch(API + "/api/v1/artifacts", {
+    method: "POST",
+    headers: { Authorization: `Bearer ${admin}` },
+    body: form,
+  });
+  const uploaded = await uploadResponse.json();
+  if (!uploadResponse.ok) throw new Error(`artifact upload -> ${uploadResponse.status}: ${JSON.stringify(uploaded)}`);
+  record("signed APK fixture uploaded through the API", true, `artifact ${uploaded.id}`);
+
+  let settled = "VALIDATING";
+  for (let attempt = 0; attempt < 100 && settled !== "READY"; attempt += 1) {
+    await new Promise((resolve) => setTimeout(resolve, 150));
+    const view = await api(`/api/v1/artifacts/${uploaded.id}?version_id=${v712.id}`, {
+      headers: { Authorization: `Bearer ${admin}` },
+    });
+    settled = view.status;
+  }
+  record("validation pipeline settled the artifact READY", settled === "READY", settled);
+
+  await page.goto(PORTAL + historyRoute, { waitUntil: "networkidle" });
+  await page.getByTestId("history-list").waitFor({ timeout: 15_000 });
+  await page.getByTestId("download-trigger-ANDROID").waitFor({ timeout: 10_000 });
+
+  // The issuance answer the browser received: DIRECT channel, the
+  // consent-gated behavior, an opaque URL, and NO storage key.
+  const issuancePromise = page.waitForResponse(
+    (response) => response.url().includes("/api/v1/artifacts/") && response.url().includes("/download"),
+  );
+  await page.getByTestId("download-trigger-ANDROID").click();
+  const issuance = await (await issuancePromise).json();
+  record(
+    "issuance answers the routed behavior with an opaque URL",
+    issuance.channel === "DIRECT" &&
+      issuance.behavior === "OPEN_SIGNED_URL" &&
+      typeof issuance.url === "string" &&
+      issuance.url.length > 0 &&
+      !("storageKey" in issuance),
+    `behavior ${issuance.behavior}`,
+  );
+
+  await page.getByTestId("download-guidance-android").waitFor({ timeout: 10_000 });
+  const guidanceText = (await page.getByTestId("download-guidance-android").textContent()) ?? "";
+  record("Android guidance explains install-unknown-apps before the URL", guidanceText.includes("Install unknown apps"));
+  await page.screenshot({ path: "/tmp/s8-04-guidance.png" });
+
+  const downloadPromise = page.waitForEvent("download", { timeout: 20_000 });
+  await page.getByTestId("download-guidance-continue").click();
+  const download = await downloadPromise;
+  const downloadedPath = "/tmp/s8-04-downloaded.apk";
+  await download.saveAs(downloadedPath);
+  const { createHash } = await import("node:crypto");
+  const { readFile } = await import("node:fs/promises");
+  const expected = createHash("sha256").update(apkBytes).digest("hex");
+  const actual = createHash("sha256")
+    .update(await readFile(downloadedPath))
+    .digest("hex");
+  record("browser download streams the exact stored bytes", actual === expected, `sha256 ${actual.slice(0, 12)}...`);
+  const suggested = download.suggestedFilename();
+  record("download carries the artifact's file name", suggested === "banking.apk", suggested);
 
   // 7. Missing token renders the honest card, not a crash.
   await page.goto(PORTAL + "/accept-invitation", { waitUntil: "networkidle" });

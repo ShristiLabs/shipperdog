@@ -125,11 +125,10 @@ class AuthorizationDecisionApiIntegrationTest {
         assertThat(UUID.fromString(decision.get("versionId").asText())).isEqualTo(world.versionId);
         assertThat(UUID.fromString(decision.get("artifactId").asText())).isEqualTo(artifactId);
         assertThat(decision.get("platform").asString()).isEqualTo("ANDROID");
-        assertThat(decision.get("storageKey").asString())
-                .as("the PRD 24 storage key S8-04 signs")
-                .endsWith("/" + artifactId + "/artifact")
-                .contains(world.orgId.toString())
-                .contains(world.tenantId.toString());
+        assertThat(decision.has("storageKey"))
+                .as("since S8-04 the storage key is server-internal (issue #38: never expose storage_key "
+                        + "to clients; the issuance route mints the URL server-side)")
+                .isFalse();
 
         // The decision is audited on its own surface, distinguishable
         // from the console's guarded reads and the admin inspection.

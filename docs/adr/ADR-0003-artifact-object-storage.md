@@ -128,6 +128,66 @@ create-session, direct PUT, and finalize. Operational caveat: the
 forwarder shares the API's netns, so recreate both (`docker compose
 up -d`, or `up -d api gcs-forward`) rather than the API alone.
 
+## Amendment: the download tier (issue #38, S8-04)
+
+The read-side amendment promised this surface: the port gains the
+download tier's own read primitives — `signV4DownloadUrl(key, fileName,
+contentType, ttl)` (production: a GCS V4-signed URL through the
+google-cloud-storage client, carrying `attachment` disposition and
+READ-only scope, no overwrite, no delete, no listing) and a streaming
+`open(key)` (the proxy's byte source, chunk-bounded, never buffered
+whole). The parser's ranged reads and the download's stream stay
+separate methods on one port, per this ADR's own separation rule.
+
+**The emulator cannot verify V4 signatures — re-verified.** The
+original decision's "V4 signed URLs are emulator-hostile" note was
+probed directly against `fsouza/fake-gcs-server` 1.56.1 (issue #38):
+the XML-API download path a V4 URL addresses
+(`/bucket/object?X-Goog-Signature=...`) answers 404 on the emulator
+outright, and the JSON media path it does serve applies NO signature
+or expiry check — there is no endpoint where a signature is both
+reachable and verified. A V4 URL therefore cannot target the emulator
+AND expire, which is FR-014's whole point.
+
+**Decision: one contract, two mechanisms.** The download service mints
+the URL through a deployment-mode branch:
+
+- **Production** (no emulator host): `signV4DownloadUrl` — real GCS
+  V4 signing, absolute URL, expiry enforced by GCS.
+- **Emulator** (local/CI/compose): the backend-minted proxy URL
+  `GET /api/v1/downloads/{token}` — an HMAC-SHA256 token (key:
+  `ARTIFACT_DOWNLOAD_PROXY_SIGNING_KEY`, local-only default per the
+  `AUTH_JWT_SECRET` policy) carrying artifact id, storage key, file
+  name, size, and the issuance-computed expiry. The route is
+  anonymous by design (the token IS the credential an engine ALLOW
+  minted), streams the object through `open` with attachment
+  disposition, and answers one uniform opaque 404 for every invalid,
+  tampered, or expired token — indistinguishable legs, INV-005
+  applied to the anonymous surface. The URL is API-relative so the
+  portal's same-origin nginx proxy serves it with no CORS and no
+  host configuration; production URLs are absolute. The token is
+  opaque (base64url(payload).base64url(MAC)): the storage key inside
+  it never appears in the clear and grants nothing without the MAC.
+
+Both mechanisms share the exact contract the S8-04 acceptance
+criteria pin: an opaque URL whose lifetime the server owns. INV-003
+is untouched — the port's additions read only. The signed-URL TTL
+(`ARTIFACT_DOWNLOAD_URL_TTL`, default PT15M) is bounded at startup,
+fail-fast, at or under BOTH the decision-input cache TTL (the S7-03/
+S7-04 rule: write-through invalidation makes revocation immediate in
+the healthy path, and no URL outlives the degraded-mode staleness
+backstop) and FR-014's hard 15-minute ceiling. Production signing
+uses the storage client's default signer (application default
+credentials' service account, or an explicit service-account key
+where the deployment requires it) — a deployment that cannot sign
+fails loudly at issuance, never silently.
+
+The S7-03 decision API simultaneously lost its `storageKey` response
+member (the S8-04 technical note: never expose `storage_key` to
+clients; signed URLs are the only egress) — the issuance route
+consumes the key server-side, and the OpenAPI baseline was
+consciously re-baselined in the same change.
+
 ## Consequences
 
 - One dependency (`com.google.cloud:google-cloud-storage`) joins the

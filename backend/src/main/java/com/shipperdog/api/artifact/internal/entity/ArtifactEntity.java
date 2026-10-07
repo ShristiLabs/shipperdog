@@ -171,6 +171,19 @@ public class ArtifactEntity implements OrganizationScope, Persistable<UUID> {
     @JdbcTypeCode(SqlTypes.NAMED_ENUM)
     private Status status;
 
+    /**
+     * The per-artifact download counter (V23, issue #38, S8-04): one
+     * increment per ALLOWED download issuance — the simple count the
+     * issue's technical note asks for now; S11-04 (issue #52-ish,
+     * analytics) formalizes aggregation on top of it beside the
+     * {@code shipperdog.download.count} metric and the audit trail.
+     * Not a binary field: INV-003 freezes {@code storageKey}/{@code
+     * sha256}/{@code size} and the status composes through the state
+     * machine; this counter is none of those — it is the issuance
+     * event's aggregate, written only by the guarded increment below.
+     */
+    private long downloadCount;
+
     private UUID uploadedBy;
 
     private Instant createdAt;
@@ -339,6 +352,21 @@ public class ArtifactEntity implements OrganizationScope, Persistable<UUID> {
 
     public Status getStatus() {
         return status;
+    }
+
+    /** The download-issuance counter (V23); zero until first issued. */
+    public long getDownloadCount() {
+        return downloadCount;
+    }
+
+    /**
+     * One download issuance counted (issue #38, S8-04): the guarded
+     * writer of the V23 counter — the only code that moves it, one
+     * increment per ALLOWED issuance, so the aggregate and the
+     * DOWNLOAD_ISSUED audit trail stay reconcilable.
+     */
+    public void recordDownloadIssued() {
+        this.downloadCount++;
     }
 
     // -------------------------------------------------------------------------

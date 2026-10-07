@@ -292,7 +292,7 @@ class AuthorizationRevocationIntegrationTest {
         // DISTRIBUTED — a FAILED artifact denies even the platform
         // wildcard (entitled at the version layer by the overlay).
         World world = world("s704-artifact", "com.other.registered");
-        UUID artifactId = uploadArtifact(world, AndroidFixtures.aabVersionCodeInManifest(), "FAILED");
+        UUID artifactId = uploadArtifact(world, AndroidFixtures.aabVersionCodeInManifest(), "banking.aab", "FAILED");
         TesterPerson john = testerOf(world, "s704-artifact@example.com", "Artifact Viewer");
         grantExplicitVersion(world, john);
 
@@ -841,11 +841,27 @@ class AuthorizationRevocationIntegrationTest {
         return counter == null ? 0 : counter.count();
     }
 
+    /**
+     * A distinct versionCode per fixture: each upload to a version
+     * carries a fresh code, exactly like real releases (the unique
+     * (version, platform, build) triple).
+     */
+    private static final java.util.concurrent.atomic.AtomicInteger VERSION_CODE =
+            new java.util.concurrent.atomic.AtomicInteger(20_000);
+
     private UUID readyAndroidArtifact(World world) throws Exception {
-        return uploadArtifact(world, AndroidFixtures.aabVersionCodeInManifest(), "READY");
+        // Since S8-04 the direct channel serves APK only (the S5-05
+        // format rule): the suite's distributable fixture is a SIGNED
+        // APK, so the download decision resolves it as installable —
+        // an AAB is Play-only and no longer a distributable download.
+        return uploadArtifact(
+                world,
+                AndroidFixtures.signedApk(AndroidFixtures.VERSION_NAME, String.valueOf(VERSION_CODE.incrementAndGet())),
+                "banking.apk",
+                "READY");
     }
 
-    private UUID uploadArtifact(World world, byte[] bytes, String expectedStatus) throws Exception {
+    private UUID uploadArtifact(World world, byte[] bytes, String fileName, String expectedStatus) throws Exception {
         org.springframework.util.MultiValueMap<String, Object> parts =
                 new org.springframework.util.LinkedMultiValueMap<>();
         parts.add("version_id", world.versionId.toString());
@@ -853,7 +869,7 @@ class AuthorizationRevocationIntegrationTest {
         parts.add("file", new org.springframework.core.io.ByteArrayResource(bytes) {
             @Override
             public String getFilename() {
-                return "banking.aab";
+                return fileName;
             }
         });
         Recording uploaded = exchange("/api/v1/artifacts", world.platformAdmin(), HttpMethod.POST, parts);
