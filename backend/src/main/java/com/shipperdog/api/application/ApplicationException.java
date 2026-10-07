@@ -32,7 +32,20 @@ public class ApplicationException extends RuntimeException {
         AUTHORIZED_TENANTS_PRESENT(
                 HttpStatus.CONFLICT,
                 "APPLICATION_AUTHORIZED_TENANTS_PRESENT",
-                "The application has authorized tenants; de-authorize them before converting ownership.");
+                "The application has authorized tenants; de-authorize them before converting ownership."),
+        /**
+         * The zero-distributions precondition issue #14 reserved for M2's
+         * releases, binding since S9-01 (issue #55): a release anchors the
+         * application to its owning dimension in BOTH directions — a
+         * tenant-owned application's releases targeted its tenant, and a
+         * shared application's releases targeted authorized tenants a
+         * conversion would cut off. History blocks like an active release
+         * (releases are never deleted).
+         */
+        RELEASES_PRESENT(
+                HttpStatus.CONFLICT,
+                "APPLICATION_RELEASES_PRESENT",
+                "The application has releases; ownership cannot be converted while any exist.");
 
         final HttpStatus httpStatus;
         final String code;

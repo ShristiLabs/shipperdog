@@ -14,6 +14,7 @@ import com.shipperdog.api.authorization.AuthorizationDecisionInvalidation;
 import com.shipperdog.api.config.CursorPageable;
 import com.shipperdog.api.config.TraceAttributes;
 import com.shipperdog.api.organization.OrganizationAccess;
+import com.shipperdog.api.release.ReleaseAccess;
 import com.shipperdog.api.tenant.TenantAccess;
 import com.shipperdog.api.tenant.TenantContext;
 import com.shipperdog.api.tenant.TenantScopeExecutor;
@@ -116,6 +117,7 @@ public class ApplicationService {
     private final TenantScopeExecutor scope;
     private final AuthorizationDecisionInvalidation decisionCache;
     private final VersionAccess versions;
+    private final ReleaseAccess releases;
     private final AuditEventPublisher audit;
     private final Clock clock;
     private final TraceAttributes trace;
@@ -130,6 +132,7 @@ public class ApplicationService {
             TenantScopeExecutor scope,
             AuthorizationDecisionInvalidation decisionCache,
             VersionAccess versions,
+            ReleaseAccess releases,
             AuditEventPublisher audit,
             Clock clock,
             TraceAttributes trace) {
@@ -142,6 +145,7 @@ public class ApplicationService {
         this.scope = scope;
         this.decisionCache = decisionCache;
         this.versions = versions;
+        this.releases = releases;
         this.audit = audit;
         this.clock = clock;
         this.trace = trace;
@@ -544,14 +548,34 @@ public class ApplicationService {
                         ApplicationException.Code.AUTHORIZED_TENANTS_PRESENT,
                         "the application has authorized tenants; de-authorize them before converting ownership");
             }
+            // Precondition (issue #14 AC3's zero-distributions rule,
+            // binding since S9-01/issue #55): releases of the shared
+            // application targeted its authorized tenants — a conversion
+            // would strand the target rows in a scope the seam no longer
+            // binds for the application's routes. Any release blocks,
+            // in any lifecycle state: releases are distribution history
+            // and are never deleted.
+            if (releases.hasReleases(application.getId())) {
+                throw new ApplicationException(
+                        ApplicationException.Code.RELEASES_PRESENT,
+                        "the application has releases; ownership cannot be converted while any exist");
+            }
             return new ScopeTransition(OwnershipScope.TENANT, targetTenantId);
         }
         if (targetTenantId != null) {
             throw invalid("tenantId is not valid when converting to ORGANIZATION ownership");
         }
         // Precondition (issue #14 AC3): zero distributions may anchor the
-        // application to its tenant. M2's release targets do not exist
-        // in M1; that story binds its check here.
+        // application to its tenant — binding since S9-01 (issue #55):
+        // a release of a tenant-owned application targeted its owning
+        // tenant's scope, and a conversion would strand the release rows
+        // outside the seam the application's routes bind. Any release
+        // blocks, in any lifecycle state (releases are never deleted).
+        if (releases.hasReleases(application.getId())) {
+            throw new ApplicationException(
+                    ApplicationException.Code.RELEASES_PRESENT,
+                    "the application has releases; ownership cannot be converted while any exist");
+        }
         return new ScopeTransition(OwnershipScope.ORGANIZATION, null);
     }
 

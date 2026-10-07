@@ -348,6 +348,31 @@ final class IsolationEndpointRegistry {
                     }
                 },
 
+                // Releases (S9-01) ------------------------------------------------
+                surface(
+                        "/api/v1/releases",
+                        // app:releases:read is organization-grain (the
+                        // RBAC matrix): the owning ORG_ADMIN lists (an
+                        // empty page in the seeded world — no release
+                        // exists), the tenant persona conceals through
+                        // the application-grain permission check.
+                        side -> "/api/v1/releases?applicationId=" + side.applicationId(),
+                        200,
+                        404,
+                        side -> "/api/v1/releases?applicationId=" + UUID.randomUUID()),
+                // The release-item route: the seeded world holds no
+                // release, so own-side probes address a random release id
+                // (the grant-item rationale — the route's miss shape is
+                // itself the correct own answer, and the parity proof is
+                // the point). Concealment of a REAL foreign release is
+                // pinned with live releases by the S9-01 release suite.
+                surface(
+                        "/api/v1/releases/{releaseId}",
+                        side -> "/api/v1/releases/" + UUID.randomUUID() + "?applicationId=" + side.applicationId(),
+                        404,
+                        404,
+                        side -> "/api/v1/releases/" + UUID.randomUUID() + "?applicationId=" + UUID.randomUUID()),
+
                 // Authorization grants ---------------------------------------------
                 surface(
                         "/api/v1/tenants/{id}/authorization-grants",

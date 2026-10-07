@@ -35,7 +35,11 @@ shape:
   exception messages are logged, never echoed.
 - `trace_id` — the request's correlation id (`X-Correlation-Id`), the join
   key across trace, logs, and the audit trail.
-- `errors` — optional member on 400s: field-to-message map from validation.
+- `errors` — optional member on 400s and 422s: field-to-message map
+  from validation (on 400s keyed by request field; since S9-01 the
+  release surface's 422s key it by the offending domain id — target
+  tenant or tester group for `RELEASE_TARGETS_INVALID`, platform for
+  `RELEASE_ARTIFACT_NOT_READY` — so one response names every offense).
 
 Security-chain 401/403s carry the same envelope plus `WWW-Authenticate`
 on 401s. All 401 bodies are uniform — no hint whether a token was
@@ -112,7 +116,16 @@ reason body and FR-008 names both operations; they take no
 `Idempotency-Key` — the terminal state itself is the replay answer.
 The rest of the application registry's surface (S3-01) is item-addressed
 (POST/GET/PATCH under `/api/v1/applications`); a tenant's own view of
-applications stays the tenant-scoped listing.
+applications stays the tenant-scoped listing. Since S9-01 (issue #55)
+the same shape serves `GET /api/v1/releases`: the listing requires the
+`applicationId` filter (it is the permission target and the listing's
+scope — an app:releases:read check at the application), narrows
+conjunctively by `versionId`, `status`, and `tenantId` (the tenant
+filter is a subquery over the release's target rows, composed with the
+caller's bound scope), and orders newest-first by the quotable
+`R-<number>`; the item read `GET /api/v1/releases/{releaseId}`
+carries `applicationId` as the query parameter for the same
+body-addressed permission-target shape the artifact read established.
 
 ## Idempotency
 
@@ -137,7 +150,11 @@ retained REVOKED row reactivates it `200 {reactivated:true}`), and
 even without the header — the SAME grant identity replays the stored
 row `200 {created:false}` with no write and no audit, while the same
 identity with a different `expiresAt` is a `409
-AUTHORIZATION_GRANT_CONFLICT`). The artifact finalize route is
+AUTHORIZATION_GRANT_CONFLICT`), and `POST /api/v1/releases`
+(S9-01, issue #55: release creation; a retry with the same key replays
+the created release, while a DIFFERENT key duplicating an existing
+application+version release is the precise `409
+RELEASE_ALREADY_EXISTS`, never a re-mint). The artifact finalize route is
 deliberately NOT in
 the registry: its terminal state is the replay answer — a retry
 answers the registered artifact `200 created=false`, exactly like the

@@ -560,3 +560,65 @@ endpoint data paths. The paired probe indexes
 (`idx_version_access_grant_subject`, `idx_version_access_tester_application`)
 keep every question an index descent; the isolation test pairs the
 marker with the seam rule as for every predecessor.
+
+## Fifteenth amendment (2026-10-07): releases join the seam; their target and selection children stay plain
+
+The release module's first landing (E9, issue #55, S9-01, V24) applies
+three standing rules to the release model and records one binding of a
+reserved precondition:
+
+1. **`releases` are route-addressed children and join the seam with the
+   full owning-dimension snapshot.** The ninth amendment's own rule
+   decides this one: the release surface is top-level and body/query-
+   addressed (`POST/GET /api/v1/releases`), so no parent route mediates
+   the access, and the rows carry the V12 shape (`organization_id`
+   always, `tenant_id` for tenant-owned applications) with
+   `ReleaseEntity` implementing `OrganizationScope` served by
+   `ReleaseScopedRepository`. Scope establishment follows the artifact
+   module's executor pattern (the service resolves the application's
+   owning dimension through the public `ApplicationAccess` port and
+   establishes it at the point of use); the seam's write guard is the
+   final authority that a new row belongs to the request's bound scope.
+   No `@CrossTenantByDesign` guard exists in the module: every question
+   it asks — including the listing's tenant filter — is a scoped
+   specification or a subquery composed with the seam's forced
+   predicate.
+
+2. **`release_targets`, `release_target_groups`, and
+   `release_artifacts` are plain children under the eighth amendment.**
+   Every target row hangs off exactly one seam-served release, every
+   group row off exactly one target (a composite foreign key to the
+   parent's composite primary key — the eleventh amendment's via-parent
+   junction rule), and every artifact slot off exactly one release;
+   none is addressed by a route of its own. They carry no snapshot
+   columns and join no seam repository. The tenant dimension a target
+   row names is a REFERENCE to an external tenant (the distribution
+   decision), not the row's own scope — the isolation question is
+   answered at the release the target hangs off, exactly as the fourth
+   amendment's grant rows answer at the application.
+
+3. **`rings` are organization-grain reference data.** The S10-04 ring
+   data model, pulled forward by the story's sequencing note, carries
+   an optional `organization_id` (NULL = FR-017's seeded system
+   defaults) and no tenant dimension — the tenth amendment's pattern:
+   a plain repository with explicit organization-scoped queries, no
+   seam standing.
+
+4. **The application registry's reserved zero-distributions
+   precondition binds, in both directions.** The third amendment's
+   transition doctrine anticipated "the zero-distributions
+   precondition binds when M2's release targets exist"; with them
+   existing, the audited ownership-scope transition refuses in EITHER
+   direction while any release of the application exists (`409
+   APPLICATION_RELEASES_PRESENT`), through the release module's public
+   `ReleaseAccess` port: a tenant-owned application's releases targeted
+   its owning tenant's scope, and a shared application's releases
+   targeted authorized tenants a conversion would cut off. Releases are
+   NOT carried along the transition (the versions carry-along is for
+   the application's own content): a release is a distribution DECISION
+   about tenants, and moving it between scopes would silently rewrite
+   what was decided. History blocks — any lifecycle state, INV-006's
+   character — because no release row is ever deleted. The module also
+   registers on `VersionDistributionContributor` (issue #19's seam): a
+   version carrying any release has its artifact set frozen, the
+   release leg of INV-004 the guard was built to consult.
