@@ -181,13 +181,19 @@ decision API carries `surface=decision-api` — both distinguishable
 from serving decisions since S7-02); see
 [authorization](authorization.md);
 `AUTHORIZATION_GRANT_CREATED` / `AUTHORIZATION_GRANT_EXPIRY_CHANGED` /
-`AUTHORIZATION_GRANT_DELETED` — issue #31/S7-02: every grant mutation
-carries the actor (mandatory `reason`, 1..1000 trimmed), the grant's
+`AUTHORIZATION_GRANT_REVOKED` — issue #31/S7-02, revocation since
+issue #33/S7-04: every grant mutation carries the actor (mandatory
+`reason`, 1..1000 trimmed), the grant's
 `grantId`/`accessType`/target (`tag`/`latestN`/`versionId` context),
 `testerId`, and expiry state — the expiry change adds
-`expiry.before`/`expiry.after`; idempotent replays and no-op changes
-write and audit nothing; grant deletion's history IS this trail —
-rows are not retained),
+`expiry.before`/`expiry.after`, and the revocation adds
+`status.before`/`status.after` (`ACTIVE` to `REVOKED`), with the
+bulk pass marking each of its per-grant flips `bulk=true`;
+idempotent replays, no-op changes, and repeated revocations write
+and audit nothing; `AUTHORIZATION_GRANT_DELETED` is historical-only
+(no writer emits it since S7-04 — removal became the audited REVOKED
+flip, and the row itself is RETAINED with its revocation facts as
+the durable history),
 and
 platform (`ACCESS_DENIED`, S1-06).
 

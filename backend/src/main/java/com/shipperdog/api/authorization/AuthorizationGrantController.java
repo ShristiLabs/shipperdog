@@ -50,7 +50,19 @@ import org.springframework.web.bind.annotation.RestController;
  * shape, target) replays the stored row {@code 200 created=false}
  * (idempotent, no write, no audit); the same identity with a
  * different expiry answers {@code 409 AUTHORIZATION_GRANT_CONFLICT}
- * — renewal is the expiry route's job.
+ * — renewal is the expiry route's job. Since S7-04 (issue #33) the
+ * duplicate authority scopes to ACTIVE rows: a revoked twin neither
+ * replays nor conflicts, and re-granting a revoked identity mints a
+ * new row.
+ *
+ * <p><strong>Revocation (S7-04, INV-007):</strong> the DELETE route
+ * revokes — a state flip with the mandatory reason, the row RETAINED
+ * as history (no code path deletes grant rows); the revocation
+ * report and the bulk pass ride the same path. The immediacy model:
+ * decisions deny on the very next call (write-through cache
+ * invalidation), while previously issued signed URLs stay valid
+ * until their own TTL expiry — the documented bound, consistent with
+ * S6-04's tester revocation SLA (see docs/authorization.md).
  */
 @RestController
 public class AuthorizationGrantController {
@@ -119,25 +131,11 @@ public class AuthorizationGrantController {
     }
 
     /**
-     * The effective-access view (acceptance criteria 5 and 6): every
-     * version the tester's live grants cover for the application —
-     * union-composed, newest first, each entry with its contributing
-     * grants and TTL — plus the live two-switches flag.
-     */
-    @GetMapping("/api/v1/tenants/{id}/authorization-grants/effective")
-    @PreAuthorize("hasPermission(#id, 'tenant', 'tenant:authorization-grants:read')")
-    VersionAccessGrantService.EffectiveAccessView effective(
-            @AuthenticationPrincipal Object principal,
-            @PathVariable UUID id,
-            @RequestParam UUID testerId,
-            @RequestParam UUID applicationId) {
-        return grants.effective(id, testerId, applicationId);
-    }
-
-    /**
      * Changes a grant's expiry (acceptance criterion 5's TTL
      * administration): extend, shorten, or clear to never-expires
-     * ({@code "expiresAt": null}); idempotent for the same value.
+     * ({@code "expiresAt": null}); idempotent for the same value. A
+     * revoked grant is terminal history and answers {@code 409
+     * AUTHORIZATION_GRANT_REVOKED} (S7-04).
      */
     @PutMapping("/api/v1/tenants/{id}/authorization-grants/{grantId}/expiry")
     @PreAuthorize("hasPermission(#id, 'tenant', 'tenant:authorization-grants:manage')")
@@ -151,19 +149,85 @@ public class AuthorizationGrantController {
     }
 
     /**
-     * Removes a grant: the row is deleted, the removal audited with
-     * actor + reason (the audit trail is the history; S7-04 builds
-     * revocation flows above this primitive).
+     * The effective-access view (acceptance criteria 5 and 6): every
+     * version the tester's live grants cover for the application —
+     * union-composed, newest first, each entry with its contributing
+     * grants and TTL — plus the live two-switches flag. Since S7-04
+     * the computation considers ACTIVE grants only: a revoked grant
+     * contributes nothing here either.
+     */
+    @GetMapping("/api/v1/tenants/{id}/authorization-grants/effective")
+    @PreAuthorize("hasPermission(#id, 'tenant', 'tenant:authorization-grants:read')")
+    VersionAccessGrantService.EffectiveAccessView effective(
+            @AuthenticationPrincipal Object principal,
+            @PathVariable UUID id,
+            @RequestParam UUID testerId,
+            @RequestParam UUID applicationId) {
+        return grants.effective(id, testerId, applicationId);
+    }
+
+    /**
+     * Revokes a grant (S7-04, issue #33, INV-007): the row is
+     * retained with a status flip to REVOKED, the revocation facts
+     * (actor, instant, reason) recorded on it, the next decision
+     * denies immediately (write-through cache invalidation), and the
+     * mutation audited with actor + reason (FR-024). Idempotent — a
+     * repeat on an already-revoked grant is the same 204, no write.
+     * No code path deletes grant rows: history is the audit
+     * question ("what did tester X have on date Y").
      */
     @DeleteMapping("/api/v1/tenants/{id}/authorization-grants/{grantId}")
     @ResponseStatus(HttpStatus.NO_CONTENT)
     @PreAuthorize("hasPermission(#id, 'tenant', 'tenant:authorization-grants:manage')")
-    void delete(
+    void revoke(
             @AuthenticationPrincipal Object principal,
             @PathVariable UUID id,
             @PathVariable UUID grantId,
             @RequestParam(required = false) String reason) {
-        grants.delete(requireUserId(principal), id, grantId, reason);
+        grants.revoke(requireUserId(principal), id, grantId, reason);
+    }
+
+    /**
+     * The bulk revocation pass (issue #33): every ACTIVE grant the
+     * tester holds through the tenant — optionally narrowed to one
+     * application — revoked in one transaction with one mandatory
+     * reason, each flip audited. The tester-grain oversharing
+     * correction: the next decision for the tester through this
+     * tenant denies immediately (one write-through cache drop covers
+     * the whole set). Repeatable: a second pass answers
+     * {@code revokedCount: 0}.
+     */
+    @PostMapping("/api/v1/tenants/{id}/authorization-grants/bulk-revoke")
+    @PreAuthorize("hasPermission(#id, 'tenant', 'tenant:authorization-grants:manage')")
+    VersionAccessGrantService.BulkRevocationResult bulkRevoke(
+            @AuthenticationPrincipal Object principal, @PathVariable UUID id, @RequestBody BulkRevokeRequest request) {
+        return grants.bulkRevoke(
+                requireUserId(principal), id, request.testerId(), request.applicationId(), request.reason());
+    }
+
+    /**
+     * The revocation report (issue #33 acceptance criterion 5): given
+     * a tester, the grants they have LOST through this tenant —
+     * revoked rows and active-but-expired ones — with both directions
+     * of provenance (who granted and when; who revoked and when and
+     * why), cursor-paginated in creation order. Optional
+     * {@code applicationId} filter; concealment mirrors the effective
+     * view (a foreign or unlinked tester is the genuine miss's
+     * shape).
+     */
+    @GetMapping("/api/v1/tenants/{id}/authorization-grants/revocation-report")
+    @PreAuthorize("hasPermission(#id, 'tenant', 'tenant:authorization-grants:read')")
+    PageResponse<VersionAccessGrantService.RevocationReportEntry> revocationReport(
+            @AuthenticationPrincipal Object principal,
+            @PathVariable UUID id,
+            @RequestParam UUID testerId,
+            @RequestParam(required = false) UUID applicationId,
+            @RequestParam(required = false) String limit,
+            @RequestParam(required = false) String cursor) {
+        ListQuery query = ListQuery.of(limit, cursor);
+        Page<VersionAccessGrantService.RevocationReportEntry> page =
+                grants.revocationReport(id, testerId, applicationId, query.offset(), query.limit());
+        return PageResponse.of(page.getContent(), page.hasNext(), query.offset() + query.limit());
     }
 
     private static UUID requireUserId(Object principal) {
@@ -205,4 +269,11 @@ public class AuthorizationGrantController {
 
     /** Expiry change request: the next expiry (null = never expires) and the reason. */
     public record ExpiryRequest(String expiresAt, String reason) {}
+
+    /**
+     * Bulk-revocation request: the tester whose ACTIVE grants the pass
+     * revokes, an optional application narrow, and the one mandatory
+     * reason every flip audits.
+     */
+    public record BulkRevokeRequest(UUID testerId, UUID applicationId, String reason) {}
 }

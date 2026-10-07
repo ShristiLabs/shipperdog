@@ -83,7 +83,7 @@ public class AuthorizationDecisionApiController {
             @RequestParam UUID tenantId,
             @RequestParam UUID versionId,
             @RequestParam String platform) {
-        return decisions.download(requireSubject(principal), tenantId, versionId, platform);
+        return decisions.download(requireSubject(principal, "version"), tenantId, versionId, platform);
     }
 
     /**
@@ -98,17 +98,22 @@ public class AuthorizationDecisionApiController {
     @PreAuthorize("isAuthenticated()")
     EligibilityView eligibility(
             @AuthenticationPrincipal Object principal, @RequestParam UUID tenantId, @RequestParam UUID applicationId) {
-        return decisions.eligibility(requireSubject(principal), tenantId, applicationId);
+        return decisions.eligibility(requireSubject(principal, "tenant"), tenantId, applicationId);
     }
 
-    /** An unresolvable subject is a concealed denial, never a 500 (the evaluator's own rule). */
-    private static UUID requireSubject(Object principal) {
+    /**
+     * An unresolvable subject is a concealed denial, never a 500 (the
+     * evaluator's own rule) — at the CALLING route's own miss grain:
+     * version for the download route, tenant for the eligibility
+     * route.
+     */
+    private static UUID requireSubject(Object principal, String missGrain) {
         if (principal instanceof Jwt jwt) {
             return UUID.fromString(jwt.getSubject());
         }
         if (principal instanceof AuthenticatedPrincipal patPrincipal) {
             return patPrincipal.userId();
         }
-        throw new ConcealedResourceAccessDeniedException("tenant");
+        throw new ConcealedResourceAccessDeniedException(missGrain);
     }
 }

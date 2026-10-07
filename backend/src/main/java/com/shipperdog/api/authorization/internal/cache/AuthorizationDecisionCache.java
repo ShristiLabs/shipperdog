@@ -172,8 +172,13 @@ public class AuthorizationDecisionCache implements DecisionInputs, Authorization
     /**
      * The tester's grants through the tenant — all applications, all
      * expiries (expiry filters at evaluation time, the live probe's
-     * contract). Loader: one {@code idx_version_access_grant_subject}
-     * prefix descent over the grant catalog.
+     * contract), ACTIVE rows only since S7-04 (issue #33): a revoked
+     * grant is history, never a decision input — the loader filters,
+     * so the cached set and the live probe can never disagree and a
+     * revocation's write-through drop (not a payload edit) is what
+     * removes the row's effect. Loader: one
+     * {@code idx_version_access_grant_subject} prefix descent over the
+     * grant catalog.
      */
     public List<CachedGrant> grantsOf(UUID tenantId, UUID testerId) {
         return lookup(
@@ -181,6 +186,7 @@ public class AuthorizationDecisionCache implements DecisionInputs, Authorization
                 grantsKey(tenantId, testerId),
                 GRANTS,
                 () -> grants.findByTenantIdAndTesterId(tenantId, testerId).stream()
+                        .filter(grant -> grant.getStatus() == VersionAccessGrantEntity.Status.ACTIVE)
                         .map(CachedGrant::of)
                         .toList());
     }
@@ -324,14 +330,31 @@ public class AuthorizationDecisionCache implements DecisionInputs, Authorization
         String serialize(T value);
     }
 
-    /** The grants family's wire format: versioned JSON of shape tuples. */
+    /**
+     * The grants family's wire format: versioned JSON of shape tuples.
+     * The body's {@code grants} field must be present and an array —
+     * a versioned body MISSING its array is corruption, not an empty
+     * hit (an empty hit can only come from a body that serialized an
+     * empty set; anything else must degrade to the live loader, never
+     * answer "no grants" and silently deny-by-staleness the other
+     * way). The serializer is deliberate JSON concatenation: every
+     * string it emits is a UUID, an enum name, or a V13 tag
+     * ({@code [A-Z0-9][A-Z0-9_-]{0,49}}) — none can contain a
+     * character JSON would escape — pinned by the round-trip test;
+     * widening any of those vocabularies moves to a structured
+     * writer first.
+     */
     private static final FamilyCodec<List<CachedGrant>> GRANTS = new FamilyCodec<>() {
         @Override
         public List<CachedGrant> parse(String json) {
             JsonNode root = PAYLOADS.readTree(json);
             requireVersion(root);
+            JsonNode grantsArray = root.path("grants");
+            if (!grantsArray.isArray()) {
+                throw new IllegalArgumentException("corrupt grants payload: missing grants array");
+            }
             List<CachedGrant> parsed = new ArrayList<>();
-            for (JsonNode node : root.path("grants")) {
+            for (JsonNode node : grantsArray) {
                 parsed.add(new CachedGrant(
                         uuidOf(node, "grantId"),
                         uuidOf(node, "tenantId"),
@@ -354,9 +377,9 @@ public class AuthorizationDecisionCache implements DecisionInputs, Authorization
                 if (i > 0) {
                     json.append(',');
                 }
-                json.append("{\"grantId\":\"")
-                        .append(grant.grantId())
-                        .append("\",\"tenantId\":\"")
+                json.append("{\"grantId\":")
+                        .append(uuidJson(grant.grantId()))
+                        .append(",\"tenantId\":\"")
                         .append(grant.tenantId())
                         .append("\",\"applicationId\":\"")
                         .append(grant.applicationId())
@@ -376,14 +399,23 @@ public class AuthorizationDecisionCache implements DecisionInputs, Authorization
         }
     };
 
-    /** The linked-tenants family's wire format: versioned JSON of tenant ids. */
+    /**
+     * The linked-tenants family's wire format: versioned JSON of
+     * tenant ids. The {@code tenants} array's presence is checked as
+     * strictly as the grants family's — a versioned body missing its
+     * array is corruption and degrades, never an empty hit.
+     */
     private static final FamilyCodec<List<UUID>> TENANTS = new FamilyCodec<>() {
         @Override
         public List<UUID> parse(String json) {
             JsonNode root = PAYLOADS.readTree(json);
             requireVersion(root);
+            JsonNode tenantsArray = root.path("tenants");
+            if (!tenantsArray.isArray()) {
+                throw new IllegalArgumentException("corrupt tenants payload: missing tenants array");
+            }
             List<UUID> parsed = new ArrayList<>();
-            for (JsonNode node : root.path("tenants")) {
+            for (JsonNode node : tenantsArray) {
                 parsed.add(UUID.fromString(node.asString()));
             }
             return List.copyOf(parsed);

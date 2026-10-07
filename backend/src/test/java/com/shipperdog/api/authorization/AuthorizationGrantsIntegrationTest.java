@@ -585,19 +585,43 @@ class AuthorizationGrantsIntegrationTest {
                         Map.of("expiresAt", "2020-01-01T00:00:00Z", "reason", "into the past"))))
                 .isEqualTo("INVALID_REQUEST");
 
-        // Removal: 204, audited with the reason, and the tester's
-        // access ends with the row.
+        // Removal is revocation since S7-04: 204, audited with the
+        // reason, the tester's access ends immediately, and the row
+        // is RETAINED as history (never deleted).
         assertThat(decides(john, world, world.versionId)).isTrue();
         Recording removed = exchange(uri + "?reason=pilot-over", world.platformAdmin(), HttpMethod.DELETE, null);
         assertThat(removed.status).isEqualTo(204);
         assertThat(decides(john, world, world.versionId)).isFalse();
-        assertThat(audit.eventsOfType(AuditEventType.AUTHORIZATION_GRANT_DELETED))
+        assertThat(audit.eventsOfType(AuditEventType.AUTHORIZATION_GRANT_REVOKED))
                 .hasSize(1);
         AuditEvent deletion =
-                audit.eventsOfType(AuditEventType.AUTHORIZATION_GRANT_DELETED).getFirst();
+                audit.eventsOfType(AuditEventType.AUTHORIZATION_GRANT_REVOKED).getFirst();
         assertThat(deletion.reason()).isEqualTo("pilot-over");
         assertThat(deletion.userId()).isEqualTo(platformAdminUserId());
-        assertThat(problemOf(getRaw(world.platformAdmin(), uri)).get("code"))
+        assertThat(deletion.detail()).containsEntry("status.before", "ACTIVE").containsEntry("status.after", "REVOKED");
+        JsonNode retained = get(world.platformAdmin(), uri, 200);
+        assertThat(retained.get("status").asString()).isEqualTo("REVOKED");
+        assertThat(retained.get("revocationReason").asString()).isEqualTo("pilot-over");
+        assertThat(retained.get("revokedBy").asString())
+                .isEqualTo(platformAdminUserId().toString());
+        assertThat(retained.get("revokedAt")).isNotNull();
+        // A repeat revoke is idempotent: the same 204, no write, no audit.
+        Recording repeated = exchange(uri + "?reason=again", world.platformAdmin(), HttpMethod.DELETE, null);
+        assertThat(repeated.status).isEqualTo(204);
+        assertThat(audit.eventsOfType(AuditEventType.AUTHORIZATION_GRANT_REVOKED))
+                .as("the idempotent repeat audits nothing")
+                .hasSize(1);
+        // The revoked row is terminal history: the expiry route answers 409.
+        assertThat(codeOf(putRaw(
+                        world.platformAdmin(),
+                        uri + "/expiry",
+                        Map.of("expiresAt", "2029-01-01T00:00:00Z", "reason", "no resurrection"))))
+                .isEqualTo("AUTHORIZATION_GRANT_REVOKED");
+        // The genuine miss stays the concealed 404 it always was.
+        assertThat(problemOf(getRaw(
+                                world.platformAdmin(),
+                                "/api/v1/tenants/" + world.tenantId + "/authorization-grants/" + UUID.randomUUID()))
+                        .get("code"))
                 .isEqualTo("AUTHORIZATION_GRANT_NOT_FOUND");
     }
 
@@ -689,7 +713,7 @@ class AuthorizationGrantsIntegrationTest {
                 world.platformAdmin(),
                 HttpMethod.DELETE,
                 null);
-        assertThat(audit.eventsOfType(AuditEventType.AUTHORIZATION_GRANT_DELETED))
+        assertThat(audit.eventsOfType(AuditEventType.AUTHORIZATION_GRANT_REVOKED))
                 .hasSize(1);
     }
 

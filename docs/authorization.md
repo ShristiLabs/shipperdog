@@ -332,13 +332,45 @@ PRD 26's tenant-admin / app-owner grant authority):
 | GET | `/api/v1/tenants/{id}/authorization-grants/{grantId}` | `tenant:authorization-grants:read` | `200` grant view; `404 AUTHORIZATION_GRANT_NOT_FOUND` (the concealed shape — a foreign tenant's grant is indistinguishable) |
 | GET | `/api/v1/tenants/{id}/authorization-grants/effective?testerId=&applicationId=` | `tenant:authorization-grants:read` | `200` the tester's effective access: `effectiveAccess` (the two-switches flag, live), newest-first `entries` (version name/status, contributing `sourceGrantIds`, entry `expiresAt` TTL), and `expiredGrantCount` — the single resolved method the portal catalog (S8-02) builds on and S7-03 caches |
 | PUT | `/api/v1/tenants/{id}/authorization-grants/{grantId}/expiry` | `tenant:authorization-grants:manage` | `200` grant view with the new `expiresAt` (`null` clears to never-expires); idempotent for the same value; `400` past expiry/malformed/missing reason |
-| DELETE | `/api/v1/tenants/{id}/authorization-grants/{grantId}?reason=...` | `tenant:authorization-grants:manage` | `204`; the row is deleted and the removal audited (the append-only audit store is the history; S7-04 builds revocation flows above this primitive); a repeated delete is the ordinary `404` (the tenant-member route's shape) |
+| DELETE | `/api/v1/tenants/{id}/authorization-grants/{grantId}?reason=...` | `tenant:authorization-grants:manage` | `204`; the grant is REVOKED — a state flip, the row retained forever (INV-007), the flip audited with actor + reason + `status.before`/`after`; the reason is mandatory (1..1000, trimmed; `400` otherwise). A repeated revoke on the already-revoked row is the same `204`, no write, no audit (idempotent — the S6-03 retained-row precedent); the row is queryable history with `status=REVOKED` and its revocation facts |
+| POST | `/api/v1/tenants/{id}/authorization-grants/bulk-revoke` | `tenant:authorization-grants:manage` | `200 {revokedCount}`; every ACTIVE grant the tester holds through the tenant — optionally narrowed by `applicationId` — revoked in ONE transaction with ONE mandatory `reason` (each flip audited individually with `bulk=true`, one grant-set cache drop covering the whole pass); repeatable — a second pass answers `revokedCount: 0`; `400` missing/bound-violating reason; same concealed `404`s as create for a foreign/unlinked tester |
+| GET | `/api/v1/tenants/{id}/authorization-grants/revocation-report?testerId=&applicationId=&limit=&cursor=` | `tenant:authorization-grants:read` | `200 {items, next_cursor}` — the grants the tester has LOST through the tenant: revoked rows (`state=REVOKED`, with `revokedAt`/`revokedBy`/`revocationReason`) and active-but-expired ones (`state=EXPIRED`, evaluation-time, never swept), each with both directions of provenance (`grantedAt`/`grantedBy`, `expiresAt`); creation-ordered, cursor-paginated; concealment mirrors the effective view — a foreign or unlinked tester is the genuine miss's shape |
 
 **Every mutation is audited** with actor + reason (mandatory, 1..1000
 trimmed): `AUTHORIZATION_GRANT_CREATED`,
 `AUTHORIZATION_GRANT_EXPIRY_CHANGED` (with `expiry.before`/`after`),
-`AUTHORIZATION_GRANT_DELETED` — each carrying the grant's shape,
+`AUTHORIZATION_GRANT_REVOKED` (with `status.before`/`after`; the bulk
+pass marks each flip `bulk=true`) — each carrying the grant's shape,
 target, and expiry state. Idempotent replays write and audit nothing.
+
+**Revocation semantics (S7-04, INV-007).** Removal is a state flip,
+never a row death: no code path deletes `version_access` rows — a
+revoked row is retained forever with its revocation facts
+(`revokedAt`, `revokedBy`, `revocationReason`) on the row itself, so
+the revocation report answers from the data ("what did tester X have
+on date Y", the S6-03 retained-row precedent). A `REVOKED` grant
+never authorizes whatever its `expiresAt` says: evaluation, the
+effective-access view, and the decision-input cache's loader all
+consider ACTIVE rows only. The duplicate authority scopes to ACTIVE
+rows too (V22 recreates `uq_version_access_grant` as a partial unique
+index over non-revoked rows), so a revoked twin neither replays nor
+conflicts — re-granting a revoked identity mints a NEW row whose
+effect is the only access, and renewal-on-terminal answers `409
+AUTHORIZATION_GRANT_REVOKED` (the S4-03 terminal-state precedent:
+the expiry route refuses to write history; the revoke route's repeat
+is idempotent because it asserts the desired end state).
+
+**Immediacy model (AC2).** Revocation takes effect on the very NEXT
+decision: the mutation drops the decision-input cache's grant-set key
+write-through (before-commit inside the revoking transaction), and
+the loader's ACTIVE-only filter keeps any refill correct — there is
+no TTL window to escape on the decision path, sequentially. The
+documented bound, aligned with [testers](testers.md)'s revocation
+SLA: signed download URLs do not exist until S8-04 — the decision API
+returns issuance inputs, it mints no URLs — so when URL-bearing
+downloads land, previously issued URLs live to their own TTL and the
+cache's TTL stays at or under it, the same one-token-lifetime shape
+S6-04 documents for tester deactivation.
 
 **M1 surface note.** The artifact routes' RBAC gate stays
 console-grade (`app:artifacts:read`) — a pure tester does not pass
@@ -387,7 +419,7 @@ and computes every evaluation:
 
 | Cached family | Key | Loader (on miss) | Invalidated by |
 |---|---|---|---|
-| Grant set | per tester x tenant — ALL the tester's grants through that tenant (any application, any expiry; versioned JSON payload, epoch-micros expiry) | one `idx_version_access_grant_subject` prefix descent | grant create, expiry change, delete |
+| Grant set | per tester x tenant — the tester's ACTIVE grants through that tenant (any application, any expiry; versioned JSON payload, epoch-micros expiry; the loader filters to ACTIVE rows since S7-04 — a revoked grant is history, never a decision input) | one `idx_version_access_grant_subject` prefix descent | grant create, expiry change, revocation (single and bulk — one drop covers the whole pass) |
 | Membership effectiveness | per tester x tenant — the two-switches flag | the membership catalog's live probe | membership link, re-link, status switch, removal; tester person-status changes (every linked tenant) |
 | Tenant-application visibility | per application x tenant — the S3-03/ownership flag | the application registry's live probe | mapping authorize/deauthorize; S3-02 ownership-scope transitions (both owner tenants) |
 | Linked-tenant set | per tester — the retained membership rows' tenants | the membership catalog's tenants-of-tester probe | a fresh membership row creation (removal retains the row, so the set cannot shrink) |

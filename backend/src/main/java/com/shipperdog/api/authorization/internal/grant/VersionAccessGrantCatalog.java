@@ -17,18 +17,20 @@ import org.springframework.data.jpa.repository.JpaRepository;
  * test accepts it as authorization-engine surface; endpoint data
  * paths use {@link VersionAccessGrantScopedRepository} instead
  * (the {@code TenantTesterMembershipCatalog} precedent exactly).
- * Declares ONLY the one sanctioned question — a subject's grants for
- * one application through one tenant, one descent of
- * {@code idx_version_access_grant_subject} — and answers rows the
- * caller filters by expiry and shape; never the inherited
+ * Declares ONLY the sanctioned questions — a subject's grants for one
+ * application through one tenant, and the per-tenant set the decision
+ * cache loads — and answers rows the caller filters by status and
+ * expiry (S7-04: a REVOKED row never authorizes; the filters are the
+ * callers' contracts, pinned by tests); never the inherited
  * {@code findById} family, and never an endpoint response.
  */
 @CrossTenantByDesign
 public interface VersionAccessGrantCatalog extends JpaRepository<VersionAccessGrantEntity, UUID> {
 
     /**
-     * Every grant (any expiry — the caller filters at evaluation
-     * time) the tester holds for the application through the tenant.
+     * Every grant (any status or expiry — the caller filters at
+     * evaluation time) the tester holds for the application through
+     * the tenant.
      */
     List<VersionAccessGrantEntity> findByTenantIdAndTesterIdAndApplicationId(
             UUID tenantId, UUID testerId, UUID applicationId);
@@ -38,23 +40,14 @@ public interface VersionAccessGrantCatalog extends JpaRepository<VersionAccessGr
      * applications (issue #32, S7-03): the decision-input cache's
      * loader — one prefix descent of
      * {@code idx_version_access_grant_subject} (the composite probe
-     * index's tenant + tester prefix), filtered by application in
-     * memory. The per-tenant SET is the cached unit per the story's
-     * technical note (a grant mutation drops exactly this key); the
-     * application filter stays at evaluation time so one entry serves
-     * every application the tenant granted. Any expiry; authorization
-     * data only, never an endpoint data path.
+     * index's tenant + tester prefix), filtered by status and
+     * application in memory. The per-tenant SET is the cached unit per
+     * the story's technical note (a grant mutation drops exactly this
+     * key); the application filter stays at evaluation time so one
+     * entry serves every application the tenant granted. Since S7-04
+     * (issue #33) the loader caches ACTIVE grants ONLY — a revoked row
+     * is history, never a decision input; authorization data only,
+     * never an endpoint data path.
      */
     List<VersionAccessGrantEntity> findByTenantIdAndTesterId(UUID tenantId, UUID testerId);
-
-    /**
-     * The shared-application decision probe (issue #31 AC2): the
-     * subject's grants for the application across tenants — one
-     * {@code idx_version_access_tester_application} descent. For an
-     * organization-shared application the engine's owning tenant is
-     * null, so the contributor resolves by subject + application and
-     * matches each grant's own tenant live (effective membership and
-     * the S3-03 mapping) — never an endpoint data path.
-     */
-    List<VersionAccessGrantEntity> findByTesterIdAndApplicationId(UUID testerId, UUID applicationId);
 }
