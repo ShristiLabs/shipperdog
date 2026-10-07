@@ -1,6 +1,8 @@
 package commands
 
 import (
+	"bytes"
+	"encoding/json"
 	"fmt"
 	"strings"
 	"text/tabwriter"
@@ -102,4 +104,62 @@ func int64String(v *int64) string {
 		return ""
 	}
 	return fmt.Sprintf("%d", *v)
+}
+
+// renderRelease is the human view of a release read: identity, the
+// governed facts (ring, environment, artifacts, targets), and the
+// honest E10-pending state of gates and approvals (S10-01/S10-03).
+func renderRelease(d *api.ReleaseDetail) string {
+	var b strings.Builder
+	fmt.Fprintf(&b, "Release %s (%s)\n", d.ReleaseRef, d.Status)
+	fmt.Fprintf(&b, "  ID:          %s\n", d.ID)
+	fmt.Fprintf(&b, "  Application: %s    Version: %s\n", d.ApplicationID, d.VersionID)
+	if d.RingName != "" {
+		fmt.Fprintf(&b, "  Ring:        %s (%s)\n", d.Ring, d.RingName)
+	} else {
+		fmt.Fprintf(&b, "  Ring:        %s\n", d.Ring)
+	}
+	if d.Environment != "" {
+		fmt.Fprintf(&b, "  Environment: %s (%s)\n", d.Environment, orDash(d.EnvironmentName))
+	} else {
+		fmt.Fprintf(&b, "  Environment: -\n")
+	}
+	if len(d.Artifacts) > 0 {
+		fmt.Fprintf(&b, "  Artifacts:   %s %s\n", d.Artifacts[0].Platform, d.Artifacts[0].ArtifactID)
+		for _, slot := range d.Artifacts[1:] {
+			fmt.Fprintf(&b, "               %s %s\n", slot.Platform, slot.ArtifactID)
+		}
+	}
+	fmt.Fprintf(&b, "  Targets:     %d tenant(s)\n", len(d.Targets))
+	for _, target := range d.Targets {
+		if len(target.TesterGroupIDs) > 0 {
+			fmt.Fprintf(&b, "    %s: groups %s\n", target.TenantID, strings.Join(target.TesterGroupIDs, ", "))
+		} else {
+			fmt.Fprintf(&b, "    %s: tenant at large\n", target.TenantID)
+		}
+	}
+	fmt.Fprintf(&b, "  Gates:       not yet reported (quality gates arrive with S10-03)\n")
+	fmt.Fprintf(&b, "  Approvals:   not yet recorded (approval workflows arrive with S10-01)\n")
+	fmt.Fprintf(&b, "  Created:     %s by %s\n", d.CreatedAt, d.CreatedBy)
+	fmt.Fprintf(&b, "  Updated:     %s\n", d.UpdatedAt)
+	return b.String()
+}
+
+// renderReleaseManifest is the human view of the frozen manifest: the
+// freeze facts and digest beside the stored PRD 16 document verbatim.
+func renderReleaseManifest(v *api.ReleaseManifestView) string {
+	var b strings.Builder
+	fmt.Fprintf(&b, "Manifest of %s (%s / %s)\n", v.ReleaseRef, v.ApplicationID, v.VersionID)
+	fmt.Fprintf(&b, "  Release:  %s\n", v.ReleaseID)
+	fmt.Fprintf(&b, "  SHA-256:  %s\n", v.Sha256)
+	fmt.Fprintf(&b, "  Frozen:   %s by %s\n", v.FrozenAt, v.FrozenBy)
+	if len(v.Manifest) > 0 {
+		var doc bytes.Buffer
+		if err := json.Indent(&doc, v.Manifest, "  ", "  "); err == nil {
+			fmt.Fprintf(&b, "  Document:\n  %s\n", doc.String())
+		} else {
+			fmt.Fprintf(&b, "  Document: %s\n", string(v.Manifest))
+		}
+	}
+	return b.String()
 }

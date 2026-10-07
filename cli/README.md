@@ -1,8 +1,8 @@
 # ShipperDog CLI
 
-The developer-side companion (PRD 20, story S5-06): upload and inspect
-artifacts from the terminal so CI pipelines and humans can drive
-ShipperDog without curl and JSON.
+The developer-side companion (PRD 20, stories S5-06 + S9-06): upload and
+inspect artifacts and drive the release path from the terminal so CI
+pipelines and humans can run ShipperDog without curl and JSON.
 
 Implemented in Go 1.26 (ADR-0004): a single static binary per platform,
 two direct dependencies (cobra, x/term), exact-pinned with the committed
@@ -70,6 +70,76 @@ shipperdog artifact revalidate <artifactId> --version <id-or-name>
 ```
 
 `--json` on any output-bearing command emits machine-readable JSON.
+
+## Releases (S9-06)
+
+The scripted path from build artifact to promoted release (PRD 20,
+FR-015/FR-017). Releases are addressed by their quotable id — `R-1028`,
+`r1028`, or `1028` — or by uuid; `--app` (name or uuid) skips the
+cross-application lookup.
+
+```bash
+# Create a DRAFT release from the version's READY artifacts (newest per
+# platform; --artifact platform=id overrides one):
+shipperdog release create banking 7.12.0 \
+    --tenants 6a1f... --groups 6a1f...=9c0d... \
+    --ring tenant-pilot --environment 4b2e...
+
+# Read (the CI decision point):
+shipperdog release get R-1028 --json
+shipperdog release list banking --version 7.12.0 --status DRAFT
+shipperdog release manifest R-1028 --yaml        # after APPROVED
+
+# Drive the PRD 17 machine (one edge; reason mandatory into
+# FAILED/ROLLED_BACK):
+shipperdog release transition R-1028 APPROVED
+shipperdog release transition R-1028 ROLLED_BACK --reason "crash spike"
+
+# Or walk it to PROMOTED in one command — the CI showcase:
+shipperdog release promote R-1028
+```
+
+- **create** targets tenants (`--tenants`, uuids) with optional
+  tester-group narrowing (`--groups tenantId=g1,g2`, or bare `g1,g2`
+  for every tenant; omit for tenant-at-large), on a starting ring
+  (FR-017 vocabulary until the organization customizes), optionally in
+  an environment (S9-04; every target tenant must sit inside its
+  assignments). Validation errors mirror the API's own codes, and the
+  per-tenant `422 RELEASE_TARGETS_INVALID` prints its full reason list
+  so one pass fixes the whole target set.
+- **promote** drives the machine forward one legal edge at a time
+  (VALIDATING, READY, APPROVAL_PENDING — the APPROVED crossing freezes
+  the manifest — DEPLOYING, ACTIVE, PROMOTED). Any refusal stops the
+  walk: the blocker's code, detail, and reason list print and the
+  command exits 4 — the same surface E10's approval and gate policies
+  will refuse through. `--ring` asserts the release's starting ring
+  (M2 releases keep their creation ring; ring-to-ring promotion arrives
+  with S10-05). FAILED/ROLLED_BACK releases are terminal and refuse.
+- **transition** is the direct edge-by-edge drive for humans and
+  scripts that want one crossing at a time.
+- Gates and approvals render their honest not-yet-reported state in
+  `release get` until E10 lands (S10-01/S10-03).
+
+### GitHub Actions showcase
+
+The promote command is the M2 CI showcase (reused by S12-03's action
+packaging):
+
+```yaml
+- name: Upload and release
+  env:
+    SHIPPERDOG_API: https://shipperdog.example.com
+    SHIPPERDOG_TOKEN: ${{ secrets.SHIPPERDOG_PAT }}
+  run: |
+    shipperdog artifact upload app.apk --app banking --version 7.12.0 \
+        --platform android --git-commit "$GITHUB_SHA" --pipeline "$GITHUB_WORKFLOW"
+    shipperdog release create banking 7.12.0 \
+        --tenants "$TENANT_ID" --ring engineering > release.json
+    shipperdog release promote "$(jq -r .releaseRef release.json)"
+```
+
+Exit codes are the branch points: 0 promoted, 4 blocked or rejected
+(read the reason list), 3 bad token, 5 network.
 
 ### Upload behavior
 

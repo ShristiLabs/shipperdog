@@ -1,5 +1,7 @@
 package api
 
+import "encoding/json"
+
 // View structs mirroring the OpenAPI baseline schemas. JSON member
 // names are the served contract (docs/openapi/baseline.yaml); the
 // provenance member names are the frozen S5-04 contract and never
@@ -194,4 +196,100 @@ type ApplicationPage struct {
 type VersionPage struct {
 	Items      []VersionView `json:"items"`
 	NextCursor string        `json:"next_cursor"`
+}
+
+// ReleaseView is a release row from the application's release listing.
+type ReleaseView struct {
+	ID            string `json:"id"`
+	ReleaseRef    string `json:"releaseRef"`
+	ApplicationID string `json:"applicationId"`
+	VersionID     string `json:"versionId"`
+	Status        string `json:"status"`
+	Ring          string `json:"ring"`
+	Environment   string `json:"environment"`
+	TargetCount   int    `json:"targetCount"`
+	CreatedAt     string `json:"createdAt"`
+	UpdatedAt     string `json:"updatedAt"`
+}
+
+// ReleaseArtifactSlot is one per-platform artifact selection of a release.
+type ReleaseArtifactSlot struct {
+	Platform   string `json:"platform"`
+	ArtifactID string `json:"artifactId"`
+}
+
+// ReleaseTarget is one release target: the tenant, its ring, and its
+// tester-group selection (empty groups target the tenant at large).
+type ReleaseTarget struct {
+	TenantID       string   `json:"tenantId"`
+	Ring           string   `json:"ring"`
+	TesterGroupIDs []string `json:"testerGroupIds"`
+}
+
+// ReleaseDetail is the release read: the full creation record with the
+// per-platform artifact selection and the complete target set.
+type ReleaseDetail struct {
+	ID              string                `json:"id"`
+	ReleaseRef      string                `json:"releaseRef"`
+	ApplicationID   string                `json:"applicationId"`
+	VersionID       string                `json:"versionId"`
+	Status          string                `json:"status"`
+	Ring            string                `json:"ring"`
+	RingName        string                `json:"ringName"`
+	EnvironmentID   string                `json:"environmentId"`
+	Environment     string                `json:"environment"`
+	EnvironmentName string                `json:"environmentName"`
+	Artifacts       []ReleaseArtifactSlot `json:"artifacts"`
+	Targets         []ReleaseTarget       `json:"targets"`
+	CreatedBy       string                `json:"createdBy"`
+	CreatedAt       string                `json:"createdAt"`
+	UpdatedAt       string                `json:"updatedAt"`
+}
+
+// ReleasePage is the release listing's page shape.
+type ReleasePage struct {
+	Items      []ReleaseView `json:"items"`
+	NextCursor string        `json:"next_cursor"`
+}
+
+// CreateReleaseRequest is POST /api/v1/releases (FR-015): the
+// application id rides the body (the permission target), the version,
+// the starting ring's code, the optional target environment, one READY
+// artifact per platform, and the target set.
+type CreateReleaseRequest struct {
+	ApplicationID string                 `json:"applicationId"`
+	VersionID     string                 `json:"versionId"`
+	Ring          string                 `json:"ring"`
+	EnvironmentID string                 `json:"environmentId,omitempty"`
+	Artifacts     []ReleaseArtifactSlot  `json:"artifacts"`
+	Targets       []ReleaseTargetCommand `json:"targets"`
+}
+
+// ReleaseTargetCommand is one target of the creation body.
+type ReleaseTargetCommand struct {
+	TenantID       string   `json:"tenantId"`
+	TesterGroupIDs []string `json:"testerGroupIds"`
+}
+
+// ReleaseTransitionRequest is POST /api/v1/releases/{id}/transitions:
+// the permission-target application id, the PRD 17 target state, and
+// the reason (mandatory on the FAILED and ROLLED_BACK edges).
+type ReleaseTransitionRequest struct {
+	ApplicationID string `json:"applicationId"`
+	To            string `json:"to"`
+	Reason        string `json:"reason,omitempty"`
+}
+
+// ReleaseManifestView is GET /api/v1/releases/{id}/manifest: the
+// storage metadata (digest, freeze facts) beside the stored PRD 16
+// document, kept verbatim for --json output.
+type ReleaseManifestView struct {
+	ReleaseID     string          `json:"releaseId"`
+	ReleaseRef    string          `json:"releaseRef"`
+	ApplicationID string          `json:"applicationId"`
+	VersionID     string          `json:"versionId"`
+	Sha256        string          `json:"sha256"`
+	FrozenAt      string          `json:"frozenAt"`
+	FrozenBy      string          `json:"frozenBy"`
+	Manifest      json.RawMessage `json:"manifest"`
 }

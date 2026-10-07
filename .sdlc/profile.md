@@ -80,7 +80,7 @@ CLI (from `cli/`, since S5-06 — see [docs/cli.md]):
 | backend | backend/ | Spring Boot application, single Maven module |
 | frontend | frontend/ | Admin console: React 19 + TS strict + MUI 9 + React Query 5 + Router 7 on Vite 7 (S2-04) |
 | portal | portal/ | Tester portal: React 19 + TS strict + MUI 9 + React Query 5 + Router 7 on Vite 7, separate app on :5174 (S8-01) |
-| cli | cli/ | Go 1.26 developer CLI: login, artifact upload/list/view/revalidate, version list (S5-06) |
+| cli | cli/ | Go 1.26 developer CLI: login, artifact upload/list/view/revalidate, version list (S5-06); release create/list/get/transition/promote, release manifest (S9-06) |
 | infrastructure | infrastructure/ | local docker compose stack (API, console, portal, data, observability) + terraform Cloud Run deployment, smoke + security-header checks (S8-05) |
 | docs | docs/ | developer docs |
 | workflows | .github/workflows/ | GitHub Actions CI (backend-ci + frontend-ci incl. portal job + cli-ci) |
