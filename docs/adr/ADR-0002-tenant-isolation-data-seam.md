@@ -622,3 +622,41 @@ reserved precondition:
    registers on `VersionDistributionContributor` (issue #19's seam): a
    version carrying any release has its artifact set frozen, the
    release leg of INV-004 the guard was built to consult.
+
+## Sixteenth amendment (2026-10-07): the release timeline is a plain child; the rolled-back cutoff probe joins the cross-tenant-by-design family
+
+The release state machine (E9, issue #56, S9-02, V25) applies two
+standing rules and completes a reservation the fourteenth amendment
+recorded:
+
+1. **`release_status_history` is a plain child of the seam-served
+   release.** The seventh amendment's doctrine (standing since V14 for
+   `version_status_history`) decides this one unchanged: the timeline
+   hangs off exactly one seam-served release, is addressed by no route
+   of its own (the history read resolves the release through the seam
+   first), and therefore carries no owning-dimension snapshot and
+   joins no seam repository. The CAS that serializes transitions — a
+   native `UPDATE releases ... WHERE status = :from` — lives on the
+   timeline's repository as a serialization point, not a data path
+   (the #18/#19 precedent the version module set; a declared method on
+   a scoped repository is forbidden by the architecture tests, and the
+   CAS needs no seam standing of its own).
+
+2. **The rolled-back download cutoff's probe is a registry guard.**
+   S7-01 reserved the distribution layer's policy seam for "M2's
+   release model"; this landing registers `RolledBackCutoffPolicy`
+   (a ROLLED_BACK release blocks DOWNLOAD of its version's artifacts).
+   The probe underneath — does this version carry a ROLLED_BACK
+   release? — is asked inside the downloading TESTER's bound scope,
+   which is by construction not the release's owning scope (a shared
+   application's release rows serve the organization's scope while the
+   tester sits in a target tenant's), so the seam-served repository
+   cannot answer it and must not be asked to. The probe therefore
+   lives on `ReleaseRegistryRepository`, explicitly marked
+   `@CrossTenantByDesign` — the second amendment's registry-guard
+   doctrine (the application registry's organization-scope guard), the
+   same cross-tenant-by-design family the fourteenth amendment opened
+   to the grant catalog: one sanctioned, review-critical,
+   boolean-grain question (never a row to a caller, never an endpoint
+   data path), paired with the architecture test that forces every
+   other repository over the release module's data onto the seam.

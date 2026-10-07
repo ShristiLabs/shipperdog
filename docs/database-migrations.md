@@ -32,6 +32,7 @@ backend/src/main/resources/db/
     V22__grant_revocation.sql
     V23__artifact_download_count.sql
     V24__release_model.sql
+    V25__release_state_history.sql
   seed/                 dev fixture, applied only when the seed location is active
     R__dev_seed.sql
 ```
@@ -436,6 +437,27 @@ backend/src/main/resources/db/
   `release_artifacts` (one per platform per release). Expand-only and
   forward-only: additive columns, three tables, one rename, one
   relaxation, checks and indexes; no release row is ever deleted.
+
+- `V25__release_state_history.sql` (S9-02, issue #56) adds
+  `release_status_history` — the release state machine's append-only
+  timeline (PRD 17, the V14 `version_status_history` doctrine applied
+  to releases): one row per real transition, from the creation's DRAFT
+  row (`from_status` NULL — a release is born, it does not transition
+  into DRAFT), with the actor uuid on the row (the issue's
+  actor/timestamp demand; the version timeline left who to the audit
+  log, the release timeline carries it because it is the surface the
+  dashboard renders), the optional reason capped at 1000 by a check
+  (mandatory in the service for the failure and rollback crossings),
+  and `occurred_at`. A pure child of the seam-served release: no
+  snapshot columns, no seam repository. No enum change — V1's
+  `release_status` has carried the full eleven-value PRD 17 vocabulary
+  since the baseline; S9-02 is its first mover. The transitions
+  themselves commit through a database compare-and-set (the V14 CAS
+  discipline, held in the repository layer), which is why the schema
+  needs no constraint beyond the table: the machine's serialization is
+  behavioral, not declarative. Rows pre-dating V25 (dev only) begin
+  their timeline with the first post-V25 transition — history is
+  recorded going forward, never reconstructed.
 
 ## Status and type columns
 

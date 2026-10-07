@@ -74,5 +74,10 @@ public enum AuditEventType {
     AUTHORIZATION_GRANT_DELETED,
     AUTHORIZATION_GRANT_REVOKED,
     /** A DRAFT release created with its full target set (S9-01, FR-015): ring, per-platform artifacts, targets. */
-    RELEASE_CREATED
+    RELEASE_CREATED,
+    /**
+     * One committed PRD 17 transition (S9-02, FR-024): releaseRef, fromStatus, toStatus, and the
+     * mandatory reason of failure/rollback crossings; one event per real transition, never a repeat.
+     */
+    RELEASE_TRANSITIONED
 }

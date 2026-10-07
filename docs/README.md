@@ -49,7 +49,11 @@ Current contents:
   (the S10-04 ring data model pulled forward as seeded reference
   data); the 422 per-tenant target validation; the quotable R-number
   ids; the filtered listing and detail; INV-004's artifact-set freeze
-  and the ownership-scope precondition the landing binds.
+  and the ownership-scope precondition the landing binds. Since S9-02:
+  the PRD 17 lifecycle — guarded transitions with the compare-and-set
+  race discipline, the mandatory failure/rollback reasons, the
+  append-only actor-carrying history timeline, and the ROLLED_BACK
+  direct-channel download cutoff.
 - [Admin console](frontend.md) — the React/MUI console (S2-04, S3-04):
   stack and structure, the shared API client (problem+json, correlation
   ids, cursor pagination), token storage and silent refresh, role-aware

@@ -372,6 +372,19 @@ final class IsolationEndpointRegistry {
                         404,
                         404,
                         side -> "/api/v1/releases/" + UUID.randomUUID() + "?applicationId=" + UUID.randomUUID()),
+                // The release history route (S9-02): the same miss-shape
+                // rationale as the release item — the seeded world holds
+                // no release, own-side probes address a random release id,
+                // and concealment of a REAL foreign release's timeline is
+                // pinned with live releases by the S9-02 transition suite.
+                surface(
+                        "/api/v1/releases/{releaseId}/history",
+                        side -> "/api/v1/releases/" + UUID.randomUUID() + "/history?applicationId="
+                                + side.applicationId(),
+                        404,
+                        404,
+                        side -> "/api/v1/releases/" + UUID.randomUUID() + "/history?applicationId="
+                                + UUID.randomUUID()),
 
                 // Authorization grants ---------------------------------------------
                 surface(

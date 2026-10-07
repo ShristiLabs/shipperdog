@@ -35,11 +35,16 @@ shape:
   exception messages are logged, never echoed.
 - `trace_id` — the request's correlation id (`X-Correlation-Id`), the join
   key across trace, logs, and the audit trail.
-- `errors` — optional member on 400s and 422s: field-to-message map
+- `errors` — optional member on 400s, 422s, and — since S9-02 — the
+  one 409 family that must name stored state: field-to-message map
   from validation (on 400s keyed by request field; since S9-01 the
   release surface's 422s key it by the offending domain id — target
   tenant or tester group for `RELEASE_TARGETS_INVALID`, platform for
-  `RELEASE_ARTIFACT_NOT_READY` — so one response names every offense).
+  `RELEASE_ARTIFACT_NOT_READY` — so one response names every offense;
+  S9-02's `RELEASE_TRANSITION_REASON_REQUIRED` keys it by the
+  `reason` field and `RELEASE_TRANSITION_BLOCKED` by the refusing
+  policy's name, while the 409 `RELEASE_TRANSITION_INVALID` carries
+  `current` and `attempted` so an illegal crossing names both states).
 
 Security-chain 401/403s carry the same envelope plus `WWW-Authenticate`
 on 401s. All 401 bodies are uniform — no hint whether a token was

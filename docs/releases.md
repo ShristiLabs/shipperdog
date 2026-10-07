@@ -5,7 +5,9 @@ the controlled distribution event everything in M2 orbits — created
 from a version's artifacts, targeting tenants + tester groups + a ring,
 so distribution is an explicit governed act rather than "upload and
 hope". This page covers the model, the creation API and its validation,
-the reads, and the two distribution probes the landing binds.
+the reads, the lifecycle (S9-02, issue #56: PRD 17's state machine,
+its transitions API, history, and the rolled-back download cutoff), and
+the two distribution probes the S9-01 landing bound.
 
 ## Model
 
@@ -21,9 +23,10 @@ Targets:     Acme (groups: Pilot Group), Contoso
 Status:      DRAFT
 ```
 
-- **DRAFT is the only state this story writes.** The full state machine
-  (PRD 17) is S9-02; the manifest (PRD 16) is S9-03; approvals and
-  promotion (PRD 8.10's ring behavior) are E10.
+- **DRAFT is the state creation writes**; the full state machine (PRD
+  17) has run since S9-02 — see [the lifecycle](#lifecycle--the-state-machine-s9-02).
+  The manifest (PRD 16) is S9-03; approvals and promotion behavior
+  (PRD 8.10's rings) are E10.
 - **One release per application and version** (V1's
   `uq_releases_application_version` is the authority; a duplicate is the
   precise `409 RELEASE_ALREADY_EXISTS`). A version can exist without a
@@ -130,6 +133,107 @@ per-platform artifacts, and every tenant with its group count.
   full creation record. A release of another application is the
   concealed `404 RELEASE_NOT_FOUND`, byte-identical to an unknown id.
 
+## Lifecycle — the state machine (S9-02)
+
+A release moves through PRD 17's diagram and nothing else — the table
+is exhaustive, pinned by a unit test over all 121 state pairs and an
+API-level matrix test that walks a release into each source state and
+attempts every target:
+
+```text
+DRAFT → VALIDATING → READY → APPROVAL_PENDING → APPROVED
+      → DEPLOYING → ACTIVE → (PROMOTED → COMPLETED | ROLLED_BACK)
+
+VALIDATING → FAILED        (with reason)
+DEPLOYING  → FAILED        (with reason)
+```
+
+Eleven legal edges. FAILED, ROLLED_BACK, and COMPLETED are terminal —
+no state exits a terminal, no state re-enters itself, and NO state
+re-opens artifact mutation (the freeze from creation is absolute).
+"Cannot enter DEPLOYING without APPROVED" and "cannot complete without
+ACTIVE" are the table itself: DEPLOYING's only source is APPROVED,
+COMPLETED's only source is PROMOTED, and PROMOTED's only source is
+ACTIVE.
+
+### Transitions — `POST /api/v1/releases/{releaseId}/transitions`
+
+Body-addressed like every release route (`applicationId` in the body
+is the permission target, `app:releases:manage`); the body names the
+target state and, for the failure and rollback edges, the mandatory
+reason. Not idempotency-keyed — the state is the replay answer.
+
+```json
+POST /api/v1/releases/{releaseId}/transitions
+{
+  "applicationId": "…",
+  "to": "ROLLED_BACK",
+  "reason": "crash spike in the field; pulling the direct channel"
+}
+```
+
+- **Illegal crossing** — `409 RELEASE_TRANSITION_INVALID` with the
+  `errors` member carrying `current` and `attempted` (a conflict with
+  stored state; the 422 family stays for request semantics).
+- **Missing reason on FAILED/ROLLED_BACK** — `422
+  RELEASE_TRANSITION_REASON_REQUIRED` (the S4-03 revoke analog: a
+  release that died or was pulled explains itself; the reason rides
+  both the audit event and the timeline row). A reason is optional on
+  every other edge; a blank one means none.
+- **Unknown `to` value** — `400 INVALID_REQUEST` keyed by `to`.
+- **Racing transitions** — serialized by the database compare-and-set
+  (the V14 CAS discipline): the row moves only while its committed
+  status is still the source state this attempt read, so two racing
+  crossings can never both commit, double-write the timeline, or
+  un-terminal a release; the loser re-reads and answers the precise
+  409.
+- **Every committed crossing** appends one `release_status_history`
+  row, audits `RELEASE_TRANSITIONED` (FR-024: actor, before/after,
+  reason), and publishes a `ReleaseTransitionedEvent` in-process — the
+  event hook S12-01's bus subscribes to, so the machine never grows
+  delivery concerns.
+
+**The guard seam.** Every registered `ReleaseTransitionPolicy`
+contributor is consulted before a legal crossing commits; a refusal is
+`422 RELEASE_TRANSITION_BLOCKED` keyed by the contributor's name. No
+contributor ships in M2 — the seam exists so E10's approval evaluator
+(the "APPROVED requires approvals complete" precondition, S10-01) and
+later gates/distribution preconditions compose without touching the
+machine. Policies refuse; they can never widen PRD 17's graph.
+
+**The FAILED retry path (documented decision).** A FAILED release
+never re-enters the machine, and its artifacts cannot be fixed in
+place: the artifact set froze the moment the release was created
+(INV-004). The fix path is a NEW version (carrying corrected
+artifacts) and a new release of it — the failure row and its reason
+stay as permanent history. Rollback of the direct channel is the same
+posture: `ROLLED_BACK` is terminal in M2 (store-channel rollback
+orchestration is S13-06).
+
+### History — `GET /api/v1/releases/{releaseId}/history?applicationId=…`
+
+The append-only timeline (`app:releases:read`): the release summary
+plus one row per real transition, chronological — the creation's DRAFT
+row (`from` null, the creator as actor) and every committed crossing
+with its actor, its reason where present, and the timestamp. This is
+the record the S9-05 dashboard renders; nothing ever updates or deletes
+a row (PRD P5). A release of another application conceals exactly like
+an unknown id.
+
+### The rolled-back download cutoff (AC4)
+
+The authorization engine's distribution layer (S7-01) reserved a
+policy seam for exactly this: the release module registers
+`RolledBackCutoffPolicy`, which blocks `DOWNLOAD` decisions for a
+version whose release is ROLLED_BACK — the engine never learns release
+schemas, and the module never touches the engine's chain. Downloads
+deny as the download route's concealed miss shape
+(`DISTRIBUTION_BLOCKED` on the decision audit trail); the version, its
+artifacts, and the release's whole history stay readable (INV-006/007
+— rollback never deletes; the portal shows what was pulled, it just
+refuses to serve it again). One release exists per application and
+version, so the version-grain cutoff is exact.
+
 ## The two distribution probes this landing binds
 
 - **INV-004 artifact-set freeze (issue #19's contributor seam).** The
@@ -151,4 +255,7 @@ per-platform artifacts, and every tenant with its group count.
 See [error codes](error-codes.md) for the registry; the release
 section carries `RELEASE_NOT_FOUND`, `RELEASE_ALREADY_EXISTS`,
 `RELEASE_RING_UNKNOWN`, `RELEASE_TARGETS_INVALID` (the platform's first
-422 family, with the `errors` member), and `RELEASE_ARTIFACT_NOT_READY`.
+422 family, with the `errors` member), `RELEASE_ARTIFACT_NOT_READY`,
+and the transition family (S9-02): `RELEASE_TRANSITION_INVALID` (409,
+current/attempted), `RELEASE_TRANSITION_REASON_REQUIRED` (422), and
+`RELEASE_TRANSITION_BLOCKED` (422, the policy seam).

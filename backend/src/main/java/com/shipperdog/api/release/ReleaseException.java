@@ -76,7 +76,40 @@ public class ReleaseException extends RuntimeException {
         RELEASE_ARTIFACT_NOT_READY(
                 HttpStatus.UNPROCESSABLE_ENTITY,
                 "RELEASE_ARTIFACT_NOT_READY",
-                "One or more selected artifacts are not READY.");
+                "One or more selected artifacts are not READY."),
+        /**
+         * The crossing is not one of PRD 17's edges (issue #56 AC1): a
+         * conflict with the stored state, answered 409 with the
+         * {@code errors} member carrying {@code current} and
+         * {@code attempted} — including the self-crossing (re-sending a
+         * state the release already holds) and every exit from a
+         * terminal (FAILED, ROLLED_BACK, COMPLETED are final).
+         */
+        RELEASE_TRANSITION_INVALID(
+                HttpStatus.CONFLICT,
+                "RELEASE_TRANSITION_INVALID",
+                "The release cannot transition to the requested state."),
+        /**
+         * A failure or rollback crossing without its mandatory reason
+         * (issue #56 AC3, the S4-03 revoke analog): a semantic failure
+         * of an otherwise well-formed request — 422, the {@code errors}
+         * member naming the {@code reason} field.
+         */
+        RELEASE_TRANSITION_REASON_REQUIRED(
+                HttpStatus.UNPROCESSABLE_ENTITY,
+                "RELEASE_TRANSITION_REASON_REQUIRED",
+                "A reason is required for failure and rollback transitions."),
+        /**
+         * A registered {@code ReleaseTransitionPolicy} refused the
+         * crossing (issue #56's guard seam): 422 keyed by the refusing
+         * contributor's name in the {@code errors} member. No
+         * contributor ships in M2 (the approval evaluator is S10-01);
+         * the code lands with the seam so a denial is never a 500.
+         */
+        RELEASE_TRANSITION_BLOCKED(
+                HttpStatus.UNPROCESSABLE_ENTITY,
+                "RELEASE_TRANSITION_BLOCKED",
+                "A transition policy refuses this transition.");
 
         final HttpStatus httpStatus;
         final String code;

@@ -895,6 +895,31 @@ paths:
             '*/*':
               schema:
                 $ref: "#/components/schemas/ReleaseDetail"
+  /api/v1/releases/{releaseId}/transitions:
+    post:
+      tags:
+      - release-controller
+      operationId: transition
+      parameters:
+      - name: releaseId
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/TransitionRequest"
+        required: true
+      responses:
+        "200":
+          description: OK
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/ReleaseDetail"
   /api/v1/organizations:
     get:
       tags:
@@ -1773,6 +1798,31 @@ paths:
             '*/*':
               schema:
                 $ref: "#/components/schemas/ReleaseDetail"
+  /api/v1/releases/{releaseId}/history:
+    get:
+      tags:
+      - release-controller
+      operationId: history
+      parameters:
+      - name: releaseId
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - name: applicationId
+        in: query
+        required: true
+        schema:
+          type: string
+          format: uuid
+      responses:
+        "200":
+          description: OK
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/ReleaseHistoryView"
   /api/v1/organizations/{id}/members:
     get:
       tags:
@@ -2018,6 +2068,7 @@ paths:
           - AUTHORIZATION_GRANT_DELETED
           - AUTHORIZATION_GRANT_REVOKED
           - RELEASE_CREATED
+          - RELEASE_TRANSITIONED
       - name: applicationId
         in: query
         required: false
@@ -2173,7 +2224,7 @@ paths:
     get:
       tags:
       - version-controller
-      operationId: history
+      operationId: history_1
       parameters:
       - name: applicationId
         in: path
@@ -2724,6 +2775,19 @@ components:
           items:
             type: string
             format: uuid
+    TransitionRequest:
+      type: object
+      description: "The release transition body: the permission-target application\
+        \ id, the target state of PRD 17's vocabulary, and the reason (mandatory for\
+        \ failure and rollback transitions)."
+      properties:
+        applicationId:
+          type: string
+          format: uuid
+        to:
+          type: string
+        reason:
+          type: string
     InspectRequest:
       type: object
       description: "The decision context to inspect: the subject user, the addressed\
@@ -3434,6 +3498,47 @@ components:
         updatedAt:
           type: string
           format: date-time
+    ReleaseHistoryView:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        releaseRef:
+          type: string
+        applicationId:
+          type: string
+          format: uuid
+        versionId:
+          type: string
+          format: uuid
+        status:
+          type: string
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+        transitions:
+          type: array
+          items:
+            $ref: "#/components/schemas/TransitionView"
+    TransitionView:
+      type: object
+      properties:
+        from:
+          type: string
+        to:
+          type: string
+        reason:
+          type: string
+        actorId:
+          type: string
+          format: uuid
+        occurredAt:
+          type: string
+          format: date-time
     PageResponseOrganizationResponse:
       type: object
       properties:
@@ -3692,6 +3797,7 @@ components:
           - AUTHORIZATION_GRANT_DELETED
           - AUTHORIZATION_GRANT_REVOKED
           - RELEASE_CREATED
+          - RELEASE_TRANSITIONED
         occurredAt:
           type: string
           format: date-time

@@ -9,13 +9,17 @@ import com.shipperdog.api.config.CursorPageable;
 import com.shipperdog.api.config.TraceAttributes;
 import com.shipperdog.api.release.ReleaseAccess;
 import com.shipperdog.api.release.ReleaseException;
+import com.shipperdog.api.release.ReleaseTransitionPolicy;
+import com.shipperdog.api.release.ReleaseTransitionedEvent;
 import com.shipperdog.api.release.internal.entity.ReleaseArtifactEntity;
 import com.shipperdog.api.release.internal.entity.ReleaseEntity;
+import com.shipperdog.api.release.internal.entity.ReleaseStatusHistoryEntity;
 import com.shipperdog.api.release.internal.entity.ReleaseTargetEntity;
 import com.shipperdog.api.release.internal.entity.ReleaseTargetGroupEntity;
 import com.shipperdog.api.release.internal.entity.RingEntity;
 import com.shipperdog.api.release.internal.repository.ReleaseArtifactRepository;
 import com.shipperdog.api.release.internal.repository.ReleaseScopedRepository;
+import com.shipperdog.api.release.internal.repository.ReleaseStatusHistoryRepository;
 import com.shipperdog.api.release.internal.repository.ReleaseTargetGroupRepository;
 import com.shipperdog.api.release.internal.repository.ReleaseTargetRepository;
 import com.shipperdog.api.release.internal.repository.RingRepository;
@@ -36,6 +40,8 @@ import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
 import java.util.function.Supplier;
+import org.springframework.beans.factory.ObjectProvider;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Sort;
@@ -53,6 +59,25 @@ import org.springframework.transaction.annotation.Transactional;
  * zero-distributions precondition on the ownership-scope transition,
  * issue #14) and {@link VersionDistributionContributor} (INV-004's
  * artifact-set freeze, issue #19).
+ *
+ * <p>The state machine (issue #56, S9-02, PRD 17): the transition route
+ * moves a release along the diagram's edges only — legality is
+ * {@link ReleaseStateMachine}'s single exhaustive table, serialized
+ * against concurrent writers by the database compare-and-set (the V14
+ * CAS discipline: the row moves only while its committed status is
+ * still the source state this attempt read, so racing transitions can
+ * never double-commit or un-terminal). Every committed crossing
+ * appends its {@code release_status_history} row (the append-only
+ * timeline the history route returns — creation wrote the row every
+ * release starts with), audits {@code RELEASE_TRANSITIONED} with
+ * before/after and the mandatory failure/rollback reason (FR-024), and
+ * publishes {@link ReleaseTransitionedEvent} for the listeners that
+ * follow (S12-01's bus first). Side conditions compose through the
+ * {@link ReleaseTransitionPolicy} seam — E10's approval evaluation is
+ * its first registrant; none ships here. No transition touches the
+ * pinned artifact set: the freeze is absolute, and a FAILED release's
+ * fix path is a new version and a new release (the documented
+ * decision).
  *
  * <p>Every route is top-level and body/query-addressed
  * ({@code POST/GET /api/v1/releases}), the artifact-collection precedent:
@@ -85,10 +110,22 @@ public class ReleaseService implements ReleaseAccess, VersionDistributionContrib
     private static final Sort NEWEST_FIRST =
             Sort.by(Sort.Direction.DESC, "releaseNumber").and(Sort.by(Sort.Direction.DESC, "id"));
 
+    /**
+     * Transition attempts before the deterministic re-read conflict:
+     * PRD 17's graph is forward-only with terminal walls, so two is
+     * the mathematical bound against any interleaving; three is the
+     * same bound with headroom (the V14 CAS loop's arithmetic).
+     */
+    private static final int MAX_TRANSITION_ATTEMPTS = 3;
+
+    /** The reason cap (V25's database check pins the same width, the V14 cap). */
+    private static final int MAX_REASON_LENGTH = 1000;
+
     private final ReleaseScopedRepository releases;
     private final ReleaseTargetRepository targets;
     private final ReleaseTargetGroupRepository targetGroups;
     private final ReleaseArtifactRepository releaseArtifacts;
+    private final ReleaseStatusHistoryRepository statusHistory;
     private final RingRepository rings;
     private final ApplicationAccess applications;
     private final VersionAccess versions;
@@ -96,6 +133,8 @@ public class ReleaseService implements ReleaseAccess, VersionDistributionContrib
     private final TesterGroupAccess testerGroups;
     private final TenantScopeExecutor scopeExecutor;
     private final AuditEventPublisher audit;
+    private final ObjectProvider<ReleaseTransitionPolicy> transitionPolicies;
+    private final ApplicationEventPublisher events;
     private final Clock clock;
     private final TraceAttributes trace;
     private final JdbcTemplate jdbc;
@@ -105,6 +144,7 @@ public class ReleaseService implements ReleaseAccess, VersionDistributionContrib
             ReleaseTargetRepository targets,
             ReleaseTargetGroupRepository targetGroups,
             ReleaseArtifactRepository releaseArtifacts,
+            ReleaseStatusHistoryRepository statusHistory,
             RingRepository rings,
             ApplicationAccess applications,
             VersionAccess versions,
@@ -112,6 +152,8 @@ public class ReleaseService implements ReleaseAccess, VersionDistributionContrib
             TesterGroupAccess testerGroups,
             TenantScopeExecutor scopeExecutor,
             AuditEventPublisher audit,
+            ObjectProvider<ReleaseTransitionPolicy> transitionPolicies,
+            ApplicationEventPublisher events,
             Clock clock,
             TraceAttributes trace,
             JdbcTemplate jdbc) {
@@ -119,6 +161,7 @@ public class ReleaseService implements ReleaseAccess, VersionDistributionContrib
         this.targets = targets;
         this.targetGroups = targetGroups;
         this.releaseArtifacts = releaseArtifacts;
+        this.statusHistory = statusHistory;
         this.rings = rings;
         this.applications = applications;
         this.versions = versions;
@@ -126,6 +169,8 @@ public class ReleaseService implements ReleaseAccess, VersionDistributionContrib
         this.testerGroups = testerGroups;
         this.scopeExecutor = scopeExecutor;
         this.audit = audit;
+        this.transitionPolicies = transitionPolicies;
+        this.events = events;
         this.clock = clock;
         this.trace = trace;
         this.jdbc = jdbc;
@@ -192,6 +237,10 @@ public class ReleaseService implements ReleaseAccess, VersionDistributionContrib
                 for (ArtifactSlot slot : slots) {
                     releaseArtifacts.save(new ReleaseArtifactEntity(saved.getId(), slot.artifactId(), slot.platform()));
                 }
+                // The timeline row every release starts with (V25): born
+                // DRAFT — from is null on exactly this row.
+                statusHistory.save(new ReleaseStatusHistoryEntity(
+                        saved.getId(), null, ReleaseEntity.Status.DRAFT, null, actorId, Instant.now(clock)));
                 // Push the inserts to the database inside the guard so a
                 // lost uniqueness race translates here, not at commit.
                 releases.flush();
@@ -295,13 +344,147 @@ public class ReleaseService implements ReleaseAccess, VersionDistributionContrib
     public ReleaseDetail get(UUID actorId, UUID applicationId, UUID releaseId) {
         ApplicationAccess.ApplicationProfile application = profileOf(applicationId);
         return inScope(application, actorId, () -> {
-            ReleaseEntity release = releases.findScoped(releaseId)
-                    .orElseThrow(() -> new ReleaseException(ReleaseException.Code.NOT_FOUND, "release not found"));
-            if (!release.getApplicationId().equals(applicationId)) {
-                throw new ReleaseException(ReleaseException.Code.NOT_FOUND, "release not found");
-            }
+            ReleaseEntity release = scopedReleaseOf(applicationId, releaseId);
             RingEntity ring = rings.findById(release.getStartingRingId()).orElse(null);
             return detailOf(release, ring);
+        });
+    }
+
+    // -------------------------------------------------------------------------
+    // The state machine (issue #56, S9-02, PRD 17)
+    // -------------------------------------------------------------------------
+
+    /**
+     * One release transition (issue #56 AC1-AC3): the crossing must be
+     * one of PRD 17's edges ({@link ReleaseStateMachine}'s table answers
+     * 409 with the current and attempted states otherwise — including
+     * the self-crossing and every exit from a terminal), the failure
+     * and rollback edges carry a mandatory reason (422 when missing),
+     * and every registered {@link ReleaseTransitionPolicy} must permit
+     * the crossing (422 keyed by the refusing contributor; none ships
+     * in M2 — the approval evaluator is S10-01). Serialized against
+     * concurrent writers by the database compare-and-set: the row moves
+     * only while its committed status is still the source state this
+     * attempt read, so racing transitions can never double-commit or
+     * un-terminal; a loser re-reads the committed state and either
+     * retries a still-legal crossing or answers the precise conflict
+     * (the graph is forward-only with terminal walls, so the loop
+     * terminates). The winner appends the timeline row, audits
+     * {@code RELEASE_TRANSITIONED} (FR-024), publishes
+     * {@link ReleaseTransitionedEvent}, and answers the refreshed
+     * detail. Not idempotency-keyed: the state itself is the replay
+     * answer.
+     */
+    @Transactional
+    public ReleaseDetail transition(UUID actorId, UUID applicationId, UUID releaseId, String to, String reason) {
+        ReleaseEntity.Status target = parseTransitionTarget(to);
+        String validatedReason = validatedReason(target, reason);
+        ApplicationAccess.ApplicationProfile application = profileOf(applicationId);
+        return inScope(application, actorId, () -> {
+            for (int attempt = 0; attempt < MAX_TRANSITION_ATTEMPTS; attempt++) {
+                ReleaseEntity release = scopedReleaseOf(applicationId, releaseId);
+                ReleaseEntity.Status from = release.getStatus();
+                if (!ReleaseStateMachine.legal(from, target)) {
+                    throw transitionConflict(from, target);
+                }
+                for (ReleaseTransitionPolicy policy :
+                        transitionPolicies.orderedStream().toList()) {
+                    Optional<String> denial = policy.denial(new ReleaseTransitionPolicy.TransitionCheck(
+                            release.getId(),
+                            release.releaseRef(),
+                            release.getApplicationId(),
+                            release.getVersionId(),
+                            release.getOrganizationId(),
+                            from.name(),
+                            target.name()));
+                    if (denial.isPresent()) {
+                        throw new ReleaseException(
+                                ReleaseException.Code.RELEASE_TRANSITION_BLOCKED,
+                                "a transition policy refuses this transition",
+                                Map.of(policy.getClass().getSimpleName(), denial.get()));
+                    }
+                }
+                if (statusHistory.transitionStatusIfCurrent(release.getId(), from.name(), target.name()) == 1) {
+                    Instant occurredAt = Instant.now(clock);
+                    statusHistory.save(new ReleaseStatusHistoryEntity(
+                            release.getId(), from, target, validatedReason, actorId, occurredAt));
+                    trace.application(applicationId);
+                    Map<String, String> auditDetail = new LinkedHashMap<>();
+                    auditDetail.put("releaseRef", release.releaseRef());
+                    auditDetail.put("fromStatus", from.name());
+                    auditDetail.put("toStatus", target.name());
+                    if (validatedReason != null) {
+                        auditDetail.put("reason", validatedReason);
+                    }
+                    audit.publish(AuditEvent.builder(AuditEventType.RELEASE_TRANSITIONED)
+                            .occurredAt(occurredAt)
+                            .userId(actorId)
+                            .orgId(release.getOrganizationId())
+                            .tenantId(release.getTenantId())
+                            .applicationId(applicationId)
+                            .versionId(release.getVersionId())
+                            .success(true)
+                            .detail(auditDetail)
+                            .build());
+                    events.publishEvent(new ReleaseTransitionedEvent(
+                            release.getId(),
+                            release.releaseRef(),
+                            applicationId,
+                            release.getVersionId(),
+                            release.getOrganizationId(),
+                            release.getTenantId(),
+                            from.name(),
+                            target.name(),
+                            validatedReason,
+                            actorId,
+                            occurredAt));
+                    ReleaseEntity fresh = scopedReleaseOf(applicationId, releaseId);
+                    return detailOf(
+                            fresh, rings.findById(fresh.getStartingRingId()).orElse(null));
+                }
+            }
+            // Unreachable against the forward-only graph; the
+            // deterministic answer if it ever were reached is the
+            // committed state's precise conflict, re-read fresh.
+            throw transitionConflict(scopedReleaseOf(applicationId, releaseId).getStatus(), target);
+        });
+    }
+
+    /**
+     * The release's transition history (issue #56 AC5, FR-024): the
+     * release summary plus its chronological timeline — the creation's
+     * DRAFT row (from null, the creator as actor) and one row per
+     * committed crossing with its actor, its reason where one was
+     * given or required, and the service clock's timestamp. The
+     * Compliance Reviewer's roll-forward question — what did this
+     * release do, when, and who moved it — answers from this one read,
+     * and the answer never expires (PRD P5). The S9-05 dashboard
+     * renders this timeline directly.
+     */
+    @Transactional(readOnly = true)
+    public ReleaseHistoryView history(UUID actorId, UUID applicationId, UUID releaseId) {
+        ApplicationAccess.ApplicationProfile application = profileOf(applicationId);
+        return inScope(application, actorId, () -> {
+            ReleaseEntity release = scopedReleaseOf(applicationId, releaseId);
+            List<TransitionView> transitions = new ArrayList<>();
+            for (ReleaseStatusHistoryEntity row :
+                    statusHistory.findByReleaseIdOrderByOccurredAtAscIdAsc(release.getId())) {
+                transitions.add(new TransitionView(
+                        row.getFromStatus() == null ? null : row.getFromStatus().name(),
+                        row.getToStatus().name(),
+                        row.getReason(),
+                        row.getActorId(),
+                        row.getOccurredAt()));
+            }
+            return new ReleaseHistoryView(
+                    release.getId(),
+                    release.releaseRef(),
+                    release.getApplicationId(),
+                    release.getVersionId(),
+                    release.getStatus().name(),
+                    release.getCreatedAt(),
+                    release.getUpdatedAt(),
+                    List.copyOf(transitions));
         });
     }
 
@@ -376,6 +559,30 @@ public class ReleaseService implements ReleaseAccess, VersionDistributionContrib
     /** One target of the detail: the tenant, its ring, and its tester-group selection. */
     public record TargetView(UUID tenantId, String ring, List<UUID> testerGroupIds) {}
 
+    /**
+     * One timeline entry of the history view (issue #56 AC5): the
+     * crossing's source and target states (the creation row's source
+     * is null — a release is born, it does not transition into
+     * DRAFT), the reason where one was given or required, the actor,
+     * and when.
+     */
+    public record TransitionView(String from, String to, String reason, UUID actorId, Instant occurredAt) {}
+
+    /**
+     * The history view (issue #56 AC5, FR-024): the release summary
+     * and its chronological transition timeline — the append-only
+     * record the S9-05 dashboard renders.
+     */
+    public record ReleaseHistoryView(
+            UUID id,
+            String releaseRef,
+            UUID applicationId,
+            UUID versionId,
+            String status,
+            Instant createdAt,
+            Instant updatedAt,
+            List<TransitionView> transitions) {}
+
     /** The creation command (the controller's request, already the module's own shape). */
     public record CreateCommand(
             UUID applicationId,
@@ -400,6 +607,71 @@ public class ReleaseService implements ReleaseAccess, VersionDistributionContrib
                 .profileOf(applicationId)
                 .orElseThrow(() ->
                         new ReleaseException(ReleaseException.Code.APPLICATION_NOT_FOUND, "application not found"));
+    }
+
+    /**
+     * The release resolved scoped (the seam's bound scope) and verified
+     * against the addressed application: any release id that is
+     * unknown, out of scope, or belonging to a different application
+     * is the standard concealed miss, indistinguishable from an
+     * unknown id.
+     */
+    private ReleaseEntity scopedReleaseOf(UUID applicationId, UUID releaseId) {
+        ReleaseEntity release = releases.findScoped(releaseId)
+                .orElseThrow(() -> new ReleaseException(ReleaseException.Code.NOT_FOUND, "release not found"));
+        if (!release.getApplicationId().equals(applicationId)) {
+            throw new ReleaseException(ReleaseException.Code.NOT_FOUND, "release not found");
+        }
+        return release;
+    }
+
+    /**
+     * The transition route's target state: the same vocabulary as the
+     * listing's status filter, keyed by this route's own field — an
+     * unknown value is a 400 naming {@code to}, never a
+     * silently-answered crossing.
+     */
+    private static ReleaseEntity.Status parseTransitionTarget(String to) {
+        if (to == null || to.isBlank()) {
+            throw invalid(Map.of("to", "to is required and must name a release status"));
+        }
+        try {
+            return ReleaseEntity.Status.valueOf(to.trim().toUpperCase(Locale.ROOT));
+        } catch (IllegalArgumentException e) {
+            throw invalid(Map.of("to", "unknown release status '" + to.trim() + "'"));
+        }
+    }
+
+    /**
+     * The crossing's reason (issue #56 AC3): mandatory on the failure
+     * and rollback edges (the S4-03 revoke analog — a release that
+     * died or was pulled says why, feeding the audit event and the
+     * timeline row), optional everywhere else. Trimmed; a blank
+     * reason on an optional crossing is no reason at all.
+     */
+    private static String validatedReason(ReleaseEntity.Status target, String reason) {
+        if (reason == null || reason.isBlank()) {
+            if (ReleaseStateMachine.reasonRequired(target)) {
+                throw new ReleaseException(
+                        ReleaseException.Code.RELEASE_TRANSITION_REASON_REQUIRED,
+                        "a reason is required for transitions to " + target,
+                        Map.of("reason", "a reason is required for transitions to " + target));
+            }
+            return null;
+        }
+        String trimmed = reason.trim();
+        if (trimmed.length() > MAX_REASON_LENGTH) {
+            throw invalid(Map.of("reason", "reason is at most " + MAX_REASON_LENGTH + " characters"));
+        }
+        return trimmed;
+    }
+
+    /** A crossing PRD 17 forbids: the precise 409 naming both states (the current includes the self-crossing). */
+    private static ReleaseException transitionConflict(ReleaseEntity.Status from, ReleaseEntity.Status to) {
+        return new ReleaseException(
+                ReleaseException.Code.RELEASE_TRANSITION_INVALID,
+                "the release cannot transition from " + from + " to " + to,
+                Map.of("current", from.name(), "attempted", to.name()));
     }
 
     /** The version of the addressed application, or the concealed miss (unknown, foreign, or another application's). */
