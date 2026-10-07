@@ -35,6 +35,7 @@ backend/src/main/resources/db/
     V25__release_state_history.sql
     V26__release_manifest.sql
     V27__environment_management.sql
+    V28__approval_workflows.sql
   seed/                 dev fixture, applied only when the seed location is active
     R__dev_seed.sql
 ```
@@ -505,6 +506,37 @@ backend/src/main/resources/db/
   code and RESOLVED configuration the S9-03 manifest freezes at
   APPROVED. Expand-only and forward-only: additive columns, three
   tables, checks, indexes; nothing dropped.
+
+- `V28__approval_workflows.sql` (S10-01, issue #40) lands the approval
+  workflow engine's schema — workflow as data, the issue's technical
+  note (S10-02 extends the same tables with mode flags). New tables:
+  `approval_workflows` — the organization-grain named chain
+  definitions (one name and one ring attachment per organization,
+  `uq_approval_workflows_org_name` / `uq_approval_workflows_org_ring`
+  partial unique); `approval_workflow_steps` — the ordered chain (PK
+  `(workflow_id, position)`, one occurrence of each role per chain,
+  optional `tenant_id` scope narrowing a step to releases targeting
+  that tenant); `release_approval_rounds` — one row per approval round
+  (round 1 instantiates inside the READY to APPROVAL_PENDING crossing
+  via the S9-02 event seam; a rejected round's rework is a NEW round,
+  the rejected one stays for PRD P5 history). `release_approvals` —
+  V1's never-written PRD 13 sketch EXPANDED (the releases precedent):
+  `ALTER TYPE approval_type ADD VALUE` for `COMPLIANCE` and
+  `RELEASE_MANAGER` (the FR-016 chain kinds V1 lacked), the id re-key
+  replacing V1's `(release_id, approval_type)` primary key with the
+  round-position uniqueness that admits the same type in a later
+  round (the V15 constraint-relaxation precedent on a table no writer
+  ever touched), plus `round_id`, `position`, `tenant_id`,
+  `approver_role` (the role the approver signed under at decision
+  time), `reason` (mandatory on rejects,
+  `ck_release_approvals_reject_reason`), and the decision-shape check
+  (`ck_release_approvals_decision_shape`: a decided row carries its
+  signature, a pending one carries none). New enum types:
+  `approval_step_role` — exactly the five PRD 7 roles the RBAC matrix
+  grants an `app:releases:approve-*` permission (a step outside it
+  would be unsatisfiable) — and `release_approval_round_status`
+  (`PENDING`/`SATISFIED`/`REJECTED`); step status reuses V1's
+  `approval_status` verbatim. Expand-only and forward-only.
 
 ## Status and type columns
 

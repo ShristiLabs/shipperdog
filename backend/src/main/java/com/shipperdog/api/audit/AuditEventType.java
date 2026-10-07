@@ -118,5 +118,28 @@ public enum AuditEventType {
      * whether the resolver answered — probing credentials is a security-relevant act, audited even
      * though it mutates nothing.
      */
-    ENVIRONMENT_CREDENTIAL_VERIFIED
+    ENVIRONMENT_CREDENTIAL_VERIFIED,
+    /**
+     * An approval workflow definition created (S10-01, FR-016): the name, the ring attachment when
+     * present, and the ordered chain — the configurable approval vocabulary an organization defines.
+     */
+    APPROVAL_WORKFLOW_CREATED,
+    /**
+     * An approval round instantiated for a release (S10-01, FR-016): the round number, the workflow
+     * resolved, the steps instantiated, and the trigger — the APPROVAL_PENDING crossing (round 1) or
+     * the rework restart after a rejection (later rounds).
+     */
+    RELEASE_APPROVAL_ROUND_STARTED,
+    /**
+     * One approval step signed (S10-01, FR-016, AC6): the release, round, position, approval type,
+     * the approver, and the role they signed under — recorded at decision time; roles change later,
+     * the record does not.
+     */
+    RELEASE_APPROVAL_GRANTED,
+    /**
+     * One approval step rejected (S10-01, FR-016, AC6): the release, round, position, approval type,
+     * the approver, and the mandatory reason — the rejection that blocks progression and opens the
+     * rework path.
+     */
+    RELEASE_APPROVAL_REJECTED
 }

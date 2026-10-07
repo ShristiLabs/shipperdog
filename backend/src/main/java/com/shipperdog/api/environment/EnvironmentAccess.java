@@ -49,6 +49,18 @@ public interface EnvironmentAccess {
      */
     Set<UUID> assignedTenantIdsOf(UUID environmentId);
 
+    /**
+     * The environment's approval-policy binding (S10-01, issue #40):
+     * the NAME-ONLY reference V27 reserved — the name of the approval
+     * workflow this environment's releases resolve at the
+     * APPROVAL_PENDING crossing, resolved within the owning
+     * organization's workflow vocabulary. Empty when the environment
+     * binds none; the name's MEANING belongs to the workflow module
+     * (an unresolvable name is that module's resolution decision, not
+     * this port's).
+     */
+    Optional<String> approvalPolicyNameOf(UUID environmentId);
+
     /** The environment's identity and lifecycle as the release surface reads it. */
     record EnvironmentState(UUID id, UUID organizationId, String code, String name, int position, String status) {}
 

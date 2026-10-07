@@ -538,6 +538,75 @@ public class ReleaseService implements ReleaseAccess, VersionDistributionContrib
     }
 
     // -------------------------------------------------------------------------
+    // ReleaseAccess (S10-01, issue #40): the approval engine's read facts
+    // -------------------------------------------------------------------------
+
+    /**
+     * The seam-served release snapshot for the approval engine
+     * (S10-01): unknown, out-of-scope, and foreign answer empty — the
+     * concealed miss the workflow module renders as its own miss. The
+     * ring is the RESOLVED starting ring (code beside id, the
+     * definition-attachment vocabulary); the status is the stable
+     * string vocabulary (events' discipline: cross-module facts never
+     * leak the internal enum).
+     */
+    @Override
+    @Transactional(readOnly = true)
+    public Optional<ReleaseAccess.ReleaseFacts> factsOf(UUID releaseId) {
+        return releases.findScoped(releaseId).map(release -> {
+            RingEntity ring = rings.findById(release.getStartingRingId()).orElse(null);
+            return new ReleaseAccess.ReleaseFacts(
+                    release.getId(),
+                    release.releaseRef(),
+                    release.getApplicationId(),
+                    release.getOrganizationId(),
+                    release.getTenantId(),
+                    release.getCreatedBy(),
+                    release.getStatus().name(),
+                    ring == null ? null : ring.getId(),
+                    ring == null ? null : ring.getCode(),
+                    release.getEnvironmentId());
+        });
+    }
+
+    /**
+     * The ring resolution of the creation surface (S10-01's definition
+     * attachment): the organization's own ring preferred over the
+     * system default of the same code, so a definition attached to a
+     * code and a release created against it can never disagree on
+     * which ring they mean.
+     */
+    @Override
+    @Transactional(readOnly = true)
+    public Optional<UUID> ringIdOf(UUID organizationId, String ringCode) {
+        if (ringCode == null || ringCode.isBlank()) {
+            return Optional.empty();
+        }
+        return rings.byCode(ringCode.trim().toLowerCase(Locale.ROOT), organizationId)
+                .map(RingEntity::getId);
+    }
+
+    /** The release's target tenants, served through the seam (the tenant-scoped approval steps' applicability set). */
+    @Override
+    @Transactional(readOnly = true)
+    public Set<UUID> targetTenantIdsOf(UUID releaseId) {
+        Set<UUID> targeted = new LinkedHashSet<>();
+        releases.findScoped(releaseId)
+                .ifPresent(
+                        release -> targeted.addAll(targets.findByReleaseIdOrderByTenantIdAsc(release.getId()).stream()
+                                .map(ReleaseTargetEntity::getTenantId)
+                                .toList()));
+        return targeted;
+    }
+
+    /** The code of a ring id (S10-01's definition views render the attachment as the API's vocabulary). */
+    @Override
+    @Transactional(readOnly = true)
+    public Optional<String> ringCodeOf(UUID ringId) {
+        return rings.findById(ringId).map(RingEntity::getCode);
+    }
+
+    // -------------------------------------------------------------------------
     // Views
     // -------------------------------------------------------------------------
 

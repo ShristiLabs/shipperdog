@@ -70,10 +70,12 @@ where a foreign id conceals as the standard 404.
 from every pre-PROMOTED state, so the walk is deterministic — the
 command is a sequence of ordinary transition calls, never a bypass.
 Refusals render the problem+json `errors` member as a reason list
-(the 409 carries `current`/`attempted`; E10's approval and gate
-policies will refuse through the same member, keyed by contributor)
-and the command exits 4. `release get` renders gates and approvals as
-not-yet-reported until their owning stories land (S10-01, S10-03).
+(the 409 carries `current`/`attempted`; the approval policies refuse
+through the same member, keyed by contributor, since S10-01 — the
+gate policies join at S10-03) and the command exits 4. `release get`
+renders gates and approvals as not-yet-reported: the approval API
+lives since S10-01 but the CLI's approval wiring is a later story
+(S10-02/03); gates land with S10-03.
 
 The CLI mirrors the server's upload routing rule locally
 (`--multipart-limit`, default 100 MiB =

@@ -1100,6 +1100,80 @@ paths:
             '*/*':
               schema:
                 $ref: "#/components/schemas/ReleaseDetail"
+  /api/v1/releases/{releaseId}/approvals:
+    get:
+      tags:
+      - workflow-controller
+      operationId: state
+      parameters:
+      - name: releaseId
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - name: applicationId
+        in: query
+        required: true
+        schema:
+          type: string
+          format: uuid
+      responses:
+        "200":
+          description: OK
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/ApprovalStateView"
+    post:
+      tags:
+      - workflow-controller
+      operationId: decide
+      parameters:
+      - name: releaseId
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/DecisionRequest"
+        required: true
+      responses:
+        "200":
+          description: OK
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/ApprovalStateView"
+  /api/v1/releases/{releaseId}/approvals/rounds:
+    post:
+      tags:
+      - workflow-controller
+      operationId: restart
+      parameters:
+      - name: releaseId
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RestartRequest"
+        required: true
+      responses:
+        "200":
+          description: OK
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/ApprovalStateView"
   /api/v1/organizations:
     get:
       tags:
@@ -1517,11 +1591,57 @@ paths:
             '*/*':
               schema:
                 $ref: "#/components/schemas/UploadSessionView"
+  /api/v1/approval-workflows:
+    get:
+      tags:
+      - workflow-controller
+      operationId: list_7
+      parameters:
+      - name: organizationId
+        in: query
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - name: limit
+        in: query
+        required: false
+        schema:
+          type: string
+      - name: cursor
+        in: query
+        required: false
+        schema:
+          type: string
+      responses:
+        "200":
+          description: OK
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/PageResponseWorkflowView"
+    post:
+      tags:
+      - workflow-controller
+      operationId: create_7
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateRequest"
+        required: true
+      responses:
+        "201":
+          description: Created
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/WorkflowView"
   /api/v1/applications:
     get:
       tags:
       - application-controller
-      operationId: list_7
+      operationId: list_8
       parameters:
       - name: organizationId
         in: query
@@ -1549,7 +1669,7 @@ paths:
     post:
       tags:
       - application-controller
-      operationId: create_7
+      operationId: create_8
       requestBody:
         content:
           application/json:
@@ -1622,7 +1742,7 @@ paths:
     get:
       tags:
       - version-controller
-      operationId: list_8
+      operationId: list_9
       parameters:
       - name: applicationId
         in: path
@@ -1660,7 +1780,7 @@ paths:
     post:
       tags:
       - version-controller
-      operationId: create_8
+      operationId: create_9
       parameters:
       - name: applicationId
         in: path
@@ -2042,7 +2162,7 @@ paths:
     get:
       tags:
       - tenant-applications-controller
-      operationId: list_9
+      operationId: list_10
       parameters:
       - name: id
         in: path
@@ -2461,6 +2581,10 @@ paths:
           - ENVIRONMENT_TENANTS_ASSIGNED
           - ENVIRONMENT_CREDENTIALS_BOUND
           - ENVIRONMENT_CREDENTIAL_VERIFIED
+          - APPROVAL_WORKFLOW_CREATED
+          - RELEASE_APPROVAL_ROUND_STARTED
+          - RELEASE_APPROVAL_GRANTED
+          - RELEASE_APPROVAL_REJECTED
       - name: applicationId
         in: query
         required: false
@@ -2558,11 +2682,36 @@ paths:
             '*/*':
               schema:
                 $ref: "#/components/schemas/DownloadIssuanceView"
+  /api/v1/approval-workflows/{workflowId}:
+    get:
+      tags:
+      - workflow-controller
+      operationId: get_9
+      parameters:
+      - name: workflowId
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - name: organizationId
+        in: query
+        required: true
+        schema:
+          type: string
+          format: uuid
+      responses:
+        "200":
+          description: OK
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/WorkflowView"
   /api/v1/applications/{id}/tenants:
     get:
       tags:
       - application-tenant-authorization-controller
-      operationId: list_10
+      operationId: list_11
       parameters:
       - name: id
         in: path
@@ -2591,7 +2740,7 @@ paths:
     get:
       tags:
       - version-controller
-      operationId: get_9
+      operationId: get_10
       parameters:
       - name: applicationId
         in: path
@@ -2935,9 +3084,7 @@ components:
     JsonNode:
       type: object
       properties:
-        string:
-          type: boolean
-        valueNode:
+        floatingPointNumber:
           type: boolean
         nodeType:
           type: string
@@ -2951,11 +3098,17 @@ components:
           - OBJECT
           - POJO
           - STRING
+        string:
+          type: boolean
+        integralNumber:
+          type: boolean
         missingNode:
+          type: boolean
+        valueNode:
           type: boolean
         pojo:
           type: boolean
-        integralNumber:
+        number:
           type: boolean
         short:
           type: boolean
@@ -2976,11 +3129,7 @@ components:
           type: boolean
         binary:
           type: boolean
-        floatingPointNumber:
-          type: boolean
         container:
-          type: boolean
-        number:
           type: boolean
         empty:
           type: boolean
@@ -3303,6 +3452,98 @@ components:
           format: uuid
         to:
           type: string
+        reason:
+          type: string
+    DecisionRequest:
+      type: object
+      description: "The approval decision body: the permission-target application\
+        \ id, APPROVE or REJECT, the optional step-position assertion (an out-of-order\
+        \ assertion answers 409), and the reason (mandatory on REJECT)."
+      properties:
+        applicationId:
+          type: string
+          format: uuid
+        decision:
+          type: string
+        step:
+          type: integer
+          format: int32
+        reason:
+          type: string
+    ApprovalRoundView:
+      type: object
+      properties:
+        roundNumber:
+          type: integer
+          format: int32
+        status:
+          type: string
+        workflowId:
+          type: string
+          format: uuid
+        workflowName:
+          type: string
+        createdBy:
+          type: string
+          format: uuid
+        createdAt:
+          type: string
+          format: date-time
+        steps:
+          type: array
+          items:
+            $ref: "#/components/schemas/ApprovalStepView"
+    ApprovalStateView:
+      type: object
+      properties:
+        releaseId:
+          type: string
+          format: uuid
+        releaseRef:
+          type: string
+        applicationId:
+          type: string
+          format: uuid
+        releaseStatus:
+          type: string
+        currentRoundNumber:
+          type: integer
+          format: int32
+        currentRoundStatus:
+          type: string
+        rounds:
+          type: array
+          items:
+            $ref: "#/components/schemas/ApprovalRoundView"
+    ApprovalStepView:
+      type: object
+      properties:
+        position:
+          type: integer
+          format: int32
+        approvalType:
+          type: string
+        tenantId:
+          type: string
+          format: uuid
+        status:
+          type: string
+        approverId:
+          type: string
+          format: uuid
+        approverRole:
+          type: string
+        reason:
+          type: string
+        decidedAt:
+          type: string
+          format: date-time
+    RestartRequest:
+      type: object
+      properties:
+        applicationId:
+          type: string
+          format: uuid
         reason:
           type: string
     VerifyView:
@@ -3649,6 +3890,43 @@ components:
         uploadUrl:
           type: string
         expiresAt:
+          type: string
+          format: date-time
+    WorkflowStepView:
+      type: object
+      properties:
+        position:
+          type: integer
+          format: int32
+        requiredRole:
+          type: string
+        tenantId:
+          type: string
+          format: uuid
+    WorkflowView:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        organizationId:
+          type: string
+          format: uuid
+        name:
+          type: string
+        ring:
+          type: string
+        steps:
+          type: array
+          items:
+            $ref: "#/components/schemas/WorkflowStepView"
+        createdBy:
+          type: string
+          format: uuid
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
           type: string
           format: date-time
     ApplicationView:
@@ -4499,6 +4777,10 @@ components:
           - ENVIRONMENT_TENANTS_ASSIGNED
           - ENVIRONMENT_CREDENTIALS_BOUND
           - ENVIRONMENT_CREDENTIAL_VERIFIED
+          - APPROVAL_WORKFLOW_CREATED
+          - RELEASE_APPROVAL_ROUND_STARTED
+          - RELEASE_APPROVAL_GRANTED
+          - RELEASE_APPROVAL_REJECTED
         occurredAt:
           type: string
           format: date-time
@@ -4571,6 +4853,15 @@ components:
         sizeBytes:
           type: integer
           format: int64
+    PageResponseWorkflowView:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/WorkflowView"
+        next_cursor:
+          type: string
     PageResponseAuthorizationView:
       type: object
       properties:

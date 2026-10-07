@@ -1,5 +1,7 @@
 package com.shipperdog.api.release;
 
+import java.util.Optional;
+import java.util.Set;
 import java.util.UUID;
 
 /**
@@ -19,9 +21,16 @@ import java.util.UUID;
  * release is still a distribution record (INV-006's character), and no
  * release row is ever deleted.
  *
+ * <p>Since S10-01 (issue #40) the port also serves the approval
+ * workflow engine's read facts: the release snapshot the workflow
+ * module resolves before acting (the seam-served concealed miss
+ * included), the ring resolution its definitions attach through, and
+ * the target set its tenant-scoped steps test applicability against.
+ * Authorization data only — never an endpoint data path.
+ *
  * <p>Implementation lives in the module's {@code .internal.} packages;
  * cross-module callers must use only this interface (enforced by
- * ArchUnit). Authorization data only — never an endpoint data path.
+ * ArchUnit).
  */
 public interface ReleaseAccess {
 
@@ -32,4 +41,57 @@ public interface ReleaseAccess {
      * zero-distributions precondition, binding since this story).
      */
     boolean hasReleases(UUID applicationId);
+
+    /**
+     * The release's snapshot as the approval engine reads it (S10-01):
+     * identity, owning dimensions, creator (the self-approval guard),
+     * lifecycle status, the resolved starting ring, and the targeted
+     * environment — served through the seam, so an id that is unknown,
+     * out of the caller's bound scope, or foreign answers empty
+     * (indistinguishable; the caller conceals).
+     */
+    Optional<ReleaseFacts> factsOf(UUID releaseId);
+
+    /**
+     * The ring id a code resolves to in the organization's vocabulary
+     * (the organization's own ring preferred over the system default —
+     * the creation surface's resolution rule, S10-01's definition
+     * attachment uses the same one so a definition and a release
+     * created later can never disagree). Empty when the code is
+     * undefined for the organization.
+     */
+    Optional<UUID> ringIdOf(UUID organizationId, String ringCode);
+
+    /**
+     * The code of a ring id (S10-01's definition views render the
+     * attachment as the vocabulary the API accepts). Empty when the id
+     * is unknown.
+     */
+    Optional<String> ringCodeOf(UUID ringId);
+
+    /**
+     * The tenants the release targets (S10-01's tenant-scoped approval
+     * steps test applicability against this set). Empty for an unknown
+     * or out-of-scope release, like every read here.
+     */
+    Set<UUID> targetTenantIdsOf(UUID releaseId);
+
+    /**
+     * The release facts the approval engine acts on: the owning
+     * dimensions and creator beside the lifecycle and attachment
+     * points. {@code ringId} is the resolved starting ring (its code
+     * carried beside it); {@code environmentId} is null when creation
+     * named none.
+     */
+    record ReleaseFacts(
+            UUID releaseId,
+            String releaseRef,
+            UUID applicationId,
+            UUID organizationId,
+            UUID tenantId,
+            UUID createdBy,
+            String status,
+            UUID ringId,
+            String ringCode,
+            UUID environmentId) {}
 }

@@ -53,6 +53,10 @@ public enum Permission {
     ORG_TENANTS_READ("org:tenants:read"),
     ORG_ENVIRONMENTS_READ("org:environments:read"), // issue #58 (S9-04)
     ORG_ENVIRONMENTS_MANAGE("org:environments:manage"), // issue #58 (S9-04)
+    // Issue #40 (S10-01): the approval-chain definitions — release
+    // governance configuration (the environments-manage personas).
+    ORG_APPROVAL_WORKFLOWS_READ("org:approval-workflows:read"),
+    ORG_APPROVAL_WORKFLOWS_MANAGE("org:approval-workflows:manage"),
 
     // tenant scope
     TENANT_TENANTS_READ("tenant:tenants:read"),
@@ -79,6 +83,13 @@ public enum Permission {
     APP_RELEASES_APPROVE_QA("app:releases:approve-qa"),
     APP_RELEASES_APPROVE_SECURITY("app:releases:approve-security"),
     APP_RELEASES_APPROVE_COMPLIANCE("app:releases:approve-compliance"),
+    // Issue #40 (S10-01): the two approval steps of FR-016's example
+    // chain the catalog pre-dated this story did not cover — Product
+    // (the application owner, PRD 7.3) and the Release Manager's own
+    // final sign-off (PRD 7.6). With the three above, every
+    // approval_step_role maps to exactly one approve permission.
+    APP_RELEASES_APPROVE_PRODUCT("app:releases:approve-product"),
+    APP_RELEASES_APPROVE_RELEASE("app:releases:approve-release"),
     APP_TESTER_GROUPS_MANAGE("app:tester-groups:manage"),
     APP_FEEDBACK_READ("app:feedback:read");
 

@@ -8,6 +8,7 @@ import com.shipperdog.api.audit.AuditEvent;
 import com.shipperdog.api.audit.AuditEventPublisher;
 import com.shipperdog.api.audit.AuditEventType;
 import com.shipperdog.api.environment.EnvironmentAccess;
+import com.shipperdog.api.release.ReleaseApprovalSource;
 import com.shipperdog.api.release.ReleaseException;
 import com.shipperdog.api.release.ReleaseTransitionedEvent;
 import com.shipperdog.api.release.internal.entity.ReleaseArtifactEntity;
@@ -45,6 +46,7 @@ import java.util.Set;
 import java.util.TreeMap;
 import java.util.UUID;
 import java.util.function.Supplier;
+import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import tools.jackson.databind.DeserializationFeature;
@@ -148,6 +150,7 @@ public class ReleaseManifestService {
     private final EnvironmentAccess environments;
     private final TenantScopeExecutor scopeExecutor;
     private final AuditEventPublisher audit;
+    private final ObjectProvider<ReleaseApprovalSource> approvalSources;
 
     ReleaseManifestService(
             ReleaseManifestRepository manifests,
@@ -161,7 +164,8 @@ public class ReleaseManifestService {
             ArtifactAccess artifacts,
             EnvironmentAccess environments,
             TenantScopeExecutor scopeExecutor,
-            AuditEventPublisher audit) {
+            AuditEventPublisher audit,
+            ObjectProvider<ReleaseApprovalSource> approvalSources) {
         this.manifests = manifests;
         this.releases = releases;
         this.releaseArtifacts = releaseArtifacts;
@@ -174,6 +178,7 @@ public class ReleaseManifestService {
         this.environments = environments;
         this.scopeExecutor = scopeExecutor;
         this.audit = audit;
+        this.approvalSources = approvalSources;
     }
 
     // -------------------------------------------------------------------------
@@ -315,6 +320,18 @@ public class ReleaseManifestService {
             configuration = new Configuration(snapshot.version(), snapshot.entries(), null);
         }
 
+        // The approval block (PRD 16, S10-01): the chain that
+        // authorized THIS crossing, deep-copied as the satisfied
+        // round's ordered approval types through the approval-source
+        // seam — the values the workflow module's transition policy
+        // already verified when it permitted the crossing, frozen
+        // verbatim. A release no workflow gated keeps the honest empty
+        // list: approvals are configurable (FR-016) and their absence
+        // is a fact the document records like any other.
+        List<String> requiredApprovals = approvalSources.stream()
+                .flatMap(source -> source.approvalTypesOf(release.getId()).stream())
+                .toList();
+
         return new ReleaseManifestDocument(
                 new Release(
                         release.getId(),
@@ -330,7 +347,7 @@ public class ReleaseManifestService {
                 environmentCode,
                 new Rollout(null),
                 configuration,
-                new Approval(List.of()));
+                new Approval(List.copyOf(requiredApprovals)));
     }
 
     // -------------------------------------------------------------------------

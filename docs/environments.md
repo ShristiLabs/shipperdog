@@ -52,6 +52,14 @@ Config:       version 2          (the ledger's current snapshot)
   deletion — environments are distribution history.
 - **Rings stay separate**: a ring is who receives; an environment is
   what the app points to. The tables never collapse.
+- **`approvalPolicy` binds a workflow by NAME** (S10-01, issue #40):
+  the value names an `approval-workflows` definition of the owning
+  organization — the chain a release targeting this environment
+  resolves at its APPROVAL_PENDING crossing (environment binding
+  first, else the starting ring's chain; see
+  [releases](releases.md#approval-workflows-s10-01)). The bind is a
+  reference, not a foreign key: an environment may bind before its
+  workflow exists.
 
 ### Tables (V27)
 

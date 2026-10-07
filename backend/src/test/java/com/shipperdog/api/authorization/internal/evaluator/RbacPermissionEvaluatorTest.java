@@ -409,6 +409,11 @@ class RbacPermissionEvaluatorTest {
                     public java.util.Set<UUID> assignedTenantIdsOf(UUID environmentId) {
                         return java.util.Set.of();
                     }
+
+                    @Override
+                    public java.util.Optional<String> approvalPolicyNameOf(UUID environmentId) {
+                        return java.util.Optional.empty();
+                    }
                 };
         return new RbacPermissionEvaluator(
                 grants,
