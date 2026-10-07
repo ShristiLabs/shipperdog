@@ -15,6 +15,7 @@ import com.shipperdog.api.config.CursorPageable;
 import com.shipperdog.api.config.TraceAttributes;
 import com.shipperdog.api.organization.OrganizationAccess;
 import com.shipperdog.api.tenant.TenantAccess;
+import com.shipperdog.api.tenant.TenantContext;
 import com.shipperdog.api.tenant.TenantScopeExecutor;
 import com.shipperdog.api.version.VersionAccess;
 import java.time.Clock;
@@ -466,6 +467,15 @@ public class ApplicationService {
      * concealed miss (PRD 12).
      */
     private ApplicationEntity load(UUID applicationId) {
+        // The platform-administrator wildcard passes the route's
+        // permission check for an UNKNOWN application before the
+        // application interceptor has anything to bind, and the seam is
+        // fail-closed — the empty context is the concealed miss, never
+        // a 500 (the tester-groups mustFindGroup precedent, S7-05
+        // issue #34 folding the #27 candidate).
+        if (TenantContext.current().isEmpty()) {
+            throw new ApplicationException(ApplicationException.Code.NOT_FOUND, "application not found");
+        }
         return applications
                 .findScoped(applicationId)
                 .orElseThrow(

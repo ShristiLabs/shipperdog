@@ -11,6 +11,7 @@ import java.time.Instant;
 import java.util.Map;
 import java.util.UUID;
 import org.springframework.stereotype.Component;
+import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 
 /**
@@ -45,9 +46,16 @@ public class TenantMemberWriteAttempt {
      * Inserts the membership (born ACTIVE) and audits — atomically.
      * The insert is flushed inside the guard so a lost uniqueness race
      * throws HERE (Hibernate defers inserts otherwise; the issue
-     * #13/#26 race discipline).
+     * #13/#26 race discipline). REQUIRES_NEW since S7-05 (issue #34):
+     * the attempt must own its transaction even when a transactional
+     * orchestrator calls it, so a lost race rolls back only this
+     * attempt and the caller's transaction stays usable for conflict
+     * resolution — the assignRole insert arm (the #26/#27 carried
+     * candidate) composes with the same discipline addMember has held
+     * since #28. For a non-transactional caller (addMember),
+     * REQUIRES_NEW behaves exactly as before.
      */
-    @Transactional
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
     public TenantMemberEntity attempt(UUID actorId, UUID tenantId, UUID targetUserId, TenantRole role) {
         TenantMemberEntity membership = members.saveScoped(new TenantMemberEntity(tenantId, targetUserId, role));
         members.flush();

@@ -6,6 +6,7 @@ import com.shipperdog.api.audit.AuditEventPublisher;
 import com.shipperdog.api.audit.AuditEventType;
 import com.shipperdog.api.config.CursorPageable;
 import com.shipperdog.api.config.TraceAttributes;
+import com.shipperdog.api.tenant.TenantContext;
 import com.shipperdog.api.version.VersionArtifacts;
 import com.shipperdog.api.version.VersionArtifacts.VersionArtifactSlot;
 import com.shipperdog.api.version.VersionDistributionContributor;
@@ -812,9 +813,17 @@ public class VersionService implements VersionDistributionGuard {
      * The version resolved scoped (the seam's bound scope) and verified
      * against the addressed application: any version id that is unknown,
      * out of scope, or belonging to a different application is the
-     * standard concealed miss.
+     * standard concealed miss. The platform-administrator wildcard
+     * reaches an UNKNOWN application's routes with no context bound
+     * (the application interceptor binds only existing applications,
+     * and the seam is fail-closed); the empty context renders the
+     * application miss, never a 500 (the mustFindGroup precedent,
+     * S7-05 issue #34 folding the #27 candidate).
      */
     private VersionEntity scopedVersionOf(UUID applicationId, UUID versionId) {
+        if (TenantContext.current().isEmpty()) {
+            throw new VersionException(VersionException.Code.APPLICATION_NOT_FOUND, "application not found");
+        }
         VersionEntity version = versions.findScoped(versionId)
                 .orElseThrow(() -> new VersionException(VersionException.Code.NOT_FOUND, "version not found"));
         if (!version.getApplicationId().equals(applicationId)) {

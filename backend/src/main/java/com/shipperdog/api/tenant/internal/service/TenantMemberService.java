@@ -292,6 +292,14 @@ public class TenantMemberService implements TenantAccess {
      * testers need not be organization members. A permission-losing
      * change revokes the member's refresh tokens (issue #5, acceptance
      * criterion 5).
+     *
+     * <p>The creating arm runs through {@link TenantMemberWriteAttempt}
+     * (REQUIRES_NEW) since S7-05 (issue #34, folding the #26/#27
+     * carried race): concurrent creates of the same (tenant, user)
+     * pair both saw no membership; the loser of the unique-key race
+     * re-derives the winner on a fresh transaction and answers with
+     * it — 200s only, never the dead-catch 500 the former
+     * in-transaction insert produced at commit.
      */
     @Transactional
     public MemberView assignRole(UUID tenantId, UUID targetUserId, TenantRole newRole, UUID actorId) {
@@ -307,7 +315,28 @@ public class TenantMemberService implements TenantAccess {
                 throw new TenantException(
                         TenantException.Code.TENANT_DEACTIVATED, "cannot add members to a deactivated tenant");
             }
-            membership = new TenantMemberEntity(tenantId, targetUserId, newRole);
+            try {
+                membership = writes.attempt(actorId, tenantId, targetUserId, newRole);
+            } catch (DataIntegrityViolationException e) {
+                // Lost the insert race: the concurrent winner decides
+                // between the idempotent answer (same role) and a real
+                // change applied to the winner row, read on a fresh
+                // transaction — this transaction is still sound; only
+                // the attempt's own rolled back. Either way the caller
+                // receives the winner, never a 500.
+                TenantMemberEntity winner = conflicts.winnerOf(targetUserId).orElseThrow(() -> e);
+                if (winner.getRole() == newRole) {
+                    return finishRoleAssignment(actorId, tenantId, targetUserId, newRole, winner, false);
+                }
+                demotion = !RolePermissions.lostOnTenantRoleChange(winner.getRole(), newRole)
+                        .isEmpty();
+                winner.setRole(newRole);
+                membership = scopedMembers.saveScoped(winner);
+                if (demotion) {
+                    sessions.revokeRefreshTokens(targetUserId, "role_demoted");
+                }
+                return finishRoleAssignment(actorId, tenantId, targetUserId, newRole, membership, demotion);
+            }
             demotion = false;
         } else {
             TenantRole previous = membership.getRole();
@@ -319,10 +348,17 @@ public class TenantMemberService implements TenantAccess {
         if (demotion) {
             sessions.revokeRefreshTokens(targetUserId, "role_demoted");
         }
-        Map<String, String> detail = new LinkedHashMap<>();
-        detail.put("userId", targetUserId.toString());
-        detail.put("role.after", newRole.name());
-        detail.put("sessionsRevoked", Boolean.toString(demotion));
+        return finishRoleAssignment(actorId, tenantId, targetUserId, newRole, membership, demotion);
+    }
+
+    /** The assignRole outcome: the audit event plus the member view. */
+    private MemberView finishRoleAssignment(
+            UUID actorId,
+            UUID tenantId,
+            UUID targetUserId,
+            TenantRole newRole,
+            TenantMemberEntity membership,
+            boolean demotion) {
         audit.publish(new AuditEvent(
                 AuditEventType.TENANT_MEMBER_ROLE_CHANGED,
                 Instant.now(clock),
@@ -330,7 +366,13 @@ public class TenantMemberService implements TenantAccess {
                 null,
                 tenantId,
                 true,
-                Map.copyOf(detail)));
+                Map.of(
+                        "userId",
+                        targetUserId.toString(),
+                        "role.after",
+                        newRole.name(),
+                        "sessionsRevoked",
+                        Boolean.toString(demotion))));
         return viewOf(tenantId, membership);
     }
 

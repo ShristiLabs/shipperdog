@@ -66,6 +66,18 @@ public final class AndroidFixtures {
         return withSigningBlock(releaseApk(), v2, v3);
     }
 
+    /**
+     * The suite leg (S7-05's isolation suite): a signed APK whose
+     * manifest carries the GIVEN version identity — the validation
+     * pipeline's VERSION_MATCH stage requires the manifest to agree
+     * with the version record, so a suite that seeds several versions
+     * needs one fixture per version name, each with a fresh code.
+     */
+    public static byte[] signedApk(String versionName, String versionCode) throws IOException {
+        byte[] manifest = manifestAxml(PACKAGE, versionName, versionCode, MIN_SDK, TARGET_SDK, LABEL, false, false);
+        return withSigningBlock(apk(manifest), true, true);
+    }
+
     /** A release-shaped APK padded with an incompressible dex payload entry. */
     public static byte[] paddedApk(int paddingBytes) throws IOException {
         byte[] padding = noise(paddingBytes);

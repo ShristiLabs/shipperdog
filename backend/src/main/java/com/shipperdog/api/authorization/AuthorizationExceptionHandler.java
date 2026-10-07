@@ -119,7 +119,13 @@ public class AuthorizationExceptionHandler {
             // 'tester-group' target: a concealed denial must render
             // exactly like the tester module's genuine group miss
             // (TESTER_GROUP_NOT_FOUND), never a code that would leak
-            // which check failed.
+            // which check failed. Since S7-05 (issue #34) the 'tester'
+            // target joins them: org-scope tester reads (S6-02) conceal
+            // as the tester module's own person miss
+            // (TESTER_NOT_FOUND), closing the generic-fallback leak
+            // carried from #26/#27 (a distinct code would reveal WHICH
+            // grain of check failed).
+            case "tester" -> "TESTER_NOT_FOUND";
             case "tester-group" -> "TESTER_GROUP_NOT_FOUND";
             default -> ApiError.NOT_FOUND.name();
         };
