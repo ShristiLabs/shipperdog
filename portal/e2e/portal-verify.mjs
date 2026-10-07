@@ -8,10 +8,14 @@
 // Exercises the golden path end to end: provision a linked-tester
 // persona through the admin API (S6-01 invitation, dev-mode token
 // visibility), accept the invitation in the portal (set password ->
-// login), verify the authenticated shell and honest empty state, log
-// out, and sign back in with the credentials just set. Also checks the
-// failure paths (opaque 401, missing token card, anonymous redirect)
-// and fails on any unexpected console error.
+// login), verify the authenticated shell and the My Applications
+// catalog's honest empty state (S8-02: a grantless linked tester sees
+// nothing by design, INV-005 — the card data path itself is proven by
+// the backend catalog suite over the real stack, since a distributable
+// artifact cannot be minted from plain-node Playwright), log out, and
+// sign back in with the credentials just set. Also checks the failure
+// paths (opaque 401, missing token card, anonymous redirect) and fails
+// on any unexpected console error.
 import { chromium } from "playwright";
 
 const PORTAL = "http://localhost:5174";
@@ -109,14 +113,23 @@ try {
   await page.getByTestId("accept-password").fill("correct-horse-battery");
   await page.getByTestId("accept-confirm").fill("correct-horse-battery");
   await page.getByTestId("accept-submit").click();
-  await page.getByTestId("portal-home-empty").waitFor({ timeout: 15_000 });
+  await page.getByTestId("catalog-empty").waitFor({ timeout: 15_000 });
   record("invitation accept: set password -> signed-in portal home", true);
-  await page.screenshot({ path: "/tmp/s8-01-portal-home.png" });
+  await page.screenshot({ path: "/tmp/s8-02-portal-home-empty.png" });
 
-  // 4. The shell shows the tester identity and the honest empty state
-  // (no grants yet: INV-005 resting state, not an error).
+  // 4. The shell shows the tester identity and the catalog's honest
+  // empty state (no grants yet: INV-005 resting state, not an error),
+  // with the refresh affordance S8-02 adds.
   const identity = await page.getByTestId("portal-user").textContent();
   record("shell shows tester identity", (identity ?? "").includes("E2E Portal Tester"));
+  const emptyText = (await page.getByTestId("catalog-empty").textContent()) ?? "";
+  record(
+    "catalog renders the honest deny-by-default empty state",
+    emptyText.includes("Nothing is shared with you yet") && !emptyText.includes("error"),
+  );
+  await page.getByTestId("catalog-refresh").click();
+  await page.getByTestId("catalog-empty").waitFor({ timeout: 10_000 });
+  record("manual refresh keeps the honest empty catalog", true);
 
   // 5. Logout clears the session and returns to login.
   await page.getByTestId("portal-logout").click();
@@ -128,7 +141,7 @@ try {
   await page.getByTestId("login-email").fill(testerEmail);
   await page.getByTestId("login-password").fill("correct-horse-battery");
   await page.getByTestId("login-submit").click();
-  await page.getByTestId("portal-home-empty").waitFor({ timeout: 15_000 });
+  await page.getByTestId("catalog-empty").waitFor({ timeout: 15_000 });
   record("standard login works for the activated tester", true);
 
   // 7. Missing token renders the honest card, not a crash.

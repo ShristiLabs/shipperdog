@@ -343,6 +343,49 @@ final class IsolationEndpointRegistry {
                         200,
                         200,
                         side -> IsolationScenarioHarness.eligibilityUri(UUID.randomUUID(), UUID.randomUUID())),
+                // The portal catalog (S8-02): param-less and self-scoped,
+                // so "foreign" and "miss" are both the caller's OWN
+                // catalog — the concealment proof here is that the body
+                // answers the caller and only the caller (byte-stable,
+                // no volatile fields, no foreign identifiers), never a
+                // leak of the addressed side. A persona without a linked
+                // tester record answers the honest empty 200.
+                new Entry() {
+                    @Override
+                    public String method() {
+                        return "GET";
+                    }
+
+                    @Override
+                    public String template() {
+                        return "/api/v1/authorization/decisions/applications";
+                    }
+
+                    @Override
+                    public String uri(IsolationScenarioHarness.IsolatedTenant side) {
+                        return "/api/v1/authorization/decisions/applications";
+                    }
+
+                    @Override
+                    public int ownOrgAdmin() {
+                        return 200;
+                    }
+
+                    @Override
+                    public int ownTenantAdmin() {
+                        return 200;
+                    }
+
+                    @Override
+                    public int concealStatus() {
+                        return 200;
+                    }
+
+                    @Override
+                    public String missUri(IsolationScenarioHarness.IsolatedTenant actorSide) {
+                        return "/api/v1/authorization/decisions/applications";
+                    }
+                },
 
                 // The audit query (platform grain) ----------------------------------
                 new Entry() {

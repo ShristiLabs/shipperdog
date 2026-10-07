@@ -1769,6 +1769,29 @@ paths:
             '*/*':
               schema:
                 $ref: "#/components/schemas/DownloadDecisionView"
+  /api/v1/authorization/decisions/applications:
+    get:
+      tags:
+      - authorization-decision-api-controller
+      operationId: catalog
+      parameters:
+      - name: limit
+        in: query
+        required: false
+        schema:
+          type: string
+      - name: cursor
+        in: query
+        required: false
+        schema:
+          type: string
+      responses:
+        "200":
+          description: OK
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/CatalogView"
   /api/v1/auth/me:
     get:
       tags:
@@ -3220,6 +3243,64 @@ components:
         platform:
           type: string
         storageKey:
+          type: string
+    ApplicationCardView:
+      type: object
+      properties:
+        applicationId:
+          type: string
+          format: uuid
+        name:
+          type: string
+        status:
+          type: string
+    CatalogCardView:
+      type: object
+      properties:
+        tenantId:
+          type: string
+          format: uuid
+        application:
+          $ref: "#/components/schemas/ApplicationCardView"
+        latestAuthorizedVersion:
+          $ref: "#/components/schemas/VersionCardView"
+        platforms:
+          type: array
+          items:
+            $ref: "#/components/schemas/PlatformCardView"
+    CatalogView:
+      type: object
+      properties:
+        effectiveAccess:
+          type: boolean
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/CatalogCardView"
+        next_cursor:
+          type: string
+    PlatformCardView:
+      type: object
+      properties:
+        platform:
+          type: string
+        tenantId:
+          type: string
+          format: uuid
+        versionId:
+          type: string
+          format: uuid
+        versionName:
+          type: string
+    VersionCardView:
+      type: object
+      properties:
+        versionId:
+          type: string
+          format: uuid
+        versionName:
+          type: string
+        status:
           type: string
     PageResponsePatResponse:
       type: object

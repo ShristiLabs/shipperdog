@@ -5,9 +5,13 @@ import com.shipperdog.api.artifact.internal.entity.ArtifactEntity;
 import com.shipperdog.api.tenant.CrossTenantByDesign;
 import java.util.Collection;
 import java.util.EnumSet;
+import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
 import java.util.UUID;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
@@ -69,6 +73,21 @@ public interface ArtifactRegistryRepository extends JpaRepository<ArtifactEntity
             @Param("platform") ArtifactEntity.Platform platform,
             @Param("distributable") Collection<ArtifactEntity.Status> distributable);
 
+    /**
+     * The portal catalog's availability read (issue #36, S8-02): the
+     * distributable platforms of many versions in one query — the set
+     * form of {@link #findDistributableByVersionAndPlatform}'s
+     * availability predicate, composed with the effective-set resolution
+     * the engine already sanctioned. Same registry-read character;
+     * never an endpoint data path.
+     */
+    @Query("select a from ArtifactEntity a"
+            + " where a.versionId in :versionIds and a.status in :distributable"
+            + " order by a.createdAt desc, a.id asc")
+    List<ArtifactEntity> findDistributableByVersionIds(
+            @Param("versionIds") Collection<UUID> versionIds,
+            @Param("distributable") Collection<ArtifactEntity.Status> distributable);
+
     /** Decision-input resolution for the E7 authorization chain; tuples only, never rows. */
     @Override
     default Optional<ArtifactState> stateOf(UUID artifactId) {
@@ -99,5 +118,21 @@ public interface ArtifactRegistryRepository extends JpaRepository<ArtifactEntity
                         artifact.getPlatform().name(),
                         artifact.getStatus().name(),
                         artifact.getStorageKey()));
+    }
+
+    /** The catalog's per-platform availability read; platform names keyed by version id. */
+    @Override
+    default Map<UUID, Set<String>> distributablePlatformsOfVersions(Collection<UUID> versionIds) {
+        if (versionIds.isEmpty()) {
+            return Map.of();
+        }
+        Map<UUID, Set<String>> platformsByVersion = new LinkedHashMap<>();
+        for (ArtifactEntity artifact : findDistributableByVersionIds(
+                versionIds, EnumSet.of(ArtifactEntity.Status.READY, ArtifactEntity.Status.DISTRIBUTED))) {
+            platformsByVersion
+                    .computeIfAbsent(artifact.getVersionId(), key -> new LinkedHashSet<>())
+                    .add(artifact.getPlatform().name());
+        }
+        return platformsByVersion;
     }
 }

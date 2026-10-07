@@ -7,7 +7,7 @@ import userEvent from "@testing-library/user-event";
 import App from "./App";
 import { tokenStore } from "./auth/tokenStore";
 import { ensureFreshTokens } from "./api/client";
-import { installFetchRouter, recordedRequests, renderPortal, seedSession } from "./test/harness";
+import { installFetchRouter, recordedRequests, renderPortal, seedCatalog, seedSession } from "./test/harness";
 
 beforeEach(() => {
   tokenStore.clear();
@@ -23,15 +23,16 @@ describe("route guard", () => {
     installFetchRouter([]);
     renderPortal(<App />, { route: "/" });
     expect(screen.getByTestId("portal-login-card")).toBeInTheDocument();
-    expect(screen.queryByTestId("portal-home-empty")).not.toBeInTheDocument();
+    expect(screen.queryByTestId("catalog-empty")).not.toBeInTheDocument();
   });
 
   it("restores a stored session on reload and renders the shell", async () => {
     installFetchRouter([]);
+    seedCatalog();
     seedSession({ fullName: "Ana Tester" });
     renderPortal(<App />, { route: "/" });
     await waitFor(() => expect(screen.getByTestId("portal-home-title")).toBeInTheDocument());
-    expect(screen.getByTestId("portal-home-empty")).toBeInTheDocument();
+    await waitFor(() => expect(screen.getByTestId("catalog-empty")).toBeInTheDocument());
   });
 
   it("a dead stored session drops to anonymous, not an error screen", async () => {
@@ -59,11 +60,13 @@ describe("route guard", () => {
 describe("authenticated shell", () => {
   it("shows the tester identity and the honest My Applications placeholder", async () => {
     installFetchRouter([]);
+    seedCatalog();
     seedSession({ fullName: "Ana Tester" });
     renderPortal(<App />, { route: "/" });
     await waitFor(() => expect(screen.getByTestId("portal-user")).toBeInTheDocument());
     expect(screen.getByTestId("portal-user").textContent).toContain("Ana Tester");
-    expect(screen.getByTestId("portal-home-empty").textContent).toContain("My Applications");
+    await waitFor(() => expect(screen.getByTestId("catalog-empty")).toBeInTheDocument());
+    expect(screen.getByTestId("catalog-empty").textContent).toContain("My Applications");
   });
 
   it("logout revokes the refresh token, clears local state, and returns to login", async () => {
@@ -112,14 +115,15 @@ describe("authenticated shell", () => {
         body: { title: "Unauthorized", status: 401, code: "INVALID_REFRESH_TOKEN" },
       },
     ]);
+    seedCatalog();
     seedSession({ fullName: "Ana Tester" });
     renderPortal(<App />, { route: "/" });
-    await waitFor(() => expect(screen.getByTestId("portal-home-empty")).toBeInTheDocument());
+    await waitFor(() => expect(screen.getByTestId("catalog-empty")).toBeInTheDocument());
 
     const refreshed = await ensureFreshTokens();
     expect(refreshed).toBe(false);
     await waitFor(() => expect(screen.getByTestId("portal-login-card")).toBeInTheDocument());
-    expect(screen.queryByTestId("portal-home-empty")).not.toBeInTheDocument();
+    expect(screen.queryByTestId("catalog-empty")).not.toBeInTheDocument();
     expect(tokenStore.get()).toBeNull();
   });
 });

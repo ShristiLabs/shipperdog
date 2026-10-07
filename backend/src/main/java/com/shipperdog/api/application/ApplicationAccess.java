@@ -46,6 +46,20 @@ public interface ApplicationAccess {
      */
     boolean visibleToTenant(UUID applicationId, UUID tenantId);
 
+    /**
+     * The application's display summary (issue #36, S8-02): id, name,
+     * and lifecycle status — the card facts the decision API's portal
+     * catalog composes beside the effective-set resolution the engine
+     * sanctions. The same registry-read character as the profile hop
+     * (tuples only, never the row; the decision surface's data, the
+     * exact precedent of the eligibility listing serving version
+     * names); empty when the application is unknown.
+     */
+    Optional<ApplicationSummary> summaryOf(UUID applicationId);
+
+    /** The application card's display tuple; never the row itself. */
+    record ApplicationSummary(UUID applicationId, String name, String status) {}
+
     /** The ownership tuple callers may resolve; never the row itself. */
     record Ownership(UUID applicationId, UUID organizationId, UUID tenantId) {}
 

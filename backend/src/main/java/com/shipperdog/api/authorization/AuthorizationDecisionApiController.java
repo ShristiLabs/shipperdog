@@ -1,8 +1,10 @@
 package com.shipperdog.api.authorization;
 
 import com.shipperdog.api.authorization.internal.decision.AuthorizationDecisionApiService;
+import com.shipperdog.api.authorization.internal.decision.AuthorizationDecisionApiService.CatalogView;
 import com.shipperdog.api.authorization.internal.decision.AuthorizationDecisionApiService.DownloadDecisionView;
 import com.shipperdog.api.authorization.internal.decision.AuthorizationDecisionApiService.EligibilityView;
+import com.shipperdog.api.config.ListQuery;
 import com.shipperdog.api.identity.AuthenticatedPrincipal;
 import java.util.UUID;
 import org.springframework.security.access.prepost.PreAuthorize;
@@ -25,7 +27,7 @@ import org.springframework.web.bind.annotation.RestController;
  * it is (live, audited {@code surface=inspect}, reason codes for the
  * admin alone).
  *
- * <p>Two routes, both self-scoped (the caller is the subject) and
+ * <p>Three routes, all self-scoped (the caller is the subject) and
  * decided by the layered engine (audited with
  * {@code surface=decision-api}) — the engine is the portal persona's
  * entire authority, because a pure tester deliberately holds no RBAC
@@ -44,6 +46,10 @@ import org.springframework.web.bind.annotation.RestController;
  *       {@code tenantId}/{@code applicationId} (FR-013's
  *       version-history page), the effective-set computation the
  *       administrator's view runs, self-scoped.</li>
+ *   <li>{@code GET /api/v1/authorization/decisions/applications} —
+ *       the caller's authorized application catalog (S8-02, the
+ *       portal home): the card set the effective resolution yields
+ *       across the tester's sanctioned tenants, cursor-paginated.</li>
  * </ul>
  *
  * <p>This is NOT the deferred public third-party "authorize"
@@ -99,6 +105,29 @@ public class AuthorizationDecisionApiController {
     EligibilityView eligibility(
             @AuthenticationPrincipal Object principal, @RequestParam UUID tenantId, @RequestParam UUID applicationId) {
         return decisions.eligibility(requireSubject(principal, "tenant"), tenantId, applicationId);
+    }
+
+    /**
+     * The caller's authorized application catalog (issue #36, S8-02,
+     * FR-012/PRD 31): one card per application the tester can reach
+     * and install — the server-computed set (PRD 26: never a filtered
+     * bigger list), each card carrying the application, the latest
+     * authorized version, and the per-platform latest installable
+     * resolution (the contract S8-03/S8-04 reuse). Cursor-paginated in
+     * the platform list envelope; a grantless-but-linked tester sees
+     * the honest EMPTY catalog, and a caller without a tester record
+     * (a console persona) answers empty the same way — this route
+     * addresses no foreign resource, so there is nothing to conceal
+     * and the set form's answer is emptiness. Self-scoped like the
+     * other decision routes: the engine decides, never RBAC.
+     */
+    @GetMapping("/applications")
+    @PreAuthorize("isAuthenticated()")
+    CatalogView catalog(
+            @AuthenticationPrincipal Object principal,
+            @RequestParam(required = false) String limit,
+            @RequestParam(required = false) String cursor) {
+        return decisions.catalog(requireSubject(principal, "catalog"), ListQuery.of(limit, cursor));
     }
 
     /**

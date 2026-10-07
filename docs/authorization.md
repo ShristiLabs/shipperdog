@@ -376,9 +376,10 @@ S6-04 documents for tester deactivation.
 console-grade (`app:artifacts:read`) — a pure tester does not pass
 it, by design. Since S7-03 the tester persona's own surfaces are the
 decision API below (the download decision and the eligibility
-listing — self-scoped, engine-decided); the portal UI that renders
-them arrives with S8, which also relaxes the artifact routes'
-console-grade gate where the story demands it. The grant's authority
+listing — self-scoped, engine-decided); since S8-02 the portal
+renders them (the application catalog is the decision API's own set
+form), and S8-04 relaxes the artifact routes' console-grade gate
+where the download story demands it. The grant's authority
 is the layered engine: the tenant catalog listing, the decision API,
 and the effective-access view administrators watch.
 
@@ -389,22 +390,24 @@ download path consume — the caller asks about their own reach, and
 the layered engine answers. It is deliberately NOT the deferred
 public third-party "authorize" endpoint (out of the story's scope)
 and it mints no URLs: the decision is the API; signing the storage
-key is S8-04's. Both routes are self-scoped (`isAuthenticated()`,
-the platform's caller-addressed convention) with the engine as their
-ENTIRE authority — a pure tester holds no RBAC role by S6-03 design
-(the membership IS the access), so a permission gate here would
-exclude exactly the persona the portal serves; an unrelated caller
-is denied by the engine's tenant layer with the same concealed miss
-a genuine unknown produces.
+key is S8-04's. All three routes are self-scoped
+(`isAuthenticated()`, the platform's caller-addressed convention)
+with the engine as their ENTIRE authority — a pure tester holds no
+RBAC role by S6-03 design (the membership IS the access), so a
+permission gate here would exclude exactly the persona the portal
+serves; an unrelated caller is denied by the engine's tenant layer
+with the same concealed miss a genuine unknown produces.
 
 | Method | Path | Result |
 |---|---|---|
 | GET | `/api/v1/authorization/decisions/download?tenantId=&versionId=&platform=` | `200` the ALLOWED download decision's issuance inputs: `applicationId`, `versionId`, `artifactId`, `platform`, and the `storageKey` reference (PRD 24 layout) S8-04 signs the URL from; `404` concealed on ANY denial — the version-grain miss (`VERSION_NOT_FOUND`: unknown version, no entitlement, invisible application, revoked version, or an unreachable/unknown tenant) or the artifact-grain miss (`ARTIFACT_NOT_FOUND`: no distributable artifact — READY or DISTRIBUTED, newest first — for the pinned platform), byte-identical to the genuine miss, never a layer name; `400` an unknown platform vocabulary |
 | GET | `/api/v1/authorization/decisions/eligibility?tenantId=&applicationId=` | `200` the caller's authorized version set (FR-013's history page): `effectiveAccess` (the two-switches flag), `resolvedAt`, newest-first `entries` (version id/name/status and each entry's TTL — null when a contributing grant never expires); `404` concealed as `TENANT_NOT_FOUND` (unknown tenant, or the caller reaches it not at all) or `APPLICATION_NOT_FOUND` (an application the tenant cannot see); a linked tester with no grants sees a legitimate EMPTY set, a console caller answers `effectiveAccess=false` and empty, and a SUSPENDED tester conceals entirely — the engine's list decision denies before the set resolves, so they learn nothing (stricter than the administrator's effective view, which still lists retained grants to admins) |
+| GET | `/api/v1/authorization/decisions/applications?limit=&cursor=` | `200` the caller's authorized application catalog (S8-02, FR-012/PRD 31, the portal home): the platform list envelope (`items` + `next_cursor`) of cards, each `{tenantId, application {id, name, status}, latestAuthorizedVersion {id, name, status}, platforms[]}` — per platform the newest authorized version carrying a distributable artifact, with the tenant dimension the S8-04 download decision is addressed through; `effectiveAccess` is true when at least one linked tenant passes the engine's LIST decision. The set is server-computed (PRD 26: never a client-side filter of a bigger list): candidates derive from the tester's own grants across LIST-sanctioned linked tenants (deny-by-default — a non-empty effective set requires a live grant), a tenant that can no longer see an application contributes nothing, and an application whose authorized versions yield no installable platform has NO card (no dead cards). The route addresses no foreign resource, so concealment is by emptiness: a grantless-but-linked tester answers `effectiveAccess=true` and an empty page, a console caller `false` and empty, and a suspended tester empty for the same reason the eligibility route conceals them. Cursor-paginated (name-ordered, byte-stable so the isolation matrix's concealment-parity proof holds); a member of `IsolationEndpointRegistry` |
 
-Both decisions are audited with `surface=decision-api` (the engine's
-own `AUTHORIZATION_DECISION` events), and both resolve their inputs
-through the decision-input cache below. The admin inspection API
+All decisions are audited with `surface=decision-api` (the engine's
+own `AUTHORIZATION_DECISION` events — the catalog's per-tenant LIST
+decisions included), and all resolve their inputs through the
+decision-input cache below. The admin inspection API
 (`POST /api/v1/authorization/decisions`, above) is untouched: it
 decides for a SUPPLIED subject with reason codes and the evaluated
 chain — the self-scoped routes above never leak either.

@@ -515,6 +515,11 @@ class RbacPermissionEvaluatorTest {
             public boolean visibleToTenant(UUID applicationId, UUID tenantId) {
                 return false;
             }
+
+            @Override
+            public Optional<ApplicationAccess.ApplicationSummary> summaryOf(UUID id) {
+                return Optional.empty(); // the evaluator never renders cards
+            }
         };
     }
 
@@ -534,6 +539,11 @@ class RbacPermissionEvaluatorTest {
             @Override
             public boolean visibleToTenant(UUID applicationId, UUID tenantId) {
                 return false;
+            }
+
+            @Override
+            public Optional<ApplicationAccess.ApplicationSummary> summaryOf(UUID id) {
+                return Optional.empty();
             }
         };
     }

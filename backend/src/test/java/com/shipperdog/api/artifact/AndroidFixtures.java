@@ -78,6 +78,19 @@ public final class AndroidFixtures {
         return withSigningBlock(apk(manifest), true, true);
     }
 
+    /**
+     * The catalog leg (S8-02): a signed APK carrying the GIVEN package
+     * identity — a second application in one organization registers its
+     * own package name (the org-wide uniqueness rule), and the
+     * validation pipeline's APPLICATION_MATCH stage requires the
+     * manifest to agree with the registry.
+     */
+    public static byte[] signedApkForPackage(String packageName, String versionName, String versionCode)
+            throws IOException {
+        byte[] manifest = manifestAxml(packageName, versionName, versionCode, MIN_SDK, TARGET_SDK, LABEL, false, false);
+        return withSigningBlock(apk(manifest), true, true);
+    }
+
     /** A release-shaped APK padded with an incompressible dex payload entry. */
     public static byte[] paddedApk(int paddingBytes) throws IOException {
         byte[] padding = noise(paddingBytes);

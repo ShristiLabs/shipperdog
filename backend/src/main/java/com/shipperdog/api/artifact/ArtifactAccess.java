@@ -1,6 +1,9 @@
 package com.shipperdog.api.artifact;
 
+import java.util.Collection;
+import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
 import java.util.UUID;
 
 /**
@@ -39,6 +42,19 @@ public interface ArtifactAccess {
      * availability authority.
      */
     Optional<IssuanceInputs> issuanceInputsOf(UUID versionId, String platform);
+
+    /**
+     * The distributable platforms of many versions at once (issue #36,
+     * S8-02): the portal catalog's per-platform availability read — for
+     * each version id supplied, the set of platforms carrying at least
+     * one distributable ({@code READY} or {@code DISTRIBUTED}, PRD 18)
+     * artifact. One query over the caller's already-authorized version
+     * set, the set form of {@link #issuanceInputsOf}'s availability
+     * predicate; the same registry-read character, never an endpoint
+     * data path — the catalog composes it with the effective-set
+     * resolution the engine sanctioned.
+     */
+    Map<UUID, Set<String>> distributablePlatformsOfVersions(Collection<UUID> versionIds);
 
     /** The artifact tuple callers may resolve; never the row itself. */
     record ArtifactState(UUID artifactId, UUID versionId, String platform, String status) {}
