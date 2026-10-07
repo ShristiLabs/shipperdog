@@ -740,6 +740,82 @@ carries `status.before`/`status.after` and `sessionsRevoked`;
 role; `TOKEN_REVOKED` carries the machine-readable reason. See
 [authentication](authentication.md) for the identity-side events.
 
+## The isolation & authorization suite (S7-05)
+
+The standing proof that the invariants hold CONTINUOUSLY — the M1
+capstone harness (`backend/src/test/java/com/shipperdog/api/isolation/`)
+that fails the build on any tenant-isolation or authorization
+regression. It lives in the standard test tree, so `mvn verify` —
+backend CI's single build-and-test step — runs it on every PR as a
+blocking stage, and the whole suite carries the JUnit tag
+`isolation-suite`, so it also runs as one named stage locally:
+
+    mvn test -Dgroups=isolation-suite
+
+### Structure
+
+| Class | Proves |
+|---|---|
+| `IsolationScenarioHarness` | The seeded world: two disjoint org/tenant/application/version/artifact sides, each with platform-admin, ORG_ADMIN, TENANT_ADMIN, and linked-tester personas plus a named tester group. One shared Spring context and one singleton container set (PostgreSQL, Redis, GCS emulator) for the whole family — the suite's five-minute CI budget goes to scenarios, not booting the stack per class. |
+| `IsolationEndpointRegistry` | The endpoint catalog: every M1 read surface as a declarative entry (URI builders, per-persona own-side expectations, the genuine-miss call). |
+| `IsolationEndpointCatalogTest` | The OpenAPI completeness guard: every GET route the served spec declares must be in the catalog or on a justified allowlist — a new read endpoint fails the suite until it joins the matrix, and a removed route flags its stale entry. |
+| `CrossTenantAccessMatrixTest` | INV-001 + the M1 exit criterion: for every (persona x tenant x endpoint) — foreign reads are the concealed miss byte-identical to the genuine one (no data, no existence leak), own reads answer correctly, the platform wildcard reaches across (sanctioned), the tester persona conceals through the decision API, and no denial body carries a foreign identifier. |
+| `ExplicitAuthorizationBypassTest` | INV-005: the decision engine is the only download authority (ALLOW carries issuance inputs — artifact id + storage key reference, never a URL); every persona without engine authority conceals; the API never proxies object storage (guesses fail closed; buckets private by default until S8-04 signs). |
+| `HistoricalAvailabilityTest` | INV-006: explicit old-version grants survive every newer arrival; LATEST_N windows slide without truncating explicit grants; TAG grants follow a moved tag; ARCHIVED versions stay readable AND downloadable (the soft terminal — revoke-distribution, pinned by the S7-04 suite, is the state that stops downloads). |
+| `RevocationAndTtlTimingTest` | INV-007: revocation denies the very NEXT decision through a warm cache; a short-TTL grant flips to denied at its expiry (evaluation-time) and lands in the revocation report as EXPIRED; bulk revocation denies every formerly granted version on the next decision. The signed-URL TTL half is S8-04's (M1 issues no URLs — the documented bound). |
+| `DegradedModeMatrixTest` | The cache-degraded half: with Redis unreachable, allow/deny/concealment/revocation-immediacy hold unchanged — the cache can only make decisions slower, never different. |
+| `DecisionLatencyGuardTest` | The §42 SLO guard: warm decision p99 under 100 ms over a 200-probe burst (the milestone exit criterion's automated half; `authorization_decision_duration` remains the production observation point). |
+| `OpaqueSemanticsHardeningTest` | The carried hardening proofs, folded here from #26-#28 and the #33 review: the platform wildcard receives the concealed miss on unknown applications/versions (never a 500); tester-grain denials render `TESTER_NOT_FOUND`; the assignRole insert race collapses to the winner (never a dead-catch 500); the grant-create/revocation triple race answers stable codes (never a 500). The deterministic unit counterpart of the last mapping is `VersionAccessGrantServiceCreateRaceTest`. |
+
+### How to add a scenario
+
+1. Extend `IsolationScenarioHarness` (you get the shared context, the
+   container set, and the HTTP plumbing). Provision a fresh world —
+   `World world = world()` for the two-tenant stage, or
+   `tenant("slug")` for more sides; every call mints unique rows, so
+   tests stay order-independent.
+2. Shape state through the public API only — `grantExplicitVersion`,
+   `grantLatestN`, `revokeGrant`, `createVersion`, `readyArtifact`,
+   or any route via `get`/`post`/`put`/`exchange`. Fixtures that
+   write rows directly prove nothing.
+3. Assert the invariant over EVERY surface it governs. If a new
+   read/download route is involved, register it in
+   `IsolationEndpointRegistry.readSurfaces()` (one entry: URI
+   builders, per-persona own statuses, the genuine-miss call) — the
+   completeness guard will remind you by failing otherwise.
+4. Mind the permission grains when stating own-side expectations:
+   `app:` permissions resolve through the owning organization
+   (ORG_ADMIN/APP_OWNER), `tenant:` through the tenant role — the
+   catalog entries state what each persona legitimately receives.
+5. Tag your class by extending the harness (the `isolation-suite`
+   tag is inherited); run `mvn test -Dgroups=isolation-suite`.
+
+### Documented bounds
+
+- Signed URLs do not exist until S8-04; the decision API's ALLOW
+  carries issuance inputs (the storage key reference), and URL TTL
+  bounding is that story's. The suite pins the grant-expiry bound
+  and the no-URL shape until then.
+- M1 versions are born DRAFT (distribution rings are M2): console
+  artifact reads of undistributed versions deny for non-platform
+  personas by the engine's distributability rule — the suite pins
+  this shape rather than blessing an upload-era read.
+- The platform administrator persona passes the ENGINE's own layers
+  (the wildcard is an authorization there too); RBAC roles never
+  reach the self-scoped decision API.
+- The cross-tenant matrix probes one direction — side A's personas
+  addressing side B's data — because the harness's two sides are
+  provisioned symmetrically: the concealment path exercised is the
+  same code, the same personas, and the same route shape with the
+  identifiers swapped. The reverse direction is the same proof with
+  relabeled inputs, not a distinct code path.
+- The degraded-mode matrix replays the core allow/deny/concealment
+  probes against its own broken-cache context — not the full endpoint
+  catalog. It cannot share the harness context (its Redis
+  configuration is deliberately unreachable), so it carries its own
+  container set and pins the decisions the degraded contract governs:
+  the cache may only make decisions slower, never different.
+
 ## Extension path
 
 `UserRolesSnapshot` is the seam the ABAC engine (S14-04) extends with

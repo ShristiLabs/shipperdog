@@ -310,7 +310,18 @@ public class VersionAccessGrantService {
             // identity; the winner IS the answer (idempotent replay).
             VersionAccessGrantEntity winner = findSameGrant(tenantId, testerId, applicationId, shape, target);
             if (winner == null) {
-                throw e;
+                // The triple race (S7-05, issue #34, folding the #33
+                // review finding): the constraint fired against a row
+                // that is no longer ACTIVE at recovery time — the
+                // concurrent winner was revoked between the insert and
+                // this fresh lookup. There is no winner to replay and
+                // the identity is free again; the stable, opaque answer
+                // is the 409 conflict the expiry route already uses —
+                // the client's retry mints the fresh grant — never a
+                // raw 500.
+                throw new AuthorizationGrantException(
+                        AuthorizationGrantException.Code.CONFLICT,
+                        "the grant identity changed state concurrently; retry the create");
             }
             return new CreateResult(GrantView.of(winner), false);
         }

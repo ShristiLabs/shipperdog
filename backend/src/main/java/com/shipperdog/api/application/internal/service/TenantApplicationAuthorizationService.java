@@ -12,6 +12,7 @@ import com.shipperdog.api.audit.AuditEventType;
 import com.shipperdog.api.authorization.AuthorizationDecisionInvalidation;
 import com.shipperdog.api.config.CursorPageable;
 import com.shipperdog.api.tenant.TenantAccess;
+import com.shipperdog.api.tenant.TenantContext;
 import java.time.Clock;
 import java.time.Instant;
 import java.util.LinkedHashMap;
@@ -298,9 +299,16 @@ public class TenantApplicationAuthorizationService {
      * Loads through the seam inside the route's bound scope: a shared
      * application's route binds the owning organization's scope, so
      * another organization's application — and an unknown id — are the
-     * same concealed miss (PRD 12).
+     * same concealed miss (PRD 12). The platform-administrator
+     * wildcard reaches an unknown application with nothing bound; the
+     * empty context renders the same miss, never a 500 (the
+     * mustFindGroup precedent, S7-05 issue #34 folding the #27
+     * candidate).
      */
     private ApplicationEntity load(UUID applicationId) {
+        if (TenantContext.current().isEmpty()) {
+            throw new ApplicationException(ApplicationException.Code.NOT_FOUND, "application not found");
+        }
         return applications
                 .findScoped(applicationId)
                 .orElseThrow(
