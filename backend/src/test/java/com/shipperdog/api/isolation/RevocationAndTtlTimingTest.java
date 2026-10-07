@@ -59,7 +59,14 @@ class RevocationAndTtlTimingTest extends IsolationScenarioHarness {
     @Test
     void aShortTtlGrantFlipsToDeniedAtItsExpiryAndLandsInTheReport() throws Exception {
         IsolationScenarioHarness.IsolatedTenant side = world().sideA();
-        Instant expiresAt = Instant.now().plusSeconds(3);
+        // Microsecond-representable on purpose (caught by CI, not by the
+        // macOS dev clock): PostgreSQL timestamps carry microsecond
+        // precision, so a nanosecond-precision request — what Linux's
+        // clock produces — round-trips TRUNCATED and an exact-equality
+        // assertion would flake by platform. Requesting a value the
+        // store can hold keeps the assertion exact and the test
+        // deterministic everywhere.
+        Instant expiresAt = Instant.now().plusSeconds(3).truncatedTo(java.time.temporal.ChronoUnit.MICROS);
         UUID grantId = grantExplicitVersion(
                 side.tenantAdminToken(),
                 side.tenantId(),
