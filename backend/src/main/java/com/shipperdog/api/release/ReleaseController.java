@@ -54,6 +54,15 @@ import org.springframework.web.bind.annotation.RestController;
  * id as the {@code applicationId} query parameter for the same
  * body-addressed permission-target shape the artifact read established;
  * a release of another application is the standard concealed miss.
+ *
+ * <p>The state machine (issue #56, S9-02, PRD 17) rides the same
+ * shapes: {@code POST /api/v1/releases/{id}/transitions} moves a
+ * release along PRD 17's edges only ({@code app:releases:manage}; the
+ * illegal crossing answers 409 with current and attempted states, the
+ * failure/rollback reason is mandatory), and
+ * {@code GET /api/v1/releases/{id}/history} returns the append-only
+ * transition timeline with every crossing's actor, reason, and
+ * timestamp ({@code app:releases:read}).
  */
 @RestController
 @RequestMapping("/api/v1/releases")
@@ -137,6 +146,45 @@ public class ReleaseController {
         return releases.get(requireUserId(principal), applicationId, releaseId);
     }
 
+    /**
+     * One release transition (issue #56 AC1-AC3, PRD 17): the body
+     * names the target state and, for the failure and rollback edges,
+     * the mandatory reason. The crossing must be one of PRD 17's
+     * edges — an illegal attempt answers 409 with the current and
+     * attempted states in the {@code errors} member (including
+     * re-sending a state the release holds and every exit from a
+     * terminal); a missing reason on FAILED or ROLLED_BACK is the 422;
+     * an unknown target state the 400. Serialized against concurrent
+     * writers by the database compare-and-set, audited per crossing,
+     * and answered with the refreshed detail. Not idempotency-keyed:
+     * the state itself is the replay answer (the lifecycle precedent).
+     */
+    @PostMapping("/{releaseId}/transitions")
+    @PreAuthorize("hasPermission(#request.applicationId(), 'application', 'app:releases:manage')")
+    ReleaseDetail transition(
+            @AuthenticationPrincipal Object principal,
+            @PathVariable UUID releaseId,
+            @RequestBody TransitionRequest request) {
+        return releases.transition(
+                requireUserId(principal), request.applicationId(), releaseId, request.to(), request.reason());
+    }
+
+    /**
+     * The release's transition history (issue #56 AC5, FR-024): the
+     * release summary plus the chronological append-only timeline —
+     * the creation's DRAFT row and every committed crossing with its
+     * actor, reason where present, and timestamp. The
+     * {@code applicationId} query parameter carries the permission
+     * target (the body-addressed shape); a release of another
+     * application conceals exactly like an unknown id.
+     */
+    @GetMapping("/{releaseId}/history")
+    @PreAuthorize("hasPermission(#applicationId, 'application', 'app:releases:read')")
+    ReleaseService.ReleaseHistoryView history(
+            @AuthenticationPrincipal Object principal, @PathVariable UUID releaseId, @RequestParam UUID applicationId) {
+        return releases.history(requireUserId(principal), applicationId, releaseId);
+    }
+
     private static UUID requireUserId(Object principal) {
         if (principal instanceof Jwt jwt) {
             return UUID.fromString(jwt.getSubject());
@@ -173,4 +221,16 @@ public class ReleaseController {
 
     /** One target: the tenant and its tester groups (empty targets the tenant at large). */
     public record TargetRequest(UUID tenantId, List<UUID> testerGroupIds) {}
+
+    /**
+     * The transition body (PRD 17): the application id (the permission
+     * target, the body-addressed shape), the target state of PRD 17's
+     * vocabulary, and the reason — mandatory on the failure
+     * (VALIDATING/DEPLOYING to FAILED) and rollback (ACTIVE to
+     * ROLLED_BACK) crossings, optional on every other.
+     */
+    @Schema(
+            description = "The release transition body: the permission-target application id, the target state "
+                    + "of PRD 17's vocabulary, and the reason (mandatory for failure and rollback transitions).")
+    public record TransitionRequest(UUID applicationId, String to, String reason) {}
 }
