@@ -99,6 +99,69 @@ export function seedHistory(entries: unknown[] = [], nextCursor?: string): void 
   });
 }
 
+/** One download-slot fixture (S8-04): the artifact a download would serve. */
+export interface SlotFixture {
+  platform: "IOS" | "ANDROID";
+  artifactId?: string;
+  buildNumber?: number | null;
+  sizeBytes?: number;
+  uploadedAt?: string;
+}
+
+/** A history entry fixture with slots attached (see seedHistory). */
+export function entryWithSlots(versionId: string, versionName: string, slots: SlotFixture[]): Record<string, unknown> {
+  return {
+    versionId,
+    versionName,
+    status: "ACTIVE",
+    expiresAt: null,
+    platforms: slots.map((slot) => ({
+      platform: slot.platform,
+      artifactId: slot.artifactId ?? `${versionId}-artifact-${slot.platform.toLowerCase()}`,
+      buildNumber: slot.buildNumber ?? 421,
+      sizeBytes: slot.sizeBytes ?? 4096,
+      uploadedAt: slot.uploadedAt ?? "2026-10-08T00:00:00Z",
+    })),
+  };
+}
+
+/**
+ * Stubs one download issuance (S8-04). Call AFTER installFetchRouter.
+ * `status: 200` answers a minted URL for the given behavior; any other
+ * status renders the problem envelope (the concealed denial).
+ */
+export function seedDownload(
+  artifactId: string,
+  status: number,
+  issuance?: Record<string, unknown>,
+): void {
+  routeTable.unshift({
+    method: "GET",
+    url: `/api/v1/artifacts/${artifactId}/download`,
+    status,
+    body:
+      status === 200
+        ? {
+            artifactId,
+            versionId: "v",
+            platform: "ANDROID",
+            channel: "DIRECT",
+            behavior: "OPEN_SIGNED_URL",
+            url: "/api/v1/downloads/test-token",
+            expiresAt: new Date(Date.now() + 14 * 60_000).toISOString(),
+            fileName: "banking.apk",
+            sizeBytes: 4096,
+            ...(issuance ?? {}),
+          }
+        : (issuance ?? {
+            title: "Not Found",
+            status,
+            code: "VERSION_NOT_FOUND",
+            detail: "Resource not found.",
+          }),
+  });
+}
+
 /** The deep-link probe's stub: 200 with entries, or the concealed miss. */
 export function seedHistoryProbe(status: number, entries: unknown[] = []): void {
   routeTable.unshift({

@@ -14,6 +14,7 @@ import {
   installFetchRouter,
   renderPortal,
   seedCatalog,
+  seedDownload,
   seedHistory,
   seedSession,
 } from "../test/harness";
@@ -203,5 +204,25 @@ describe("ApplicationPage version history", () => {
 
     await waitFor(() => expect(screen.getByTestId("history-list")).toBeInTheDocument());
     expect(screen.getByTestId("history-title")).toHaveTextContent("Banking");
+  });
+
+  it("offers the download flow on the platform rows (S8-04)", async () => {
+    installFetchRouter([]);
+    seedHistory([V712]);
+    seedSession();
+    seedDownload("50000000-0000-4000-8000-000000000002", 200);
+    renderPortal(<App />, { route: APP_ROUTE });
+
+    await waitFor(() => expect(screen.getByTestId("history-list")).toBeInTheDocument());
+
+    // One Download button per installable slot; the artifactless
+    // revoked row offers none.
+    expect(screen.getByTestId("download-trigger-ANDROID")).toBeInTheDocument();
+    expect(screen.getByTestId("download-trigger-IOS")).toBeInTheDocument();
+    expect(screen.queryByTestId(`history-downloads-${V710_REVOKED.versionId}`)).not.toBeInTheDocument();
+
+    await userEvent.click(screen.getByTestId("download-trigger-ANDROID"));
+    const guidance = await screen.findByTestId("download-guidance-android");
+    expect(guidance).toHaveTextContent("Install unknown apps");
   });
 });

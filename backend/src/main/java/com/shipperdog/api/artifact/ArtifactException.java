@@ -26,6 +26,7 @@ public class ArtifactException extends RuntimeException {
     public enum Code {
         ARTIFACT_NOT_FOUND(HttpStatus.NOT_FOUND, "ARTIFACT_NOT_FOUND", "Resource not found."),
         UPLOAD_SESSION_NOT_FOUND(HttpStatus.NOT_FOUND, "UPLOAD_SESSION_NOT_FOUND", "Resource not found."),
+        DOWNLOAD_NOT_FOUND(HttpStatus.NOT_FOUND, "DOWNLOAD_NOT_FOUND", "Resource not found."),
         INVALID_REQUEST(HttpStatus.BAD_REQUEST, "INVALID_REQUEST", "The request is invalid."),
         ARTIFACT_FILE_TYPE_REJECTED(
                 HttpStatus.UNSUPPORTED_MEDIA_TYPE,

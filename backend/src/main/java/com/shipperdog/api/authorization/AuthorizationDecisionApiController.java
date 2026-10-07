@@ -37,10 +37,12 @@ import org.springframework.web.bind.annotation.RestController;
  *   <li>{@code GET /api/v1/authorization/decisions/download} — the
  *       PRD 12 download decision for
  *       {@code tenantId}/{@code versionId}/{@code platform}; ALLOW
- *       answers the signed-URL issuance inputs (artifact id + storage
- *       key reference) S8-04 signs; denials conceal at the route's
- *       two grains (version/artifact), never leaking the failing
- *       layer.</li>
+ *       answers the artifact id the download would serve (since
+ *       S8-04 WITHOUT the storage key reference — signed URLs are the
+ *       binary's only egress, and the issuance route that mints them
+ *       is the artifact module's {@code GET /api/v1/artifacts/{id}/
+ *       download}); denials conceal at the route's two grains
+ *       (version/artifact), never leaking the failing layer.</li>
  *   <li>{@code GET /api/v1/authorization/decisions/eligibility} —
  *       the caller's authorized version set for
  *       {@code tenantId}/{@code applicationId} (FR-013's

@@ -466,6 +466,11 @@ abstract class IsolationScenarioHarness {
         return "/api/v1/artifacts/" + artifactId + "?version_id=" + versionId;
     }
 
+    /** The S8-04 download-issuance route (engine-decided, URL-minting). */
+    protected static String issuanceUri(UUID artifactId, UUID versionId) {
+        return "/api/v1/artifacts/" + artifactId + "/download?version_id=" + versionId;
+    }
+
     // -----------------------------------------------------------------------
     // HTTP plumbing (the integration suites' shared shape)
     // -----------------------------------------------------------------------

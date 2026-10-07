@@ -138,7 +138,20 @@ so a revalidation trail reads attempt by attempt;
 `ARTIFACT_REVALIDATION_REQUESTED` — issue #24/S5-05: the retry entry
 accepted (`FAILED -> VALIDATING`, a blocked validation re-driven, or
 a blocked extraction re-armed), carrying `versionId` and `artifactId`
-entity references with the `status` the row carried at acceptance),
+entity references with the `status` the row carried at acceptance);
+`DOWNLOAD_ISSUED` — issue #38/S8-04: one ALLOWED tester download
+issuance (who/what/artifact/result, beside the engine's own
+`AUTHORIZATION_DECISION` event for the same call — a denial emits
+no `DOWNLOAD_ISSUED`, nothing was issued), carrying the full entity
+reference chain (`userId` of the caller through `organizationId`,
+`tenantId`, `applicationId`, `versionId`, `artifactId`) with
+`success=true` and the issuance facts in `detail`: `platform`,
+`channel` (DIRECT), `behavior` (the channel routing table's resolved
+row), `fileName`, `size`, `urlTtlSeconds`, and `mechanism`
+(`backend-proxy` on emulator deployments, `gcs-v4` in production) —
+the trail that reconciles against the per-artifact `download_count`
+column (V23) and the `shipperdog.download.count` metric;
+tester (`TESTER_INVITED` — issue #26/S6-01: an onboarding invitation
 tester (`TESTER_INVITED` — issue #26/S6-01: an onboarding invitation
 minted (create or re-invite, `reinvited=true` distinguishing the
 latter), carrying the `email` and `testerId` entity reference;

@@ -92,5 +92,26 @@ public final class MetricNames {
      */
     public static final String ARTIFACT_VALIDATION_DURATION = "shipperdog.artifact.validation.duration";
 
+    /**
+     * Timer of every download URL issuance (issue #38, S8-04 — the
+     * PRD 42 SLO "download URL generation < 500 ms" observes THIS
+     * meter's {@code outcome=issued} leg), tagged {@code
+     * outcome=issued|denied}: issued is the ALLOW path that minted a
+     * URL (decision, scoped read, routing, and minting), denied every
+     * concealed denial — recorded for the ratio, excluded from the
+     * SLO reading, which is about generation.
+     */
+    public static final String DOWNLOAD_URL_GENERATION_DURATION = "shipperdog.download.url.generation.duration";
+
+    /**
+     * Counter of every issued tester download (issue #38, S8-04 — the
+     * reserved {@code download_count} of PRD 28, E5/E9), tagged
+     * {@code platform=IOS|ANDROID}. Beside it, the durable per-
+     * artifact aggregate on the artifact row (V23, the S11-04 input)
+     * and the DOWNLOAD_ISSUED audit trail keep the number
+     * reconcilable; this meter is the live operational signal.
+     */
+    public static final String DOWNLOAD_COUNT = "shipperdog.download.count";
+
     private MetricNames() {}
 }

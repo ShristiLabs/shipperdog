@@ -30,6 +30,7 @@ import java.time.Duration;
 import java.util.HexFormat;
 import java.util.Optional;
 import java.util.OptionalLong;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -69,6 +70,9 @@ public class GcsArtifactStore implements ArtifactStore {
 
     /** Chunk size of streamed writes; a multiple of the 256 KiB GCS floor. */
     private static final int WRITE_CHUNK_BYTES = 8 * 1024 * 1024;
+
+    /** Chunk size of streamed download reads (issue #38, S8-04): bounded, never whole-object. */
+    private static final int READ_CHUNK_BYTES = 1024 * 1024;
 
     private final Storage storage;
     private final ArtifactStorageProperties properties;
@@ -195,6 +199,60 @@ public class GcsArtifactStore implements ArtifactStore {
         } catch (StorageException | IOException e) {
             throw unavailable("cannot read range from object at " + storageKey, e);
         }
+    }
+
+    @Override
+    public String signV4DownloadUrl(String storageKey, String fileName, String contentType, Duration ttl) {
+        // Emulator deployments never reach here: the download tier
+        // routes emulator issuance to the backend proxy (the store's
+        // NoCredentials identity cannot sign, and fake-gcs-server does
+        // not verify V4 signatures — ADR-0003's download-tier
+        // amendment records the verification). A call in emulator mode
+        // is a wiring fault and fails loudly, never silently.
+        if (emulatorMode()) {
+            throw unavailable("V4 signing is unavailable against the emulator host", null);
+        }
+        BlobInfo target = BlobInfo.newBuilder(properties.bucket(), storageKey)
+                .setContentType(contentType)
+                .build();
+        try {
+            return storage.signUrl(
+                            target,
+                            ttl.toMillis(),
+                            TimeUnit.MILLISECONDS,
+                            Storage.SignUrlOption.withV4Signature(),
+                            Storage.SignUrlOption.withQueryParams(java.util.Map.of(
+                                    "response-content-disposition",
+                                    "attachment; filename=\"" + sanitizeFileName(fileName) + "\"")))
+                    .toString();
+        } catch (StorageException e) {
+            throw unavailable("cannot sign the download URL for " + storageKey, e);
+        }
+    }
+
+    @Override
+    public InputStream open(String storageKey) {
+        BlobId id = BlobId.of(properties.bucket(), storageKey);
+        try {
+            if (storage.get(id) == null) {
+                throw unavailable("no object at " + storageKey, null);
+            }
+            ReadChannel reader = storage.reader(id);
+            reader.setChunkSize(READ_CHUNK_BYTES);
+            return Channels.newInputStream(reader);
+        } catch (StorageException e) {
+            throw unavailable("cannot open object at " + storageKey, e);
+        }
+    }
+
+    /**
+     * The response-disposition filename is quoted into an HTTP header
+     * value: control characters and quotes are stripped so a hostile
+     * upload name cannot smuggle header syntax (the name was already
+     * bounded at upload; this is the belt to that braces).
+     */
+    private static String sanitizeFileName(String fileName) {
+        return fileName == null ? "artifact" : fileName.replaceAll("[\"\\\\\\r\\n\\t;]", "_");
     }
 
     /** The bucket's existence is checked once per process, tolerantly. */

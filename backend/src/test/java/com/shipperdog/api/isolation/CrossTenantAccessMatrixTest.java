@@ -66,6 +66,12 @@ class CrossTenantAccessMatrixTest extends IsolationScenarioHarness {
                 case "/api/v1/authorization/decisions/eligibility" -> 200;
                 case "/api/v1/audit" -> 200;
                 case "/api/v1/artifacts/{artifactId}" -> 200;
+                // The S8-04 issuance route: engine-decided like the
+                // decision API (no RBAC gate), so the wildcard's
+                // ALLOW mints the URL — while org/tenant personas
+                // without a download entitlement conceal (the
+                // entry's own-side 404s above).
+                case "/api/v1/artifacts/{artifactId}/download" -> 200;
                 default -> entry.ownOrgAdmin();
             };
             expectOwn(entry, sideB, sideA.platformAdminToken(), "platform-admin", platformExpected, violations);

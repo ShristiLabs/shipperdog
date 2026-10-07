@@ -1,5 +1,7 @@
 package com.shipperdog.api.artifact;
 
+import com.shipperdog.api.artifact.internal.download.ArtifactDownloadService;
+import com.shipperdog.api.artifact.internal.download.ArtifactDownloadService.DownloadIssuanceView;
 import com.shipperdog.api.artifact.internal.provenance.Provenance;
 import com.shipperdog.api.artifact.internal.service.ArtifactService;
 import com.shipperdog.api.artifact.internal.service.ArtifactService.ArtifactView;
@@ -64,9 +66,11 @@ import org.springframework.web.multipart.MultipartFile;
 public class ArtifactController {
 
     private final ArtifactService artifacts;
+    private final ArtifactDownloadService downloads;
 
-    ArtifactController(ArtifactService artifacts) {
+    ArtifactController(ArtifactService artifacts, ArtifactDownloadService downloads) {
         this.artifacts = artifacts;
+        this.downloads = downloads;
     }
 
     /**
@@ -206,6 +210,33 @@ public class ArtifactController {
             @PathVariable UUID artifactId,
             @RequestParam("version_id") UUID versionId) {
         return artifacts.revalidate(requireUserId(principal), artifactId, versionId);
+    }
+
+    /**
+     * Issues one tester download (issue #38, S8-04, FR-014): the
+     * layered engine's DOWNLOAD decision for the CALLER is this
+     * route's entire authority — no console-grade {@code
+     * app:artifacts:read} gate, the #37 follow-up's deliberate
+     * relaxation (a pure tester holds no RBAC role by design, S6-03,
+     * so a permission gate would exclude exactly the persona the
+     * download serves; {@code isAuthenticated()} is the platform's
+     * convention for caller-addressed surfaces, and the engine's
+     * role-overlay entitlement still admits the console personas).
+     * On ALLOW the answer carries the routed channel and behavior,
+     * the short-lived signed URL, and its expiry — never the storage
+     * key (signed URLs are the binary's only egress). A denial
+     * renders the artifact read's own two concealed miss shapes,
+     * byte-identical to the genuine ones; no URL is ever minted on
+     * deny (INV-005). The {@code version_id} query parameter is the
+     * same body-addressed permission target shape as the read.
+     */
+    @GetMapping("/{artifactId}/download")
+    @PreAuthorize("isAuthenticated()")
+    DownloadIssuanceView download(
+            @AuthenticationPrincipal Object principal,
+            @PathVariable UUID artifactId,
+            @RequestParam("version_id") UUID versionId) {
+        return downloads.issue(requireUserId(principal), artifactId, versionId);
     }
 
     private static String originalName(MultipartFile file) {

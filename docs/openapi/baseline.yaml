@@ -1714,6 +1714,25 @@ paths:
             '*/*':
               schema:
                 $ref: "#/components/schemas/PageResponseMemberView"
+  /api/v1/downloads/{token}:
+    get:
+      tags:
+      - download-proxy-controller
+      operationId: fetch
+      parameters:
+      - name: token
+        in: path
+        required: true
+        schema:
+          type: string
+      responses:
+        "200":
+          description: OK
+          content:
+            '*/*':
+              schema:
+                type: string
+                format: binary
   /api/v1/authorization/decisions/eligibility:
     get:
       tags:
@@ -1891,6 +1910,7 @@ paths:
           - ARTIFACT_METADATA_EXTRACTED
           - ARTIFACT_VALIDATED
           - ARTIFACT_REVALIDATION_REQUESTED
+          - DOWNLOAD_ISSUED
           - TESTER_INVITED
           - TESTER_ACTIVATED
           - TESTER_STATUS_CHANGED
@@ -1981,6 +2001,31 @@ paths:
             '*/*':
               schema:
                 $ref: "#/components/schemas/ArtifactView"
+  /api/v1/artifacts/{artifactId}/download:
+    get:
+      tags:
+      - artifact-controller
+      operationId: download_1
+      parameters:
+      - name: artifactId
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - name: version_id
+        in: query
+        required: true
+        schema:
+          type: string
+          format: uuid
+      responses:
+        "200":
+          description: OK
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/DownloadIssuanceView"
   /api/v1/applications/{id}/tenants:
     get:
       tags:
@@ -2358,6 +2403,8 @@ components:
     JsonNode:
       type: object
       properties:
+        container:
+          type: boolean
         floatingPointNumber:
           type: boolean
         nodeType:
@@ -2402,8 +2449,6 @@ components:
         boolean:
           type: boolean
         binary:
-          type: boolean
-        container:
           type: boolean
         empty:
           type: boolean
@@ -3295,8 +3340,6 @@ components:
           format: uuid
         platform:
           type: string
-        storageKey:
-          type: string
     CatalogCardView:
       type: object
       properties:
@@ -3446,6 +3489,7 @@ components:
           - ARTIFACT_METADATA_EXTRACTED
           - ARTIFACT_VALIDATED
           - ARTIFACT_REVALIDATION_REQUESTED
+          - DOWNLOAD_ISSUED
           - TESTER_INVITED
           - TESTER_ACTIVATED
           - TESTER_STATUS_CHANGED
@@ -3511,6 +3555,31 @@ components:
             $ref: "#/components/schemas/AuditEventView"
         next_cursor:
           type: string
+    DownloadIssuanceView:
+      type: object
+      properties:
+        artifactId:
+          type: string
+          format: uuid
+        versionId:
+          type: string
+          format: uuid
+        platform:
+          type: string
+        channel:
+          type: string
+        behavior:
+          type: string
+        url:
+          type: string
+        expiresAt:
+          type: string
+          format: date-time
+        fileName:
+          type: string
+        sizeBytes:
+          type: integer
+          format: int64
     PageResponseAuthorizationView:
       type: object
       properties:

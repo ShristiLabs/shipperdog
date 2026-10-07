@@ -19,6 +19,8 @@ metadata only in PostgreSQL — never bytes (FR-007, ADR-0003).
 | `POST /api/v1/artifacts/{artifactId}/finalize` | `app:artifacts:upload` | Registers the artifact after direct bytes; replays the registered state on retry; replays the session-captured provenance |
 | `GET /api/v1/artifacts/{artifactId}?version_id={versionId}` | `app:artifacts:read` | The artifact read — where extraction outcomes land (S5-02), the provenance block answers (S5-04), and the validation block settles (S5-05) |
 | `POST /api/v1/artifacts/{artifactId}/revalidate?version_id={versionId}` | `app:artifacts:upload` | The validation retry entry (S5-05): a FAILED artifact re-enters through `FAILED -> VALIDATING`, a blocked validation re-drives, a blocked extraction re-arms; 202 with the artifact view, 409 `ARTIFACT_NOT_VALIDATABLE` for anything else |
+| `GET /api/v1/artifacts/{artifactId}/download?version_id={versionId}` | `isAuthenticated()` (the engine is the authority) | Download issuance (S8-04): the layered engine's DOWNLOAD decision for the caller is this route's entire authority — the #37 follow-up's deliberate relaxation of the console-grade gate (a pure tester holds no RBAC role, so a permission gate here would exclude the persona the download serves). ALLOW answers the routed channel/behavior, the short-lived signed URL, and its expiry — never the storage key; every denial conceals as the read's own two miss shapes. An ANDROID AAB is refused as the artifact-grain miss (S5-05: AAB is Play-only, never a direct download) |
+| `GET /api/v1/downloads/{token}` | anonymous (the token is the credential) | The emulator-mode download proxy (S8-04, ADR-0003's download-tier amendment): stands in for GCS V4 signing wherever the storage target cannot verify a signature (the compose emulator). The HMAC-SHA256 token an engine ALLOW minted is unforgeable (not secret — the base64url payload is decodable by its holder) and TTL-bounded; every invalid, tampered, or expired token answers the same uniform 404 `DOWNLOAD_NOT_FOUND`. Production deployments mint GCS V4 URLs instead and never hand a client this route |
 
 The surface is body-addressed: every route carries the version id in
 the form/body/query (never the path), the permission evaluator
@@ -34,7 +36,9 @@ rendering the same two conceal grains — see
 also answers the decision API's issuance question
 (`issuanceInputsOf`: the version's distributable — READY or
 DISTRIBUTED, newest first — artifact for a platform, with its PRD 24
-storage key), the inputs S8-04 signs the download URL from; the
+storage key); since S8-04 those inputs are consumed server-side by
+the download issuance route, which mints the signed URL — the key
+never reaches a client on any path; the
 engine's own artifact layer stays the availability authority.
 
 ## Artifact states and extraction (S5-02, issue #21)
@@ -293,6 +297,8 @@ Semantics:
 | `ARTIFACT_VALIDATION_CONCURRENCY` | `2` | Validation pool size (its own pool — the extraction hand-off would self-deadlock a shared queue) |
 | `ARTIFACT_VALIDATION_QUEUE_CAPACITY` | `200` | Bounded queue; full = loud `VALIDATION_QUEUE_FULL` block record, never unbounded backlog |
 | `ARTIFACT_VALIDATION_STORAGE_RETRIES` | `3` | Attempts against transient storage failures before the attempt records `VALIDATION_UNAVAILABLE` |
+| `ARTIFACT_DOWNLOAD_URL_TTL` | `PT15M` | Signed download URL lifetime (S8-04). Bounded twice at startup, fail-fast: at or under the authorization decision-input cache TTL (the S7-04 rule — no URL outlives the revocation backstop) and at or under the hard 15-minute ceiling FR-014 names |
+| `ARTIFACT_DOWNLOAD_PROXY_SIGNING_KEY` | `shipperdog-local-download-key` | HMAC-SHA256 key behind the emulator-mode proxy URL (S8-04). Local-only default, the same policy as `AUTH_JWT_SECRET`; production injects a real secret through the environment — and in production the key is never read, because production issuance mints GCS V4 URLs (no emulator host) |
 
 ## Observability
 
@@ -312,7 +318,14 @@ Semantics:
   `platform=IOS|ANDROID`, `outcome=success|failed|blocked` — the
   PRD 42 "artifact metadata processing < 30 s" SLO observes the
   extraction meter plus this one end to end; `artifact_validation_duration`
-  is the PRD 28 reserved name).
+  is the PRD 28 reserved name); since S8-04
+  `shipperdog.download.url.generation.duration` (tags
+  `outcome=issued|denied` — the PRD 42 "download URL generation <
+  500 ms" SLO observes the `issued` leg) and
+  `shipperdog.download.count` (tag `platform=IOS|ANDROID`, the PRD 28
+  reserved `download_count` wired live) beside the durable
+  per-artifact `download_count` column (V23) and the
+  `DOWNLOAD_ISSUED` audit trail, which keep the number reconcilable.
 
 ## Duplicates and immutability
 

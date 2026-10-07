@@ -366,11 +366,13 @@ write-through (before-commit inside the revoking transaction), and
 the loader's ACTIVE-only filter keeps any refill correct — there is
 no TTL window to escape on the decision path, sequentially. The
 documented bound, aligned with [testers](testers.md)'s revocation
-SLA: signed download URLs do not exist until S8-04 — the decision API
-returns issuance inputs, it mints no URLs — so when URL-bearing
-downloads land, previously issued URLs live to their own TTL and the
-cache's TTL stays at or under it, the same one-token-lifetime shape
-S6-04 documents for tester deactivation.
+SLA: the decision API mints no URLs — the artifact module's
+issuance route (S8-04) does the minting, and its URL TTL is bounded
+at startup (fail-fast) at or under the decision-input cache TTL, so
+a previously issued URL can never outlive the revocation backstop:
+the same one-token-lifetime shape S6-04 documents for tester
+deactivation, enforced structurally rather than by operator
+discipline.
 
 **M1 surface note.** The artifact routes' RBAC gate stays
 console-grade (`app:artifacts:read`) — a pure tester does not pass
@@ -391,8 +393,11 @@ The stable FIRST-PARTY contract the tester portal (E8) and the
 download path consume — the caller asks about their own reach, and
 the layered engine answers. It is deliberately NOT the deferred
 public third-party "authorize" endpoint (out of the story's scope)
-and it mints no URLs: the decision is the API; signing the storage
-key is S8-04's. All three routes are self-scoped
+and it mints no URLs: the decision is the API; since S8-04 the
+artifact module's `GET /api/v1/artifacts/{artifactId}/download`
+consumes the ALLOW server-side and mints the short-lived signed URL
+(see [artifacts](artifacts.md)) — this route's answer carries the
+artifact id, never the storage key. All three routes are self-scoped
 (`isAuthenticated()`, the platform's caller-addressed convention)
 with the engine as their ENTIRE authority — a pure tester holds no
 RBAC role by S6-03 design (the membership IS the access), so a
@@ -402,7 +407,7 @@ with the same concealed miss a genuine unknown produces.
 
 | Method | Path | Result |
 |---|---|---|
-| GET | `/api/v1/authorization/decisions/download?tenantId=&versionId=&platform=` | `200` the ALLOWED download decision's issuance inputs: `applicationId`, `versionId`, `artifactId`, `platform`, and the `storageKey` reference (PRD 24 layout) S8-04 signs the URL from; `404` concealed on ANY denial — the version-grain miss (`VERSION_NOT_FOUND`: unknown version, no entitlement, invisible application, revoked version, or an unreachable/unknown tenant) or the artifact-grain miss (`ARTIFACT_NOT_FOUND`: no distributable artifact — READY or DISTRIBUTED, newest first — for the pinned platform), byte-identical to the genuine miss, never a layer name; `400` an unknown platform vocabulary |
+| GET | `/api/v1/authorization/decisions/download?tenantId=&versionId=&platform=` | `200` the ALLOWED download decision: `applicationId`, `versionId`, `artifactId` (the tester-visible half of the issuance inputs — the artifact a download would serve), `platform`. The `storageKey` reference left this payload with S8-04 (never expose `storage_key` to clients; signed URLs are the binary's only egress) — the issuance route consumes it server-side and mints the URL; `404` concealed on ANY denial — the version-grain miss (`VERSION_NOT_FOUND`: unknown version, no entitlement, invisible application, revoked version, or an unreachable/unknown tenant) or the artifact-grain miss (`ARTIFACT_NOT_FOUND`: no distributable artifact — READY or DISTRIBUTED, newest first, and since S8-04 never an AAB on the direct channel — for the pinned platform), byte-identical to the genuine miss, never a layer name; `400` an unknown platform vocabulary |
 | GET | `/api/v1/authorization/decisions/eligibility?tenantId=&applicationId=&limit=&cursor=&versionId=` | `200` the caller's authorized version set (FR-013's history page, rendered by the portal since S8-03): `application` (id/name/status — the header facts a deep link cannot know from a catalog card), `effectiveAccess` (the two-switches flag), `resolvedAt`, and newest-first `entries` (version id/name/status, each entry's TTL — null when a contributing grant never expires — and `platforms[]`: one slot per platform carrying a distributable artifact, the NEWEST one, with `buildNumber` from extraction metadata, `sizeBytes`, and `uploadedAt`; the artifact a download would serve); cursor-paginated at the story's default `limit` of 20 (`next_cursor` follows the platform envelope); the optional `versionId` narrows the answer to that one version — the deep-link probe, whose miss (unknown, a foreign application's, or unauthorized) conceals as `404 VERSION_NOT_FOUND`, byte-identical to the genuine miss (§12); `404` concealed as `TENANT_NOT_FOUND` (unknown tenant, or the caller reaches it not at all) or `APPLICATION_NOT_FOUND` (an application the tenant cannot see); a linked tester with no grants sees a legitimate EMPTY set, a console caller answers `effectiveAccess=false` and empty, and a SUSPENDED tester conceals entirely — the engine's list decision denies before the set resolves, so they learn nothing (stricter than the administrator's effective view, which still lists retained grants to admins) |
 | GET | `/api/v1/authorization/decisions/applications?limit=&cursor=` | `200` the caller's authorized application catalog (S8-02, FR-012/PRD 31, the portal home): the platform list envelope (`items` + `next_cursor`) of cards, each `{tenantId, application {id, name, status}, latestAuthorizedVersion {id, name, status}, platforms[]}` — per platform the newest authorized version carrying a distributable artifact, with the tenant dimension the S8-04 download decision is addressed through; `effectiveAccess` is true when at least one linked tenant passes the engine's LIST decision. The set is server-computed (PRD 26: never a client-side filter of a bigger list): candidates derive from the tester's own grants across LIST-sanctioned linked tenants (deny-by-default — a non-empty effective set requires a live grant), a tenant that can no longer see an application contributes nothing, and an application whose authorized versions yield no installable platform has NO card (no dead cards). The route addresses no foreign resource, so concealment is by emptiness: a grantless-but-linked tester answers `effectiveAccess=true` and an empty page, a console caller `false` and empty, and a suspended tester empty for the same reason the eligibility route conceals them. Cursor-paginated (name-ordered, byte-stable so the isolation matrix's concealment-parity proof holds); a member of `IsolationEndpointRegistry` |
 
@@ -765,9 +770,9 @@ blocking stage, and the whole suite carries the JUnit tag
 | `IsolationEndpointRegistry` | The endpoint catalog: every M1 read surface as a declarative entry (URI builders, per-persona own-side expectations, the genuine-miss call). |
 | `IsolationEndpointCatalogTest` | The OpenAPI completeness guard: every GET route the served spec declares must be in the catalog or on a justified allowlist — a new read endpoint fails the suite until it joins the matrix, and a removed route flags its stale entry. |
 | `CrossTenantAccessMatrixTest` | INV-001 + the M1 exit criterion: for every (persona x tenant x endpoint) — foreign reads are the concealed miss byte-identical to the genuine one (no data, no existence leak), own reads answer correctly, the platform wildcard reaches across (sanctioned), the tester persona conceals through the decision API, and no denial body carries a foreign identifier. |
-| `ExplicitAuthorizationBypassTest` | INV-005: the decision engine is the only download authority (ALLOW carries issuance inputs — artifact id + storage key reference, never a URL); every persona without engine authority conceals; the API never proxies object storage (guesses fail closed; buckets private by default until S8-04 signs). |
+| `ExplicitAuthorizationBypassTest` | INV-005: the decision engine is the only download authority — since S8-04 the issuance route mints the URL only on ALLOW (the decision's ALLOW carries the artifact id, never the storage key, never a URL to a persona without engine authority); every persona without engine authority conceals; the API's storage egress is the signed URL alone (proxy token guesses fail closed; buckets private). |
 | `HistoricalAvailabilityTest` | INV-006: explicit old-version grants survive every newer arrival; LATEST_N windows slide without truncating explicit grants; TAG grants follow a moved tag; ARCHIVED versions stay readable AND downloadable (the soft terminal — revoke-distribution, pinned by the S7-04 suite, is the state that stops downloads). |
-| `RevocationAndTtlTimingTest` | INV-007: revocation denies the very NEXT decision through a warm cache; a short-TTL grant flips to denied at its expiry (evaluation-time) and lands in the revocation report as EXPIRED; bulk revocation denies every formerly granted version on the next decision. The signed-URL TTL half is S8-04's (M1 issues no URLs — the documented bound). |
+| `RevocationAndTtlTimingTest` | INV-007: revocation denies the very NEXT decision through a warm cache; a short-TTL grant flips to denied at its expiry (evaluation-time) and lands in the revocation report as EXPIRED; bulk revocation denies every formerly granted version on the next decision. Since S8-04 the signed-URL TTL bound is enforced structurally: the issuance service fails fast at startup unless the URL TTL sits at or under the decision-input cache TTL (and FR-014's 15-minute ceiling), so a minted URL can never outlive the revocation backstop. |
 | `DegradedModeMatrixTest` | The cache-degraded half: with Redis unreachable, allow/deny/concealment/revocation-immediacy hold unchanged — the cache can only make decisions slower, never different. |
 | `DecisionLatencyGuardTest` | The §42 SLO guard: warm decision p99 under 100 ms over a 200-probe burst (the milestone exit criterion's automated half; `authorization_decision_duration` remains the production observation point). |
 | `OpaqueSemanticsHardeningTest` | The carried hardening proofs, folded here from #26-#28 and the #33 review: the platform wildcard receives the concealed miss on unknown applications/versions (never a 500); tester-grain denials render `TESTER_NOT_FOUND`; the assignRole insert race collapses to the winner (never a dead-catch 500); the grant-create/revocation triple race answers stable codes (never a 500). The deterministic unit counterpart of the last mapping is `VersionAccessGrantServiceCreateRaceTest`. |
@@ -797,10 +802,12 @@ blocking stage, and the whole suite carries the JUnit tag
 
 ### Documented bounds
 
-- Signed URLs do not exist until S8-04; the decision API's ALLOW
-  carries issuance inputs (the storage key reference), and URL TTL
-  bounding is that story's. The suite pins the grant-expiry bound
-  and the no-URL shape until then.
+- Since S8-04 signed URLs exist: the artifact module's issuance route
+  mints them on ALLOW only, and the URL TTL is bounded at startup at
+  or under the decision-input cache TTL (the grant-expiry bound the
+  suite pins structurally). The decision API's ALLOW carries the
+  artifact id only — the storage key is server-internal, and no
+  persona without engine authority is ever handed a URL.
 - M1 versions are born DRAFT (distribution rings are M2): console
   artifact reads of undistributed versions deny for non-platform
   personas by the engine's distributability rule — the suite pins

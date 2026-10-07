@@ -9,9 +9,10 @@
  * can be shared when reproducing an issue.
  */
 import HistoryIcon from "@mui/icons-material/History";
-import { Card, CardActionArea, CardContent, Chip, Stack, Typography } from "@mui/material";
+import { Card, CardActionArea, CardActions, CardContent, Chip, Stack, Typography } from "@mui/material";
 import { Link as RouterLink } from "react-router-dom";
 import type { HistoryEntry } from "../api/history";
+import DownloadFlow from "./DownloadFlow";
 
 export default function HistoryEntryCard({
   entry,
@@ -69,6 +70,18 @@ export default function HistoryEntryCard({
           </Stack>
         </CardContent>
       </CardActionArea>
+      {entry.platforms.length > 0 ? (
+        <CardActions sx={{ pt: 0 }} data-testid={`history-downloads-${entry.versionId}`}>
+          {entry.platforms.map((slot) => (
+            <DownloadFlow
+              key={slot.platform}
+              artifactId={slot.artifactId}
+              versionId={entry.versionId}
+              platform={slot.platform}
+            />
+          ))}
+        </CardActions>
+      ) : null}
     </Card>
   );
 }

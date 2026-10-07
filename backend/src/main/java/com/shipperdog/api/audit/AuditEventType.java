@@ -46,6 +46,8 @@ public enum AuditEventType {
     ARTIFACT_METADATA_EXTRACTED,
     ARTIFACT_VALIDATED,
     ARTIFACT_REVALIDATION_REQUESTED,
+    /** One ALLOWED download issuance (S8-04, FR-014): who/what/artifact/result beside the engine's own decision event. */
+    DOWNLOAD_ISSUED,
     TESTER_INVITED,
     TESTER_ACTIVATED,
     TESTER_STATUS_CHANGED,

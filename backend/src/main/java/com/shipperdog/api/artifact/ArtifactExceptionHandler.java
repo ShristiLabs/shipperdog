@@ -27,7 +27,7 @@ import org.springframework.web.bind.annotation.RestControllerAdvice;
  * envelope here — same code, same shape, one renderer per route.
  */
 @Order(0)
-@RestControllerAdvice(assignableTypes = {ArtifactController.class})
+@RestControllerAdvice(assignableTypes = {ArtifactController.class, DownloadProxyController.class})
 public class ArtifactExceptionHandler {
 
     @ExceptionHandler(ArtifactException.class)

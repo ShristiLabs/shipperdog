@@ -63,13 +63,17 @@ public interface ArtifactRegistryRepository extends JpaRepository<ArtifactEntity
      * API's ALLOW path — one indexed descent on the artifact table,
      * newest first with the id tiebreaker, restricted to the
      * distributable lifecycle statuses (PRD 18) so the decision API
-     * can never hand the portal a storage key whose bytes are not yet
-     * settled. Authorization data in the same registry-read character
-     * as {@link #findArtifactById}; never an endpoint data path.
+     * can never hand the portal an artifact whose bytes are not yet
+     * settled, and to the DIRECT channel's format rule (S8-04, the
+     * S5-05 recorded fact): an AAB is Play-only and never installs
+     * from a download tap, so it is not a distributable download —
+     * M1's only channel is the direct one. Authorization data in the
+     * same registry-read character as {@link #findArtifactById};
+     * never an endpoint data path.
      */
     @Query("select a from ArtifactEntity a"
             + " where a.versionId = :versionId and a.platform = :platform"
-            + " and a.status in :distributable"
+            + " and a.status in :distributable and a.format <> 'AAB'"
             + " order by a.createdAt desc, a.id asc")
     List<ArtifactEntity> findDistributableByVersionAndPlatform(
             @Param("versionId") UUID versionId,
@@ -82,16 +86,19 @@ public interface ArtifactRegistryRepository extends JpaRepository<ArtifactEntity
      * the columns the platform set and the history slots need, never
      * hydrated entities (the #36 review's projection finding, folded
      * with issue #37). The set form of {@link
-     * #findDistributableByVersionAndPlatform}'s availability predicate,
-     * composed with the effective-set resolution the engine already
-     * sanctioned; same registry-read character, never an endpoint data
-     * path. Newest first with the id tiebreaker, so the first row per
-     * (version, platform) is the artifact a download would serve.
+     * #findDistributableByVersionAndPlatform}'s availability predicate
+     * — including the S8-04 direct-channel format rule (no AAB row is
+     * ever a slot, a platform, or a download: an AAB cannot install
+     * from a tap) — composed with the effective-set resolution the
+     * engine already sanctioned; same registry-read character, never
+     * an endpoint data path. Newest first with the id tiebreaker, so
+     * the first row per (version, platform) is the artifact a
+     * download would serve.
      */
     @Query("select a.versionId as versionId, a.platform as platform, a.id as id,"
             + " a.buildNumber as buildNumber, a.size as size, a.createdAt as createdAt"
             + " from ArtifactEntity a"
-            + " where a.versionId in :versionIds and a.status in :distributable"
+            + " where a.versionId in :versionIds and a.status in :distributable and a.format <> 'AAB'"
             + " order by a.versionId asc, a.createdAt desc, a.id asc")
     List<InstallableArtifactView> findInstallableByVersionIds(
             @Param("versionIds") Collection<UUID> versionIds,

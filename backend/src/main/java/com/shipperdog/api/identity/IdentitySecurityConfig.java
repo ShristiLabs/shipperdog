@@ -54,6 +54,16 @@ public class IdentitySecurityConfig {
                                 "/api/v1/auth/password-reset/request",
                                 "/api/v1/auth/password-reset/confirm")
                         .permitAll()
+                        // The emulator-mode download proxy (issue #38, S8-04): the
+                        // HMAC token in the path IS the credential — an engine ALLOW
+                        // minted it at issuance — so the fetch is anonymous by design
+                        // and every invalid, tampered, or expired token answers the
+                        // controller's uniform opaque 404 (never an authentication
+                        // hint). Production deployments mint GCS V4 URLs instead and
+                        // never hand a client this route; the signature guard is the
+                        // entire authority either way.
+                        .requestMatchers(HttpMethod.GET, "/api/v1/downloads/*")
+                        .permitAll()
                         // Spring routes unhandled exceptions to /error via an ERROR
                         // dispatch that passes through this chain; without the permit a
                         // server fault would surface as a bare 401 instead of a 5xx.

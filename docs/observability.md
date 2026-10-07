@@ -77,7 +77,8 @@ Prometheus registry renders underscores + `_seconds` units):
 | `shipperdog_artifact_validation_duration_seconds` | Artifact validation pipeline (one timer per completed attempt), tags `platform=IOS\|ANDROID` and `outcome=success\|failed\|blocked` (the stage-failure vs infra-block split; the PRD 42 "artifact metadata processing < 30 sec" SLO observes the extraction meter plus this one end to end) | S5-05 (issue #24) |
 | `shipperdog_release_duration_seconds` | reserved | E9 |
 | `shipperdog_distribution_duration_seconds` | reserved | E13 |
-| `shipperdog_download_count` | reserved | E5/E9 |
+| `shipperdog_download_url_generation_duration_seconds` | Download issuance service, tags `outcome=issued\|denied`: the ALLOW leg that minted a URL (decision, scoped read, routing, minting) vs every concealed denial, recorded for the ratio — the PRD 42 "download URL generation < 500 ms" SLO observes the `issued` leg | S8-04 (issue #38) |
+| `shipperdog_download_count` | Download issuance service, tag `platform=IOS\|ANDROID`, one increment per ALLOWED issuance — the PRD 28 reserved name wired live, reconcilable against the per-artifact `download_count` column (V23) and the `DOWNLOAD_ISSUED` audit trail | S8-04 (issue #38); reserved since E5/E9 |
 | `shipperdog_installation_count` | reserved | E11 |
 | `shipperdog_promotion_duration_seconds` | reserved | E10 |
 | `shipperdog_approval_duration_seconds` | reserved | E10 |

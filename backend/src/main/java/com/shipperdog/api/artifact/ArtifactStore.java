@@ -1,6 +1,7 @@
 package com.shipperdog.api.artifact;
 
 import java.io.InputStream;
+import java.time.Duration;
 import java.util.Optional;
 import java.util.OptionalLong;
 
@@ -24,13 +25,16 @@ import java.util.OptionalLong;
  * buffering it whole (the request part is disk-buffered by the servlet
  * layer), and {@link #hash} streams the object back through a digest
  * — no method of this port ever exposes a whole-artifact byte array.
- * The read side (issue #21, S5-02 — the gap ADR-0003 left for this
- * story) is deliberately RANGED, not whole-object: the IPA parser
- * needs the ZIP central directory (at the end of the object) and a
- * handful of small entries, so {@link #sizeOf} plus {@link #read}
- * fetch kilobytes out of a multi-hundred-MB binary instead of
+ * The parser's read side (issue #21, S5-02 — the gap ADR-0003 left
+ * for that story) is deliberately RANGED, not whole-object: the IPA
+ * parser needs the ZIP central directory (at the end of the object)
+ * and a handful of small entries, so {@link #sizeOf} plus {@link
+ * #read} fetch kilobytes out of a multi-hundred-MB binary instead of
  * streaming it — the same no-whole-binary discipline as the write
- * side, in seekable form.
+ * side, in seekable form. The download tier (issue #38, S8-04) adds
+ * its own read surface — {@link #signV4DownloadUrl} and the streaming
+ * {@link #open} — because serving bytes to testers is a different
+ * concern from parsing them (ADR-0003's own separation, kept here).
  */
 public interface ArtifactStore {
 
@@ -92,6 +96,42 @@ public interface ArtifactStore {
      *     fails or the range leaves the object
      */
     byte[] read(String storageKey, long offset, int length);
+
+    /**
+     * Mints a short-lived signed download URL for the stored object
+     * (issue #38, S8-04, FR-014): the production tier's issuance
+     * primitive — a GCS V4-signed URL carrying the download decision,
+     * never the storage path as authorization (PRD 24's own note). The
+     * URL expires after {@code ttl}, answers {@code attachment} with
+     * the artifact's file name, and grants READ on exactly this one
+     * object — no overwrite, no delete, no listing (INV-003 is
+     * structural on the read side too). Production mode only: the
+     * compose emulator does not verify V4 signatures (ADR-0003's
+     * documented emulator hostility, re-verified by this story — see
+     * the ADR's download-tier amendment), so emulator deployments mint
+     * the backend-proxy URL instead and never call this method.
+     *
+     * @throws ArtifactException STORAGE_UNAVAILABLE when the store
+     *         cannot sign (missing signer credentials in production)
+     */
+    String signV4DownloadUrl(String storageKey, String fileName, String contentType, Duration ttl);
+
+    /**
+     * Streams the whole stored object (issue #38, S8-04): the download
+     * tier's own read surface — the bytes a signed URL (or the
+     * emulator-mode proxy that stands in for one) serves to a tester.
+     * Unlike the ranged {@link #read} the parser tier uses, this is a
+     * whole-object stream consumed by the response writer, never
+     * buffered by the caller; ADR-0003's no-whole-binary discipline
+     * holds because nothing reads it into memory. The download
+     * decision already happened before any caller opens this — the
+     * stream is the post-authorization egress, and the port keeps no
+     * overwrite or delete.
+     *
+     * @throws ArtifactException STORAGE_UNAVAILABLE when the store
+     *         fails or no object exists at the key
+     */
+    InputStream open(String storageKey);
 
     /** The checksum tuple {@link #hash} answers. */
     record StoredChecksum(String sha256Hex, long size) {}
