@@ -230,9 +230,20 @@ public class VersionAccessGrantService {
     /** The bulk-revocation outcome: how many ACTIVE grants the pass revoked. */
     public record BulkRevocationResult(int revokedCount) {}
 
-    /** One effective-access entry: the version, its contributors, and its TTL. */
+    /**
+     * One effective-access entry: the version, its contributors, and
+     * its TTL. {@code sortKey} is the version module's normalized
+     * ordering key (newest first) — additive since issue #37, where
+     * the decision API's catalog merges entries across tenant
+     * dimensions and needs the global order.
+     */
     public record EffectiveEntryView(
-            UUID versionId, String versionName, String status, List<UUID> sourceGrantIds, Instant expiresAt) {}
+            UUID versionId,
+            String versionName,
+            String status,
+            String sortKey,
+            List<UUID> sourceGrantIds,
+            Instant expiresAt) {}
 
     /** The tester's effective access for one application (issue #31 acceptance criterion 5 and 6). */
     public record EffectiveAccessView(
@@ -890,6 +901,11 @@ public class VersionAccessGrantService {
 
     private static EffectiveEntryView entryViewOf(EffectiveEntry entry) {
         return new EffectiveEntryView(
-                entry.versionId(), entry.versionName(), entry.status(), entry.sourceGrantIds(), entry.expiresAt());
+                entry.versionId(),
+                entry.versionName(),
+                entry.status(),
+                entry.sortKey(),
+                entry.sourceGrantIds(),
+                entry.expiresAt());
     }
 }

@@ -1,6 +1,8 @@
 package com.shipperdog.api.artifact;
 
+import java.time.Instant;
 import java.util.Collection;
+import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
@@ -55,6 +57,31 @@ public interface ArtifactAccess {
      * resolution the engine sanctioned.
      */
     Map<UUID, Set<String>> distributablePlatformsOfVersions(Collection<UUID> versionIds);
+
+    /**
+     * The installable platform slots of many versions at once (issue
+     * #37, S8-03): the version-history page's per-platform rows — for
+     * each version id supplied, one slot per platform carrying at
+     * least one distributable ({@code READY} or {@code DISTRIBUTED},
+     * PRD 18) artifact, resolved to the NEWEST such artifact (the one
+     * a download would serve) with the build metadata the page shows:
+     * the build number from extraction, the byte size, and the upload
+     * timestamp. One projected query over the caller's
+     * already-authorized version set — the row form of {@link
+     * #distributablePlatformsOfVersions}' availability predicate;
+     * authorization data in the same registry-read character, never an
+     * endpoint data path.
+     */
+    Map<UUID, List<InstallableSlot>> installableSlotsOfVersions(Collection<UUID> versionIds);
+
+    /**
+     * One platform's installable artifact as the history page shows it
+     * (issue #37, S8-03): the platform, the artifact a download would
+     * serve, and its build metadata. {@code buildNumber} is nullable —
+     * extraction metadata is settled best-effort, and a distributable
+     * artifact without one still installs.
+     */
+    record InstallableSlot(String platform, UUID artifactId, Long buildNumber, long sizeBytes, Instant uploadedAt) {}
 
     /** The artifact tuple callers may resolve; never the row itself. */
     record ArtifactState(UUID artifactId, UUID versionId, String platform, String status) {}
