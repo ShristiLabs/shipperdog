@@ -73,6 +73,11 @@ public class TraceAttributes {
         attribute("tester_group_id", groupId);
     }
 
+    /** Records the environment the current request operates on (S9-04, issue #58). */
+    public void environment(UUID environmentId) {
+        attribute("environment_id", environmentId);
+    }
+
     private void attribute(String key, UUID id) {
         if (id == null) {
             return;

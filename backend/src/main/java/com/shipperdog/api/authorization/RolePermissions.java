@@ -30,6 +30,7 @@ import java.util.Set;
  *                       org:members:manage
  *                       org:testers:read/invite/manage (S6-01)
  *                       org:tenants:create          org:tenants:read
+ *                       org:environments:read/manage (S9-04)
  *                       tenant:tenants:read         tenant:tenants:update
  *                       tenant:members:read         tenant:members:manage
  *                       tenant:testers:read/manage (S6-03)
@@ -41,21 +42,27 @@ import java.util.Set;
  * APP_OWNER             app:applications:read/write app:versions:read/write
  *                       app:artifacts:read          app:releases:read/manage
  *                       app:feedback:read
+ *                       org:environments:read/manage (S9-04)
  *                       tenant:authorization-grants:read/manage (S7-02,
  *                       through the owning-organization overlay)
  * DEVELOPER             app:artifacts:read          app:artifacts:upload
  *                       app:versions:read           app:releases:read
+ *                       org:environments:read       (S9-04)
  * QA_ENGINEER           app:applications:read       app:versions:read
  *                       app:releases:read           app:releases:approve-qa
  *                       app:tester-groups:manage    app:feedback:read
+ *                       org:environments:read       (S9-04)
  * RELEASE_MANAGER       app:applications:read       app:versions:read
  *                       app:artifacts:read          app:releases:read/manage
+ *                       org:environments:read/manage (S9-04)
  * SECURITY_REVIEWER     app:applications:read       app:versions:read
  *                       app:releases:read           app:releases:approve-security
+ *                       org:environments:read       (S9-04)
  * COMPLIANCE_REVIEWER   app:applications:read       app:versions:read
  *                       app:releases:read           app:releases:approve-compliance
+ *                       org:environments:read       (S9-04)
  * VIEWER                app:applications:read       app:versions:read
- *                       app:releases:read
+ *                       app:releases:read           org:environments:read (S9-04)
  * TENANT_ADMIN          tenant:tenants:read         tenant:members:read
  *                       tenant:members:manage       tenant:applications:read
  *                       tenant:testers:read/manage (S6-03)
@@ -88,6 +95,8 @@ public final class RolePermissions {
             Permission.ORG_TESTERS_MANAGE,
             Permission.ORG_TENANTS_CREATE,
             Permission.ORG_TENANTS_READ,
+            Permission.ORG_ENVIRONMENTS_READ,
+            Permission.ORG_ENVIRONMENTS_MANAGE,
             Permission.TENANT_TENANTS_READ,
             Permission.TENANT_TENANTS_UPDATE,
             Permission.TENANT_MEMBERS_READ,
@@ -113,6 +122,11 @@ public final class RolePermissions {
             Permission.APP_RELEASES_READ,
             Permission.APP_RELEASES_MANAGE,
             Permission.APP_FEEDBACK_READ,
+            // S9-04 (issue #58): the application owner defines the
+            // environments their releases flow through (the story's
+            // persona).
+            Permission.ORG_ENVIRONMENTS_READ,
+            Permission.ORG_ENVIRONMENTS_MANAGE,
             // S7-02 (issue #31): app owners administer tester grants
             // inside their organization's tenants through the
             // owning-organization overlay (PRD 26's tenant-admin /
@@ -124,7 +138,8 @@ public final class RolePermissions {
             Permission.APP_ARTIFACTS_READ,
             Permission.APP_ARTIFACTS_UPLOAD,
             Permission.APP_VERSIONS_READ,
-            Permission.APP_RELEASES_READ);
+            Permission.APP_RELEASES_READ,
+            Permission.ORG_ENVIRONMENTS_READ);
 
     private static final Set<Permission> QA_ENGINEER = Set.of(
             Permission.APP_APPLICATIONS_READ,
@@ -132,29 +147,39 @@ public final class RolePermissions {
             Permission.APP_RELEASES_READ,
             Permission.APP_RELEASES_APPROVE_QA,
             Permission.APP_TESTER_GROUPS_MANAGE,
-            Permission.APP_FEEDBACK_READ);
+            Permission.APP_FEEDBACK_READ,
+            Permission.ORG_ENVIRONMENTS_READ);
 
     private static final Set<Permission> RELEASE_MANAGER = Set.of(
             Permission.APP_APPLICATIONS_READ,
             Permission.APP_VERSIONS_READ,
             Permission.APP_ARTIFACTS_READ,
             Permission.APP_RELEASES_READ,
-            Permission.APP_RELEASES_MANAGE);
+            Permission.APP_RELEASES_MANAGE,
+            // S9-04 (issue #58): the release manager binds environments
+            // to the releases they govern.
+            Permission.ORG_ENVIRONMENTS_READ,
+            Permission.ORG_ENVIRONMENTS_MANAGE);
 
     private static final Set<Permission> SECURITY_REVIEWER = Set.of(
             Permission.APP_APPLICATIONS_READ,
             Permission.APP_VERSIONS_READ,
             Permission.APP_RELEASES_READ,
-            Permission.APP_RELEASES_APPROVE_SECURITY);
+            Permission.APP_RELEASES_APPROVE_SECURITY,
+            Permission.ORG_ENVIRONMENTS_READ);
 
     private static final Set<Permission> COMPLIANCE_REVIEWER = Set.of(
             Permission.APP_APPLICATIONS_READ,
             Permission.APP_VERSIONS_READ,
             Permission.APP_RELEASES_READ,
-            Permission.APP_RELEASES_APPROVE_COMPLIANCE);
+            Permission.APP_RELEASES_APPROVE_COMPLIANCE,
+            Permission.ORG_ENVIRONMENTS_READ);
 
-    private static final Set<Permission> VIEWER =
-            Set.of(Permission.APP_APPLICATIONS_READ, Permission.APP_VERSIONS_READ, Permission.APP_RELEASES_READ);
+    private static final Set<Permission> VIEWER = Set.of(
+            Permission.APP_APPLICATIONS_READ,
+            Permission.APP_VERSIONS_READ,
+            Permission.APP_RELEASES_READ,
+            Permission.ORG_ENVIRONMENTS_READ);
 
     /** ORG_MEMBER deliberately holds nothing (deny-by-default, PRD P3). */
     private static final Set<Permission> ORG_MEMBER = Set.of();

@@ -60,7 +60,12 @@ class RolePermissionsTest {
         Set<Permission> viewer = RolePermissions.of(OrgRole.VIEWER);
         assertThat(viewer)
                 .containsExactlyInAnyOrder(
-                        Permission.APP_APPLICATIONS_READ, Permission.APP_VERSIONS_READ, Permission.APP_RELEASES_READ);
+                        Permission.APP_APPLICATIONS_READ,
+                        Permission.APP_VERSIONS_READ,
+                        Permission.APP_RELEASES_READ,
+                        // S9-04 (issue #58): environment reads join the
+                        // read-only surface (releases reference environments).
+                        Permission.ORG_ENVIRONMENTS_READ);
     }
 
     @Test

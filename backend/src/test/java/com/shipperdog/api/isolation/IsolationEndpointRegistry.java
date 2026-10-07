@@ -418,6 +418,55 @@ final class IsolationEndpointRegistry {
                                 + "&otherReleaseId="
                                 + UUID.randomUUID()),
 
+                // Environments (S9-04) ---------------------------------------------
+                // org:environments:read is organization-grain (the RBAC
+                // matrix): the owning ORG_ADMIN lists the seeded defaults
+                // (every organization creation seeds FR-025's five), the
+                // tenant persona conceals through the organization-grain
+                // permission check.
+                surface(
+                        "/api/v1/environments",
+                        side -> "/api/v1/environments?organizationId=" + side.organizationId(),
+                        200,
+                        404,
+                        side -> "/api/v1/environments?organizationId=" + UUID.randomUUID()),
+                // The environment item and child reads: the seeded-world
+                // rationale of the release item routes — probes address a
+                // random environment id (the route's miss shape IS the
+                // correct own answer), and concealment of a REAL foreign
+                // environment's config, assignments, ledger, or bindings
+                // is pinned with live environments by the S9-04 suite.
+                surface(
+                        "/api/v1/environments/{environmentId}",
+                        side -> "/api/v1/environments/" + UUID.randomUUID(),
+                        404,
+                        404,
+                        side -> "/api/v1/environments/" + UUID.randomUUID()),
+                surface(
+                        "/api/v1/environments/{environmentId}/config",
+                        side -> "/api/v1/environments/" + UUID.randomUUID() + "/config",
+                        404,
+                        404,
+                        side -> "/api/v1/environments/" + UUID.randomUUID() + "/config"),
+                surface(
+                        "/api/v1/environments/{environmentId}/config/versions",
+                        side -> "/api/v1/environments/" + UUID.randomUUID() + "/config/versions",
+                        404,
+                        404,
+                        side -> "/api/v1/environments/" + UUID.randomUUID() + "/config/versions"),
+                surface(
+                        "/api/v1/environments/{environmentId}/tenants",
+                        side -> "/api/v1/environments/" + UUID.randomUUID() + "/tenants",
+                        404,
+                        404,
+                        side -> "/api/v1/environments/" + UUID.randomUUID() + "/tenants"),
+                surface(
+                        "/api/v1/environments/{environmentId}/credentials",
+                        side -> "/api/v1/environments/" + UUID.randomUUID() + "/credentials",
+                        404,
+                        404,
+                        side -> "/api/v1/environments/" + UUID.randomUUID() + "/credentials"),
+
                 // Authorization grants ---------------------------------------------
                 surface(
                         "/api/v1/tenants/{id}/authorization-grants",

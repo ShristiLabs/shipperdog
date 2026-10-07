@@ -2,6 +2,7 @@ package com.shipperdog.api.release.internal.manifest;
 
 import java.time.Instant;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 
 /**
@@ -18,14 +19,14 @@ import java.util.UUID;
  * trail and the diff surface.
  *
  * <p>Nulls are deliberate, never omissions (AC2 pins every key's
- * presence): the environment, rollout, and configuration blocks carry
- * the platform's honest "not yet modeled" until their owning stories
- * land — S9-04 owns environments and the versioned configuration the
- * {@code configuration} keys reference (resolved values will be frozen
- * then, not pointers), E10 owns staged rollout percentages, and S10-01
- * owns approval policies whose required-approvers list will freeze
- * here. A manifest frozen today with null blocks remains a valid
- * document of its time forever (the format's shape never changes).
+ * presence): since S9-04 (issue #58) a release naming an environment
+ * freezes its code and its configuration snapshot's RESOLVED values
+ * (see {@link Configuration}); a release naming none keeps the honest
+ * nulls. The rollout percentage stays null until E10's staged rollouts,
+ * and the required-approvers list stays empty until S10-01's approval
+ * policies. A manifest frozen before a block's owning story landed
+ * remains a valid document of its time forever (the format's shape
+ * never changes).
  *
  * <p>Every field is a copied VALUE, never a live reference: artifacts
  * are identified by content (sha256) beside their uuid, targets by
@@ -76,13 +77,19 @@ public record ReleaseManifestDocument(
 
     /**
      * The configuration snapshot block (PRD 16's configuration map,
-     * camelCased to the API's conventions). Values are null until
-     * S9-04's environment config lands; when it does, the freeze
-     * stores the RESOLVED values (the actual flag set and tenant
-     * configuration pinned to the release), never mere pointers —
-     * the issue's technical note.
+     * camelCased to the API's conventions). Since S9-04 (issue #58) a
+     * release naming an environment freezes the RESOLVED values:
+     * {@code configVersion} is the environment's configuration version
+     * at the freeze moment (0 when never configured — the honest
+     * empty), {@code featureFlags} is the complete resolved key-value
+     * map of that snapshot (the actual flag, endpoint, and settings
+     * set pinned to the release — deep values, never pointers, the
+     * issue's technical note). {@code tenantConfig} stays null until
+     * its owning story models per-tenant overrides; a release naming
+     * no environment keeps all three null.
      */
-    public record Configuration(Object configVersion, Object featureFlags, Object tenantConfig) {}
+    public record Configuration(
+            Long configVersion, Map<String, String> featureFlags, Map<String, String> tenantConfig) {}
 
     /** The approval block: the required-approvers vocabulary (evaluation logic is S10-01's). */
     public record Approval(List<String> required) {}

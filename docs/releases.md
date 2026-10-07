@@ -55,7 +55,7 @@ Status:      DRAFT
 | Table | Shape | Isolation standing (ADR-0002) |
 |---|---|---|
 | `rings` | uuid PK, nullable `organization_id` (NULL = system), `code`, `name`, `position` | Organization-grain reference data — plain repository, no seam |
-| `releases` (V1 + V24) | + ownership snapshot (`organization_id` NOT NULL, `tenant_id` nullable), `release_number` (sequence, unique), `starting_ring_id` FK | Addressed by its own routes — ninth amendment: full snapshot, seam-served (`ReleaseEntity` implements `OrganizationScope`) |
+| `releases` (V1 + V24 + V27) | + ownership snapshot (`organization_id` NOT NULL, `tenant_id` nullable), `release_number` (sequence, unique), `starting_ring_id` FK, optional `environment_id` FK (S9-04) | Addressed by its own routes — ninth amendment: full snapshot, seam-served (`ReleaseEntity` implements `OrganizationScope`) |
 | `release_targets` (V1 + V24) | PK `(release_id, tenant_id)`; the V1 `ring_id` varchar renamed to legacy nullable `ring_code`; real `ring_id` FK NOT NULL | Plain child of the release (eighth amendment) — no snapshot, no seam repository, parent-first paths |
 | `release_target_groups` | PK `(release_id, tenant_id, group_id)`, composite FK to its target | Via-parent junction (eleventh amendment) |
 | `release_artifacts` | PK `(release_id, artifact_id)`, `platform`, `uq (release_id, platform)` | Plain child of the release |
@@ -75,6 +75,7 @@ POST /api/v1/releases
   "applicationId": "…",
   "versionId": "…",
   "ring": "tenant-pilot",
+  "environmentId": null,
   "artifacts": [
     { "platform": "IOS", "artifactId": "…" },
     { "platform": "ANDROID", "artifactId": "…" }
@@ -101,7 +102,17 @@ passes; the whole write is one transaction):
    `400 RELEASE_RING_UNKNOWN` (creation is blocked until ring
    definitions exist — the sequencing note; the V24 seed provides the
    defaults).
-3. **Artifacts** — at least one, one per platform, every artifact READY
+3. **Environment** (optional, S9-04/issue #58) — when the body names
+   an `environmentId` it must belong to the application's organization
+   (a foreign environment is the concealed `404
+   ENVIRONMENT_NOT_FOUND`, byte-identical to an unknown id) and be
+   ACTIVE (a DISABLED environment is the `409 ENVIRONMENT_DISABLED`);
+   when present, every target tenant must also sit inside the
+   environment's assignments — the per-tenant refusal joins step 5's
+   single `422 RELEASE_TARGETS_INVALID` ("not assigned to the release
+   environment"; deny-by-default — see
+   [environments](environments.md)).
+4. **Artifacts** — at least one, one per platform, every artifact READY
    (S5-05's vocabulary) and belonging to the release's version:
    not-READY is one `422 RELEASE_ARTIFACT_NOT_READY` naming every
    offending platform in the `errors` member; an artifact of another
@@ -109,7 +120,7 @@ passes; the whole write is one transaction):
    (the artifact read's own shape); structural mistakes (empty list,
    duplicate platform, unparseable platform, duplicate artifact,
    platform/artifact mismatch) are `400 INVALID_REQUEST`.
-4. **Targets** — at least one, tenants distinct: every target tenant
+5. **Targets** — at least one, tenants distinct: every target tenant
    must hold the application — tenant-owned by it, or organization-
    shared with an ACTIVE authorization (the S3-03 effective-visibility
    rule) — and every tester group must belong to its target tenant.
@@ -261,13 +272,15 @@ frozenAt/By:    the APPROVED crossing's moment and actor
   CONTENT (sha256, build number, byte size, filename, upload moment —
   the INV-003-immutable fields), targets by tenant id with their group
   selections, the ring by its frozen code/name/position, the
-  application and version by name-at-freeze. The environment, rollout
-  percentage, configuration values, and required approvals carry
-  their PRD 16 keys with honest `null`/empty values until their owning
-  stories land (S9-04, E10, S10-01) — the document's shape is complete
-  from day one, and a manifest frozen today stays a valid document of
-  its time forever. When S9-04 lands, the freeze stores RESOLVED
-  config values, not pointers (the story's technical note).
+  application and version by name-at-freeze. Since S9-04 (issue #58)
+  a release naming an environment freezes its CODE and its
+  configuration snapshot's RESOLVED values — the version and the
+  complete key-value map, never pointers (the story's technical
+  note; the #57 follow-up discharged). The rollout percentage and
+  required approvals carry their PRD 16 keys with honest
+  `null`/empty values until their owning stories land (E10, S10-01) —
+  the document's shape is complete, and a manifest frozen before a
+  block's story landed stays a valid document of its time forever.
 - **Stored, never recomputed** (AC3). `GET
   /api/v1/releases/{id}/manifest?applicationId=…` serves the stored
   document; a later application rename or any world drift cannot
@@ -337,4 +350,6 @@ current/attempted), `RELEASE_TRANSITION_REASON_REQUIRED` (422), and
 `RELEASE_TRANSITION_BLOCKED` (422, the policy seam), and the manifest
 family (S9-03): `RELEASE_MANIFEST_NOT_FOUND` (404, the honest
 state-dependent miss), `RELEASE_MANIFEST_IMMUTABLE` (409), and
-`RELEASE_MANIFEST_CORRUPT` (500, the loud integrity failure).
+`RELEASE_MANIFEST_CORRUPT` (500, the loud integrity failure), and the
+S9-04 environment values `ENVIRONMENT_NOT_FOUND` (404, the concealed
+environment miss of creation) and `ENVIRONMENT_DISABLED` (409).

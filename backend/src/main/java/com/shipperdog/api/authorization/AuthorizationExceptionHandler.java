@@ -127,6 +127,12 @@ public class AuthorizationExceptionHandler {
             // grain of check failed).
             case "tester" -> "TESTER_NOT_FOUND";
             case "tester-group" -> "TESTER_GROUP_NOT_FOUND";
+            // Since S9-04 (issue #58) the environment routes check the
+            // 'environment' target: a concealed denial must render
+            // exactly like the environment module's genuine miss
+            // (ENVIRONMENT_NOT_FOUND), never a code that would leak
+            // which grain of check failed.
+            case "environment" -> "ENVIRONMENT_NOT_FOUND";
             default -> ApiError.NOT_FOUND.name();
         };
     }

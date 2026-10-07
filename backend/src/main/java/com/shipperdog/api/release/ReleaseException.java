@@ -37,6 +37,20 @@ public class ReleaseException extends RuntimeException {
         APPLICATION_NOT_FOUND(HttpStatus.NOT_FOUND, "APPLICATION_NOT_FOUND", "Resource not found."),
         /** The version-miss of creation: unknown, foreign, or not the addressed application's version. */
         VERSION_NOT_FOUND(HttpStatus.NOT_FOUND, "VERSION_NOT_FOUND", "Resource not found."),
+        /**
+         * The environment miss of creation (S9-04, issue #58 AC4): unknown,
+         * foreign, or of another organization than the application's — this
+         * surface's own value of the environment module's public code (the
+         * {@code APPLICATION_NOT_FOUND} pattern), so the concealed miss is
+         * byte-identical through either module.
+         */
+        ENVIRONMENT_NOT_FOUND(HttpStatus.NOT_FOUND, "ENVIRONMENT_NOT_FOUND", "Resource not found."),
+        /**
+         * The named environment is DISABLED (S9-04): a parked environment
+         * may not be named by a new release — reactivation is the one
+         * crossing out.
+         */
+        ENVIRONMENT_DISABLED(HttpStatus.CONFLICT, "ENVIRONMENT_DISABLED", "The environment is disabled."),
         INVALID_REQUEST(HttpStatus.BAD_REQUEST, "INVALID_REQUEST", "The request is invalid."),
         /** The artifact miss of creation: unknown, foreign, or not of the release's version (concealed — the artifact read's own shape). */
         ARTIFACT_NOT_FOUND(HttpStatus.NOT_FOUND, "ARTIFACT_NOT_FOUND", "Resource not found."),

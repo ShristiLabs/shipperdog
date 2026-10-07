@@ -115,6 +115,7 @@ public class ReleaseController {
                         request.applicationId(),
                         request.versionId(),
                         request.ring(),
+                        request.environmentId(),
                         request.artifacts() == null
                                 ? List.of()
                                 : request.artifacts().stream()
@@ -273,23 +274,27 @@ public class ReleaseController {
     }
 
     /**
-     * The creation body (FR-015): the application and version the
-     * release distributes, the starting ring's code (the FR-017
-     * vocabulary — engineering, qa, tenant-pilot, uat, production —
-     * until an organization customizes), one artifact per platform
-     * (every artifact READY and of the version), and the target set —
-     * each target a tenant that holds the application plus its
-     * tester-group narrowing (an empty group list targets the tenant at
-     * large).
+     * The creation body (FR-015; the environment dimension since
+     * S9-04/issue #58): the application and version the release
+     * distributes, the starting ring's code (the FR-017 vocabulary —
+     * engineering, qa, tenant-pilot, uat, production — until an
+     * organization customizes), the OPTIONAL environment the release
+     * targets (when present, every target tenant must sit inside the
+     * environment's assignments and the environment must be ACTIVE),
+     * one artifact per platform (every artifact READY and of the
+     * version), and the target set — each target a tenant that holds
+     * the application plus its tester-group narrowing (an empty group
+     * list targets the tenant at large).
      */
     @Schema(
-            description = "The release creation body: application, version, starting ring code, per-platform "
-                    + "artifact selection (READY artifacts of the version), and target tenants with their "
-                    + "tester groups.")
+            description = "The release creation body: application, version, starting ring code, optional target "
+                    + "environment, per-platform artifact selection (READY artifacts of the version), and target "
+                    + "tenants with their tester groups.")
     public record CreateRequest(
             UUID applicationId,
             UUID versionId,
             String ring,
+            UUID environmentId,
             List<ArtifactRequest> artifacts,
             List<TargetRequest> targets) {}
 
