@@ -118,7 +118,13 @@ committed crossing of PRD 17's state machine, carrying `releaseRef`,
 rollback crossings (mandatory there, FR-024); one event per real
 transition — the lifecycle commits through a database
 compare-and-set, so concurrent crossings never double-commit, and a
-forbidden direction answers the precise 409 writing nothing),
+forbidden direction answers the precise 409 writing nothing;
+`RELEASE_MANIFEST_FROZEN` — S9-03/issue #57: the PRD 16 reproducibility
+document frozen in the APPROVED crossing's committing transaction,
+carrying `releaseRef`, the manifest's `sha256` content digest (the
+value that pins WHAT the release shipped, AC4), the artifact and
+target counts, and the `ring`; exactly one per release ever — the
+document is write-once, so the event is too),
 artifact (`ARTIFACT_UPLOAD_SESSION_CREATED` — issue #20/S5-01: the
 resumable direct-to-storage handoff is granted, carrying the
 pre-allocated `artifactId` entity reference with `platform`,

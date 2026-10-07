@@ -58,6 +58,14 @@ public interface ArtifactRegistryRepository extends JpaRepository<ArtifactEntity
     Optional<ArtifactEntity> findArtifactById(@Param("id") UUID id);
 
     /**
+     * The manifest freeze's pin read (issue #57, S9-03): many artifacts
+     * by id in one declared query — the same registry-read character as
+     * {@link #findArtifactById}, never an endpoint data path.
+     */
+    @Query("select a from ArtifactEntity a where a.id in :ids")
+    List<ArtifactEntity> findArtifactsByIds(@Param("ids") Collection<UUID> ids);
+
+    /**
      * The version's distributable artifact for the platform (issue
      * #32, S7-03): the issuance-inputs lookup behind the decision
      * API's ALLOW path — one indexed descent on the artifact table,
@@ -129,6 +137,29 @@ public interface ArtifactRegistryRepository extends JpaRepository<ArtifactEntity
                         artifact.getVersionId(),
                         artifact.getPlatform().name(),
                         artifact.getStatus().name()));
+    }
+
+    /** The manifest freeze's binary pins; tuples only, never rows. */
+    @Override
+    default Map<UUID, ArtifactPin> pinsOf(Collection<UUID> artifactIds) {
+        if (artifactIds.isEmpty()) {
+            return Map.of();
+        }
+        Map<UUID, ArtifactPin> pins = new LinkedHashMap<>();
+        for (ArtifactEntity artifact : findArtifactsByIds(artifactIds)) {
+            pins.put(
+                    artifact.getId(),
+                    new ArtifactPin(
+                            artifact.getId(),
+                            artifact.getVersionId(),
+                            artifact.getPlatform().name(),
+                            artifact.getFileName(),
+                            artifact.getBuildNumber(),
+                            artifact.getSha256(),
+                            artifact.getSize(),
+                            artifact.getCreatedAt()));
+        }
+        return pins;
     }
 
     /** The issuance-inputs resolution of the decision API; tuples only, never rows. */

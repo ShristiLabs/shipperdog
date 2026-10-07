@@ -109,7 +109,39 @@ public class ReleaseException extends RuntimeException {
         RELEASE_TRANSITION_BLOCKED(
                 HttpStatus.UNPROCESSABLE_ENTITY,
                 "RELEASE_TRANSITION_BLOCKED",
-                "A transition policy refuses this transition.");
+                "A transition policy refuses this transition."),
+        /**
+         * The addressed release resolved (same application, in scope)
+         * but has no frozen manifest — it has not crossed into
+         * APPROVED yet, or predates the manifest surface (S9-03). An
+         * honest state-dependent miss, never a concealment: the
+         * release itself is readable, only the manifest is absent.
+         */
+        RELEASE_MANIFEST_NOT_FOUND(
+                HttpStatus.NOT_FOUND, "RELEASE_MANIFEST_NOT_FOUND", "No manifest is frozen for this release."),
+        /**
+         * A manifest already exists for the release (S9-03 AC1): the
+         * document is write-once — V26's one-per-release constraint is
+         * the authority, and the forward-only state machine cannot
+         * re-enter APPROVED, so a second freeze is doubly impossible.
+         * Any surface that ever reaches this code is a bug answering
+         * loudly, never a silent overwrite.
+         */
+        RELEASE_MANIFEST_IMMUTABLE(
+                HttpStatus.CONFLICT, "RELEASE_MANIFEST_IMMUTABLE", "The release manifest is immutable."),
+        /**
+         * The stored manifest failed read-time verification (S9-03):
+         * the re-canonicalized content does not hash to the stored
+         * digest — storage corruption or tampering. The platform
+         * detects drift loudly and never repairs or serves the
+         * document (INV-003/004 discipline applied to the manifest
+         * itself); an operator investigates, the row is never
+         * silently rewritten.
+         */
+        RELEASE_MANIFEST_CORRUPT(
+                HttpStatus.INTERNAL_SERVER_ERROR,
+                "RELEASE_MANIFEST_CORRUPT",
+                "The stored release manifest failed integrity verification.");
 
         final HttpStatus httpStatus;
         final String code;

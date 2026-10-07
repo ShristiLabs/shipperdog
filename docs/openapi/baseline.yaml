@@ -1798,6 +1798,67 @@ paths:
             '*/*':
               schema:
                 $ref: "#/components/schemas/ReleaseDetail"
+  /api/v1/releases/{releaseId}/manifest:
+    get:
+      tags:
+      - release-controller
+      operationId: manifest
+      parameters:
+      - name: releaseId
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - name: applicationId
+        in: query
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - name: format
+        in: query
+        required: false
+        schema:
+          type: string
+      responses:
+        "200":
+          description: OK
+          content:
+            '*/*':
+              schema:
+                type: object
+  /api/v1/releases/{releaseId}/manifest/diff:
+    get:
+      tags:
+      - release-controller
+      operationId: manifestDiff
+      parameters:
+      - name: releaseId
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - name: applicationId
+        in: query
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - name: otherReleaseId
+        in: query
+        required: true
+        schema:
+          type: string
+          format: uuid
+      responses:
+        "200":
+          description: OK
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/ManifestDiffView"
   /api/v1/releases/{releaseId}/history:
     get:
       tags:
@@ -2069,6 +2130,7 @@ paths:
           - AUTHORIZATION_GRANT_REVOKED
           - RELEASE_CREATED
           - RELEASE_TRANSITIONED
+          - RELEASE_MANIFEST_FROZEN
       - name: applicationId
         in: query
         required: false
@@ -2543,6 +2605,8 @@ components:
     JsonNode:
       type: object
       properties:
+        container:
+          type: boolean
         nodeType:
           type: string
           enum:
@@ -2587,8 +2651,6 @@ components:
         binary:
           type: boolean
         floatingPointNumber:
-          type: boolean
-        container:
           type: boolean
         empty:
           type: boolean
@@ -3498,6 +3560,101 @@ components:
         updatedAt:
           type: string
           format: date-time
+    ArtifactChange:
+      type: object
+      properties:
+        change:
+          type: string
+        from:
+          $ref: "#/components/schemas/ArtifactPinView"
+        to:
+          $ref: "#/components/schemas/ArtifactPinView"
+    ArtifactPinView:
+      type: object
+      properties:
+        buildNumber:
+          type: integer
+          format: int64
+        sha256:
+          type: string
+        sizeBytes:
+          type: integer
+          format: int64
+        fileName:
+          type: string
+    DiffEndpoint:
+      type: object
+      properties:
+        releaseId:
+          type: string
+          format: uuid
+        releaseRef:
+          type: string
+        sha256:
+          type: string
+        frozenAt:
+          type: string
+          format: date-time
+    FieldChange:
+      type: object
+      properties:
+        from:
+          type: string
+        to:
+          type: string
+    GroupChange:
+      type: object
+      properties:
+        added:
+          type: array
+          items:
+            type: string
+            format: uuid
+        removed:
+          type: array
+          items:
+            type: string
+            format: uuid
+    ManifestDiffView:
+      type: object
+      properties:
+        from:
+          $ref: "#/components/schemas/DiffEndpoint"
+        to:
+          $ref: "#/components/schemas/DiffEndpoint"
+        artifacts:
+          type: object
+          additionalProperties:
+            $ref: "#/components/schemas/ArtifactChange"
+        targets:
+          $ref: "#/components/schemas/TargetChanges"
+        ring:
+          $ref: "#/components/schemas/FieldChange"
+        environment:
+          $ref: "#/components/schemas/FieldChange"
+        rollout:
+          $ref: "#/components/schemas/FieldChange"
+        configurationChanges:
+          type: array
+          items:
+            type: string
+    TargetChanges:
+      type: object
+      properties:
+        added:
+          type: array
+          items:
+            type: string
+            format: uuid
+        removed:
+          type: array
+          items:
+            type: string
+            format: uuid
+        groupsChanged:
+          type: object
+          additionalProperties:
+            $ref: "#/components/schemas/GroupChange"
     ReleaseHistoryView:
       type: object
       properties:
@@ -3798,6 +3955,7 @@ components:
           - AUTHORIZATION_GRANT_REVOKED
           - RELEASE_CREATED
           - RELEASE_TRANSITIONED
+          - RELEASE_MANIFEST_FROZEN
         occurredAt:
           type: string
           format: date-time

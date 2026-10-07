@@ -75,6 +75,19 @@ public interface ArtifactAccess {
     Map<UUID, List<InstallableSlot>> installableSlotsOfVersions(Collection<UUID> versionIds);
 
     /**
+     * The immutable binary pins of many artifacts at once (issue #57,
+     * S9-03): the release manifest's freeze-time read — for each
+     * artifact id supplied, the INV-003-immutable metadata the frozen
+     * document deep-copies (sha256, size, build number, filename,
+     * upload moment). Unknown ids are simply absent from the answer
+     * (the freeze treats a missing pin as a loud failure, never a
+     * silent gap). One query over the caller's already-resolved
+     * artifact selection — the set form of {@link #stateOf}'s
+     * registry read; never an endpoint data path.
+     */
+    Map<UUID, ArtifactPin> pinsOf(Collection<UUID> artifactIds);
+
+    /**
      * One platform's installable artifact as the history page shows it
      * (issue #37, S8-03): the platform, the artifact a download would
      * serve, and its build metadata. {@code buildNumber} is nullable —
@@ -82,6 +95,26 @@ public interface ArtifactAccess {
      * artifact without one still installs.
      */
     record InstallableSlot(String platform, UUID artifactId, Long buildNumber, long sizeBytes, Instant uploadedAt) {}
+
+    /**
+     * The immutable binary pin the release manifest freezes (issue #57,
+     * S9-03, PRD 16): the content address (sha256), byte size, build
+     * number, filename, and upload moment of one artifact — every
+     * field INV-003 froze at upload, read once at the APPROVED
+     * crossing and deep-copied into the frozen document. The storage
+     * key stays internal (the manifest identifies bytes by content,
+     * never by address). Authorization data in the same registry-read
+     * character as {@link #stateOf}; never an endpoint data path.
+     */
+    record ArtifactPin(
+            UUID artifactId,
+            UUID versionId,
+            String platform,
+            String fileName,
+            Long buildNumber,
+            String sha256,
+            long sizeBytes,
+            Instant uploadedAt) {}
 
     /** The artifact tuple callers may resolve; never the row itself. */
     record ArtifactState(UUID artifactId, UUID versionId, String platform, String status) {}

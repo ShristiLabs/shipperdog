@@ -307,6 +307,11 @@ class LayeredEngineUnitTest {
             }
 
             @Override
+            public Map<UUID, ArtifactPin> pinsOf(Collection<UUID> artifactIds) {
+                return Map.of(); // the engine walk never freezes manifests
+            }
+
+            @Override
             public Optional<IssuanceInputs> issuanceInputsOf(UUID versionId, String platform) {
                 return artifactKnown && artifactPlatform.equals(platform)
                         ? Optional.of(new IssuanceInputs(ARTIFACT, VERSION, platform, artifactStatus, "test/key"))

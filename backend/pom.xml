@@ -130,6 +130,17 @@
       <artifactId>springdoc-openapi-starter-webmvc-api</artifactId>
       <version>${springdoc.version}</version>
     </dependency>
+    <!-- YAML dataformat for the release manifest's compliance render
+         (issue #57, S9-03): the SAME Jackson 2 artifact the springdoc
+         starter already ships transitively to serve /v3/api-docs.yaml,
+         promoted to a first-party declaration because the manifest
+         route now depends on it directly (version stays managed by
+         the Boot jackson-2 BOM pin, jackson-2-bom.version). No new
+         third-party library enters the build. -->
+    <dependency>
+      <groupId>com.fasterxml.jackson.dataformat</groupId>
+      <artifactId>jackson-dataformat-yaml</artifactId>
+    </dependency>
     <!-- Observability baseline (issue #7): tracing through Micrometer
          observations bridged onto the OpenTelemetry SDK, so every HTTP
          request produces a span without a javaagent. Boot 4 split the

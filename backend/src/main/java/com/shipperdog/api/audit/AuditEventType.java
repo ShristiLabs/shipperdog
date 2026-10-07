@@ -79,5 +79,11 @@ public enum AuditEventType {
      * One committed PRD 17 transition (S9-02, FR-024): releaseRef, fromStatus, toStatus, and the
      * mandatory reason of failure/rollback crossings; one event per real transition, never a repeat.
      */
-    RELEASE_TRANSITIONED
+    RELEASE_TRANSITIONED,
+    /**
+     * The release manifest frozen at the APPROVED crossing (S9-03, FR-024, PRD 16): releaseRef and the
+     * manifest's SHA-256 content hash — the digest that pins WHAT the release shipped, recorded once,
+     * at freeze time; the document itself never changes, so neither does this event's meaning.
+     */
+    RELEASE_MANIFEST_FROZEN
 }
