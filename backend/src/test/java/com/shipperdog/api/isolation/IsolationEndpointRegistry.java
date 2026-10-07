@@ -417,6 +417,46 @@ final class IsolationEndpointRegistry {
                                 + UUID.randomUUID()
                                 + "&otherReleaseId="
                                 + UUID.randomUUID()),
+                // The approval state route (S10-01): the seeded world
+                // holds no release, so own-side probes address a random
+                // release id (the history route's rationale — the miss
+                // shape IS the correct own answer), and concealment of a
+                // REAL foreign release's approvals is pinned with live
+                // releases by the S10-01 approval suite.
+                surface(
+                        "/api/v1/releases/{releaseId}/approvals",
+                        side -> "/api/v1/releases/" + UUID.randomUUID() + "/approvals?applicationId="
+                                + side.applicationId(),
+                        404,
+                        404,
+                        side -> "/api/v1/releases/" + UUID.randomUUID() + "/approvals?applicationId="
+                                + UUID.randomUUID()),
+
+                // Approval workflows (S10-01) ------------------------------------
+                // org:approval-workflows:read is organization-grain (the
+                // RBAC matrix): the owning ORG_ADMIN lists (an empty page
+                // in the seeded world — no definition exists), the tenant
+                // persona conceals through the organization-grain
+                // permission check.
+                surface(
+                        "/api/v1/approval-workflows",
+                        side -> "/api/v1/approval-workflows?organizationId=" + side.organizationId(),
+                        200,
+                        404,
+                        side -> "/api/v1/approval-workflows?organizationId=" + UUID.randomUUID()),
+                // The definition item route (S10-01): the seeded world
+                // holds no definition, so own and miss probes share the
+                // route's miss shape; concealment of a REAL foreign
+                // definition is pinned with live definitions by the
+                // S10-01 approval suite.
+                surface(
+                        "/api/v1/approval-workflows/{workflowId}",
+                        side -> "/api/v1/approval-workflows/" + UUID.randomUUID() + "?organizationId="
+                                + side.organizationId(),
+                        404,
+                        404,
+                        side -> "/api/v1/approval-workflows/" + UUID.randomUUID() + "?organizationId="
+                                + UUID.randomUUID()),
 
                 // Environments (S9-04) ---------------------------------------------
                 // org:environments:read is organization-grain (the RBAC

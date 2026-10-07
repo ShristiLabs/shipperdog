@@ -4,6 +4,7 @@ import com.shipperdog.api.application.ApplicationAccess;
 import com.shipperdog.api.audit.AuditEvent;
 import com.shipperdog.api.audit.AuditEventType;
 import com.shipperdog.api.audit.AuditLogger;
+import com.shipperdog.api.authorization.ApplicationPermissionCheck;
 import com.shipperdog.api.authorization.ConcealedResourceAccessDeniedException;
 import com.shipperdog.api.authorization.Permission;
 import com.shipperdog.api.authorization.RolePermissions;
@@ -73,7 +74,7 @@ import org.springframework.web.context.request.ServletRequestAttributes;
  * the who/what.
  */
 @Component
-public class RbacPermissionEvaluator implements PermissionEvaluator {
+public class RbacPermissionEvaluator implements PermissionEvaluator, ApplicationPermissionCheck {
 
     private final RequestRoleGrants grants;
     private final ApplicationAccess applications;
@@ -162,6 +163,29 @@ public class RbacPermissionEvaluator implements PermissionEvaluator {
             }
         }
         return allowed;
+    }
+
+    /**
+     * The programmatic application-grant probe (S10-01, issue #40):
+     * the same answer the annotation form renders for
+     * {@code hasPermission(applicationId, 'application', code)} — the
+     * same snapshot (memoized per request), the same
+     * application-to-owner hop, the same union and wildcard semantics
+     * — minus the HTTP denial rendering, which stays the annotation
+     * path's job. The approval surface calls this for the step's
+     * precise role requirement after its route-level coarse gate
+     * passed; it never widens anything the annotation form denies.
+     */
+    @Override
+    public boolean permits(UUID userId, UUID applicationId, Permission permission) {
+        if (userId == null || applicationId == null || permission == null) {
+            return false;
+        }
+        UserRolesSnapshot snapshot = grants.snapshot(userId);
+        if (snapshot.platformAdmin()) {
+            return RolePermissions.platformAdminPasses(permission);
+        }
+        return appGrants(snapshot, applicationId, "application", permission);
     }
 
     private boolean decide(Authentication authentication, Serializable targetId, String targetType, Object permission) {

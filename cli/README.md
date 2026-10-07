@@ -118,7 +118,9 @@ shipperdog release promote R-1028
 - **transition** is the direct edge-by-edge drive for humans and
   scripts that want one crossing at a time.
 - Gates and approvals render their honest not-yet-reported state in
-  `release get` until E10 lands (S10-01/S10-03).
+  `release get`: the approval API lives since S10-01 but the CLI's
+  approval wiring is a later story (S10-02/03); gates land with
+  S10-03.
 
 ### GitHub Actions showcase
 

@@ -65,7 +65,11 @@ class RolePermissionsTest {
                         Permission.APP_RELEASES_READ,
                         // S9-04 (issue #58): environment reads join the
                         // read-only surface (releases reference environments).
-                        Permission.ORG_ENVIRONMENTS_READ);
+                        Permission.ORG_ENVIRONMENTS_READ,
+                        // S10-01 (issue #40): approval-chain reads join the
+                        // read-only surface (a viewer can see the chains
+                        // their releases run, never decide them).
+                        Permission.ORG_APPROVAL_WORKFLOWS_READ);
     }
 
     @Test

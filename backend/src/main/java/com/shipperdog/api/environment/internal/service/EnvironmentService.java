@@ -667,6 +667,12 @@ public class EnvironmentService implements EnvironmentAccess, EnvironmentProvisi
                 .toList());
     }
 
+    @Override
+    @Transactional(readOnly = true)
+    public Optional<String> approvalPolicyNameOf(UUID environmentId) {
+        return environments.findById(environmentId).map(EnvironmentEntity::getApprovalPolicy);
+    }
+
     // -------------------------------------------------------------------------
     // Views
     // -------------------------------------------------------------------------

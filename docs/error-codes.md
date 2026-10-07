@@ -144,7 +144,7 @@ permission target is the application and its denials conceal as
 | `RELEASE_ARTIFACT_NOT_READY` | 422 | One or more selected artifacts are not READY. (issue #55 AC1 — S5-05's vocabulary; the `errors` member is keyed by platform naming the offending artifact and its current status) |
 | `RELEASE_TRANSITION_INVALID` | 409 | The release cannot transition to the requested state. (issue #56 AC1/AC6 — PRD 17's graph is the single authority; the `errors` member carries `current` and `attempted`, including the self-crossing (re-sending the state the release holds) and every exit from a terminal: FAILED, ROLLED_BACK, and COMPLETED are final) |
 | `RELEASE_TRANSITION_REASON_REQUIRED` | 422 | A reason is required for failure and rollback transitions. (issue #56 AC3 — the S4-03 revoke analog: VALIDATING/DEPLOYING to FAILED and ACTIVE to ROLLED_BACK explain themselves in the audit trail and the timeline; the `errors` member names the `reason` field) |
-| `RELEASE_TRANSITION_BLOCKED` | 422 | A transition policy refuses this transition. (issue #56's guard seam — a registered `ReleaseTransitionPolicy` contributor denied the crossing; the `errors` member is keyed by the refusing contributor's name. No contributor ships in M2: the approval evaluator is S10-01/E10, which registers against the seam) |
+| `RELEASE_TRANSITION_BLOCKED` | 422 | A transition policy refuses this transition. (issue #56's guard seam — a registered `ReleaseTransitionPolicy` contributor denied the crossing; the `errors` member is keyed by the refusing contributor's name. Since S10-01 the `ReleaseApprovalPolicy` contributor is the first live registrant: it refuses APPROVAL_PENDING to APPROVED while the release's latest approval round is PENDING or REJECTED and permits when it is SATISFIED — or when no round exists, the ungated crossing an unconfigured organization keeps) |
 | `RELEASE_MANIFEST_NOT_FOUND` | 404 | No manifest is frozen for this release. (S9-03/issue #57 — the release resolved and is readable, but has not crossed into APPROVED yet, or predates the manifest surface; an honest state-dependent miss, never a concealment — the foreign-release shape stays `RELEASE_NOT_FOUND`) |
 | `RELEASE_MANIFEST_IMMUTABLE` | 409 | The release manifest is immutable. (S9-03 — V26's one-per-release unique constraint is the authority and the forward-only graph cannot re-enter APPROVED, so a second freeze is doubly impossible; any surface reaching this code is a bug answering loudly, never a silent overwrite) |
 | `RELEASE_MANIFEST_CORRUPT` | 500 | The stored release manifest failed integrity verification. (S9-03 — the re-canonicalized content does not hash to the stored digest: storage corruption or tampering; the platform detects drift loudly and never serves, repairs, or rewrites the document — INV-003/004 discipline applied to the manifest itself) |
@@ -154,6 +154,26 @@ permission target is the application and its denials conceal as
 `VERSION_ARCHIVED` and `VERSION_REVOKED` arrive on the creation route
 as the version module's own code (a release may not target a read-only
 version), re-rendered verbatim — see the version table above.
+
+## Workflow (`WorkflowException.Code`)
+
+The approval engine's codes (S10-01, issue #40; rendered by
+`WorkflowExceptionHandler` for the `WorkflowController` surface).
+
+| Code | HTTP | Detail |
+|---|---|---|
+| `WORKFLOW_NOT_FOUND` | 404 | Resource not found. (the definition detail's concealed miss — a workflow of another organization is indistinguishable from an unknown id through the `organizationId` query parameter's permission target) |
+| `ORGANIZATION_NOT_FOUND` | 404 | Resource not found. (the organization-miss backstop of definition creation) |
+| `RELEASE_NOT_FOUND` | 404 | Resource not found. (the approval surface's release miss — the release module's own public code, so the concealed miss is byte-identical through either module) |
+| `INVALID_REQUEST` | 400 | The request is invalid. (malformed definitions — name shape, unknown role, empty chain, duplicated role, out-of-organization tenant scope — and malformed decisions; the `errors` member keys the offending `steps[i]`/field) |
+| `WORKFLOW_RING_UNKNOWN` | 400 | The ring is not defined for the organization. (the creation surface's own rule, this surface's value of it) |
+| `WORKFLOW_ALREADY_EXISTS` | 409 | An approval workflow already exists with this name or ring. (V28's one-name and one-ring-per-organization guards; the pre-check and the lost-race translation answer identically) |
+| `APPROVAL_STEP_OUT_OF_ORDER` | 409 | The approval decision does not address the current step. (issue AC2 — sequential chains decide in order; the `errors` member carries `current` and `attempted` positions plus the round status, including the concurrent-decision loser's answer) |
+| `APPROVAL_NOT_ACTIVE` | 409 | The release is not awaiting approval decisions. (a release outside APPROVAL_PENDING, or a round already SATISFIED/REJECTED/absent; `errors` carries `releaseStatus` and `current`) |
+| `APPROVAL_ROUND_NOT_RESTARTABLE` | 409 | Only a rejected approval round can be restarted. (the rework path; `errors.current` carries PENDING/SATISFIED/NONE) |
+| `APPROVAL_ROLE_NOT_HELD` | 403 | The caller does not hold the role this step requires. (issue AC2 — the precise per-step refusal after the route's read gate passed; `errors` carries `requiredRole`, `approvalType`, and `permission` so the right approver is findable) |
+| `APPROVAL_SELF_APPROVAL` | 403 | The release creator may not approve their own release. (issue AC5 — the delegation rule, whatever roles the creator holds) |
+| `APPROVAL_REJECT_REASON_REQUIRED` | 422 | A reason is required to reject an approval step. (issue AC6, the S4-03 revoke analog; `errors` names the `reason` field) |
 
 ## Environment (`EnvironmentException.Code`)
 

@@ -167,8 +167,9 @@ allowed.
   failure/rollback edges open a mandatory-reason dialog); the artifacts
   block shows the creation slots and flips to the frozen content pins
   (build, sha256, size, filename) once the manifest exists; quality
-  gates and approvals render documented empty states until E10
-  (S10-01/S10-03) — the block layout is the E10 landing zone;
+  gates and approvals render documented empty states until their
+  console wiring lands (the approval API lives since S10-01; gates
+  arrive with S10-03) — the block layout is the E10 landing zone;
   distribution shows the starting ring, the targeted environment
   (S9-04), and the resolved target set; the state timeline renders the
   append-only history with roster-resolved actors, timestamps, and

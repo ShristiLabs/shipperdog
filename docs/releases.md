@@ -28,8 +28,10 @@ Status:      DRAFT
 - **DRAFT is the state creation writes**; the full state machine (PRD
   17) has run since S9-02 — see [the lifecycle](#lifecycle--the-state-machine-s9-02).
   The manifest (PRD 16) has run since S9-03 — see
-  [the frozen manifest](#the-frozen-manifest-s9-03); approvals and
-  promotion behavior (PRD 8.10's rings) are E10.
+  [the frozen manifest](#the-frozen-manifest-s9-03); approval
+  workflows (FR-016) have run since S10-01 — see
+  [approval workflows](#approval-workflows-s10-01); rings' promotion
+  behavior (PRD 8.10) is the rest of E10.
 - **One release per application and version** (V1's
   `uq_releases_application_version` is the authority; a duplicate is the
   precise `409 RELEASE_ALREADY_EXISTS`). A version can exist without a
@@ -209,11 +211,16 @@ POST /api/v1/releases/{releaseId}/transitions
 
 **The guard seam.** Every registered `ReleaseTransitionPolicy`
 contributor is consulted before a legal crossing commits; a refusal is
-`422 RELEASE_TRANSITION_BLOCKED` keyed by the contributor's name. No
-contributor ships in M2 — the seam exists so E10's approval evaluator
-(the "APPROVED requires approvals complete" precondition, S10-01) and
-later gates/distribution preconditions compose without touching the
-machine. Policies refuse; they can never widen PRD 17's graph.
+`422 RELEASE_TRANSITION_BLOCKED` keyed by the contributor's name.
+Since S10-01 the seam's first registrant ships: the approval
+engine's `ReleaseApprovalPolicy` refuses APPROVAL_PENDING to APPROVED
+while the release's latest approval round is PENDING or REJECTED and
+permits when it is SATISFIED — or when no round exists, the ungated
+crossing an organization that configured no workflow keeps (see
+[approval workflows](#approval-workflows-s10-01)). Later
+gates/distribution preconditions (E11/E13) compose on the same seam
+without touching the machine. Policies refuse; they can never widen
+PRD 17's graph.
 
 **The FAILED retry path (documented decision).** A FAILED release
 never re-enters the machine, and its artifacts cannot be fixed in
@@ -234,6 +241,101 @@ the record the S9-05 dashboard renders; nothing ever updates or deletes
 a row (PRD P5). A release of another application conceals exactly like
 an unknown id.
 
+## Approval workflows (S10-01)
+
+Nothing reaches testers or production without the right sign-offs
+(FR-016, issue #40): an organization configures approval chains as
+DATA — ordered steps, each demanding a role — and the engine gates the
+APPROVAL_PENDING to APPROVED crossing through the S9-02 policy seam
+until the chain is satisfied. Sequential only in this story; parallel,
+any-of, and conditional modes are S10-02 (mode flags extend the same
+tables, the story's technical note).
+
+### The model
+
+```text
+Approval workflow "standard-chain"        (organization-grain)
+Ring:        qa                            (direct attachment)
+Steps:       1 QA_ENGINEER
+             2 SECURITY_REVIEWER
+             3 APP_OWNER                  (Product — PRD 7.3)
+             4 RELEASE_MANAGER            (the final sign-off — PRD 7.6)
+             (each step optionally narrowed to a tenant the release
+              must target — a skipped step is never a failure)
+```
+
+- **Definitions** (`POST/GET /api/v1/approval-workflows`,
+  `org:approval-workflows:manage/read` — the Release Manager, App
+  Owner, and Org Admin personas): a lowercase-kebab binding NAME and
+  an optional ring attachment; one name and one ring attachment per
+  organization (409). Steps come from the five-role approval
+  vocabulary — exactly the roles the RBAC matrix grants an
+  `app:releases:approve-*` permission (`QA_ENGINEER`,
+  `SECURITY_REVIEWER`, `COMPLIANCE_REVIEWER`, `APP_OWNER`,
+  `RELEASE_MANAGER`), each at most once per chain, 1-10 steps.
+- **Resolution** happens at the READY to APPROVAL_PENDING crossing,
+  most specific first: the targeted environment's `approvalPolicy`
+  NAME binding (V27's reserved reference — the environment update
+  surface binds it) resolves against the organization's workflow
+  names; else the starting ring's attached chain. Neither resolves ->
+  no round, no gate: approval workflows are CONFIGURABLE (FR-016),
+  and an unconfigured organization keeps the ungated machine S9-02
+  shipped. A workflow defined AFTER a release crossed into
+  APPROVAL_PENDING never retro-opens its gate.
+- **Rounds** instantiate inside the crossing's transaction (the
+  event-seam composition the manifest freeze uses): round 1 with one
+  `release_approvals` record per applicable step (PRD 13's table —
+  `approval_type` is its vocabulary: `QA`, `SECURITY`, `PRODUCT`,
+  `COMPLIANCE`, `RELEASE_MANAGER`, 1:1 with the step roles; roles name
+  WHO signs, types name WHAT they sign), plus one
+  `ApprovalRequestedEvent` per step — S12-01's notification feed. A
+  tenant-scoped step whose tenant the release does not target is not
+  instantiated (skipped, never failed); a round whose every step
+  scoped away stands SATISFIED by the same act.
+- **Decisions** (`POST /api/v1/releases/{releaseId}/approvals`,
+  body `{applicationId, decision: APPROVE|REJECT, step?, reason?}`):
+  the chain's CURRENT step only — an out-of-order or already-decided
+  assertion is `409 APPROVAL_STEP_OUT_OF_ORDER` carrying `current`
+  and `attempted` (AC2). Authority is precise: the route's coarse
+  gate is the release read authority every approver role holds (the
+  evaluator's throwing concealment makes permission disjunctions
+  unusable as gates), and the service checks the step's mapped
+  `app:releases:approve-*` permission through the programmatic
+  application-grant probe — a caller who holds no approval authority
+  gets `403 APPROVAL_ROLE_NOT_HELD` naming the required role and
+  permission. The release's CREATOR signs nothing (AC5,
+  `403 APPROVAL_SELF_APPROVAL`). REJECT requires its reason (AC6,
+  `422 APPROVAL_REJECT_REASON_REQUIRED`). Every decision is audited
+  (`RELEASE_APPROVAL_GRANTED`/`REJECTED`, reason included) and the
+  signature is a fact: `approver` + `approver_role` recorded at
+  decision time — roles change later, the record does not. Decided
+  exactly once (the repository's compare-and-set); racing approvers
+  can never double-sign.
+- **Rejection blocks progression** (AC3): a rejected round is
+  terminal, the release STAYS APPROVAL_PENDING with the rejection
+  recorded, and the APPROVED crossing keeps refusing (422 naming the
+  rejected round). The documented rework path is a NEW round — never
+  an un-reject: `POST /api/v1/releases/{releaseId}/approvals/rounds`
+  (`app:releases:manage` — restarting a chain is release management,
+  not a signature; only a REJECTED round restarts, 409 otherwise)
+  instantiates round N+1 of the SAME frozen definition, one request
+  event per step, the optional note audited.
+- **All steps complete** (AC4): the last approval satisfies the round
+  and the crossing becomes fireable through the ordinary transition
+  route — the state machine stays the single writer of release status
+  (one authority, one audit trail), and the manifest freezes the
+  satisfied chain into `approval.required` at that same crossing.
+- **The read** (`GET /api/v1/releases/{releaseId}/approvals?applicationId=…`,
+  `app:releases:read`): every round with its steps and signatures —
+  the rejected rounds and their reasons beside the live or satisfied
+  one, the full audit-read of the approval moment. Foreign releases
+  conceal exactly like unknown ids.
+- **INV-008 discipline** (approvals never mutate artifacts): approvals
+  run against the artifact set INV-004 froze at CREATION, and the
+  manifest — approval block included — is the document OF the APPROVED
+  crossing; the chain the policy verified and the chain the manifest
+  froze are the same facts by construction.
+
 ## The frozen manifest (S9-03)
 
 Every release carries PRD 16's reproducibility artifact: a complete,
@@ -252,7 +354,9 @@ Environment:    null                       (S9-04 owns environments)
 Rollout:        percentage null            (E10 owns staged rollouts)
 Configuration:  configVersion/featureFlags/tenantConfig null
                 (S9-04's versioned config, resolved values when it lands)
-Approval:       required []                (S10-01 owns approval policies)
+Approval:       required [QA, SECURITY, PRODUCT,
+                RELEASE_MANAGER]     (S10-01; empty for an
+                ungated release)
 sha256:         63061b4b…                  (canonical content digest)
 frozenAt/By:    the APPROVED crossing's moment and actor
 ```
@@ -276,11 +380,14 @@ frozenAt/By:    the APPROVED crossing's moment and actor
   a release naming an environment freezes its CODE and its
   configuration snapshot's RESOLVED values — the version and the
   complete key-value map, never pointers (the story's technical
-  note; the #57 follow-up discharged). The rollout percentage and
-  required approvals carry their PRD 16 keys with honest
-  `null`/empty values until their owning stories land (E10, S10-01) —
-  the document's shape is complete, and a manifest frozen before a
-  block's story landed stays a valid document of its time forever.
+  note; the #57 follow-up discharged). Since S10-01 (issue #40) the
+  approval block freezes the satisfied chain verbatim — the approval
+  types that authorized the crossing, in chain order, through the
+  `ReleaseApprovalSource` seam (empty for a release no workflow
+  gated); the rollout percentage keeps its honest null until E10's
+  staged rollouts — the document's shape is complete, and a manifest
+  frozen before a block's story landed stays a valid document of its
+  time forever.
 - **Stored, never recomputed** (AC3). `GET
   /api/v1/releases/{id}/manifest?applicationId=…` serves the stored
   document; a later application rename or any world drift cannot
