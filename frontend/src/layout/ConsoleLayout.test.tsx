@@ -43,6 +43,21 @@ describe("ConsoleLayout role-aware navigation", () => {
     expect(await screen.findByTestId("nav-applications")).toBeInTheDocument();
   });
 
+  it("shows the Releases section under the applications probe (S9-05)", async () => {
+    installFetchRouter([
+      {
+        method: "GET",
+        url: "/api/v1/applications",
+        status: 200,
+        body: { items: [] },
+      },
+    ]);
+    seedSession();
+    renderConsole(<ConsoleLayout />, { route: "/" });
+
+    expect(await screen.findByTestId("nav-releases")).toBeInTheDocument();
+  });
+
   it("hides the Applications section when the probe is conceal-denied", async () => {
     installFetchRouter([
       {
@@ -68,6 +83,7 @@ describe("ConsoleLayout role-aware navigation", () => {
 
     await screen.findByTestId("nav-tenants");
     expect(screen.queryByTestId("nav-applications")).not.toBeInTheDocument();
+    expect(screen.queryByTestId("nav-releases")).not.toBeInTheDocument();
   });
 
   it("hides the Tenants section when the probe is denied (concealed 404)", async () => {

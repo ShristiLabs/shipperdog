@@ -1,4 +1,4 @@
-# Admin Console (S2-04, S3-04)
+# Admin Console (S2-04, S3-04, S9-05)
 
 The admin console is the React single-page application in `frontend/`
 (PRD §21 stack): React 19, TypeScript (strict), MUI 9 with MUI X Data
@@ -7,7 +7,9 @@ the scaffold plus tenant administration — list, create, edit,
 deactivate, and member management — and the conventions every later
 console story (E3 onward) reuses. S3-04 adds the application console on
 those conventions: the registry listing, create/edit, the shared-app
-authorization screen, and the reversible archive.
+authorization screen, and the reversible archive. S9-05 adds the
+release dashboard (PRD §32): the application-scoped release listing and
+the per-release screen a Release Manager judges release health from.
 
 ## Running locally
 
@@ -26,22 +28,29 @@ authorization screen, and the reversible archive.
 
 ```
 frontend/src/
-  api/          client.ts (fetch wrapper), problem.ts (RFC 7807
-                decoding), auth.ts, tenants.ts, organizations.ts,
-                applications.ts (registry + shared-app authorization)
+  api/          client.ts (fetch wrapper + apiFetchText for non-JSON
+                bodies), problem.ts (RFC 7807 decoding), auth.ts,
+                tenants.ts, organizations.ts, applications.ts
+                (registry + shared-app authorization), releases.ts
+                + versions.ts (the S9-05 dashboard surfaces)
   auth/         tokenStore.ts, AuthContext.tsx, RequireAuth.tsx
   components/   ToastContext.tsx (error toast convention)
   hooks/        usePermission.ts (role-aware navigation probes),
                 useOrganizationDirectory.ts (walks org tenants/members
-                rosters across cursor pages for pickers and name maps)
+                rosters across cursor pages for pickers and name maps;
+                since S9-05 also the application registry and
+                per-application version walks)
   layout/       ConsoleLayout.tsx (app bar + nav drawer)
   pages/        LoginPage, TenantsPage, TenantMembersPage, tenantRules,
                 ApplicationsPage, ApplicationDetailPage,
                 ApplicationDialog (create/edit form),
-                applicationRules (client mirrors of field rules)
+                applicationRules (client mirrors of field rules),
+                ReleasesPage, ReleaseDetailPage, releaseRules
+                (PRD 17 state-vocabulary mirrors; S9-05)
   test/         harness.tsx (providers + fetch router), setup.ts
-frontend/e2e/   console-verify.mjs, applications-verify.mjs
-                (Playwright smokes vs compose stack)
+frontend/e2e/   console-verify.mjs, applications-verify.mjs,
+                releases-verify.mjs + apk-fixture.mjs (Playwright
+                smokes vs compose stack)
 ```
 
 ## Conventions fixed by this scaffold
@@ -60,6 +69,10 @@ Screens never call `fetch` directly. `apiFetch`/`pageFetch`
   field map;
 - list calls use `useInfiniteQuery` with the opaque `next_cursor` and a
   Load more control — cursors are never parsed, `limit` stays 1-100.
+- non-JSON bodies (the release manifest's `format=yaml` render) go
+  through `apiFetchText` — the same contract (correlation id, bearer,
+  single-flight 401 refresh and retry, problem+json error decoding),
+  returning text instead of parsed JSON.
 
 ### Auth and token lifecycle
 
@@ -134,6 +147,39 @@ allowed.
   render honest empty states until E4/E5; mutations invalidate the
   `["applications"]` query-key prefix, which covers both listing views
   and per-application reads.
+- **Releases** (`/releases`, S9-05): the release listing is
+  application-addressed (the API requires `applicationId` as the
+  permission target), so the screen opens with an application picker
+  (deep links preselect: `/releases/:applicationId`). Status, version,
+  and target-tenant filters ride the listing's server-side query
+  parameters; ring and release-ref search filter the loaded cursor
+  pages client-side (the registry search precedent — the listing has no
+  ring parameter). Rows carry status chips from PRD 17's vocabulary and
+  open the dashboard. The nav section renders under the applications
+  probe: every role holding `app:applications:read` also holds
+  `app:releases:read` (authorization matrix), while a DEVELOPER — who
+  holds release read but not the registry read that backs the picker —
+  reaches releases through the CLI (S9-06) instead.
+- **Release dashboard** (`/releases/:applicationId/:releaseId`, S9-05;
+  PRD §32): one screen per release. Lifecycle actions offer exactly
+  PRD 17's legal edges (`releaseRules.ts` mirrors the machine; the
+  server rejects anything else with the precise 409, and the
+  failure/rollback edges open a mandatory-reason dialog); the artifacts
+  block shows the creation slots and flips to the frozen content pins
+  (build, sha256, size, filename) once the manifest exists; quality
+  gates and approvals render documented empty states until E10
+  (S10-01/S10-03) — the block layout is the E10 landing zone;
+  distribution shows the starting ring, the targeted environment
+  (S9-04), and the resolved target set; the state timeline renders the
+  append-only history with roster-resolved actors, timestamps, and
+  reasons; the frozen-manifest section shows the digest and freeze
+  facts, the document summary, the YAML compliance render, a YAML
+  download, and a diff against another APPROVED release of the same
+  application (artifact pins rendered by their content facts — the
+  identity a CHANGED verdict actually used). Detail, history, and
+  manifest queries auto-refresh every 30 seconds; before APPROVED the
+  manifest panel shows the honest not-frozen state (the surface's 404),
+  never an error.
 
 ## CI and verification
 
@@ -141,9 +187,16 @@ allowed.
 lint, strict-typecheck build, Vitest — one Node 22 job, about a minute.
 Browser verification is a Playwright smoke against the compose stack
 (`frontend/e2e/console-verify.mjs` and, since S3-04,
-`frontend/e2e/applications-verify.mjs`; run instructions in each
-header); it is intentionally outside CI because it needs the full
-stack.
+`frontend/e2e/applications-verify.mjs`; since S9-05,
+`frontend/e2e/releases-verify.mjs` walks the dashboard golden path — a
+release created through the S9-01 API, listed, driven through the UI to
+APPROVED (the manifest freeze), then rolled back with a reason — using
+`apk-fixture.mjs` — the console's own port of the backend's
+AndroidFixtures (the same independent-implementation move the portal's
+e2e made in S8-04; the two apps share no code by design) — mints
+genuinely READY artifacts through the real validation pipeline; run
+instructions in each header); it is intentionally outside CI
+because it needs the full stack.
 
 ## Decisions
 

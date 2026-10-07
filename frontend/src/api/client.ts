@@ -39,6 +39,8 @@ interface RequestOptions {
   body?: unknown;
   /** Internal: set on the post-refresh retry to bound it to one attempt. */
   retrying?: boolean;
+  /** Internal: carried by apiFetchText to override the Accept header. */
+  acceptOverride?: string;
 }
 
 let refreshInFlight: Promise<boolean> | null = null;
@@ -83,6 +85,32 @@ export async function apiFetch<T>(path: string, options: RequestOptions = {}): P
   return (await response.json()) as T;
 }
 
+/** The same contract as apiFetch for endpoints that answer a non-JSON
+ * body (e.g. a manifest's `format=yaml` render): correlation id, bearer
+ * token, the single-flight 401 refresh and retry, and problem+json
+ * error decoding — only the success path returns text instead of
+ * parsed JSON. Screens still never call fetch directly. */
+export async function apiFetchText(
+  path: string,
+  options: RequestOptions & { accept?: string } = {},
+): Promise<string> {
+  const { accept, ...requestOptions } = options;
+  const response = await rawFetch(path, {
+    ...requestOptions,
+    ...(accept !== undefined ? { acceptOverride: accept } : {}),
+  });
+  if (response.status === 401 && !requestOptions.retrying && !isRawAuthPath(path)) {
+    const refreshed = await ensureFreshTokens();
+    if (refreshed) {
+      return apiFetchText(path, { ...options, retrying: true });
+    }
+  }
+  if (!response.ok) {
+    throw await parseProblem(response);
+  }
+  return response.text();
+}
+
 /** Append limit/cursor plus arbitrary filters to a list endpoint and
  * decode the `{items, next_cursor}` envelope. */
 export async function pageFetch<T>(
@@ -103,7 +131,7 @@ export async function pageFetch<T>(
 
 async function rawFetch(path: string, options: RequestOptions): Promise<Response> {
   const headers: Record<string, string> = {
-    Accept: "application/json",
+    Accept: options.acceptOverride ?? "application/json",
     "X-Correlation-Id": crypto.randomUUID(),
   };
   if (options.body !== undefined) {

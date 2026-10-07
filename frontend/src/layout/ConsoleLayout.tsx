@@ -9,6 +9,7 @@
 import AppsIcon from "@mui/icons-material/Apps";
 import BusinessIcon from "@mui/icons-material/Business";
 import LogoutIcon from "@mui/icons-material/Logout";
+import RocketLaunchIcon from "@mui/icons-material/RocketLaunch";
 import {
   Alert,
   AppBar,
@@ -122,6 +123,26 @@ export default function ConsoleLayout() {
                   <AppsIcon />
                 </ListItemIcon>
                 <ListItemText primary="Applications" />
+              </ListItemButton>
+            </List>
+          ) : null}
+          {/* The Releases dashboard (S9-05) renders under the same
+              applications probe: every role holding app:applications:read
+              also holds app:releases:read (the authorization matrix), and
+              the screen is unusable without the registry picker anyway.
+              The per-application release listing stays server-enforced. */}
+          {orgId !== null && applicationsNav.allowed ? (
+            <List>
+              <ListItemButton
+                component={NavLink}
+                to="/releases"
+                data-testid="nav-releases"
+                sx={{ "&.active": { backgroundColor: "action.selected" } }}
+              >
+                <ListItemIcon>
+                  <RocketLaunchIcon />
+                </ListItemIcon>
+                <ListItemText primary="Releases" />
               </ListItemButton>
             </List>
           ) : null}
