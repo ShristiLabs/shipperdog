@@ -155,11 +155,15 @@ retained REVOKED row reactivates it `200 {reactivated:true}`), and
 even without the header — the SAME grant identity replays the stored
 row `200 {created:false}` with no write and no audit, while the same
 identity with a different `expiresAt` is a `409
-AUTHORIZATION_GRANT_CONFLICT`), and `POST /api/v1/releases`
+AUTHORIZATION_GRANT_CONFLICT`), `POST /api/v1/releases`
 (S9-01, issue #55: release creation; a retry with the same key replays
 the created release, while a DIFFERENT key duplicating an existing
 application+version release is the precise `409
-RELEASE_ALREADY_EXISTS`, never a re-mint). The artifact finalize route is
+RELEASE_ALREADY_EXISTS`, never a re-mint), and `POST
+/api/v1/environments` (S9-04, issue #58: custom environment creation;
+the replace-set writes of the environment surface — config,
+assignments, bindings — are deliberately NOT in the registry: the
+desired set IS the replay answer). The artifact finalize route is
 deliberately NOT in
 the registry: its terminal state is the replay answer — a retry
 answers the registered artifact `200 created=false`, exactly like the

@@ -51,6 +51,8 @@ public enum Permission {
     ORG_TESTERS_MANAGE("org:testers:manage"),
     ORG_TENANTS_CREATE("org:tenants:create"),
     ORG_TENANTS_READ("org:tenants:read"),
+    ORG_ENVIRONMENTS_READ("org:environments:read"), // issue #58 (S9-04)
+    ORG_ENVIRONMENTS_MANAGE("org:environments:manage"), // issue #58 (S9-04)
 
     // tenant scope
     TENANT_TENANTS_READ("tenant:tenants:read"),

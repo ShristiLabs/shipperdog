@@ -148,10 +148,33 @@ permission target is the application and its denials conceal as
 | `RELEASE_MANIFEST_NOT_FOUND` | 404 | No manifest is frozen for this release. (S9-03/issue #57 — the release resolved and is readable, but has not crossed into APPROVED yet, or predates the manifest surface; an honest state-dependent miss, never a concealment — the foreign-release shape stays `RELEASE_NOT_FOUND`) |
 | `RELEASE_MANIFEST_IMMUTABLE` | 409 | The release manifest is immutable. (S9-03 — V26's one-per-release unique constraint is the authority and the forward-only graph cannot re-enter APPROVED, so a second freeze is doubly impossible; any surface reaching this code is a bug answering loudly, never a silent overwrite) |
 | `RELEASE_MANIFEST_CORRUPT` | 500 | The stored release manifest failed integrity verification. (S9-03 — the re-canonicalized content does not hash to the stored digest: storage corruption or tampering; the platform detects drift loudly and never serves, repairs, or rewrites the document — INV-003/004 discipline applied to the manifest itself) |
+| `ENVIRONMENT_NOT_FOUND` | 404 | Resource not found. (S9-04 — creation naming an environment that is unknown, foreign, or of another organization than the application's; this surface's own value of the environment module's public code, so the concealed miss is byte-identical through either module) |
+| `ENVIRONMENT_DISABLED` | 409 | The environment is disabled. (S9-04 — a parked environment may not be named by a new release; reactivation is the one crossing out) |
 
 `VERSION_ARCHIVED` and `VERSION_REVOKED` arrive on the creation route
 as the version module's own code (a release may not target a read-only
 version), re-rendered verbatim — see the version table above.
+
+## Environment (`EnvironmentException.Code`)
+
+The environment surface (S9-04, issue #58): the organization-grain
+deployment contexts with their versioned configuration, tenant
+assignments, and reference-only credential bindings. Item-route
+permission denials conceal as `ENVIRONMENT_NOT_FOUND` through the
+authorization module's handler; collection-route denials conceal as
+`ORGANIZATION_NOT_FOUND` at the permission target.
+
+| Code | HTTP | Detail |
+|---|---|---|
+| `ENVIRONMENT_NOT_FOUND` | 404 | Resource not found. (also the concealed-denial shape on every item-addressed route — a foreign organization's environment, config, ledger, assignment set, or binding set is indistinguishable from a missing one) |
+| `ORGANIZATION_NOT_FOUND` | 404 | Resource not found. (the collection routes' backstop: unknown or foreign `organizationId`) |
+| `INVALID_REQUEST` | 400 | The request is invalid. (missing/blank fields, a non-kebab code or binding name, a negative position, a malformed config key or over-long value, a whitespace-bearing secret reference, an unknown status value) |
+| `TENANT_NOT_FOUND` | 404 | Resource not found. (the assignment resolution path's reserved value; the set-write's per-tenant refusal is the 422 below) |
+| `ENVIRONMENT_ALREADY_EXISTS` | 409 | An environment already exists for this organization. (`uq_environments_org_code` and V1's `uq_environments_org_name` are the authorities; the pre-check and the lost-race translation answer it identically) |
+| `ENVIRONMENT_DISABLED` | 409 | The environment is disabled. (the park refuses every mutation — PATCH, config, assignments, bindings — except reactivation) |
+| `ENVIRONMENT_STATUS_INVALID` | 409 | The environment cannot change to the requested status. (the self-crossing; the `errors` member carries `current` and `attempted`, the `RELEASE_TRANSITION_INVALID` shape) |
+| `ENVIRONMENT_CONFIG_VERSION_NOT_FOUND` | 404 | No configuration snapshot exists at that version. (an honest state-dependent miss: the environment is readable, the version is absent) |
+| `ENVIRONMENT_TENANTS_INVALID` | 422 | One or more tenants are not members of the environment's organization. (one 422 keyed by tenant id; the message is IDENTICAL for an unknown and a foreign tenant — the refusal never confirms existence) |
 
 ## Tester (`TesterException.Code`)
 

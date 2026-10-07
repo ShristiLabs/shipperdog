@@ -178,3 +178,24 @@ VALUES (
     '10000000-0000-4000-8000-000000000010',
     'APK')
 ON CONFLICT (id) DO NOTHING;
+
+-- Default environments for the demo organization (issue #58, S9-04):
+-- the API seeds FR-025's five on every organization creation; the seed
+-- fixture creates its organization directly, so it reproduces the same
+-- provisioning here (the tester-groups precedent above). Fixed ids keep
+-- re-runs idempotent; bare ON CONFLICT DO NOTHING tolerates a local
+-- database where V27's migration-time seeding (or the API) already
+-- provisioned them under different ids.
+INSERT INTO environments (id, organization_id, code, name, position)
+VALUES
+    ('10000000-0000-4000-8000-000000000030',
+     '10000000-0000-4000-8000-000000000001', 'development', 'Development', 0),
+    ('10000000-0000-4000-8000-000000000031',
+     '10000000-0000-4000-8000-000000000001', 'qa', 'QA', 1),
+    ('10000000-0000-4000-8000-000000000032',
+     '10000000-0000-4000-8000-000000000001', 'uat', 'UAT', 2),
+    ('10000000-0000-4000-8000-000000000033',
+     '10000000-0000-4000-8000-000000000001', 'pilot', 'Pilot', 3),
+    ('10000000-0000-4000-8000-000000000034',
+     '10000000-0000-4000-8000-000000000001', 'production', 'Production', 4)
+ON CONFLICT DO NOTHING;

@@ -9,6 +9,7 @@ import com.shipperdog.api.authorization.Permission;
 import com.shipperdog.api.authorization.RolePermissions;
 import com.shipperdog.api.config.MetricNames;
 import com.shipperdog.api.config.TraceAttributes;
+import com.shipperdog.api.environment.EnvironmentAccess;
 import com.shipperdog.api.identity.AuthenticatedPrincipal;
 import com.shipperdog.api.organization.OrgRole;
 import com.shipperdog.api.tenant.TenantRole;
@@ -79,6 +80,7 @@ public class RbacPermissionEvaluator implements PermissionEvaluator {
     private final VersionAccess versions;
     private final TesterAccess testers;
     private final TesterGroupAccess testerGroups;
+    private final EnvironmentAccess environmentAccess;
     private final AuditLogger audit;
     private final MeterRegistry meters;
     private final TraceAttributes trace;
@@ -89,6 +91,7 @@ public class RbacPermissionEvaluator implements PermissionEvaluator {
             VersionAccess versions,
             TesterAccess testers,
             TesterGroupAccess testerGroups,
+            EnvironmentAccess environmentAccess,
             AuditLogger audit,
             MeterRegistry meters,
             TraceAttributes trace) {
@@ -97,6 +100,7 @@ public class RbacPermissionEvaluator implements PermissionEvaluator {
         this.versions = versions;
         this.testers = testers;
         this.testerGroups = testerGroups;
+        this.environmentAccess = environmentAccess;
         this.audit = audit;
         this.meters = meters;
         this.trace = trace;
@@ -129,6 +133,8 @@ public class RbacPermissionEvaluator implements PermissionEvaluator {
                 trace.tester(id);
             } else if ("tester-group".equals(targetType)) {
                 trace.testerGroup(id);
+            } else if ("environment".equals(targetType)) {
+                trace.environment(id);
             }
         }
         // SLO measurability from day one (PRD sections 28 and 42):
@@ -185,9 +191,15 @@ public class RbacPermissionEvaluator implements PermissionEvaluator {
         // 'version' target performs for app-scope grants. An unknown or
         // cross-organization tester denies here; the caller adds the
         // concealed-404 shape so it is indistinguishable from a miss.
+        // S9-04 (issue #58): the 'environment' target performs the same
+        // hop — environments are organization-grain, so the item routes'
+        // permission checks resolve the owning organization exactly once.
         UUID effectiveScopeId = scopeId;
         if ("tester".equals(targetType) && "org".equals(required.scope()) && scopeId != null) {
             effectiveScopeId = testers.owningOrganizationOf(scopeId).orElse(null);
+        }
+        if ("environment".equals(targetType) && "org".equals(required.scope()) && scopeId != null) {
+            effectiveScopeId = environmentAccess.owningOrganizationOf(scopeId).orElse(null);
         }
         return switch (required.scope()) {
             case "platform" -> false; // only the platform wildcard above
@@ -262,6 +274,16 @@ public class RbacPermissionEvaluator implements PermissionEvaluator {
             return testerGroups
                     .owningTenantOf(targetId)
                     .map(tenantId -> tenantGrants(snapshot, tenantId, required))
+                    .orElse(false);
+        }
+        if ("environment".equals(targetType)) {
+            // S9-04 (issue #58): app-scope grants at an environment
+            // target resolve the environment's owning organization —
+            // the same hop the org-scope environment check performs
+            // above (environments are organization-grain).
+            return environmentAccess
+                    .owningOrganizationOf(targetId)
+                    .map(organizationId -> orgGrants(snapshot, organizationId, required))
                     .orElse(false);
         }
         return false;

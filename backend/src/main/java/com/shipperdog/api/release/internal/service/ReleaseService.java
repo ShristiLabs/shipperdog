@@ -7,6 +7,7 @@ import com.shipperdog.api.audit.AuditEventPublisher;
 import com.shipperdog.api.audit.AuditEventType;
 import com.shipperdog.api.config.CursorPageable;
 import com.shipperdog.api.config.TraceAttributes;
+import com.shipperdog.api.environment.EnvironmentAccess;
 import com.shipperdog.api.release.ReleaseAccess;
 import com.shipperdog.api.release.ReleaseException;
 import com.shipperdog.api.release.ReleaseTransitionPolicy;
@@ -131,6 +132,7 @@ public class ReleaseService implements ReleaseAccess, VersionDistributionContrib
     private final VersionAccess versions;
     private final ArtifactAccess artifacts;
     private final TesterGroupAccess testerGroups;
+    private final EnvironmentAccess environments;
     private final TenantScopeExecutor scopeExecutor;
     private final AuditEventPublisher audit;
     private final ObjectProvider<ReleaseTransitionPolicy> transitionPolicies;
@@ -150,6 +152,7 @@ public class ReleaseService implements ReleaseAccess, VersionDistributionContrib
             VersionAccess versions,
             ArtifactAccess artifacts,
             TesterGroupAccess testerGroups,
+            EnvironmentAccess environments,
             TenantScopeExecutor scopeExecutor,
             AuditEventPublisher audit,
             ObjectProvider<ReleaseTransitionPolicy> transitionPolicies,
@@ -167,6 +170,7 @@ public class ReleaseService implements ReleaseAccess, VersionDistributionContrib
         this.versions = versions;
         this.artifacts = artifacts;
         this.testerGroups = testerGroups;
+        this.environments = environments;
         this.scopeExecutor = scopeExecutor;
         this.audit = audit;
         this.transitionPolicies = transitionPolicies;
@@ -208,9 +212,13 @@ public class ReleaseService implements ReleaseAccess, VersionDistributionContrib
                     VersionException.Code.VERSION_REVOKED, "version's distribution is revoked; it cannot be released");
         }
         RingEntity ring = ringOf(command.ring(), application.organizationId());
+        EnvironmentAccess.EnvironmentState environment =
+                environmentOf(command.environmentId(), application.organizationId());
+        Set<UUID> environmentTenants = environment == null ? null : environments.assignedTenantIdsOf(environment.id());
         List<ArtifactSlot> slots =
                 validatedArtifacts(command.applicationId(), command.versionId(), command.artifacts());
-        Map<UUID, List<UUID>> groupsByTenant = validatedTargets(command.applicationId(), command.targets());
+        Map<UUID, List<UUID>> groupsByTenant =
+                validatedTargets(command.applicationId(), command.targets(), environmentTenants);
 
         ReleaseDetail detail = inScope(application, actorId, () -> {
             if (releases.existsScoped(ofApplication(command.applicationId()).and(versionIs(command.versionId())))) {
@@ -223,6 +231,7 @@ public class ReleaseService implements ReleaseAccess, VersionDistributionContrib
                     application.organizationId(),
                     application.tenantId(),
                     ring.getId(),
+                    environment == null ? null : environment.id(),
                     releaseNumber,
                     actorId);
             ReleaseEntity saved;
@@ -257,11 +266,17 @@ public class ReleaseService implements ReleaseAccess, VersionDistributionContrib
         });
 
         trace.application(command.applicationId());
+        if (environment != null) {
+            trace.environment(environment.id());
+        }
         Map<String, String> auditDetail = new LinkedHashMap<>();
         auditDetail.put("releaseRef", detail.releaseRef());
         auditDetail.put("versionId", command.versionId().toString());
         auditDetail.put("status", "DRAFT");
         auditDetail.put("ring", ring.getCode());
+        if (environment != null) {
+            auditDetail.put("environment", environment.code());
+        }
         auditDetail.put(
                 "artifacts",
                 slots.stream()
@@ -319,6 +334,7 @@ public class ReleaseService implements ReleaseAccess, VersionDistributionContrib
             Page<ReleaseEntity> found = releases.findAllScoped(scope, new CursorPageable(offset, limit, NEWEST_FIRST));
             Map<UUID, Integer> targetCounts = targetCountsOf(found.getContent());
             Map<UUID, String> ringCodes = ringCodesOf(found.getContent());
+            Map<UUID, String> environmentCodes = environmentCodesOf(found.getContent());
             return found.map(release -> new ReleaseView(
                     release.getId(),
                     release.releaseRef(),
@@ -326,6 +342,9 @@ public class ReleaseService implements ReleaseAccess, VersionDistributionContrib
                     release.getVersionId(),
                     release.getStatus().name(),
                     ringCodes.getOrDefault(release.getStartingRingId(), null),
+                    release.getEnvironmentId() == null
+                            ? null
+                            : environmentCodes.getOrDefault(release.getEnvironmentId(), null),
                     targetCounts.getOrDefault(release.getId(), 0),
                     release.getCreatedAt(),
                     release.getUpdatedAt()));
@@ -522,7 +541,7 @@ public class ReleaseService implements ReleaseAccess, VersionDistributionContrib
     // Views
     // -------------------------------------------------------------------------
 
-    /** The list-item view: registry fields, the quotable id, ring code, and target count. */
+    /** The list-item view: registry fields, the quotable id, ring and environment codes, and target count. */
     public record ReleaseView(
             UUID id,
             String releaseRef,
@@ -530,14 +549,16 @@ public class ReleaseService implements ReleaseAccess, VersionDistributionContrib
             UUID versionId,
             String status,
             String ring,
+            String environment,
             int targetCount,
             Instant createdAt,
             Instant updatedAt) {}
 
     /**
      * The detail view: the list-item shape plus the complete creation
-     * record — the per-platform artifact selection and the full target
-     * set with each target's tester groups and its ring.
+     * record — the per-platform artifact selection, the full target set
+     * with each target's tester groups and its ring, and the targeted
+     * environment when creation named one (S9-04).
      */
     public record ReleaseDetail(
             UUID id,
@@ -547,6 +568,9 @@ public class ReleaseService implements ReleaseAccess, VersionDistributionContrib
             String status,
             String ring,
             String ringName,
+            UUID environmentId,
+            String environment,
+            String environmentName,
             List<ArtifactSlotView> artifacts,
             List<TargetView> targets,
             UUID createdBy,
@@ -588,6 +612,7 @@ public class ReleaseService implements ReleaseAccess, VersionDistributionContrib
             UUID applicationId,
             UUID versionId,
             String ring,
+            UUID environmentId,
             List<ArtifactSlot> artifacts,
             List<TargetCommand> targets) {}
 
@@ -698,6 +723,34 @@ public class ReleaseService implements ReleaseAccess, VersionDistributionContrib
     }
 
     /**
+     * The named environment of creation (S9-04, issue #58 AC4): null
+     * when the request named none; otherwise it must exist, belong to
+     * the application's organization (a foreign environment is the
+     * concealed miss, indistinguishable from unknown), and be ACTIVE
+     * (a parked environment may not be named). Resolution precedes the
+     * target validation so the assignment check composes with the
+     * visibility rule into the same per-tenant 422.
+     */
+    private EnvironmentAccess.EnvironmentState environmentOf(UUID environmentId, UUID organizationId) {
+        if (environmentId == null) {
+            return null;
+        }
+        EnvironmentAccess.EnvironmentState state = environments
+                .stateOf(environmentId)
+                .orElseThrow(() ->
+                        new ReleaseException(ReleaseException.Code.ENVIRONMENT_NOT_FOUND, "environment not found"));
+        if (!state.organizationId().equals(organizationId)) {
+            throw new ReleaseException(ReleaseException.Code.ENVIRONMENT_NOT_FOUND, "environment not found");
+        }
+        if (!"ACTIVE".equals(state.status())) {
+            throw new ReleaseException(
+                    ReleaseException.Code.ENVIRONMENT_DISABLED,
+                    "environment '" + state.code() + "' is disabled; no new releases may target it");
+        }
+        return state;
+    }
+
+    /**
      * The artifact selection (AC1): at least one slot, distinct
      * platforms, every artifact READY (S5-05) and belonging to the
      * release's version. An artifact that is unknown, foreign, or of
@@ -770,13 +823,18 @@ public class ReleaseService implements ReleaseAccess, VersionDistributionContrib
     }
 
     /**
-     * The target set (AC2/AC3): at least one target, distinct tenants,
-     * every tenant holding the application (tenant-owned or
-     * shared+authorized — the S3-03 effective-visibility predicate), and
-     * every tester group belonging to its target tenant. Every offense
-     * accumulates into ONE 422 keyed by tenant or group id.
+     * The target set (AC2/AC3; the environment leg since S9-04, AC4):
+     * at least one target, distinct tenants, every tenant holding the
+     * application (tenant-owned or shared+authorized — the S3-03
+     * effective-visibility predicate), every tester group belonging to
+     * its target tenant, and — when creation names an environment —
+     * every target tenant sitting inside that environment's
+     * assignments (deny-by-default: an empty assignment set admits no
+     * tenant). Every offense accumulates into ONE 422 keyed by tenant
+     * or group id.
      */
-    private Map<UUID, List<UUID>> validatedTargets(UUID applicationId, List<TargetCommand> request) {
+    private Map<UUID, List<UUID>> validatedTargets(
+            UUID applicationId, List<TargetCommand> request, Set<UUID> environmentTenants) {
         if (request == null || request.isEmpty()) {
             throw invalid(Map.of("targets", "at least one target is required"));
         }
@@ -799,6 +857,12 @@ public class ReleaseService implements ReleaseAccess, VersionDistributionContrib
                 invalid.put(
                         target.tenantId().toString(),
                         "tenant does not hold the application (tenant-owned or shared with an ACTIVE authorization)");
+            }
+            if (environmentTenants != null && !environmentTenants.contains(target.tenantId())) {
+                invalid.putIfAbsent(
+                        target.tenantId().toString(),
+                        "tenant is not assigned to the release environment (environment assignments are "
+                                + "deny-by-default)");
             }
             List<UUID> groups = target.testerGroupIds() == null ? List.of() : target.testerGroupIds();
             Set<UUID> distinct = new LinkedHashSet<>();
@@ -840,6 +904,9 @@ public class ReleaseService implements ReleaseAccess, VersionDistributionContrib
                     .computeIfAbsent(group.getTenantId(), tenant -> new ArrayList<>())
                     .add(group.getGroupId());
         }
+        EnvironmentAccess.EnvironmentState environment = release.getEnvironmentId() == null
+                ? null
+                : environments.stateOf(release.getEnvironmentId()).orElse(null);
         return new ReleaseDetail(
                 release.getId(),
                 release.releaseRef(),
@@ -848,6 +915,9 @@ public class ReleaseService implements ReleaseAccess, VersionDistributionContrib
                 release.getStatus().name(),
                 ring == null ? null : ring.getCode(),
                 ring == null ? null : ring.getName(),
+                release.getEnvironmentId(),
+                environment == null ? null : environment.code(),
+                environment == null ? null : environment.name(),
                 artifactRows.stream()
                         .map(row -> new ArtifactSlotView(row.getPlatform(), row.getArtifactId()))
                         .toList(),
@@ -883,6 +953,18 @@ public class ReleaseService implements ReleaseAccess, VersionDistributionContrib
         Map<UUID, String> codes = new LinkedHashMap<>();
         for (RingEntity ring : rings.findAllById(ringIds)) {
             codes.put(ring.getId(), ring.getCode());
+        }
+        return codes;
+    }
+
+    /** The environment codes of a page of releases (null ids skip — most releases name no environment yet). */
+    private Map<UUID, String> environmentCodesOf(List<ReleaseEntity> page) {
+        Map<UUID, String> codes = new LinkedHashMap<>();
+        for (ReleaseEntity release : page) {
+            UUID environmentId = release.getEnvironmentId();
+            if (environmentId != null && !codes.containsKey(environmentId)) {
+                environments.stateOf(environmentId).ifPresent(state -> codes.put(environmentId, state.code()));
+            }
         }
         return codes;
     }

@@ -385,12 +385,38 @@ class RbacPermissionEvaluatorTest {
             TesterAccess testers,
             com.shipperdog.api.tester.TesterGroupAccess testerGroups,
             RequestRoleGrants grants) {
+        // The environment hop's stub resolves nothing (S9-04, issue #58):
+        // the org-scope and app-scope environment paths deny through an
+        // unknown id exactly like the tester hop's stub above.
+        com.shipperdog.api.environment.EnvironmentAccess unknownEnvironments =
+                new com.shipperdog.api.environment.EnvironmentAccess() {
+                    @Override
+                    public java.util.Optional<UUID> owningOrganizationOf(UUID environmentId) {
+                        return java.util.Optional.empty();
+                    }
+
+                    @Override
+                    public java.util.Optional<EnvironmentState> stateOf(UUID environmentId) {
+                        return java.util.Optional.empty();
+                    }
+
+                    @Override
+                    public EnvironmentConfigSnapshot configSnapshotOf(UUID environmentId) {
+                        return new EnvironmentConfigSnapshot(0L, java.util.Map.of());
+                    }
+
+                    @Override
+                    public java.util.Set<UUID> assignedTenantIdsOf(UUID environmentId) {
+                        return java.util.Set.of();
+                    }
+                };
         return new RbacPermissionEvaluator(
                 grants,
                 applications,
                 versions,
                 testers,
                 testerGroups,
+                unknownEnvironments,
                 new AuditLogger(event -> {}, Clock.systemUTC()),
                 new SimpleMeterRegistry(),
                 new TraceAttributes(ObservationRegistry.NOOP));

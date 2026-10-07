@@ -54,6 +54,16 @@ Current contents:
   race discipline, the mandatory failure/rollback reasons, the
   append-only actor-carrying history timeline, and the ROLLED_BACK
   direct-channel download cutoff.
+- [Environments](environments.md) — the environment surface (S9-04):
+  the organization-grain deployment contexts (seeded defaults plus
+  customs) with their two-value lifecycle, the versioned
+  configuration snapshots with retrieval by version, the tenant
+  assignment allow-list release creation validates targets against
+  (deny-by-default), the reference-only credential bindings with the
+  resolution probe (secret references, never material — PRD 25), and
+  the release-creation and manifest-freeze integration (the
+  environment code and the RESOLVED configuration values freeze at
+  APPROVED).
 - [Admin console](frontend.md) — the React/MUI console (S2-04, S3-04):
   stack and structure, the shared API client (problem+json, correlation
   ids, cursor pagination), token storage and silent refresh, role-aware

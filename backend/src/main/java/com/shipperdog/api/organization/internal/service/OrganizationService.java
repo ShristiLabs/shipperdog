@@ -6,6 +6,7 @@ import com.shipperdog.api.audit.AuditEventType;
 import com.shipperdog.api.authorization.RolePermissions;
 import com.shipperdog.api.config.CursorPageable;
 import com.shipperdog.api.config.TraceAttributes;
+import com.shipperdog.api.environment.EnvironmentProvisioning;
 import com.shipperdog.api.identity.PlatformAdmins;
 import com.shipperdog.api.identity.SessionRevocation;
 import com.shipperdog.api.identity.UserDirectory;
@@ -69,6 +70,15 @@ public class OrganizationService implements OrganizationAccess {
      */
     private final ObjectProvider<SessionRevocation> sessions;
 
+    /**
+     * Lazy for the same reason: the environment module's provisioning
+     * callback seeds FR-025's default environments inside organization
+     * creation (S9-04, issue #58), and its service depends on
+     * OrganizationAccess — a direct dependency here would close the
+     * bean cycle. The provider resolves the binding on first creation.
+     */
+    private final ObjectProvider<EnvironmentProvisioning> environmentDefaults;
+
     private final UserDirectory directory;
     private final AuditEventPublisher audit;
     private final ObjectMapper mapper;
@@ -81,6 +91,7 @@ public class OrganizationService implements OrganizationAccess {
             OrganizationIdpConfigRepository idpConfigs,
             PlatformAdmins platformAdmins,
             ObjectProvider<SessionRevocation> sessions,
+            ObjectProvider<EnvironmentProvisioning> environmentDefaults,
             UserDirectory directory,
             AuditEventPublisher audit,
             ObjectMapper mapper,
@@ -91,6 +102,7 @@ public class OrganizationService implements OrganizationAccess {
         this.idpConfigs = idpConfigs;
         this.platformAdmins = platformAdmins;
         this.sessions = sessions;
+        this.environmentDefaults = environmentDefaults;
         this.directory = directory;
         this.audit = audit;
         this.mapper = mapper;
@@ -204,6 +216,10 @@ public class OrganizationService implements OrganizationAccess {
             throw externalIdTaken();
         }
         members.save(new OrganizationMemberEntity(organization.getId(), actorId, OrgRole.ORG_ADMIN));
+        // S9-04 (issue #58): seed FR-025's five default environments
+        // inside the creation transaction — a seeding failure fails the
+        // whole creation (the S6-02 default-group precedent).
+        environmentDefaults.getObject().seedDefaultEnvironments(organization.getId(), actorId);
         // The created id is only known here, after the insert — creation
         // requests have no guarded target id for the evaluator to tag,
         // so the service stamps the trace itself (issue #7).

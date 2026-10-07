@@ -76,6 +76,16 @@ public class ReleaseEntity implements OrganizationScope {
 
     private UUID startingRingId;
 
+    /**
+     * The environment the release targets (V27, S9-04, issue #58 AC4):
+     * optional — the release surface predates environments and creation
+     * accepts one "when environment specified". When present, the
+     * release's targets must sit inside the environment's tenant
+     * assignments, and the S9-03 manifest freezes the environment's
+     * CODE and RESOLVED configuration at APPROVED.
+     */
+    private UUID environmentId;
+
     private Long releaseNumber;
 
     private UUID createdBy;
@@ -91,10 +101,12 @@ public class ReleaseEntity implements OrganizationScope {
     protected ReleaseEntity() {}
 
     /**
-     * A new release (S9-01): born DRAFT under the application's
-     * owning-dimension snapshot, starting at the resolved ring, with its
-     * quotable number allocated from the V24 sequence and its creator
-     * recorded for the audit trail.
+     * A new release (S9-01; the environment dimension since S9-04): born
+     * DRAFT under the application's owning-dimension snapshot, starting
+     * at the resolved ring, optionally targeting a validated environment
+     * (null when creation named none), with its quotable number
+     * allocated from the V24 sequence and its creator recorded for the
+     * audit trail.
      */
     public ReleaseEntity(
             UUID applicationId,
@@ -102,6 +114,7 @@ public class ReleaseEntity implements OrganizationScope {
             UUID organizationId,
             UUID tenantId,
             UUID startingRingId,
+            UUID environmentId,
             long releaseNumber,
             UUID createdBy) {
         this.applicationId = applicationId;
@@ -109,6 +122,7 @@ public class ReleaseEntity implements OrganizationScope {
         this.organizationId = organizationId;
         this.tenantId = tenantId;
         this.startingRingId = startingRingId;
+        this.environmentId = environmentId;
         this.releaseNumber = releaseNumber;
         this.createdBy = createdBy;
         this.status = Status.DRAFT;
@@ -158,6 +172,11 @@ public class ReleaseEntity implements OrganizationScope {
 
     public UUID getStartingRingId() {
         return startingRingId;
+    }
+
+    /** The targeted environment, or null when the release names none (S9-04). */
+    public UUID getEnvironmentId() {
+        return environmentId;
     }
 
     public Long getReleaseNumber() {

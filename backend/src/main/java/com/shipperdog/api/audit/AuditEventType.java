@@ -85,5 +85,38 @@ public enum AuditEventType {
      * manifest's SHA-256 content hash — the digest that pins WHAT the release shipped, recorded once,
      * at freeze time; the document itself never changes, so neither does this event's meaning.
      */
-    RELEASE_MANIFEST_FROZEN
+    RELEASE_MANIFEST_FROZEN,
+    /**
+     * A custom environment created (S9-04, FR-025): code, name, position, and the name-only channel
+     * and policy bindings when present. The seeded defaults of a new organization are part of its
+     * creation and carry no separate event.
+     */
+    ENVIRONMENT_CREATED,
+    /** One environment's mutable facts changed (S9-04): the changed fields and their new values. */
+    ENVIRONMENT_UPDATED,
+    /** An environment's lifecycle crossing (S9-04): from, to, and the optional reason. */
+    ENVIRONMENT_STATUS_CHANGED,
+    /**
+     * One configuration write appended to an environment's ledger (S9-04, FR-025): the version and the
+     * per-key movement (added, removed, changed). History lives in the ledger; this event is the who
+     * and the when beside it.
+     */
+    ENVIRONMENT_CONFIG_UPDATED,
+    /**
+     * An environment's tenant assignment set replaced (S9-04, FR-025/AC4): the tenants added and
+     * removed — the allow-list release creation validates targets against.
+     */
+    ENVIRONMENT_TENANTS_ASSIGNED,
+    /**
+     * An environment's credential binding set replaced (S9-04, FR-025/AC3): binding names added,
+     * removed, and repointed — with their secret REFERENCES, which are the audit fact; material never
+     * reaches the platform, so it can never reach an audit event.
+     */
+    ENVIRONMENT_CREDENTIALS_BOUND,
+    /**
+     * One credential resolution probe (S9-04, FR-025/AC5): the binding's name and reference and
+     * whether the resolver answered — probing credentials is a security-relevant act, audited even
+     * though it mutates nothing.
+     */
+    ENVIRONMENT_CREDENTIAL_VERIFIED
 }

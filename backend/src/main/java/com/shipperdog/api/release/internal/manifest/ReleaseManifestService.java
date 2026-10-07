@@ -7,6 +7,7 @@ import com.shipperdog.api.artifact.ArtifactAccess;
 import com.shipperdog.api.audit.AuditEvent;
 import com.shipperdog.api.audit.AuditEventPublisher;
 import com.shipperdog.api.audit.AuditEventType;
+import com.shipperdog.api.environment.EnvironmentAccess;
 import com.shipperdog.api.release.ReleaseException;
 import com.shipperdog.api.release.ReleaseTransitionedEvent;
 import com.shipperdog.api.release.internal.entity.ReleaseArtifactEntity;
@@ -144,6 +145,7 @@ public class ReleaseManifestService {
     private final ApplicationAccess applications;
     private final VersionAccess versions;
     private final ArtifactAccess artifacts;
+    private final EnvironmentAccess environments;
     private final TenantScopeExecutor scopeExecutor;
     private final AuditEventPublisher audit;
 
@@ -157,6 +159,7 @@ public class ReleaseManifestService {
             ApplicationAccess applications,
             VersionAccess versions,
             ArtifactAccess artifacts,
+            EnvironmentAccess environments,
             TenantScopeExecutor scopeExecutor,
             AuditEventPublisher audit) {
         this.manifests = manifests;
@@ -168,6 +171,7 @@ public class ReleaseManifestService {
         this.applications = applications;
         this.versions = versions;
         this.artifacts = artifacts;
+        this.environments = environments;
         this.scopeExecutor = scopeExecutor;
         this.audit = audit;
     }
@@ -288,6 +292,29 @@ public class ReleaseManifestService {
                 .orElseThrow(() -> new IllegalStateException(
                         "version record missing at manifest freeze for release " + release.releaseRef()));
 
+        // The environment block and the resolved configuration (S9-04,
+        // issue #58 — the #57 follow-up this discharges): when the
+        // release names an environment, the freeze deep-copies its CODE
+        // and its configuration snapshot's RESOLVED VALUES — the actual
+        // version and key-value map, never pointers to rows that might
+        // later move. A release naming no environment keeps the honest
+        // nulls; a named-but-never-configured environment freezes
+        // version 0 with the empty map (the honest empty, not an
+        // absence). The per-tenant configuration key stays null until
+        // its owning story models tenant-scoped overrides.
+        String environmentCode = null;
+        Configuration configuration = new Configuration(null, null, null);
+        if (release.getEnvironmentId() != null) {
+            EnvironmentAccess.EnvironmentState environment = environments
+                    .stateOf(release.getEnvironmentId())
+                    .orElseThrow(() -> new IllegalStateException(
+                            "environment missing at manifest freeze for release " + release.releaseRef()));
+            EnvironmentAccess.EnvironmentConfigSnapshot snapshot =
+                    environments.configSnapshotOf(release.getEnvironmentId());
+            environmentCode = environment.code();
+            configuration = new Configuration(snapshot.version(), snapshot.entries(), null);
+        }
+
         return new ReleaseManifestDocument(
                 new Release(
                         release.getId(),
@@ -300,9 +327,9 @@ public class ReleaseManifestService {
                 List.copyOf(artifactPins),
                 List.copyOf(targetPins),
                 new Ring(ring.getCode(), ring.getName(), ring.getPosition()),
-                null,
+                environmentCode,
                 new Rollout(null),
-                new Configuration(null, null, null),
+                configuration,
                 new Approval(List.of()));
     }
 

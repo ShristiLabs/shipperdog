@@ -374,6 +374,186 @@ paths:
             '*/*':
               schema:
                 $ref: "#/components/schemas/IdpConfig"
+  /api/v1/environments/{environmentId}/tenants:
+    get:
+      tags:
+      - environment-controller
+      operationId: tenants
+      parameters:
+      - name: environmentId
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - name: limit
+        in: query
+        required: false
+        schema:
+          type: string
+      - name: cursor
+        in: query
+        required: false
+        schema:
+          type: string
+      responses:
+        "200":
+          description: OK
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/PageResponseTenantView"
+    put:
+      tags:
+      - environment-controller
+      operationId: putTenants
+      parameters:
+      - name: environmentId
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/TenantsRequest"
+        required: true
+      responses:
+        "200":
+          description: OK
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/TenantsView"
+  /api/v1/environments/{environmentId}/status:
+    put:
+      tags:
+      - environment-controller
+      operationId: setStatus
+      parameters:
+      - name: environmentId
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/StatusChangeRequest"
+        required: true
+      responses:
+        "200":
+          description: OK
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/EnvironmentView"
+  /api/v1/environments/{environmentId}/credentials:
+    get:
+      tags:
+      - environment-controller
+      operationId: credentials
+      parameters:
+      - name: environmentId
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - name: limit
+        in: query
+        required: false
+        schema:
+          type: string
+      - name: cursor
+        in: query
+        required: false
+        schema:
+          type: string
+      responses:
+        "200":
+          description: OK
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/PageResponseCredentialView"
+    put:
+      tags:
+      - environment-controller
+      operationId: putCredentials
+      parameters:
+      - name: environmentId
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CredentialsRequest"
+        required: true
+      responses:
+        "200":
+          description: OK
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/CredentialsView"
+  /api/v1/environments/{environmentId}/config:
+    get:
+      tags:
+      - environment-controller
+      operationId: config
+      parameters:
+      - name: environmentId
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - name: version
+        in: query
+        required: false
+        schema:
+          type: integer
+          format: int64
+      responses:
+        "200":
+          description: OK
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/ConfigSnapshotView"
+    put:
+      tags:
+      - environment-controller
+      operationId: putConfig
+      parameters:
+      - name: environmentId
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ConfigRequest"
+        required: true
+      responses:
+        "200":
+          description: OK
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/ConfigSnapshotView"
   /api/v1/applications/{applicationId}/versions/{versionId}/tags:
     put:
       tags:
@@ -960,6 +1140,77 @@ paths:
             '*/*':
               schema:
                 $ref: "#/components/schemas/OrganizationResponse"
+  /api/v1/environments:
+    get:
+      tags:
+      - environment-controller
+      operationId: list_6
+      parameters:
+      - name: organizationId
+        in: query
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - name: limit
+        in: query
+        required: false
+        schema:
+          type: string
+      - name: cursor
+        in: query
+        required: false
+        schema:
+          type: string
+      responses:
+        "200":
+          description: OK
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/PageResponseEnvironmentView"
+    post:
+      tags:
+      - environment-controller
+      operationId: create_6
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateRequest"
+        required: true
+      responses:
+        "201":
+          description: Created
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/EnvironmentView"
+  /api/v1/environments/{environmentId}/credentials/{credentialId}/verify:
+    post:
+      tags:
+      - environment-controller
+      operationId: verifyCredential
+      parameters:
+      - name: environmentId
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - name: credentialId
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      responses:
+        "200":
+          description: OK
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/VerifyView"
   /api/v1/authorization/decisions:
     post:
       tags:
@@ -1270,7 +1521,7 @@ paths:
     get:
       tags:
       - application-controller
-      operationId: list_6
+      operationId: list_7
       parameters:
       - name: organizationId
         in: query
@@ -1298,7 +1549,7 @@ paths:
     post:
       tags:
       - application-controller
-      operationId: create_6
+      operationId: create_7
       requestBody:
         content:
           application/json:
@@ -1371,7 +1622,7 @@ paths:
     get:
       tags:
       - version-controller
-      operationId: list_7
+      operationId: list_8
       parameters:
       - name: applicationId
         in: path
@@ -1409,7 +1660,7 @@ paths:
     post:
       tags:
       - version-controller
-      operationId: create_7
+      operationId: create_8
       parameters:
       - name: applicationId
         in: path
@@ -1486,11 +1737,54 @@ paths:
             '*/*':
               schema:
                 $ref: "#/components/schemas/VersionDetail"
+  /api/v1/environments/{environmentId}:
+    get:
+      tags:
+      - environment-controller
+      operationId: get_3
+      parameters:
+      - name: environmentId
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      responses:
+        "200":
+          description: OK
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/EnvironmentView"
+    patch:
+      tags:
+      - environment-controller
+      operationId: update_2
+      parameters:
+      - name: environmentId
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateRequest"
+        required: true
+      responses:
+        "200":
+          description: OK
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/EnvironmentView"
   /api/v1/applications/{id}:
     get:
       tags:
       - application-controller
-      operationId: get_3
+      operationId: get_4
       parameters:
       - name: id
         in: path
@@ -1508,7 +1802,7 @@ paths:
     patch:
       tags:
       - application-controller
-      operationId: update_2
+      operationId: update_3
       parameters:
       - name: id
         in: path
@@ -1533,7 +1827,7 @@ paths:
     get:
       tags:
       - tester-controller
-      operationId: get_4
+      operationId: get_5
       parameters:
       - name: id
         in: path
@@ -1626,7 +1920,7 @@ paths:
     get:
       tags:
       - authorization-grant-controller
-      operationId: get_5
+      operationId: get_6
       parameters:
       - name: id
         in: path
@@ -1748,7 +2042,7 @@ paths:
     get:
       tags:
       - tenant-applications-controller
-      operationId: list_8
+      operationId: list_9
       parameters:
       - name: id
         in: path
@@ -1777,7 +2071,7 @@ paths:
     get:
       tags:
       - release-controller
-      operationId: get_6
+      operationId: get_7
       parameters:
       - name: releaseId
         in: path
@@ -1913,6 +2207,35 @@ paths:
             '*/*':
               schema:
                 $ref: "#/components/schemas/PageResponseMemberView"
+  /api/v1/environments/{environmentId}/config/versions:
+    get:
+      tags:
+      - environment-controller
+      operationId: configVersions
+      parameters:
+      - name: environmentId
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - name: limit
+        in: query
+        required: false
+        schema:
+          type: string
+      - name: cursor
+        in: query
+        required: false
+        schema:
+          type: string
+      responses:
+        "200":
+          description: OK
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/PageResponseConfigVersionView"
   /api/v1/downloads/{token}:
     get:
       tags:
@@ -2131,6 +2454,13 @@ paths:
           - RELEASE_CREATED
           - RELEASE_TRANSITIONED
           - RELEASE_MANIFEST_FROZEN
+          - ENVIRONMENT_CREATED
+          - ENVIRONMENT_UPDATED
+          - ENVIRONMENT_STATUS_CHANGED
+          - ENVIRONMENT_CONFIG_UPDATED
+          - ENVIRONMENT_TENANTS_ASSIGNED
+          - ENVIRONMENT_CREDENTIALS_BOUND
+          - ENVIRONMENT_CREDENTIAL_VERIFIED
       - name: applicationId
         in: query
         required: false
@@ -2182,7 +2512,7 @@ paths:
     get:
       tags:
       - artifact-controller
-      operationId: get_7
+      operationId: get_8
       parameters:
       - name: artifactId
         in: path
@@ -2232,7 +2562,7 @@ paths:
     get:
       tags:
       - application-tenant-authorization-controller
-      operationId: list_9
+      operationId: list_10
       parameters:
       - name: id
         in: path
@@ -2261,7 +2591,7 @@ paths:
     get:
       tags:
       - version-controller
-      operationId: get_8
+      operationId: get_9
       parameters:
       - name: applicationId
         in: path
@@ -2605,7 +2935,9 @@ components:
     JsonNode:
       type: object
       properties:
-        container:
+        string:
+          type: boolean
+        valueNode:
           type: boolean
         nodeType:
           type: string
@@ -2619,17 +2951,11 @@ components:
           - OBJECT
           - POJO
           - STRING
-        string:
-          type: boolean
-        integralNumber:
-          type: boolean
         missingNode:
-          type: boolean
-        valueNode:
           type: boolean
         pojo:
           type: boolean
-        number:
+        integralNumber:
           type: boolean
         short:
           type: boolean
@@ -2652,6 +2978,10 @@ components:
           type: boolean
         floatingPointNumber:
           type: boolean
+        container:
+          type: boolean
+        number:
+          type: boolean
         empty:
           type: boolean
         array:
@@ -2672,6 +3002,124 @@ components:
         config:
           $ref: "#/components/schemas/JsonNode"
         updatedAt:
+          type: string
+          format: date-time
+    TenantsRequest:
+      type: object
+      description: "The tenant assignment body: the full desired tenant id set."
+      properties:
+        tenantIds:
+          type: array
+          items:
+            type: string
+            format: uuid
+    TenantsView:
+      type: object
+      properties:
+        environmentId:
+          type: string
+          format: uuid
+        tenantIds:
+          type: array
+          items:
+            type: string
+            format: uuid
+    EnvironmentView:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        organizationId:
+          type: string
+          format: uuid
+        code:
+          type: string
+        name:
+          type: string
+        position:
+          type: integer
+          format: int32
+        status:
+          type: string
+        distributionChannel:
+          type: string
+        approvalPolicy:
+          type: string
+        configVersion:
+          type: integer
+          format: int64
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+    CredentialBindingRequest:
+      type: object
+      properties:
+        name:
+          type: string
+        secretReference:
+          type: string
+    CredentialsRequest:
+      type: object
+      description: "The credential binding body: the full desired set of name plus\
+        \ secret-reference pairs."
+      properties:
+        credentials:
+          type: array
+          items:
+            $ref: "#/components/schemas/CredentialBindingRequest"
+    CredentialView:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+        secretReference:
+          type: string
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+    CredentialsView:
+      type: object
+      properties:
+        credentials:
+          type: array
+          items:
+            $ref: "#/components/schemas/CredentialView"
+    ConfigRequest:
+      type: object
+      description: "The environment configuration body: the full desired key-value\
+        \ set."
+      properties:
+        entries:
+          type: object
+          additionalProperties:
+            type: string
+    ConfigSnapshotView:
+      type: object
+      properties:
+        environmentId:
+          type: string
+          format: uuid
+        version:
+          type: integer
+          format: int64
+        entries:
+          type: object
+          additionalProperties:
+            type: string
+        createdBy:
+          type: string
+          format: uuid
+        createdAt:
           type: string
           format: date-time
     ReplaceTagsRequest:
@@ -2807,6 +3255,13 @@ components:
           type: string
         ringName:
           type: string
+        environmentId:
+          type: string
+          format: uuid
+        environment:
+          type: string
+        environmentName:
+          type: string
         artifacts:
           type: array
           items:
@@ -2850,6 +3305,21 @@ components:
           type: string
         reason:
           type: string
+    VerifyView:
+      type: object
+      properties:
+        credentialId:
+          type: string
+          format: uuid
+        name:
+          type: string
+        secretReference:
+          type: string
+        resolved:
+          type: boolean
+        verifiedAt:
+          type: string
+          format: date-time
     InspectRequest:
       type: object
       description: "The decision context to inspect: the subject user, the addressed\
@@ -3551,6 +4021,8 @@ components:
           type: string
         ring:
           type: string
+        environment:
+          type: string
         targetCount:
           type: integer
           format: int32
@@ -3703,6 +4175,70 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/OrganizationResponse"
+        next_cursor:
+          type: string
+    PageResponseEnvironmentView:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/EnvironmentView"
+        next_cursor:
+          type: string
+    PageResponseTenantView:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/TenantView"
+        next_cursor:
+          type: string
+    TenantView:
+      type: object
+      properties:
+        tenantId:
+          type: string
+          format: uuid
+        name:
+          type: string
+        status:
+          type: string
+        assignedAt:
+          type: string
+          format: date-time
+    PageResponseCredentialView:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/CredentialView"
+        next_cursor:
+          type: string
+    ConfigVersionView:
+      type: object
+      properties:
+        version:
+          type: integer
+          format: int64
+        keyCount:
+          type: integer
+          format: int32
+        createdBy:
+          type: string
+          format: uuid
+        createdAt:
+          type: string
+          format: date-time
+    PageResponseConfigVersionView:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/ConfigVersionView"
         next_cursor:
           type: string
     ApplicationCardView:
@@ -3956,6 +4492,13 @@ components:
           - RELEASE_CREATED
           - RELEASE_TRANSITIONED
           - RELEASE_MANIFEST_FROZEN
+          - ENVIRONMENT_CREATED
+          - ENVIRONMENT_UPDATED
+          - ENVIRONMENT_STATUS_CHANGED
+          - ENVIRONMENT_CONFIG_UPDATED
+          - ENVIRONMENT_TENANTS_ASSIGNED
+          - ENVIRONMENT_CREDENTIALS_BOUND
+          - ENVIRONMENT_CREDENTIAL_VERIFIED
         occurredAt:
           type: string
           format: date-time

@@ -41,14 +41,14 @@ permission:
 | Role | Permissions |
 |---|---|
 | PLATFORM_ADMIN | `*` (wildcard; the `users.platform_admin` flag, PRD 7.1) |
-| ORG_ADMIN | `org:organizations:read` `org:organizations:update` `org:idp-configs:read` `org:idp-configs:write` `org:members:read` `org:members:invite` `org:members:manage` `org:testers:read` `org:testers:invite` `org:testers:manage` `org:tenants:create` `org:tenants:read` `tenant:tenants:read` `tenant:tenants:update` `tenant:members:read` `tenant:members:manage` `tenant:testers:read` `tenant:testers:manage` `tenant:applications:read` `app:applications:read` `app:applications:write` `app:versions:read` `app:releases:read` `app:tester-groups:manage` `app:feedback:read` `tenant:authorization-grants:read` `tenant:authorization-grants:manage` (S7-02) |
-| APP_OWNER | `app:applications:read` `app:applications:write` `app:versions:read` `app:versions:write` `app:artifacts:read` `app:releases:read` `app:releases:manage` `app:feedback:read` `tenant:authorization-grants:read` `tenant:authorization-grants:manage` (S7-02, via the owning-organization overlay inside their organization's tenants) |
-| DEVELOPER | `app:artifacts:read` `app:artifacts:upload` `app:versions:read` `app:releases:read` |
-| QA_ENGINEER | `app:applications:read` `app:versions:read` `app:releases:read` `app:releases:approve-qa` `app:tester-groups:manage` `app:feedback:read` |
-| RELEASE_MANAGER | `app:applications:read` `app:versions:read` `app:artifacts:read` `app:releases:read` `app:releases:manage` |
-| SECURITY_REVIEWER | `app:applications:read` `app:versions:read` `app:releases:read` `app:releases:approve-security` |
-| COMPLIANCE_REVIEWER | `app:applications:read` `app:versions:read` `app:releases:read` `app:releases:approve-compliance` |
-| VIEWER | `app:applications:read` `app:versions:read` `app:releases:read` |
+| ORG_ADMIN | `org:organizations:read` `org:organizations:update` `org:idp-configs:read` `org:idp-configs:write` `org:members:read` `org:members:invite` `org:members:manage` `org:testers:read` `org:testers:invite` `org:testers:manage` `org:tenants:create` `org:tenants:read` `org:environments:read` `org:environments:manage` (S9-04) `tenant:tenants:read` `tenant:tenants:update` `tenant:members:read` `tenant:members:manage` `tenant:testers:read` `tenant:testers:manage` `tenant:applications:read` `app:applications:read` `app:applications:write` `app:versions:read` `app:releases:read` `app:tester-groups:manage` `app:feedback:read` `tenant:authorization-grants:read` `tenant:authorization-grants:manage` (S7-02) |
+| APP_OWNER | `app:applications:read` `app:applications:write` `app:versions:read` `app:versions:write` `app:artifacts:read` `app:releases:read` `app:releases:manage` `app:feedback:read` `org:environments:read` `org:environments:manage` (S9-04) `tenant:authorization-grants:read` `tenant:authorization-grants:manage` (S7-02, via the owning-organization overlay inside their organization's tenants) |
+| DEVELOPER | `app:artifacts:read` `app:artifacts:upload` `app:versions:read` `app:releases:read` `org:environments:read` (S9-04) |
+| QA_ENGINEER | `app:applications:read` `app:versions:read` `app:releases:read` `app:releases:approve-qa` `app:tester-groups:manage` `app:feedback:read` `org:environments:read` (S9-04) |
+| RELEASE_MANAGER | `app:applications:read` `app:versions:read` `app:artifacts:read` `app:releases:read` `app:releases:manage` `org:environments:read` `org:environments:manage` (S9-04) |
+| SECURITY_REVIEWER | `app:applications:read` `app:versions:read` `app:releases:read` `app:releases:approve-security` `org:environments:read` (S9-04) |
+| COMPLIANCE_REVIEWER | `app:applications:read` `app:versions:read` `app:releases:read` `app:releases:approve-compliance` `org:environments:read` (S9-04) |
+| VIEWER | `app:applications:read` `app:versions:read` `app:releases:read` `org:environments:read` (S9-04) |
 | TENANT_ADMIN | `tenant:tenants:read` `tenant:members:read` `tenant:members:manage` `tenant:testers:read` `tenant:testers:manage` `tenant:applications:read` `tenant:authorization-grants:read` `tenant:authorization-grants:manage` (S7-02) |
 | TENANT_TESTER | `tenant:applications:read` `tenant:applications:download` `tenant:feedback:create` |
 | ORG_MEMBER | (none — membership only; deny-by-default) |

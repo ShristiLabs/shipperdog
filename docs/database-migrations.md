@@ -34,6 +34,7 @@ backend/src/main/resources/db/
     V24__release_model.sql
     V25__release_state_history.sql
     V26__release_manifest.sql
+    V27__environment_management.sql
   seed/                 dev fixture, applied only when the seed location is active
     R__dev_seed.sql
 ```
@@ -476,6 +477,34 @@ backend/src/main/resources/db/
   actor_id precedent; the audit event keeps the full who). No
   backfill, by design: a manifest is a transition-time act, and a
   retro-frozen document would carry a falsified freeze time.
+
+- `V27__environment_management.sql` (S9-04, issue #58) completes the
+  V1 `environments` sketch (its first writer) and lands the
+  environment module's schema: the stable `code` (kebab, unique per
+  organization beside V1's name guard), the progression `position`,
+  and the two name-only bindings `distribution_channel` /
+  `approval_policy` (nullable references-by-name — E13 owns channels,
+  S10-01 owns policies); FR-025's five defaults seeded for every
+  organization existing at migration time (later organizations are
+  seeded inside the organization-creation transaction by the
+  environment module's provisioning callback, the S6-02 default-group
+  precedent; the dev seed carries the same block). New tables:
+  `environment_config_versions` — the append-only snapshot ledger
+  (PK `(environment_id, version)`, the FULL resolved key-value map as
+  a jsonb object, no `updated_at` per the append-only exception); V1's
+  unversioned `environment_config` junction stays untouched legacy
+  scaffolding, never written (the `release_targets.ring_code`
+  precedent). `environment_tenants` — the release-target allow-list
+  junction (deny-by-default; validated at release creation). New table:
+  `environment_credentials` — reference-only credential bindings
+  (`secret_reference` pinned printable-no-whitespace by
+  `ck_environment_credentials_reference_shape`; the length bound is
+  the varchar — PostgreSQL caps regex repetition counts at 255, so
+  the shape check carries no explicit count). `releases.environment_id`
+  — the optional environment a release targets (nullable, FK), whose
+  code and RESOLVED configuration the S9-03 manifest freezes at
+  APPROVED. Expand-only and forward-only: additive columns, three
+  tables, checks, indexes; nothing dropped.
 
 ## Status and type columns
 
