@@ -832,11 +832,74 @@ paths:
             '*/*':
               schema:
                 $ref: "#/components/schemas/BulkRevocationResult"
+  /api/v1/releases:
+    get:
+      tags:
+      - release-controller
+      operationId: list_4
+      parameters:
+      - name: applicationId
+        in: query
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - name: versionId
+        in: query
+        required: false
+        schema:
+          type: string
+          format: uuid
+      - name: status
+        in: query
+        required: false
+        schema:
+          type: string
+      - name: tenantId
+        in: query
+        required: false
+        schema:
+          type: string
+          format: uuid
+      - name: limit
+        in: query
+        required: false
+        schema:
+          type: string
+      - name: cursor
+        in: query
+        required: false
+        schema:
+          type: string
+      responses:
+        "200":
+          description: OK
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/PageResponseReleaseView"
+    post:
+      tags:
+      - release-controller
+      operationId: create_4
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateRequest"
+        required: true
+      responses:
+        "201":
+          description: Created
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/ReleaseDetail"
   /api/v1/organizations:
     get:
       tags:
       - organization-controller
-      operationId: list_4
+      operationId: list_5
       parameters:
       - name: limit
         in: query
@@ -858,7 +921,7 @@ paths:
     post:
       tags:
       - organization-controller
-      operationId: create_4
+      operationId: create_5
       requestBody:
         content:
           application/json:
@@ -1182,7 +1245,7 @@ paths:
     get:
       tags:
       - application-controller
-      operationId: list_5
+      operationId: list_6
       parameters:
       - name: organizationId
         in: query
@@ -1210,7 +1273,7 @@ paths:
     post:
       tags:
       - application-controller
-      operationId: create_5
+      operationId: create_6
       requestBody:
         content:
           application/json:
@@ -1283,7 +1346,7 @@ paths:
     get:
       tags:
       - version-controller
-      operationId: list_6
+      operationId: list_7
       parameters:
       - name: applicationId
         in: path
@@ -1321,7 +1384,7 @@ paths:
     post:
       tags:
       - version-controller
-      operationId: create_6
+      operationId: create_7
       parameters:
       - name: applicationId
         in: path
@@ -1660,7 +1723,7 @@ paths:
     get:
       tags:
       - tenant-applications-controller
-      operationId: list_7
+      operationId: list_8
       parameters:
       - name: id
         in: path
@@ -1685,6 +1748,31 @@ paths:
             '*/*':
               schema:
                 $ref: "#/components/schemas/PageResponseApplicationView"
+  /api/v1/releases/{releaseId}:
+    get:
+      tags:
+      - release-controller
+      operationId: get_6
+      parameters:
+      - name: releaseId
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - name: applicationId
+        in: query
+        required: true
+        schema:
+          type: string
+          format: uuid
+      responses:
+        "200":
+          description: OK
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/ReleaseDetail"
   /api/v1/organizations/{id}/members:
     get:
       tags:
@@ -1929,6 +2017,7 @@ paths:
           - AUTHORIZATION_GRANT_EXPIRY_CHANGED
           - AUTHORIZATION_GRANT_DELETED
           - AUTHORIZATION_GRANT_REVOKED
+          - RELEASE_CREATED
       - name: applicationId
         in: query
         required: false
@@ -1980,7 +2069,7 @@ paths:
     get:
       tags:
       - artifact-controller
-      operationId: get_6
+      operationId: get_7
       parameters:
       - name: artifactId
         in: path
@@ -2030,7 +2119,7 @@ paths:
     get:
       tags:
       - application-tenant-authorization-controller
-      operationId: list_8
+      operationId: list_9
       parameters:
       - name: id
         in: path
@@ -2059,7 +2148,7 @@ paths:
     get:
       tags:
       - version-controller
-      operationId: get_7
+      operationId: get_8
       parameters:
       - name: applicationId
         in: path
@@ -2403,10 +2492,6 @@ components:
     JsonNode:
       type: object
       properties:
-        container:
-          type: boolean
-        floatingPointNumber:
-          type: boolean
         nodeType:
           type: string
           enum:
@@ -2449,6 +2534,10 @@ components:
         boolean:
           type: boolean
         binary:
+          type: boolean
+        floatingPointNumber:
+          type: boolean
+        container:
           type: boolean
         empty:
           type: boolean
@@ -2577,6 +2666,64 @@ components:
         revokedCount:
           type: integer
           format: int32
+    ArtifactSlotView:
+      type: object
+      properties:
+        platform:
+          type: string
+        artifactId:
+          type: string
+          format: uuid
+    ReleaseDetail:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        releaseRef:
+          type: string
+        applicationId:
+          type: string
+          format: uuid
+        versionId:
+          type: string
+          format: uuid
+        status:
+          type: string
+        ring:
+          type: string
+        ringName:
+          type: string
+        artifacts:
+          type: array
+          items:
+            $ref: "#/components/schemas/ArtifactSlotView"
+        targets:
+          type: array
+          items:
+            $ref: "#/components/schemas/TargetView"
+        createdBy:
+          type: string
+          format: uuid
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+    TargetView:
+      type: object
+      properties:
+        tenantId:
+          type: string
+          format: uuid
+        ring:
+          type: string
+        testerGroupIds:
+          type: array
+          items:
+            type: string
+            format: uuid
     InspectRequest:
       type: object
       description: "The decision context to inspect: the subject user, the addressed\
@@ -3251,6 +3398,42 @@ components:
             $ref: "#/components/schemas/ApplicationView"
         next_cursor:
           type: string
+    PageResponseReleaseView:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/ReleaseView"
+        next_cursor:
+          type: string
+    ReleaseView:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        releaseRef:
+          type: string
+        applicationId:
+          type: string
+          format: uuid
+        versionId:
+          type: string
+          format: uuid
+        status:
+          type: string
+        ring:
+          type: string
+        targetCount:
+          type: integer
+          format: int32
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
     PageResponseOrganizationResponse:
       type: object
       properties:
@@ -3508,6 +3691,7 @@ components:
           - AUTHORIZATION_GRANT_EXPIRY_CHANGED
           - AUTHORIZATION_GRANT_DELETED
           - AUTHORIZATION_GRANT_REVOKED
+          - RELEASE_CREATED
         occurredAt:
           type: string
           format: date-time

@@ -43,6 +43,13 @@ Current contents:
   its per-stage failure codes and the revalidation surface (S5-05),
   ARTIFACT_* environment configuration, and the
   duplicate/immutability rules.
+- [Releases](releases.md) — the release model, creation, and targets
+  (S9-01): the DRAFT distribution event with per-platform READY
+  artifacts, target tenants + tester groups, and the starting ring
+  (the S10-04 ring data model pulled forward as seeded reference
+  data); the 422 per-tenant target validation; the quotable R-number
+  ids; the filtered listing and detail; INV-004's artifact-set freeze
+  and the ownership-scope precondition the landing binds.
 - [Admin console](frontend.md) — the React/MUI console (S2-04, S3-04):
   stack and structure, the shared API client (problem+json, correlation
   ids, cursor pagination), token storage and silent refresh, role-aware

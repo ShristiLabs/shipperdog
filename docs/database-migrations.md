@@ -31,6 +31,7 @@ backend/src/main/resources/db/
     V21__version_access_grants.sql
     V22__grant_revocation.sql
     V23__artifact_download_count.sql
+    V24__release_model.sql
   seed/                 dev fixture, applied only when the seed location is active
     R__dev_seed.sql
 ```
@@ -416,6 +417,25 @@ backend/src/main/resources/db/
   this column) remains the history of record, and the
   `shipperdog.download.count` metric is the live signal. Purely
   expand-only: one additive column, nothing dropped or tightened.
+
+- `V24__release_model.sql` (S9-01, issue #55) lands the release model,
+  creation, and targets — the release tables' first writer since the
+  V1 sketch, expanding rather than duplicating: the `rings` reference
+  table (S10-04's data model pulled forward, seeded with FR-017's five
+  system defaults as fixed-uuid NULL-organization rows — the first
+  reference-data seed inside a versioned migration); the `releases`
+  ownership snapshot (`organization_id` NOT NULL backfilled from the
+  application, nullable `tenant_id` — the V12 versions shape; releases
+  are route-addressed, so the ninth amendment applies), the quotable
+  `release_number` (one global `release_number_seq`, unique, rendered
+  `R-<number>`), and `starting_ring_id`; `release_targets`'s V1
+  `ring_id` varchar renamed to legacy nullable `ring_code` (the one
+  constraint relaxation — the V15 build_number precedent) with the
+  real `ring_id` uuid FK as the authority; new plain children
+  `release_target_groups` (composite FK to its target) and
+  `release_artifacts` (one per platform per release). Expand-only and
+  forward-only: additive columns, three tables, one rename, one
+  relaxation, checks and indexes; no release row is ever deleted.
 
 ## Status and type columns
 

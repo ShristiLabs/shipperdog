@@ -7,7 +7,8 @@ Stable public error codes of the problem+json envelope (issue #8). Rules:
 - Codes are UPPER_SNAKE (payload enum casing convention).
 - Source of truth in code: `ApiError` (cross-cutting) and each module's
   domain exception enum (`AuthException.Code`, `OrganizationException.Code`,
-  `TenantException.Code`, `ArtifactException.Code`, `TesterException.Code`). This file is the human registry; update it in
+  `TenantException.Code`, `ArtifactException.Code`, `TesterException.Code`,
+  `ReleaseException.Code`). This file is the human registry; update it in
   the same PR that adds a code.
 - All 404 codes share the uniform detail `Resource not found.` — the
   concealed-denial rule (PRD §12) requires genuine misses and concealed
@@ -78,6 +79,7 @@ Stable public error codes of the problem+json envelope (issue #8). Rules:
 | `APPLICATION_BUNDLE_TAKEN` | 409 | The bundle id is already in use in the organization. |
 | `APPLICATION_PACKAGE_TAKEN` | 409 | The package name is already in use in the organization. |
 | `APPLICATION_AUTHORIZED_TENANTS_PRESENT` | 409 | The application has authorized tenants; de-authorize them before converting ownership. (ORGANIZATION-to-TENANT scope transition while any tenant holds an ACTIVE authorization; the same concealed `APPLICATION_NOT_FOUND` answers an absent or already-revoked authorization on the mapping surface, S3-03) |
+| `APPLICATION_RELEASES_PRESENT` | 409 | The application has releases; ownership cannot be converted while any exist. (since S9-01, issue #55 — issue #14's reserved zero-distributions precondition, binding in BOTH transition directions: a release anchors the application to its owning dimension, and any lifecycle state blocks because releases are distribution history, never deleted) |
 
 Reserved, not yet emitted: none. `APPLICATION_ARCHIVED` was reserved in
 issue #13 for the artifact-creation surface and is live there since
@@ -119,6 +121,31 @@ arrives through the version module's code as noted above.
 | `ARTIFACT_NOT_VALIDATABLE` | 409 | Only a FAILED or still-VALIDATING artifact can be revalidated. (the revalidation surface of S5-05, issue #24: PRD 18 has no path from UPLOADING, READY, DISTRIBUTED, or ARCHIVED back to VALIDATING, and the `ArtifactStateMachine` transition table is the authority — a FAILED row re-enters through `FAILED -> VALIDATING`, a blocked row re-drives where it stands) |
 | `APPLICATION_ARCHIVED` | 409 | The application is archived; new artifacts cannot be added. (the artifact module's own value of the code issue #13 reserved for this surface — existing artifacts stay readable, and unarchiving resumes uploads) |
 | `STORAGE_UNAVAILABLE` | 503 | Artifact storage is unavailable; retry the upload. (the object store refused the write or cannot be read; a retry re-allocates a fresh artifact id and key, never overwriting anything — INV-003) |
+
+## Release (`ReleaseException.Code`)
+
+The release creation and read surface (S9-01, issue #55, FR-015). The
+routes are body/query-addressed (`POST/GET /api/v1/releases`), so the
+permission target is the application and its denials conceal as
+`APPLICATION_NOT_FOUND`; a genuine release miss renders
+`RELEASE_NOT_FOUND` here.
+
+| Code | HTTP | Detail |
+|---|---|---|
+| `RELEASE_NOT_FOUND` | 404 | Resource not found. (also the concealed-denial shape for releases — a release of another application is indistinguishable from a missing one on the detail route, byte-identical to the genuine miss) |
+| `APPLICATION_NOT_FOUND` | 404 | Resource not found. (the service-layer application-miss backstop, aligned to the registry's one vocabulary — through HTTP the permission check already renders this shape before the service runs) |
+| `VERSION_NOT_FOUND` | 404 | Resource not found. (creation's version miss: unknown, foreign, or a version of another application — indistinguishable) |
+| `ARTIFACT_NOT_FOUND` | 404 | Resource not found. (a selected artifact that is unknown, foreign, or of another version — the artifact read's own public code, this surface's own value of it, so a caller learns nothing about artifacts it cannot see) |
+| `INVALID_REQUEST` | 400 | The request is invalid. (missing/blank fields, an unparseable platform, an empty artifact or target list, duplicate platforms/artifacts/tenants/groups, a platform-artifact mismatch — answered with the `errors` member naming every offending wire field) |
+| `APPLICATION_ARCHIVED` | 409 | The application is archived; new releases cannot be created. (this surface's own value of the code issue #13 reserved — existing releases stay readable) |
+| `RELEASE_ALREADY_EXISTS` | 409 | A release already exists for this application and version. (V1's `uq_releases_application_version` is the authority; the pre-check and the lost-race translation answer identically) |
+| `RELEASE_RING_UNKNOWN` | 400 | The ring is not defined for the organization. (issue #55 AC4: the ring reference must resolve in the organization's vocabulary — system defaults seeded by V24, organization rings with E10; creation is blocked until definitions exist) |
+| `RELEASE_TARGETS_INVALID` | 422 | One or more release targets are invalid. (issue #55 AC2/AC3 — the platform's first 422 family: target validation is a semantic failure of a well-formed request; the `errors` member carries one entry per offending tenant ("does not hold the application") or tester group ("does not belong to target tenant"), so the whole set is fixed in one pass) |
+| `RELEASE_ARTIFACT_NOT_READY` | 422 | One or more selected artifacts are not READY. (issue #55 AC1 — S5-05's vocabulary; the `errors` member is keyed by platform naming the offending artifact and its current status) |
+
+`VERSION_ARCHIVED` and `VERSION_REVOKED` arrive on the creation route
+as the version module's own code (a release may not target a read-only
+version), re-rendered verbatim — see the version table above.
 
 ## Tester (`TesterException.Code`)
 

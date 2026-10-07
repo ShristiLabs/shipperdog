@@ -72,5 +72,7 @@ public enum AuditEventType {
      */
     @Deprecated
     AUTHORIZATION_GRANT_DELETED,
-    AUTHORIZATION_GRANT_REVOKED
+    AUTHORIZATION_GRANT_REVOKED,
+    /** A DRAFT release created with its full target set (S9-01, FR-015): ring, per-platform artifacts, targets. */
+    RELEASE_CREATED
 }

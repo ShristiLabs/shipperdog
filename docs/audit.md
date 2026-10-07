@@ -106,6 +106,13 @@ itself in the trail, and the same reason rides the version's
 transition: the lifecycle commits through a database compare-and-set,
 so concurrent transitions never double-commit — a repeat or a
 forbidden direction answers the precise 409 and writes nothing),
+release (`RELEASE_CREATED` — S9-01/issue #55: a DRAFT release
+created with its full target set, FR-024's governed-distribution
+record — carrying `releaseRef` (the quotable R-number), `versionId`,
+`status`, `ring`, and the complete target set as `artifacts`
+(platform:artifactId per slot) and `targets` (tenantId:groupCount per
+target, sorted); one event per real creation, an idempotency replay
+writes nothing),
 artifact (`ARTIFACT_UPLOAD_SESSION_CREATED` — issue #20/S5-01: the
 resumable direct-to-storage handoff is granted, carrying the
 pre-allocated `artifactId` entity reference with `platform`,

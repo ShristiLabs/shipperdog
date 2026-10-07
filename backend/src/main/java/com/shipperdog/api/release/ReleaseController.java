@@ -1,0 +1,176 @@
+package com.shipperdog.api.release;
+
+import com.shipperdog.api.config.Idempotent;
+import com.shipperdog.api.config.ListQuery;
+import com.shipperdog.api.config.PageResponse;
+import com.shipperdog.api.identity.AuthenticatedPrincipal;
+import com.shipperdog.api.release.internal.service.ReleaseService;
+import com.shipperdog.api.release.internal.service.ReleaseService.ArtifactSlot;
+import com.shipperdog.api.release.internal.service.ReleaseService.CreateCommand;
+import com.shipperdog.api.release.internal.service.ReleaseService.ReleaseDetail;
+import com.shipperdog.api.release.internal.service.ReleaseService.ReleaseView;
+import com.shipperdog.api.release.internal.service.ReleaseService.TargetCommand;
+import io.swagger.v3.oas.annotations.media.Schema;
+import java.util.List;
+import java.util.UUID;
+import org.springframework.data.domain.Page;
+import org.springframework.http.HttpStatus;
+import org.springframework.security.access.prepost.PreAuthorize;
+import org.springframework.security.core.annotation.AuthenticationPrincipal;
+import org.springframework.security.oauth2.jwt.Jwt;
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
+import org.springframework.web.bind.annotation.ResponseStatus;
+import org.springframework.web.bind.annotation.RestController;
+
+/**
+ * The release API (issue #55, S9-01, FR-015, PRD 8.6/19): one
+ * body-addressed collection route and two reads, the artifact-collection
+ * precedent — {@code POST /api/v1/releases} carries the application id
+ * in the JSON body, so the permission check targets the application
+ * ({@code app:releases:manage} through the evaluator's
+ * application-to-owner hop) and the service establishes the owning
+ * scope through the sanctioned executor once the application resolves.
+ *
+ * <p>Creation assembles the whole distribution event in one governed
+ * act: the version, one READY artifact per platform (S5-05), the target
+ * tenants (each must hold the application, S3-03 — per-tenant errors
+ * ride one 422), each target's tester groups, and the starting ring
+ * (S10-04's ring definitions, pulled forward as reference data by this
+ * story). The release is born DRAFT — the state machine is S9-02 — and
+ * its creation is audited with the full target set (FR-024). The
+ * quotable id (AC5, {@code R-1001}) rides every view beside the uuid
+ * the routes address. Creation honors {@code Idempotency-Key} (the
+ * designated-POST registry, per the API conventions).
+ *
+ * <p>The listing requires {@code applicationId} — it is the permission
+ * target and the listing's scope — and narrows conjunctively by
+ * {@code versionId}, {@code status}, and {@code tenantId} (AC5),
+ * standard limit/cursor pagination. The detail carries the application
+ * id as the {@code applicationId} query parameter for the same
+ * body-addressed permission-target shape the artifact read established;
+ * a release of another application is the standard concealed miss.
+ */
+@RestController
+@RequestMapping("/api/v1/releases")
+public class ReleaseController {
+
+    private final ReleaseService releases;
+
+    ReleaseController(ReleaseService releases) {
+        this.releases = releases;
+    }
+
+    /**
+     * Creates a DRAFT release (issue #55 AC1-AC4, AC6): validations
+     * refuse before any write — the version must belong to the
+     * application and be releasable (not archived, distribution not
+     * revoked), every artifact READY and of the version, every target
+     * tenant holding the application, every tester group belonging to
+     * its target tenant, and the ring defined. One release exists per
+     * application and version (V1's unique constraint; a duplicate is
+     * the precise 409). Returns 201 with the detail, quotable id
+     * included.
+     */
+    @PostMapping
+    @ResponseStatus(HttpStatus.CREATED)
+    @Idempotent
+    @PreAuthorize("hasPermission(#request.applicationId(), 'application', 'app:releases:manage')")
+    ReleaseDetail create(@AuthenticationPrincipal Object principal, @RequestBody CreateRequest request) {
+        return releases.create(
+                requireUserId(principal),
+                new CreateCommand(
+                        request.applicationId(),
+                        request.versionId(),
+                        request.ring(),
+                        request.artifacts() == null
+                                ? List.of()
+                                : request.artifacts().stream()
+                                        .map(artifact -> new ArtifactSlot(artifact.platform(), artifact.artifactId()))
+                                        .toList(),
+                        request.targets() == null
+                                ? List.of()
+                                : request.targets().stream()
+                                        .map(target -> new TargetCommand(target.tenantId(), target.testerGroupIds()))
+                                        .toList()));
+    }
+
+    /**
+     * The release listing (issue #55 AC5): newest (quotable number)
+     * first, conjunctive filters — {@code applicationId} required (the
+     * permission target), {@code versionId}, {@code status}, and
+     * {@code tenantId} optional. Standard limit/cursor pagination; an
+     * unknown status value is a 400, never a silently empty page.
+     */
+    @GetMapping
+    @PreAuthorize("hasPermission(#applicationId, 'application', 'app:releases:read')")
+    PageResponse<ReleaseView> list(
+            @AuthenticationPrincipal Object principal,
+            @RequestParam UUID applicationId,
+            @RequestParam(required = false) UUID versionId,
+            @RequestParam(required = false) String status,
+            @RequestParam(required = false) UUID tenantId,
+            @RequestParam(required = false) String limit,
+            @RequestParam(required = false) String cursor) {
+        ListQuery query = ListQuery.of(limit, cursor);
+        Page<ReleaseView> page = releases.list(
+                requireUserId(principal), applicationId, versionId, status, tenantId, query.offset(), query.limit());
+        return PageResponse.of(page.getContent(), page.hasNext(), query.offset() + query.limit());
+    }
+
+    /**
+     * The release detail: the full creation record — ring, per-platform
+     * artifacts, and the complete target set with tester groups (the
+     * audited facts, read back). The {@code applicationId} query
+     * parameter carries the permission target (the body-addressed
+     * shape); a release of another application conceals exactly like an
+     * unknown id.
+     */
+    @GetMapping("/{releaseId}")
+    @PreAuthorize("hasPermission(#applicationId, 'application', 'app:releases:read')")
+    ReleaseDetail get(
+            @AuthenticationPrincipal Object principal, @PathVariable UUID releaseId, @RequestParam UUID applicationId) {
+        return releases.get(requireUserId(principal), applicationId, releaseId);
+    }
+
+    private static UUID requireUserId(Object principal) {
+        if (principal instanceof Jwt jwt) {
+            return UUID.fromString(jwt.getSubject());
+        }
+        if (principal instanceof AuthenticatedPrincipal patPrincipal) {
+            return patPrincipal.userId();
+        }
+        throw new ReleaseException(ReleaseException.Code.INVALID_REQUEST, "no authenticated principal");
+    }
+
+    /**
+     * The creation body (FR-015): the application and version the
+     * release distributes, the starting ring's code (the FR-017
+     * vocabulary — engineering, qa, tenant-pilot, uat, production —
+     * until an organization customizes), one artifact per platform
+     * (every artifact READY and of the version), and the target set —
+     * each target a tenant that holds the application plus its
+     * tester-group narrowing (an empty group list targets the tenant at
+     * large).
+     */
+    @Schema(
+            description = "The release creation body: application, version, starting ring code, per-platform "
+                    + "artifact selection (READY artifacts of the version), and target tenants with their "
+                    + "tester groups.")
+    public record CreateRequest(
+            UUID applicationId,
+            UUID versionId,
+            String ring,
+            List<ArtifactRequest> artifacts,
+            List<TargetRequest> targets) {}
+
+    /** One per-platform artifact slot: the platform and the artifact of the version selected for it. */
+    public record ArtifactRequest(String platform, UUID artifactId) {}
+
+    /** One target: the tenant and its tester groups (empty targets the tenant at large). */
+    public record TargetRequest(UUID tenantId, List<UUID> testerGroupIds) {}
+}
