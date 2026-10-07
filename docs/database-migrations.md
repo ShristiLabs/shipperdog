@@ -46,7 +46,13 @@ backend/src/main/resources/db/
   organization (`external_id demo-shipperdog`), two tenants
   (`demo-acme`, `demo-contoso`), and one application; the bootstrap
   admin is a platform administrator and `ORG_ADMIN` of the organization
-  (S1-04). Later integration tests rely on these identifiers.
+  (S1-04). Later integration tests rely on these identifiers. Since
+  S8-05 it also provisions the demo tester persona
+  (`tester@shipperdog.local`, local-only password documented in the
+  seed file): user, tester record, ACTIVE Acme membership, one
+  working-set version (`1.0.0`), and an application-wide
+  `version_access` grant — the post-deploy smoke test's login and
+  catalog legs run as this tester ([deployment.md](deployment.md)).
 
 ## Table conventions
 

@@ -46,3 +46,58 @@ jobs:
           curl -sSL "https://github.com/oasdiff/oasdiff/releases/download/v${OASDIFF_VERSION}/oasdiff_${OASDIFF_VERSION}_linux_amd64.tar.gz" \
             | tar -xz -C /usr/local/bin oasdiff
           oasdiff breaking docs/openapi/baseline.yaml backend/target/openapi.yaml
+
+  # Dependency vulnerability gate (issue #39, S8-05): OSV scan of every
+  # dependency surface in the repo (backend pom, both npm lockfiles, the
+  # Go module), failing on high/critical findings. The backend's
+  # resolved transitive graph is the risk — the scan reads the pom and
+  # resolves transitives through deps.dev, so the gate sees what ships.
+  dependency-scan:
+    runs-on: ubuntu-latest
+    env:
+      OSV_VERSION: '2.6.0'
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Install osv-scanner
+        run: |
+          curl -sSL -o /usr/local/bin/osv-scanner \
+            "https://github.com/google/osv-scanner/releases/download/v${OSV_VERSION}/osv-scanner_linux_amd64"
+          chmod +x /usr/local/bin/osv-scanner
+
+      - name: Scan backend (pom with transitive resolution)
+        run: |
+          osv-scanner scan source --format json backend \
+            | python3 infrastructure/dependency-scan/osv_severity_gate.py
+
+      - name: Scan console, portal, and CLI lockfiles
+        run: |
+          osv-scanner scan source --format json frontend portal cli \
+            | python3 infrastructure/dependency-scan/osv_severity_gate.py
+
+  # Terraform gate (issue #39, S8-05): format check and validation of
+  # the Cloud Run deployment config. validate with -backend=false
+  # needs no GCP credentials (providers download, no APIs are called),
+  # so every PR proves the IaC is at least well-formed.
+  terraform-fmt-validate:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: infrastructure/terraform
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: '~1.9'
+
+      - name: Format check
+        run: terraform fmt -check -recursive
+
+      - name: Init (no backend) and validate
+        run: |
+          terraform init -backend=false
+          terraform validate

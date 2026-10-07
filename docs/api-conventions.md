@@ -264,10 +264,15 @@ for the storage decision.
 - The spec is served unauthenticated at `/v3/api-docs` and
   `/v3/api-docs.yaml`; Dwara can restrict the surface in production.
 
-## Rate limiting (contract only)
+## Rate limiting
 
-Rate limiting is not implemented in the API (Dwara fronts production
-traffic and owns it there). The reserved contract for when an upstream
-enforces limits: standard `RateLimit-Limit`, `RateLimit-Remaining`,
-`RateLimit-Reset` response headers and HTTP 429 with code `RATE_LIMITED`
-from this envelope's registry.
+The in-app limiter (S8-05, issue #39) enforces per-client-IP token
+buckets on the two abuse surfaces — `POST /auth/login` (the
+credential-stuffing door) and the download tier (`GET /downloads/*`
+plus the `GET /artifacts/{id}/download` issuance). A refused request
+answers HTTP 429 with code `RATE_LIMITED` from this envelope's
+registry plus a `Retry-After` header (seconds until the next token).
+Every knob is environment-configurable (`RATE_LIMIT_*`; see
+[deployment](deployment.md)); Dwara still fronts production and owns
+edge-level limiting — this tier is the always-present baseline
+beneath it, and it deliberately fails open.

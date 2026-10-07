@@ -56,8 +56,40 @@ public class SecurityConfig {
                                 .authenticated())
                 .formLogin(AbstractHttpConfigurer::disable)
                 .httpBasic(AbstractHttpConfigurer::disable)
+                .headers(ApiSecurityHeaders::apply)
                 .exceptionHandling(handling ->
                         handling.authenticationEntryPoint(problemHandlers).accessDeniedHandler(problemHandlers));
         return http.build();
+    }
+
+    /**
+     * The API-surface web-security headers (issue #39, S8-05): the
+     * JSON API answers with the same hardening posture the origins
+     * fronting it carry. Spring Security's defaults already send
+     * {@code X-Content-Type-Options: nosniff}, {@code X-Frame-Options:
+     * DENY}, and no-store caching; this tightens the remaining set —
+     * HSTS (the platform terminates TLS at its ingress, so the header
+     * is written on every response regardless of the hop's own
+     * scheme, not only on already-secure requests), a
+     * {@code no-referrer} policy, an empty Permissions-Policy, and a
+     * {@code default-src 'none'} CSP that is inert for a JSON payload
+     * but grades the origin (the securityheaders.com check of the
+     * story runs against the portal; the API holds the same bar).
+     */
+    public static final class ApiSecurityHeaders {
+
+        /** Applies the header set to one chain's {@code headers} configurer. */
+        public static void apply(
+                org.springframework.security.config.annotation.web.configurers.HeadersConfigurer<HttpSecurity>
+                        headers) {
+            headers.contentSecurityPolicy(csp -> csp.policyDirectives("default-src 'none'; frame-ancestors 'none'"))
+                    .referrerPolicy(referrer -> referrer.policy(
+                            org.springframework.security.web.header.writers.ReferrerPolicyHeaderWriter.ReferrerPolicy
+                                    .NO_REFERRER))
+                    .addHeaderWriter(new org.springframework.security.web.header.writers.StaticHeadersWriter(
+                            "Strict-Transport-Security", "max-age=31536000; includeSubDomains"))
+                    .addHeaderWriter(new org.springframework.security.web.header.writers.StaticHeadersWriter(
+                            "Permissions-Policy", "geolocation=(), camera=(), microphone=(), payment=(), usb=()"));
+        }
     }
 }

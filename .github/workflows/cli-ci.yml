@@ -37,6 +37,14 @@ jobs:
       - name: Unit tests (includes the OpenAPI endpoint contract test)
         run: go test ./...
 
+      # Vulnerability gate (issue #39, S8-05): govulncheck reports
+      # reachable vulnerabilities in the module (the two pinned deps
+      # and the toolchain); findings fail the gate.
+      - name: Vulnerability check (govulncheck)
+        run: |
+          go install golang.org/x/vuln/cmd/govulncheck@latest
+          govulncheck ./...
+
       - name: Build
         run: go build ./...
 

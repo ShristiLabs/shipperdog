@@ -113,5 +113,15 @@ public final class MetricNames {
      */
     public static final String DOWNLOAD_COUNT = "shipperdog.download.count";
 
+    /**
+     * Counter of every request refused by the in-app rate limiter
+     * (issue #39, S8-05), tagged {@code rule=login|downloads}: the
+     * operator's signal that a client is being throttled — and, on the
+     * login rule, the brute-force early-warning beside the identity
+     * lockout. Refusals answer 429 {@code RATE_LIMITED} with a
+     * {@code Retry-After} header; the meter is the aggregate view.
+     */
+    public static final String RATE_LIMIT_REJECTED = "shipperdog.ratelimit.rejected";
+
     private MetricNames() {}
 }

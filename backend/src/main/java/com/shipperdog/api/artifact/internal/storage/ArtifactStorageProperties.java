@@ -20,4 +20,18 @@ import org.springframework.boot.context.properties.ConfigurationProperties;
  *     false)
  */
 @ConfigurationProperties(prefix = "shipperdog.artifact.storage")
-public record ArtifactStorageProperties(String bucket, String host, String projectId, boolean createBucketIfAbsent) {}
+public record ArtifactStorageProperties(String bucket, String host, String projectId, boolean createBucketIfAbsent) {
+
+    /**
+     * True when an emulator host is configured (local/CI compose): the
+     * one predicate both the store (no credentials, direct host) and
+     * the download tier (proxy URLs instead of GCS V4 signing) branch
+     * on. Lives here — on the configuration it derives from — so the
+     * two consumers cannot drift apart at the M2 production seam
+     * (issue #39's consolidation of the #38 review's duplication
+     * finding).
+     */
+    public boolean emulatorMode() {
+        return host != null && !host.isBlank();
+    }
+}

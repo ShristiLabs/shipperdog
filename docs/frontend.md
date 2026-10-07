@@ -70,14 +70,23 @@ token is 15 minutes; `AuthContext` arms a silent refresh one minute
 before expiry, and a 401 on any business call triggers one
 single-flight refresh plus a single retry — concurrent 401s share one
 refresh, honoring single-use rotation. A failed refresh clears the
-session and returns the user to the login screen.
+session and returns the user to the login screen. `GET /auth/me`
+participates in the recovery like any business call (the #35 review
+finding, fixed in S8-05): a reload with an expired access token but a
+live refresh token recovers transparently instead of logging the
+operator out — only the raw auth POSTs (login, register, refresh,
+logout) never enter the retry loop.
 
-**Storage trade-off (accepted for M1):** `localStorage` survives reloads
-and multiple tabs but is readable by injected scripts. The API never
-trusts the client: authorization is re-evaluated live per request
-([authorization](authorization.md)), and refresh rotation + family
-revocation bound what a stolen token is worth. Revisit (memory-only +
-refresh cookie) when the console gains third-party content.
+**Storage trade-off (accepted for M1, recorded in
+[ADR-0006](adr/ADR-0006-portal-session-token-storage.md)):**
+`localStorage` survives reloads and multiple tabs but is readable by
+injected scripts. The API never trusts the client: authorization is
+re-evaluated live per request ([authorization](authorization.md)),
+and refresh rotation + family revocation bound what a stolen token is
+worth. The S8-05 hardening ships a strict CSP (`script-src 'self'`,
+no inline scripts) on the console origin — the XSS vector that would
+make theft trivial is what the policy eliminates. The cookie-session
+migration path is recorded in the ADR, not built.
 
 ### Role-aware navigation (PRD §26)
 

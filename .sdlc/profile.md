@@ -81,7 +81,7 @@ CLI (from `cli/`, since S5-06 — see [docs/cli.md]):
 | frontend | frontend/ | Admin console: React 19 + TS strict + MUI 9 + React Query 5 + Router 7 on Vite 7 (S2-04) |
 | portal | portal/ | Tester portal: React 19 + TS strict + MUI 9 + React Query 5 + Router 7 on Vite 7, separate app on :5174 (S8-01) |
 | cli | cli/ | Go 1.26 developer CLI: login, artifact upload/list/view/revalidate, version list (S5-06) |
-| infrastructure | infrastructure/ | local docker compose stack (API, console, data, observability) |
+| infrastructure | infrastructure/ | local docker compose stack (API, console, portal, data, observability) + terraform Cloud Run deployment, smoke + security-header checks (S8-05) |
 | docs | docs/ | developer docs |
 | workflows | .github/workflows/ | GitHub Actions CI (backend-ci + frontend-ci incl. portal job + cli-ci) |
 
@@ -93,4 +93,6 @@ CLI (from `cli/`, since S5-06 — see [docs/cli.md]):
 
 - Messaging (Kafka/Pub/Sub) — M2, issue for S12-01.
 - Business logic of any module — issues #2 onward.
-- Production deployment/IaC.
+- Production deployment beyond the Cloud Run stack shipped with S8-05
+  (issue #39): multi-region, CDN/WAF, and the Dwara gateway front are
+  later infra projects (see docs/deployment.md).

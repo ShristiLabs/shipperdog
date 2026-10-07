@@ -88,3 +88,93 @@ VALUES
 -- same-named group in a demo tenant (uq_tester_groups_tenant_name,
 -- not the fixed ids) must not abort the repeatable migration.
 ON CONFLICT DO NOTHING;
+
+-- ---------------------------------------------------------------------------
+-- Demo tester (issue #39, S8-05): the post-deploy smoke test's login
+-- and catalog legs run as a REAL tester persona over the seeded demo
+-- org — health proves the stack, login proves the identity tier, and
+-- the catalog proves the authorization engine end to end (a
+-- grant-linked tester seeing the Banking application). Argon2id hash
+-- of the local-only password "shipperdog-dev-tester"; same policy as
+-- the dev admin above — never valid outside local/emulator
+-- deployments because this file never runs in production or CI.
+-- ---------------------------------------------------------------------------
+
+INSERT INTO users (id, email, password_hash, full_name, platform_admin)
+VALUES (
+    '10000000-0000-4000-8000-000000000011',
+    'tester@shipperdog.local',
+    '$argon2id$v=19$m=19456,t=2,p=1$LMk0vcFr2R69xXSQgJLtUA$y2OrDERriM2mnno/0oGMwjtswJ29vpak1kEYkb+MMKg',
+    'ShipperDog Demo Tester',
+    false)
+ON CONFLICT (id) DO NOTHING;
+
+-- The tester record (PRD 8.8): the organization-scoped persona this
+-- user carries (V19 columns).
+INSERT INTO testers (id, user_id, organization_id, email, full_name)
+VALUES (
+    '10000000-0000-4000-8000-000000000014',
+    '10000000-0000-4000-8000-000000000011',
+    '10000000-0000-4000-8000-000000000001',
+    'tester@shipperdog.local',
+    'ShipperDog Demo Tester')
+ON CONFLICT (id) DO NOTHING;
+
+-- Linked to the Acme demo tenant, ACTIVE membership.
+INSERT INTO tenant_tester_memberships (tenant_id, tester_id)
+VALUES ('10000000-0000-4000-8000-000000000002', '10000000-0000-4000-8000-000000000014')
+ON CONFLICT (tenant_id, tester_id) DO NOTHING;
+
+-- One working-set version so the catalog card is installable (an
+-- application with no version is not yet reachable, S8-02's rule).
+-- Banking is tenant-owned by Acme, so the version carries that
+-- ownership pair (V12/V14 columns).
+INSERT INTO versions (id, application_id, organization_id, tenant_id, version_name, status, sort_key)
+VALUES (
+    '10000000-0000-4000-8000-000000000015',
+    '10000000-0000-4000-8000-000000000004',
+    '10000000-0000-4000-8000-000000000001',
+    '10000000-0000-4000-8000-000000000002',
+    '1.0.0',
+    'ACTIVE',
+    '00001.00000.00000')
+ON CONFLICT (id) DO NOTHING;
+
+-- The application-wide grant (FR-011's APPLICATION shape): granted by
+-- the bootstrap dev admin; never expires; ACTIVE by the V22 default.
+INSERT INTO version_access (id, tenant_id, tester_id, application_id, version_id, access_type, created_by)
+VALUES (
+    '10000000-0000-4000-8000-000000000016',
+    '10000000-0000-4000-8000-000000000002',
+    '10000000-0000-4000-8000-000000000014',
+    '10000000-0000-4000-8000-000000000004',
+    NULL,
+    'APPLICATION',
+    '10000000-0000-4000-8000-000000000010')
+ON CONFLICT DO NOTHING;
+
+-- One READY artifact so the catalog card is INSTALLABLE (the
+-- no-dead-cards rule: a version without a distributable artifact
+-- renders no card) and the demo download path has a real object.
+-- sha256/size are of the 54-byte placeholder the compose stack also
+-- mounts into the GCS emulator (infrastructure/gcs-seed/); a Cloud
+-- Run demo deployment uploads a real binary through the product
+-- instead (docs/deployment.md).
+INSERT INTO artifacts (
+    id, version_id, organization_id, tenant_id, platform, file_name,
+    storage_key, sha256, size, build_number, status, uploaded_by, format)
+VALUES (
+    '10000000-0000-4000-8000-000000000017',
+    '10000000-0000-4000-8000-000000000015',
+    '10000000-0000-4000-8000-000000000001',
+    '10000000-0000-4000-8000-000000000002',
+    'ANDROID',
+    'demo-banking-1.0.0.apk',
+    '10000000-0000-4000-8000-000000000001/10000000-0000-4000-8000-000000000002/10000000-0000-4000-8000-000000000004/10000000-0000-4000-8000-000000000015/10000000-0000-4000-8000-000000000017/artifact',
+    'e69df2aa3d2e19d2dee0ab224b97b3a8e9207f0a4eb267a5cd93a206b260440e',
+    54,
+    1,
+    'READY',
+    '10000000-0000-4000-8000-000000000010',
+    'APK')
+ON CONFLICT (id) DO NOTHING;

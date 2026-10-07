@@ -79,6 +79,7 @@ Prometheus registry renders underscores + `_seconds` units):
 | `shipperdog_distribution_duration_seconds` | reserved | E13 |
 | `shipperdog_download_url_generation_duration_seconds` | Download issuance service, tags `outcome=issued\|denied`: the ALLOW leg that minted a URL (decision, scoped read, routing, minting) vs every concealed denial, recorded for the ratio — the PRD 42 "download URL generation < 500 ms" SLO observes the `issued` leg | S8-04 (issue #38) |
 | `shipperdog_download_count` | Download issuance service, tag `platform=IOS\|ANDROID`, one increment per ALLOWED issuance — the PRD 28 reserved name wired live, reconcilable against the per-artifact `download_count` column (V23) and the `DOWNLOAD_ISSUED` audit trail | S8-04 (issue #38); reserved since E5/E9 |
+| `shipperdog_ratelimit_rejected_total` | The in-app rate limiter (S8-05), tag `rule=login\|downloads`, one increment per 429 — on the login rule, the brute-force early warning beside the identity lockout | S8-05 (issue #39) |
 | `shipperdog_installation_count` | reserved | E11 |
 | `shipperdog_promotion_duration_seconds` | reserved | E10 |
 | `shipperdog_approval_duration_seconds` | reserved | E10 |
@@ -128,6 +129,18 @@ plus authorization decision rate/p95 (the <100 ms SLO signal) and JVM
 heap. PromQL uses `$__rate_interval` windows over
 `http_server_requests_seconds_*` and
 `shipperdog_authorization_decision_duration_seconds_*`.
+
+### Availability panels (S8-05, issue #39)
+
+The PRD 42 availability SLO (99.9% for the API and the tester portal)
+is now on the dashboard: an **availability stat** (`1 - 5xx fraction`
+over the trailing hour, thresholds at the 99.9% SLO), an **error-rate
+share** timeseries (the 0.1% budget view), and a **rate-limit
+rejections** panel per rule (the login rule's sustained growth is the
+brute-force early warning beside the identity lockout). The deployed
+environment's external uptime probing is Cloud Monitoring uptime
+checks provisioned with the terraform stack
+([deployment.md](deployment.md)).
 
 ### The decision SLO under load (S7-03, issue #32)
 

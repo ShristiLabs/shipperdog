@@ -166,8 +166,11 @@ the URL through a deployment-mode branch:
   applied to the anonymous surface. The URL is API-relative so the
   portal's same-origin nginx proxy serves it with no CORS and no
   host configuration; production URLs are absolute. The token is
-  opaque (base64url(payload).base64url(MAC)): the storage key inside
-  it never appears in the clear and grants nothing without the MAC.
+  unforgeable, not secret (`base64url(payload).base64url(MAC)` — the
+  #38 review's precision, adopted here with issue #39): a holder can
+  base64-decode the payload and read the storage key it carries, but
+  cannot mint or alter a token without the MAC key, and the key alone
+  grants nothing — every fetch still re-verifies the MAC and expiry.
 
 Both mechanisms share the exact contract the S8-04 acceptance
 criteria pin: an opaque URL whose lifetime the server owns. INV-003

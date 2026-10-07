@@ -44,12 +44,14 @@ class DevSeedIntegrationTest {
         Integer orgs = jdbc.queryForObject("SELECT count(*) FROM organizations", Integer.class);
         Integer tenants = jdbc.queryForObject("SELECT count(*) FROM tenants", Integer.class);
         Integer applications = jdbc.queryForObject("SELECT count(*) FROM applications", Integer.class);
+        // Two users since S8-05 (issue #39): the bootstrap admin and
+        // the demo tester the post-deploy smoke test authenticates as.
         Integer users = jdbc.queryForObject("SELECT count(*) FROM users", Integer.class);
 
         assertThat(orgs).isEqualTo(1);
         assertThat(tenants).isEqualTo(2);
         assertThat(applications).isEqualTo(1);
-        assertThat(users).isEqualTo(1);
+        assertThat(users).isEqualTo(2);
     }
 
     @Test
@@ -96,10 +98,20 @@ class DevSeedIntegrationTest {
         Integer tenants = jdbc.queryForObject("SELECT count(*) FROM tenants", Integer.class);
         Integer applications = jdbc.queryForObject("SELECT count(*) FROM applications", Integer.class);
         Integer users = jdbc.queryForObject("SELECT count(*) FROM users", Integer.class);
+        Integer testers = jdbc.queryForObject("SELECT count(*) FROM testers", Integer.class);
+        Integer versions = jdbc.queryForObject("SELECT count(*) FROM versions", Integer.class);
+        Integer grants = jdbc.queryForObject("SELECT count(*) FROM version_access", Integer.class);
+        Integer artifacts = jdbc.queryForObject("SELECT count(*) FROM artifacts", Integer.class);
 
         assertThat(orgs).as("seed re-execution must not duplicate rows").isEqualTo(1);
         assertThat(tenants).isEqualTo(2);
         assertThat(applications).isEqualTo(1);
-        assertThat(users).isEqualTo(1);
+        assertThat(users).isEqualTo(2);
+        // The S8-05 demo-tester fixture: exactly one of each, still
+        // one after the re-run above.
+        assertThat(testers).isEqualTo(1);
+        assertThat(versions).isEqualTo(1);
+        assertThat(grants).isEqualTo(1);
+        assertThat(artifacts).isEqualTo(1);
     }
 }

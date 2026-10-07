@@ -87,5 +87,9 @@ Current contents:
 - [ADR-0002: Predicate-injection repository seam for tenant isolation](adr/ADR-0002-tenant-isolation-data-seam.md)
 - [ADR-0003: Artifact object storage behind the ArtifactStore port](adr/ADR-0003-artifact-object-storage.md)
 - [ADR-0004: CLI implemented in Go with a contract-tested thin client](adr/ADR-0004-cli-toolchain.md)
+- [ADR-0005: M1 deploys to Cloud Run over a private VPC data tier](adr/ADR-0005-cloud-run-deployment.md)
+- [ADR-0006: Portal and console sessions stay in localStorage for M1, hardened by CSP](adr/ADR-0006-portal-session-token-storage.md)
+- [Deployment runbook (Cloud Run, M1)](deployment.md) — terraform stack,
+  deploy workflow, smoke test, rollback, observability posture (S8-05).
 
 Start with the top-level README for local setup and CI.

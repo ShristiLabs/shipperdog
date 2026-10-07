@@ -1,0 +1,66 @@
+# Portal nginx (issue #35): static SPA plus same-origin proxying to
+# the api service. The client calls /api/... unconditionally; dev uses
+# the Vite proxy, compose uses this. Mobile-first: gzip text assets so
+# testers on mobile networks download less.
+#
+# Hardened since issue #39 (S8-05): the securityheaders.com-grade
+# header set (see security-headers.conf) rides on every SPA response,
+# and gzip_proxied compresses the PROXIED API JSON as well (the gzip
+# default excludes proxied responses — API payloads were shipped
+# uncompressed through this origin).
+#
+# A TEMPLATE (issue #39): the official nginx image substitutes
+# ${API_UPSTREAM} at container start, so the SAME image serves compose
+# (API_UPSTREAM=api:8080) and Cloud Run (the api service's run.app
+# URL) — the upstream is a literal in the rendered conf, so nginx
+# resolves it once at startup with no runtime resolver.
+server {
+    listen 80;
+    server_name _;
+
+    root /usr/share/nginx/html;
+    index index.html;
+
+    # The security-header set (issue #39): server-level headers apply
+    # to every response from this server EXCEPT locations that add
+    # their own add_header (nginx inheritance rule) — /assets/ repeats
+    # the include for exactly that reason.
+    include /etc/nginx/snippets/security-headers.conf;
+
+    gzip on;
+    gzip_types text/css application/javascript application/json image/svg+xml;
+    gzip_min_length 1024;
+    # Compress proxied responses too (the /api JSON the browser fetches
+    # same-origin through this server).
+    gzip_proxied any;
+    gzip_vary on;
+
+    # Static assets are content-hashed; cache hard, fall back to the
+    # SPA entry for client-side routes.
+    location /assets/ {
+        include /etc/nginx/snippets/security-headers.conf;
+        add_header Cache-Control "public, max-age=31536000, immutable" always;
+        try_files $uri =404;
+    }
+
+    location /api/ {
+        proxy_pass http://${API_UPSTREAM};
+        # Host is the UPSTREAM's ($proxy_host): Cloud Run routes by
+        # the run.app host header, so the original domain travels in
+        # X-Forwarded-Host instead (the API generates no absolute
+        # URLs, but the forwarded-header strategy sees a full picture).
+        proxy_set_header Host $proxy_host;
+        proxy_set_header X-Forwarded-Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        # The API sets its own security headers (S8-05's backend leg);
+        # this marker add_header also cancels the SPA set's inheritance
+        # on proxied responses so nothing is doubled.
+        add_header X-Robots-Tag "noindex" always;
+    }
+
+    location / {
+        try_files $uri $uri/ /index.html;
+    }
+}
