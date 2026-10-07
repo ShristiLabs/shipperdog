@@ -40,6 +40,22 @@ export function seedSession(user: SignedInTester = {}): void {
   });
 }
 
+/**
+ * Stubs the catalog listing (S8-02) with the given items — the honest
+ * empty page by default. Call AFTER installFetchRouter (it unshifts
+ * onto the live table, like seedSession).
+ */
+export function seedCatalog(items: unknown[] = [], nextCursor?: string): void {
+  const body: Record<string, unknown> = { effectiveAccess: true, items };
+  if (nextCursor) body.next_cursor = nextCursor;
+  routeTable.unshift({
+    method: "GET",
+    url: "/api/v1/authorization/decisions/applications",
+    status: 200,
+    body,
+  });
+}
+
 export interface SequencedResponse {
   status: number;
   body?: unknown;

@@ -44,6 +44,12 @@ function loginOkRouter(): void {
         authenticatedVia: "PASSWORD",
       },
     },
+    {
+      method: "GET",
+      url: "/api/v1/authorization/decisions/applications",
+      status: 200,
+      body: { effectiveAccess: true, items: [] },
+    },
   ]);
 }
 
@@ -73,7 +79,7 @@ describe("LoginPage", () => {
     await userEvent.click(screen.getByTestId("login-submit"));
 
     await waitFor(() => expect(screen.getByTestId("portal-home-title")).toBeInTheDocument());
-    expect(screen.getByTestId("portal-home-empty")).toBeInTheDocument();
+    await waitFor(() => expect(screen.getByTestId("catalog-empty")).toBeInTheDocument());
     expect(tokenStore.get()?.accessToken).toBe("tester-access");
   });
 
@@ -87,7 +93,7 @@ describe("LoginPage", () => {
 
     await waitFor(() => expect(screen.getByTestId("login-error")).toBeInTheDocument());
     expect(screen.getByTestId("login-error").textContent).toContain("Sign-in failed");
-    expect(screen.queryByTestId("portal-home-empty")).not.toBeInTheDocument();
+    expect(screen.queryByTestId("catalog-empty")).not.toBeInTheDocument();
     expect(tokenStore.get()).toBeNull();
   });
 

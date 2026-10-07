@@ -43,24 +43,30 @@ error.
 portal/src/
   api/          client.ts (fetch wrapper + single-flight refresh),
                 problem.ts (RFC 7807 decoding), auth.ts (raw auth
-                endpoints)
+                endpoints), catalog.ts (the S8-02 catalog contract:
+                card types + cursor paging)
   auth/         tokenStore.ts (session storage), AuthContext.tsx
                 (session lifecycle + silent refresh), RequireAuth.tsx
                 (route guard), tokenStore.test.ts,
                 AuthContext.test.tsx (silent-refresh timer)
   components/   ToastContext.tsx (error toast convention)
   layout/       PortalLayout.tsx (app bar, tester identity, logout)
-  pages/        LoginPage, AcceptInvitationPage, HomePage (honest
-                empty state)
-  test/         harness.tsx (providers + fetch router), setup.ts
+  pages/        LoginPage, AcceptInvitationPage, HomePage (the S8-02
+                My Applications catalog), HomePage.test.tsx (catalog
+                states)
+  test/         harness.tsx (providers + fetch router; seedSession/
+                seedCatalog stubs), setup.ts
 portal/e2e/     portal-verify.mjs (Playwright smoke vs compose stack)
 ```
 
 ## Authentication flows
 
 The portal consumes the identity module's endpoints
-([authentication](authentication.md)); it adds none and needs no
-portal-specific backend routes.
+([authentication](authentication.md)); for authentication it adds
+none and needs no portal-specific backend routes. Since S8-02 the
+home screen also consumes the decision API's self-scoped catalog
+(GET /api/v1/authorization/decisions/applications,
+[authorization](authorization.md)).
 
 - **Login:** `POST /api/v1/auth/login` with email + password.
   Suspended and deactivated testers receive the same opaque 401
@@ -95,5 +101,27 @@ portal-specific backend routes.
 - **Logout:** revokes the refresh token (`POST /api/v1/auth/logout`,
   best-effort) and clears local state regardless of the outcome.
 
-The authenticated shell shows the tester's identity and the My
-Applications placeholder; the catalog itself arrives with S8-02.
+## My Applications (S8-02)
+
+The authenticated home is the tester's authorized application
+catalog: one card per application the server says they can reach and
+install (FR-012/PRD 31) — name, latest authorized version with its
+status badge, per-platform availability (iOS/Android, each resolving
+to the newest authorized installable build), and an Archived badge
+for archived applications. The screen never filters a bigger list
+client-side (PRD 26): the decision API computes the set, and an
+honest EMPTY catalog is the correct view for a grantless-but-linked
+tester (INV-005 resting state), rendered as guidance, not an error.
+
+- **Loading:** the first fetch shows a loading indicator; cached
+  renders are instant (30 s stale time) and a Refresh button
+  revalidates on demand.
+- **Paging:** the catalog pages through the platform cursor envelope
+  with a Load more button (`useInfiniteQuery` on `next_cursor`).
+- **Errors:** API failures render the problem+json envelope (stable
+  code, trace id) with a Retry; a mid-session refresh failure keeps
+  the last good page beneath the error card.
+
+The authenticated shell shows the tester's identity in the app bar
+beside the catalog. Version history (S8-03) and the install/download
+flow (S8-04) build on the same card contract.

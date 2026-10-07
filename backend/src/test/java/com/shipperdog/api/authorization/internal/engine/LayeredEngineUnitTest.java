@@ -21,9 +21,11 @@ import com.shipperdog.api.tester.TesterAccess;
 import com.shipperdog.api.version.VersionAccess;
 import com.shipperdog.api.version.VersionAccess.VersionCatalogEntry;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
+import java.util.Collection;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
 import java.util.UUID;
 import java.util.stream.Stream;
 import org.junit.jupiter.api.Test;
@@ -226,6 +228,11 @@ class LayeredEngineUnitTest {
             }
 
             @Override
+            public Optional<ApplicationSummary> summaryOf(UUID applicationId) {
+                return Optional.empty(); // the engine walk never renders cards
+            }
+
+            @Override
             public boolean visibleToTenant(UUID applicationId, UUID tenantId) {
                 visibleToTenantCalls++;
                 return visibleToTenant;
@@ -287,6 +294,11 @@ class LayeredEngineUnitTest {
                 return artifactKnown
                         ? Optional.of(new ArtifactState(ARTIFACT, VERSION, artifactPlatform, artifactStatus))
                         : Optional.empty();
+            }
+
+            @Override
+            public Map<UUID, Set<String>> distributablePlatformsOfVersions(Collection<UUID> versionIds) {
+                return Map.of(); // the engine walk never renders cards
             }
 
             @Override

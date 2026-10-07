@@ -193,6 +193,16 @@ public interface ApplicationRegistryRepository extends JpaRepository<Application
                         new Ownership(application.getId(), application.getOrganizationId(), application.getTenantId()));
     }
 
+    /** The portal catalog's display summary (issue #36); tuples only, never rows. */
+    @Override
+    default Optional<ApplicationSummary> summaryOf(UUID applicationId) {
+        return findApplicationById(applicationId)
+                .map(application -> new ApplicationSummary(
+                        application.getId(),
+                        application.getName(),
+                        application.getStatus().name()));
+    }
+
     /**
      * Profile resolution for the version layer (issue #17) and the
      * artifact validation tier (issue #24, S5-05): ownership plus the
