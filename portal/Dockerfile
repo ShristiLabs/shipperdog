@@ -12,6 +12,10 @@ COPY src ./src
 RUN npm run build
 
 FROM nginx:1.27-alpine
-COPY nginx.conf /etc/nginx/conf.d/default.conf
+# The template is envsubst'd to conf.d/default.conf at start with the
+# deployment's API_UPSTREAM (compose: api:8080; Cloud Run: the api
+# service's URL) — one image, both targets.
+COPY default.conf.template /etc/nginx/templates/default.conf.template
+COPY security-headers.conf /etc/nginx/snippets/security-headers.conf
 COPY --from=build /app/dist /usr/share/nginx/html
 EXPOSE 80

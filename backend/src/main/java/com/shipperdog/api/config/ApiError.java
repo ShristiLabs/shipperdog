@@ -49,6 +49,12 @@ public enum ApiError {
     UNSUPPORTED_MEDIA_TYPE(
             HttpStatus.UNSUPPORTED_MEDIA_TYPE, "Unsupported Media Type", "The media type is not supported."),
 
+    /**
+     * The in-app rate limiter refused the request (issue #39, S8-05). The 429 always carries a
+     * {@code Retry-After} header with the seconds until the next token.
+     */
+    RATE_LIMITED(HttpStatus.TOO_MANY_REQUESTS, "Too Many Requests", "Too many requests."),
+
     /** Unhandled server fault; detail never leaks internals (the correlation id is the lookup key). */
     INTERNAL_ERROR(HttpStatus.INTERNAL_SERVER_ERROR, "Internal Server Error", "An unexpected error occurred.");
 

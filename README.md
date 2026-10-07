@@ -14,10 +14,14 @@ subsequent story builds on.
 |---|---|
 | `backend/` | Spring Boot modular-monolith API (Java 25, single Maven module) |
 | `frontend/` | Admin console — React 19 + TypeScript + MUI (Vite; S2-04) |
+| `portal/` | Tester portal — React 19 + TypeScript + MUI, separate app (S8) |
 | `cli/` | Developer CLI — Go 1.26, artifact upload/inspect + login (S5-06) |
-| `infrastructure/` | Local docker compose stack |
+| `infrastructure/` | Local docker compose stack, terraform (Cloud Run, S8-05), smoke + security-header checks, Grafana/Prometheus |
 | `docs/` | Developer documentation |
-| `.github/workflows/` | GitHub Actions CI |
+| `.github/workflows/` | GitHub Actions CI + the manual deploy pipeline (S8-05) |
+
+Production deployment (Cloud Run, terraform, post-deploy smoke test):
+see [docs/deployment.md](docs/deployment.md).
 
 The backend is a modular monolith: one deployable, with one package per
 bounded context (identity, organization, tenant, application, version,

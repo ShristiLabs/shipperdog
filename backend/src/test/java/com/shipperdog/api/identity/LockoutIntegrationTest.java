@@ -60,6 +60,21 @@ class LockoutIntegrationTest {
         jdbc.update("UPDATE users SET failed_login_attempts = 0, locked_until = NULL WHERE email = ?", EMAIL);
     }
 
+    /**
+     * Full-suite ordering hardening (issue #39, of the flake seen on
+     * #35's CI run): the locking test legitimately ends with the
+     * seeded dev admin LOCKED for the configured duration, and
+     * classes that share this Spring context (identical properties —
+     * one container) run against that same row afterwards; their
+     * dev-admin bootstrap logins then answered 401 and the suite
+     * looked order-flaky. Reset the lock when this class is done so
+     * the fixture never leaks past it.
+     */
+    @org.junit.jupiter.api.AfterEach
+    void unlockDevAdminAfterwards() {
+        jdbc.update("UPDATE users SET failed_login_attempts = 0, locked_until = NULL WHERE email = ?", EMAIL);
+    }
+
     @Test
     void accountLocksAfterConfiguredFailuresAndEmitsAuditEvent() {
         for (int i = 0; i < 4; i++) {

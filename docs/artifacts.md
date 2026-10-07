@@ -326,6 +326,11 @@ Semantics:
   reserved `download_count` wired live) beside the durable
   per-artifact `download_count` column (V23) and the
   `DOWNLOAD_ISSUED` audit trail, which keep the number reconcilable.
+  (Known bound, the #38 review's low finding: the column's
+  read-modify-write increment can lose counts under concurrent
+  issuance of the SAME artifact — the metric and the audit trail are
+  the exact record; the atomic per-artifact aggregate is S11-04's
+  concern.)
 
 ## Duplicates and immutability
 

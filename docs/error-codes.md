@@ -27,10 +27,8 @@ Stable public error codes of the problem+json envelope (issue #8). Rules:
 | `NOT_FOUND` | 404 | Resource not found. (generic; unknown resource types) |
 | `METHOD_NOT_ALLOWED` | 405 | The HTTP method is not allowed. |
 | `UNSUPPORTED_MEDIA_TYPE` | 415 | The media type is not supported. |
+| `RATE_LIMITED` | 429 | Too many requests. (emitted since S8-05/issue #39 by the in-app rate limiter; always with a `Retry-After` header — see [api-conventions.md](api-conventions.md)) |
 | `INTERNAL_ERROR` | 500 | An unexpected error occurred. (detail never leaks internals) |
-
-Reserved, not yet emitted: `RATE_LIMITED` (429 — Dwara fronts production,
-see [api-conventions.md](api-conventions.md)).
 
 ## Identity (`AuthException.Code`)
 

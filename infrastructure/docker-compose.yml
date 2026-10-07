@@ -34,8 +34,14 @@ services:
     # gcs-emulator:4443 over the compose network, but the CLIENT that
     # streams direct-to-storage bytes runs on the operator's machine,
     # so the advertised URL must be host-reachable.
+    # -data (issue #39, S8-05): preloads the dev seed's demo artifact
+    # object (infrastructure/gcs-seed/ — the bucket layout the seed
+    # row's storage_key addresses) so the demo catalog's download
+    # path serves real bytes locally.
     command:
-      ["-scheme", "http", "-host", "0.0.0.0", "-port", "4443", "-external-url", "${GCS_EXTERNAL_URL:-http://localhost:4443}"]
+      ["-scheme", "http", "-host", "0.0.0.0", "-port", "4443", "-external-url", "${GCS_EXTERNAL_URL:-http://localhost:4443}", "-data", "/seed"]
+    volumes:
+      - ./gcs-seed:/seed:ro
     ports:
       - "${GCS_EMULATOR_PORT:-4443}:4443"
 
@@ -87,6 +93,17 @@ services:
       # TTL and the 15-minute FR-014 ceiling.
       ARTIFACT_DOWNLOAD_URL_TTL: ${ARTIFACT_DOWNLOAD_URL_TTL:-PT15M}
       ARTIFACT_DOWNLOAD_PROXY_SIGNING_KEY: ${ARTIFACT_DOWNLOAD_PROXY_SIGNING_KEY:-shipperdog-local-download-key}
+      # Local rate-limit posture (issue #39, S8-05): the production
+      # defaults are per-client tight (10 logins, 30 downloads per
+      # minute), but the compose stack serves ONE operator IP that
+      # carries every browser session, Playwright e2e run, and CLI
+      # workflow at once — so the local buckets are generous instead.
+      # Production (Cloud Run via terraform) and the gateway (Dwara)
+      # dial their own posture through the same variables.
+      RATE_LIMIT_LOGIN_CAPACITY: ${RATE_LIMIT_LOGIN_CAPACITY:-60}
+      RATE_LIMIT_LOGIN_REFILL: ${RATE_LIMIT_LOGIN_REFILL:-PT1S}
+      RATE_LIMIT_DOWNLOADS_CAPACITY: ${RATE_LIMIT_DOWNLOADS_CAPACITY:-120}
+      RATE_LIMIT_DOWNLOADS_REFILL: ${RATE_LIMIT_DOWNLOADS_REFILL:-PT0.5S}
       # Observability baseline (issue #7): all management endpoints move
       # to the internal management port, which is published to the host
       # loopback only — /actuator/health and /actuator/prometheus are
@@ -130,6 +147,11 @@ services:
   portal:
     build:
       context: ../portal
+    environment:
+      # The nginx template's api upstream (issue #39): the compose
+      # network name; Cloud Run runs the same image with the api
+      # service's URL instead.
+      API_UPSTREAM: api:8080
     ports:
       - "${PORTAL_PORT:-5174}:80"
     depends_on:

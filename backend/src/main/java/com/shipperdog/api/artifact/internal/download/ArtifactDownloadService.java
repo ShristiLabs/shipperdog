@@ -202,7 +202,7 @@ public class ArtifactDownloadService {
                             "no download route for " + artifact.getPlatform() + " on channel " + Channel.DIRECT));
             Duration ttl = downloadProperties.urlTtl();
             Instant expiresAt = Instant.now(clock).plus(ttl);
-            String url = emulatorMode()
+            String url = storageProperties.emulatorMode()
                     ? "/api/v1/downloads/"
                             + tokens.mint(new DownloadTokenCodec.Grant(
                                     artifactId,
@@ -247,7 +247,7 @@ public class ArtifactDownloadService {
         detail.put("fileName", artifact.getFileName());
         detail.put("size", Long.toString(artifact.getSize()));
         detail.put("urlTtlSeconds", Long.toString(ttl.toSeconds()));
-        detail.put("mechanism", emulatorMode() ? "backend-proxy" : "gcs-v4");
+        detail.put("mechanism", storageProperties.emulatorMode() ? "backend-proxy" : "gcs-v4");
         audit.publish(AuditEvent.builder(AuditEventType.DOWNLOAD_ISSUED)
                 .occurredAt(Instant.now(clock))
                 .userId(actorId)
@@ -274,10 +274,6 @@ public class ArtifactDownloadService {
         return ownership.tenantId() != null
                 ? scopeExecutor.inScope(ownership.tenantId(), actorId, work)
                 : scopeExecutor.inOrganizationScope(ownership.organizationId(), actorId, work);
-    }
-
-    private boolean emulatorMode() {
-        return storageProperties.host() != null && !storageProperties.host().isBlank();
     }
 
     private Timer generationTimer(String outcome) {

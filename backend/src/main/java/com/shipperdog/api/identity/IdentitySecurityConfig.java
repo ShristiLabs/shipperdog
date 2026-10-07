@@ -72,6 +72,11 @@ public class IdentitySecurityConfig {
                         .anyRequest()
                         .authenticated())
                 .addFilterBefore(patFilter, BearerTokenAuthenticationFilter.class)
+                // The API-surface security headers (issue #39, S8-05):
+                // HSTS, no-referrer, empty Permissions-Policy, and a
+                // default-src 'none' CSP — the same posture the baseline
+                // chain applies below /api/v1 and the origins carry.
+                .headers(com.shipperdog.api.config.SecurityConfig.ApiSecurityHeaders::apply)
                 .oauth2ResourceServer(oauth2 -> oauth2.bearerTokenResolver(patAwareBearerTokenResolver())
                         .jwt(jwt -> jwt.decoder(jwtDecoder).jwtAuthenticationConverter(accessTokenOnly())))
                 .exceptionHandling(handling ->

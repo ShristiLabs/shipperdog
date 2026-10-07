@@ -68,7 +68,7 @@ export function ensureFreshTokens(): Promise<boolean> {
 
 export async function apiFetch<T>(path: string, options: RequestOptions = {}): Promise<T> {
   const response = await rawFetch(path, options);
-  if (response.status === 401 && !options.retrying && !isAuthPath(path)) {
+  if (response.status === 401 && !options.retrying && !isRawAuthPath(path)) {
     const refreshed = await ensureFreshTokens();
     if (refreshed) {
       return apiFetch<T>(path, { ...options, retrying: true });
@@ -120,6 +120,17 @@ async function rawFetch(path: string, options: RequestOptions): Promise<Response
   });
 }
 
-function isAuthPath(path: string): boolean {
-  return path.startsWith("/auth/");
+/** The raw auth POSTs (login, register, refresh, logout) must never
+ * trigger the refresh-retry loop — they carry no session. They are
+ * invoked through raw fetch in api/auth.ts and never via apiFetch, so
+ * this guard is defense in depth. GET /auth/me deliberately DOES
+ * refresh (issue #39, the #35 reviewer finding): it is the session-
+ * validation call, and a reload with an expired access token but a
+ * live refresh token must recover transparently instead of logging
+ * the operator out — the prefix match this replaced suppressed that
+ * recovery. Same shape as the portal's client. */
+const RAW_AUTH_PATHS = new Set(["/auth/login", "/auth/register", "/auth/refresh", "/auth/logout"]);
+
+function isRawAuthPath(path: string): boolean {
+  return RAW_AUTH_PATHS.has(path);
 }

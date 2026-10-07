@@ -41,6 +41,17 @@ jobs:
       - name: Unit tests
         run: npm test
 
+      # Dependency audit (issue #39, S8-05): the OSV scan job in
+      # backend-ci covers lockfiles repo-wide; npm audit fails fast on
+      # high/critical advisories at the app's own gate too.
+      - name: Dependency audit (fails on high/critical)
+        run: npm audit --audit-level=high
+
+      # Bundle budget (issue #39, S8-05): the shipped hashed assets
+      # stay under the ceiling (see scripts/check-bundle-size.mjs).
+      - name: Bundle size budget
+        run: node scripts/check-bundle-size.mjs
+
   portal-lint-typecheck-build-test:
     runs-on: ubuntu-latest
     defaults:
@@ -68,4 +79,19 @@ jobs:
 
       - name: Unit tests
         run: npm test
+
+      - name: Dependency audit (fails on high/critical)
+        run: npm audit --audit-level=high
+
+      - name: Bundle size budget
+        run: node scripts/check-bundle-size.mjs
+
+      # Security-header gate (issue #39, S8-05): builds the portal
+      # image exactly as deployed and asserts the
+      # securityheaders.com-grade header set. Docker is on the runner;
+      # the script never touches the network beyond the local
+      # container (the api upstream is stub-resolved).
+      - name: Security header check (deployed image)
+        working-directory: .
+        run: infrastructure/security-headers/check-portal-headers.sh
 

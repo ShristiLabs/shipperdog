@@ -126,6 +126,35 @@ describe("apiFetch auth", () => {
     expect(retries).toHaveLength(1);
   });
 
+  it("recovers GET /auth/me with an expired access token but a live refresh token", async () => {
+    // Issue #39 (the #35 reviewer finding): /auth/me is the session-
+    // validation call; a browser reload must transparently refresh
+    // instead of logging the operator out.
+    tokenStore.save("stale-access", "refresh-1", 900);
+    fetchMock.mockImplementation(
+      async (input: RequestInfo | URL, init?: RequestInit) => {
+        const url = String(input);
+        if (url.endsWith("/auth/refresh")) {
+          return jsonResponse(200, {
+            accessToken: "fresh-access",
+            refreshToken: "refresh-2",
+            tokenType: "Bearer",
+            expiresInSeconds: 900,
+          });
+        }
+        const headers = (init?.headers ?? {}) as Record<string, string>;
+        if (headers.Authorization === "Bearer stale-access") {
+          return jsonResponse(401, { title: "Unauthorized", status: 401, code: "UNAUTHENTICATED" });
+        }
+        return jsonResponse(200, { id: "user-1", email: "ops@example.com" });
+      },
+    );
+
+    const me = await apiFetch<{ id: string }>("/auth/me");
+    expect(me.id).toBe("user-1");
+    expect(tokenStore.get()?.accessToken).toBe("fresh-access");
+  });
+
   it("clears the session and emits the expiry event when refresh fails", async () => {
     tokenStore.save("stale-access", "dead-refresh", 900);
     const expired = vi.fn();

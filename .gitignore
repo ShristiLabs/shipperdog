@@ -25,3 +25,11 @@ portal/*.tsbuildinfo
 *.iml
 .vscode/
 .DS_Store
+
+# Terraform runtime state (issue #39): the provider cache and any
+# local state never belong in the repo; the lock file DOES (it pins
+# provider versions for every consumer).
+.terraform/
+*.tfstate
+*.tfstate.*
+crash.log

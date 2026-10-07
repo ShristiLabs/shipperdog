@@ -87,7 +87,7 @@ public class GcsArtifactStore implements ArtifactStore {
         this.properties = properties;
         this.http =
                 HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(10)).build();
-        this.credentials = emulatorMode() ? null : defaultCredentialsOrNull();
+        this.credentials = properties.emulatorMode() ? null : defaultCredentialsOrNull();
     }
 
     @Override
@@ -209,7 +209,7 @@ public class GcsArtifactStore implements ArtifactStore {
         // not verify V4 signatures — ADR-0003's download-tier
         // amendment records the verification). A call in emulator mode
         // is a wiring fault and fails loudly, never silently.
-        if (emulatorMode()) {
+        if (properties.emulatorMode()) {
             throw unavailable("V4 signing is unavailable against the emulator host", null);
         }
         BlobInfo target = BlobInfo.newBuilder(properties.bucket(), storageKey)
@@ -234,6 +234,12 @@ public class GcsArtifactStore implements ArtifactStore {
     public InputStream open(String storageKey) {
         BlobId id = BlobId.of(properties.bucket(), storageKey);
         try {
+            // Two RPCs by design (the #38 review's low finding, note
+            // adopted with issue #39): the existence get() distinguishes
+            // a missing object (404 to the caller) from a mid-stream
+            // failure, and the objects are immutable so nothing can
+            // change between the two calls. reader() alone cannot make
+            // that distinction until bytes are read.
             if (storage.get(id) == null) {
                 throw unavailable("no object at " + storageKey, null);
             }
@@ -285,13 +291,9 @@ public class GcsArtifactStore implements ArtifactStore {
         }
     }
 
-    private boolean emulatorMode() {
-        return properties.host() != null && !properties.host().isBlank();
-    }
-
     /** The endpoint every GCS call targets: the emulator host, or GCS itself. */
     private String effectiveHost() {
-        return emulatorMode() ? trimTrailingSlash(properties.host()) : "https://storage.googleapis.com";
+        return properties.emulatorMode() ? trimTrailingSlash(properties.host()) : "https://storage.googleapis.com";
     }
 
     private static String trimTrailingSlash(String host) {

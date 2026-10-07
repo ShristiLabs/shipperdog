@@ -207,3 +207,47 @@ its expiry, and the download facts — never the storage key.
   `apk-fixture.mjs` signed-APK minter) uploads a real fixture through
   the API, settles it READY, and proves the browser download is
   byte-identical (sha256) with the artifact's file name.
+
+## Hardening and deployment (S8-05)
+
+The production-credibility story (issue #39) hardened every origin
+the portal touches and made the deployment repeatable:
+
+- **Security headers (CSP et al.).** The portal's nginx answers every
+  SPA response — entry, client-side-route fallback, hashed assets —
+  with the securityheaders.com-grade set: strict CSP
+  (`script-src 'self'`, no inline scripts ship in the bundle;
+  `style-src 'unsafe-inline'` for MUI's runtime-injected styles;
+  `connect-src 'self'`), HSTS, `X-Frame-Options: DENY`, `nosniff`,
+  `no-referrer`, and an empty Permissions-Policy
+  (`portal/security-headers.conf`). The API carries the same posture
+  on its own origin (Spring Security headers, `default-src 'none'`
+  CSP). CI grades the deployed image, not a config review:
+  `infrastructure/security-headers/check-portal-headers.sh` builds
+  the portal container exactly as deployed and asserts all six
+  headers on three path shapes (plus the no-inline-script invariant
+  the CSP depends on).
+- **Session posture.** localStorage stays for M1 with the trade-off
+  consciously recorded and its migration path named:
+  [ADR-0006](adr/ADR-0006-portal-session-token-storage.md). The CSP
+  is the load-bearing mitigation.
+- **Rate limiting.** The backend now enforces per-client-IP token
+  buckets on `POST /auth/login` and the download tier (429
+  `RATE_LIMITED` + `Retry-After`, env-configurable
+  `RATE_LIMIT_*`, fails open). Client identity resolves from the raw
+  `X-Forwarded-For` chain trusted from the right — compose's nginx
+  and Cloud Run's fronting proxy both append the real client, so the
+  default trust depth is one (`RATE_LIMIT_TRUSTED_PROXY_COUNT`);
+  forged prefixes cannot mint new buckets. The limiter deliberately
+  runs before the security chains: a flood costs one map lookup, not
+  a JWT decode or a password hash.
+- **Same image, two deployment targets.** The portal's nginx conf is
+  a template (`default.conf.template`): compose sets
+  `API_UPSTREAM=api:8080`, Cloud Run the api service's URL — one
+  image everywhere, so the CI header check grades what deploys.
+- **Deployment.** Terraform in `infrastructure/terraform/`
+  provisions the Cloud Run stack (ADR-0005); the runbook is
+  [deployment.md](deployment.md); the post-deploy smoke test
+  (`infrastructure/smoke/smoke.sh`) proves health, tester login, and
+  a non-empty catalog against the seeded demo org, and the deploy
+  workflow wires it after every apply.

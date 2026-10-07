@@ -152,6 +152,10 @@ export default function AcceptInvitationPage() {
 }
 
 function MissingTokenCard() {
+  // SPA navigation, not a full document reload (issue #39's sweep of
+  // the #36 review finding): the portal keeps its in-memory router
+  // state and loads no second copy of the bundle.
+  const navigate = useNavigate();
   return (
     <Box
       sx={{
@@ -176,7 +180,7 @@ function MissingTokenCard() {
             </Typography>
             <Button
               variant="contained"
-              onClick={() => window.location.assign("/login")}
+              onClick={() => navigate("/login")}
               data-testid="accept-go-login"
             >
               Go to sign in

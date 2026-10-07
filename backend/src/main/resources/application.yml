@@ -135,6 +135,30 @@ shipperdog:
     # S6-02, PRD 8.9's examples; the seeded rows are ordinary editable
     # groups). Comma-separated; empty skips seeding.
     default-groups: ${TESTER_DEFAULT_GROUPS:Internal QA,Tenant QA,UAT,Pilot,Executive Beta,External Beta}
+  # In-app request rate limiting (issue #39, S8-05): per-(rule,
+  # client-IP) token buckets over the login door and the download
+  # tier, answered 429 RATE_LIMITED with a Retry-After header. The
+  # defaults are production-tight (10 login attempts/min, 30
+  # downloads/min per client); the compose stack overrides them
+  # generously because one operator IP carries every browser, e2e
+  # run, and CLI session locally, and Cloud Run sets its own through
+  # the same variables. Buckets are per-instance (the gateway fronts
+  # production); the limiter fails OPEN — it must never be the outage.
+  ratelimit:
+    enabled: ${RATE_LIMIT_ENABLED:true}
+    # How many proxies in front of the API append to X-Forwarded-For
+    # and are trusted (compose nginx / the Cloud Run fronting proxy
+    # both append the real client as the trusted-side entry).
+    trusted-proxy-count: ${RATE_LIMIT_TRUSTED_PROXY_COUNT:1}
+    # LRU bound on the (rule, client) bucket cache.
+    max-tracked-clients: ${RATE_LIMIT_MAX_TRACKED_CLIENTS:10000}
+    rules:
+      login:
+        capacity: ${RATE_LIMIT_LOGIN_CAPACITY:10}
+        refill: ${RATE_LIMIT_LOGIN_REFILL:PT6S}
+      downloads:
+        capacity: ${RATE_LIMIT_DOWNLOADS_CAPACITY:30}
+        refill: ${RATE_LIMIT_DOWNLOADS_REFILL:PT2S}
   authorization-cache:
     # The decision-input cache (issue #32, S7-03): Redis-backed, above
     # the grant contributor and the effective-set resolution. Caches
@@ -152,6 +176,17 @@ shipperdog:
 server:
   port: ${SERVER_PORT:8080}
   shutdown: graceful
+  # Forwarded-header trust (issue #39, S8-05): the platform always
+  # runs behind a fronting proxy (compose nginx, Cloud Run's ingress,
+  # later Dwara), so X-Forwarded-* is honored for link and redirect
+  # generation. FRAMEWORK (Spring's ForwardedHeaderFilter, Google's
+  # documented setting for Cloud Run) is the default rather than the
+  # container-native valve: the valve rewrites the X-Forwarded-For
+  # chain BEFORE any filter runs, which would hide the raw chain the
+  # rate limiter's own trusted-side resolution reads — the rate
+  # limiter additionally unwraps request wrappers, so its answer is
+  # independent of where in the chain it runs.
+  forward-headers-strategy: ${FORWARD_HEADERS_STRATEGY:framework}
 
 # Every log line of a request carries its correlation id (issue #6);
 # '-' when off-request (startup, schedulers).

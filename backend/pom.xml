@@ -26,6 +26,7 @@
     <!-- springdoc 3.x is the Spring Boot 4 line (issue #8); the starter
          is generated at build time and published as a CI artifact. -->
     <springdoc.version>3.1.1</springdoc.version>
+    <bucket4j.version>8.10.1</bucket4j.version>
     <!-- Google Cloud Storage Java client (E5/S5-01): the one object-
          storage dependency, used against both the compose GCS emulator
          (fsouza/fake-gcs-server) and production GCS. OSS, Apache-2.0,
@@ -36,6 +37,15 @@
          the IPA parser never hand-rolls bplist decoding and the test
          fixtures generate real binary plists programmatically. -->
     <dd-plist.version>1.29</dd-plist.version>
+    <!-- Vulnerability remediation (issue #39, S8-05): the CI OSV scan
+         gate found known CVEs in the Spring Boot 4.1.1-managed
+         versions — Tomcat embed 11.0.24 (three CRITICALs) and Jackson
+         3.1.5 / 2.21.5 (several HIGHs) — all fixed in the patch
+         versions pinned here. Bumps stay inside the managed line;
+         Spring Boot's own dependency management does the rest. -->
+    <tomcat.version>11.0.26</tomcat.version>
+    <jackson-bom.version>3.1.7</jackson-bom.version>
+    <jackson-2-bom.version>2.21.7</jackson-2-bom.version>
   </properties>
 
   <dependencyManagement>
@@ -46,6 +56,14 @@
         <version>${testcontainers.version}</version>
         <type>pom</type>
         <scope>import</scope>
+      </dependency>
+      <!-- Vulnerability remediation (issue #39, S8-05): testcontainers
+           pulls commons-compress 1.24.0 (two MODERATE CVEs); the scan
+           gate runs clean only on the fixed line. Test-scope only. -->
+      <dependency>
+        <groupId>org.apache.commons</groupId>
+        <artifactId>commons-compress</artifactId>
+        <version>1.28.0</version>
       </dependency>
     </dependencies>
   </dependencyManagement>
@@ -92,6 +110,15 @@
     <dependency>
       <groupId>org.springframework.boot</groupId>
       <artifactId>spring-boot-starter-actuator</artifactId>
+    </dependency>
+    <!-- In-app rate limiting (issue #39, S8-05): local token buckets for
+         the login door and the download tier. Core only — buckets are
+         per-instance by design (the gateway fronts production and owns
+         cross-instance aggregation; see docs/deployment.md). -->
+    <dependency>
+      <groupId>com.bucket4j</groupId>
+      <artifactId>bucket4j-core</artifactId>
+      <version>${bucket4j.version}</version>
     </dependency>
     <!-- OpenAPI 3 contract generation (issue #8): springdoc 3.x is the
          Spring Boot 4 line; the api (non-UI) starter serves /v3/api-docs
