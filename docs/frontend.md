@@ -210,6 +210,20 @@ allowed.
   environments reference); edits replace the chain and re-attach the
   ring (an emptied ring detaches). The nav section renders under the
   `org:approval-workflows:read` probe.
+- **Release rings** (`/rings`, S10-04, issue #43): the rollout ladder
+  editor — the organization's effective vocabulary (its seeded five
+  plus customs, system defaults where unshadowed) in progressive
+  order with Production last, each ring's provenance badge
+  (organization vs system), eligibility summary, policy chips, and
+  gate-set count. The create/edit dialog writes name, position,
+  promotion policy, the name-only approval-policy and channel
+  references, and the eligibility axes (tenants from the
+  organization directory, tester groups from each tenant's roster,
+  degrading to free id entry for actors without
+  `app:tester-groups:manage`); an EMPTY eligibility selection clears
+  the rules (the documented reset). The server re-validates
+  everything (the console is never the gate). The nav section renders
+  under the `org:rings:read` probe.
 
 ## CI and verification
 

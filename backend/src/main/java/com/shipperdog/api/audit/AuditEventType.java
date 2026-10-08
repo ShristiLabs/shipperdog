@@ -171,5 +171,23 @@ public enum AuditEventType {
      * recorded with the actor; the row keeps reporting the underlying state, the override governs
      * only whether it still blocks.
      */
-    RELEASE_GATE_OVERRIDDEN
+    RELEASE_GATE_OVERRIDDEN,
+    /**
+     * A ring created (S10-04, FR-017, AC5): the code, name, position, eligibility rules, and the
+     * three references — the moment a rollout stage enters an organization's vocabulary. Audited
+     * because ring definitions change who can receive what.
+     */
+    RING_CREATED,
+    /**
+     * A ring edited (S10-04, FR-017, AC5): the changed facts only — name, position, eligibility
+     * rules, or references. Audited with the same weight as creation: an edited rule is a new
+     * boundary on distribution, applied to every future evaluation.
+     */
+    RING_UPDATED,
+    /**
+     * A ring deleted (S10-04, FR-017, AC5): the full deleted facts, the last record of a stage
+     * that left the vocabulary (references refuse the deletion, so a deleted ring was never
+     * load-bearing).
+     */
+    RING_DELETED
 }

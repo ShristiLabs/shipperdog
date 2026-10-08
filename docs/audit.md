@@ -142,7 +142,11 @@ state, the override governs only whether it still blocks; beside the
 definition surface's `GATE_DEFINITION_CREATED`/`GATE_DEFINITION_UPDATED`
 — the required-gate catalog an organization defines, carrying
 `gateType`, `required`, the expected-result `config`, and the `ring`
-attachment),
+attachment), and the ring surface's `RING_CREATED`/`RING_UPDATED`/
+`RING_DELETED` — S10-04/issue #43: every ring edit audited because it
+changes who can receive what — creation and deletion carry the full
+facts (`code`, `name`, `position`, the eligibility summary, the three
+references), edits carry only the CHANGED members,
 artifact (`ARTIFACT_UPLOAD_SESSION_CREATED` — issue #20/S5-01: the
 resumable direct-to-storage handoff is granted, carrying the
 pre-allocated `artifactId` entity reference with `platform`,

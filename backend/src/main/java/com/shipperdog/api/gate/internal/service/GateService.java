@@ -9,6 +9,7 @@ import com.shipperdog.api.config.TraceAttributes;
 import com.shipperdog.api.gate.GateCatalog;
 import com.shipperdog.api.gate.GateCatalog.Metric;
 import com.shipperdog.api.gate.GateCatalog.ResultSchema;
+import com.shipperdog.api.gate.GateDefinitionAccess;
 import com.shipperdog.api.gate.GateException;
 import com.shipperdog.api.gate.GateMetricSource;
 import com.shipperdog.api.gate.ReleaseGateEvaluation;
@@ -77,7 +78,7 @@ import org.springframework.transaction.annotation.Transactional;
  * data (the {@code approval_workflows} standing).
  */
 @Service
-public class GateService implements ReleaseGateEvaluation {
+public class GateService implements ReleaseGateEvaluation, GateDefinitionAccess {
 
     /** Newest last: the catalog's type order is the display order (deterministic listing). */
     private static final Sort TYPE_ORDER =
@@ -584,6 +585,27 @@ public class GateService implements ReleaseGateEvaluation {
 
     /** The result submission command: the externally-reported outcome with its evidence. */
     public record ResultCommand(String status, String evidenceUrl, Double observedValue) {}
+
+    // -------------------------------------------------------------------------
+    // GateDefinitionAccess (S10-04, issue #43): the ring surface's read facts
+    // -------------------------------------------------------------------------
+
+    /**
+     * The organization's whole definition catalog as cross-module read
+     * facts (S10-04): the release module's ring surface composes each
+     * ring's gate set (the ring-attached definitions plus the
+     * organization-wide standing) and validates the production ring's
+     * gate-set reference. Definition DATA only — evaluation stays
+     * behind {@link ReleaseGateEvaluation}.
+     */
+    @Override
+    @Transactional(readOnly = true)
+    public List<GateDefinitionAccess.DefinitionFact> definitionsOf(UUID organizationId) {
+        return definitions.findAllByOrganizationId(organizationId).stream()
+                .map(definition -> new GateDefinitionAccess.DefinitionFact(
+                        definition.getGateType(), definition.getRequired(), definition.getRingId()))
+                .toList();
+    }
 
     // -------------------------------------------------------------------------
     // Helpers: resolution, validation, scope, audit

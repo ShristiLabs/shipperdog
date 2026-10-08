@@ -197,6 +197,30 @@ value of the release read's public code (byte-identical concealment).
 | `GATE_METRIC_BACKED` | 422 | Metric-backed gates resolve their values from analytics at evaluation time. (`crash-free-threshold`, `open-critical-bugs` — manual submission is refused; the value comes from the `GateMetricSource` seam when S11-04's feeds land, fail-closed NO_DATA until then) |
 | `GATE_OVERRIDE_INVALID` | 409 | This gate cannot be overridden. (only a FAILED or NO_DATA gate, exactly once — a passed gate needs no override, a pending one has nothing to override, and a used override is a recorded fact that never moves; `errors` carries the `state` or names the `gate`) |
 
+## Ring (`RingException.Code`)
+
+The release-ring surface (S10-04, issue #43, FR-017): the
+organization-grain vocabulary routes (`POST/GET/PATCH/DELETE
+/api/v1/rings`) and the release-addressed eligibility read. The
+vocabulary routes' permission target is the organization, so denials
+conceal as the organization-grain 404; the eligibility route is
+release-addressed and carries the release surface's miss codes
+byte-identically (rendered through this module's advice, the gate
+precedent).
+
+| Code | HTTP | Detail |
+|---|---|---|
+| `RING_NOT_FOUND` | 404 | Resource not found. (a ring of another organization is indistinguishable from an unknown id) |
+| `ORGANIZATION_NOT_FOUND` | 404 | Resource not found. (the organization-miss backstop) |
+| `INVALID_REQUEST` | 400 | The request is invalid. (missing/blank fields, a non-kebab code, a bad name or position, an unknown promotion policy; the `errors` member keys the field) |
+| `RING_ALREADY_EXISTS` | 409 | A ring with this code already exists. (one code per scope — an organization ring may carry a SYSTEM code, the shadow; V24's `uq_rings_scope_code` is the authority) |
+| `RING_SYSTEM_IMMUTABLE` | 409 | System rings cannot be edited; define an organization ring with the same code to customize it. (the shared vocabulary is customized by shadowing, never rewritten) |
+| `RING_IN_USE` | 409 | The ring is referenced and cannot be deleted. (releases, targets, gate definitions, approval workflows — the foreign keys are the authority) |
+| `RING_ELIGIBILITY_INVALID` | 422 | The ring eligibility rules are invalid. (unknown axis, a non-array or empty axis, an id that is not one of the organization's tenants or tenant-groups — the `errors` member keys every offending entry) |
+| `RING_POSITION_INVALID` | 422 | The ring position breaks the progression; Production stays last. (a non-production ring at or past the production ring's position, or a production ring no longer after every other) |
+| `RING_PRODUCTION_POLICY_REQUIRED` | 422 | The production ring must reference an approval policy. (the widest audience is governed by default — writing the production ring demands the policy reference) |
+| `RING_PRODUCTION_GATES_REQUIRED` | 422 | The production ring must reference at least one required gate definition. (ring-attached or organization-wide — production ships through gates, never past them) |
+
 ## Environment (`EnvironmentException.Code`)
 
 The environment surface (S9-04, issue #58): the organization-grain

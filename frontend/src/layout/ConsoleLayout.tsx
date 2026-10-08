@@ -9,6 +9,7 @@
 import AppsIcon from "@mui/icons-material/Apps";
 import BusinessIcon from "@mui/icons-material/Business";
 import ChecklistIcon from "@mui/icons-material/Checklist";
+import TollIcon from "@mui/icons-material/Toll";
 import LogoutIcon from "@mui/icons-material/Logout";
 import RocketLaunchIcon from "@mui/icons-material/RocketLaunch";
 import {
@@ -30,6 +31,7 @@ import { NavLink, Outlet, useNavigate } from "react-router-dom";
 import { useAuth } from "../auth/AuthContext";
 import { usePermission } from "../hooks/usePermission";
 import { listApplications } from "../api/applications";
+import { listRings } from "../api/rings";
 import { listApprovalWorkflows } from "../api/workflows";
 import { listTenants } from "../api/tenants";
 
@@ -54,6 +56,16 @@ export default function ConsoleLayout() {
   const applicationsNav = usePermission(
     `applications:${orgId ?? "none"}`,
     () => listApplications({ organizationId: orgId as string, limit: 1 }),
+    orgId !== null,
+  );
+
+  // The Release rings section (S10-04) probes the vocabulary listing
+  // its editor loads first: org:rings:read holders see the ladder;
+  // everyone else is conceal-denied and the section hides. Writes stay
+  // server-enforced regardless.
+  const ringsNav = usePermission(
+    `rings:${orgId ?? "none"}`,
+    () => listRings(orgId as string),
     orgId !== null,
   );
 
@@ -159,6 +171,21 @@ export default function ConsoleLayout() {
               also holds app:releases:read (the authorization matrix), and
               the screen is unusable without the registry picker anyway.
               The per-application release listing stays server-enforced. */}
+          {orgId !== null && ringsNav.allowed ? (
+            <List>
+              <ListItemButton
+                component={NavLink}
+                to="/rings"
+                data-testid="nav-rings"
+                sx={{ "&.active": { backgroundColor: "action.selected" } }}
+              >
+                <ListItemIcon>
+                  <TollIcon />
+                </ListItemIcon>
+                <ListItemText primary="Release rings" />
+              </ListItemButton>
+            </List>
+          ) : null}
           {orgId !== null && applicationsNav.allowed ? (
             <List>
               <ListItemButton

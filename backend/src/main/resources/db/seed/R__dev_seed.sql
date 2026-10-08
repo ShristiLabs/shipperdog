@@ -199,3 +199,24 @@ VALUES
     ('10000000-0000-4000-8000-000000000034',
      '10000000-0000-4000-8000-000000000001', 'production', 'Production', 4)
 ON CONFLICT DO NOTHING;
+
+-- Default rings for the demo organization (issue #43, S10-04): the API
+-- seeds FR-017's five on every organization creation; the seed fixture
+-- creates its organization directly, so it reproduces the same
+-- provisioning here (the environments precedent above). Fixed ids keep
+-- re-runs idempotent; bare ON CONFLICT DO NOTHING tolerates a local
+-- database where V32's migration-time seeding (or the API) already
+-- provisioned them under different ids.
+INSERT INTO rings (id, organization_id, code, name, position, promotion_policy)
+VALUES
+    ('10000000-0000-4000-8000-000000000040',
+     '10000000-0000-4000-8000-000000000001', 'engineering', 'Engineering', 0, 'MANUAL'),
+    ('10000000-0000-4000-8000-000000000041',
+     '10000000-0000-4000-8000-000000000001', 'qa', 'QA', 1, 'MANUAL'),
+    ('10000000-0000-4000-8000-000000000042',
+     '10000000-0000-4000-8000-000000000001', 'tenant-pilot', 'Tenant Pilot', 2, 'MANUAL'),
+    ('10000000-0000-4000-8000-000000000043',
+     '10000000-0000-4000-8000-000000000001', 'uat', 'UAT', 3, 'MANUAL'),
+    ('10000000-0000-4000-8000-000000000044',
+     '10000000-0000-4000-8000-000000000001', 'production', 'Production', 4, 'MANUAL')
+ON CONFLICT DO NOTHING;

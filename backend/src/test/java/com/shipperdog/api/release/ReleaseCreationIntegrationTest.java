@@ -155,7 +155,7 @@ class ReleaseCreationIntegrationTest {
                         "SELECT count(*) FROM release_targets WHERE release_id = ? AND ring_id = ?",
                         Integer.class,
                         releaseId,
-                        ringIdOf("tenant-pilot")))
+                        orgRingIdOf(world.org, "tenant-pilot")))
                 .isEqualTo(1);
         assertThat(jdbc.queryForObject(
                         "SELECT count(*) FROM release_target_groups WHERE release_id = ? AND group_id = ?",
@@ -816,12 +816,14 @@ class ReleaseCreationIntegrationTest {
     @Test
     void anOrganizationsOwnRingShadowsTheSystemDefaultForItsReleases() throws Exception {
         World world = tenantOwnedWorld("rel-org-ring");
-        // The organization defines its own meaning for 'qa'; a foreign
-        // organization defines the same code for itself (uq_rings_scope_
-        // code scopes the vocabulary per organization).
-        UUID orgRing = insertRing(world.org, "qa", "Org QA Ring");
+        // Since S10-04 (V32) every organization carries its own seeded
+        // five; the organization defines its own meaning for 'qa' by
+        // RENAMING its seeded ring (the shadow the seeds materialize),
+        // and a foreign organization renames its own the same way
+        // (uq_rings_scope_code scopes the vocabulary per organization).
+        UUID orgRing = renameOrgRing(world.org, "qa", "Org QA Ring");
         UUID foreignOrg = createOrg("Rel Org Ring Foreign Corp");
-        insertRing(foreignOrg, "qa", "Foreign QA Ring");
+        renameOrgRing(foreignOrg, "qa", "Foreign QA Ring");
 
         JsonNode created = post(world.managerToken, "/api/v1/releases", baseRelease(world), 201);
         UUID releaseId = UUID.fromString(created.get("id").asText());
@@ -1049,16 +1051,24 @@ class ReleaseCreationIntegrationTest {
         return jdbc.queryForObject("SELECT id FROM rings WHERE code = ? AND organization_id IS NULL", UUID.class, code);
     }
 
-    /** Inserts an organization-scoped ring (E10's writer is not here yet; the reference row is the fixture). */
-    private UUID insertRing(UUID organizationId, String code, String name) {
-        UUID id = UUID.randomUUID();
-        jdbc.update(
-                "INSERT INTO rings (id, organization_id, code, name, position) VALUES (?, ?, ?, ?, 90)",
-                id,
+    /**
+     * The ring id releases of this organization resolve to: since S10-04
+     * (V32) the organization's own seeded ring (the effective
+     * vocabulary), not the system default.
+     */
+    private UUID orgRingIdOf(UUID organizationId, String code) {
+        return jdbc.queryForObject(
+                "SELECT id FROM rings WHERE code = ? AND organization_id = ?", UUID.class, code, organizationId);
+    }
+
+    /** Renames the organization's seeded ring of the code; returns its id (the V32 seeded five). */
+    private UUID renameOrgRing(UUID organizationId, String code, String name) {
+        return jdbc.queryForObject(
+                "UPDATE rings SET name = ? WHERE organization_id = ? AND code = ? RETURNING id",
+                UUID.class,
+                name,
                 organizationId,
-                code,
-                name);
-        return id;
+                code);
     }
 
     /** One racer's creation attempt, released simultaneously with its peer by the barrier. */

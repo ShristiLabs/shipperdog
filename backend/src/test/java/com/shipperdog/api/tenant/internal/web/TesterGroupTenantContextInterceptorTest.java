@@ -56,8 +56,17 @@ class TesterGroupTenantContextInterceptorTest {
         groupExists = true;
         PlatformAdmins platformAdmins = userId -> actorIsPlatformAdmin;
         AuditLogger audit = new AuditLogger(published::add, Clock.systemUTC());
-        TesterGroupAccess testerGroups =
-                groupId -> groupExists && GROUP.equals(groupId) ? Optional.of(TENANT) : Optional.empty();
+        TesterGroupAccess testerGroups = new TesterGroupAccess() {
+            @Override
+            public Optional<UUID> owningTenantOf(UUID groupId) {
+                return groupExists && GROUP.equals(groupId) ? Optional.of(TENANT) : Optional.empty();
+            }
+
+            @Override
+            public List<UUID> groupIdsOfTester(UUID testerId) {
+                return List.of();
+            }
+        };
         interceptor = new TesterGroupTenantContextInterceptor(testerGroups, platformAdmins, audit);
     }
 

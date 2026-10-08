@@ -606,6 +606,24 @@ public class ReleaseService implements ReleaseAccess, VersionDistributionContrib
         return rings.findById(ringId).map(RingEntity::getCode);
     }
 
+    /**
+     * The approval-policy name of the ORGANIZATION-EFFECTIVE ring for
+     * this ring id (S10-04, issue #43): the row resolved
+     * organization-preferred (the V24 shadowing contract — a system
+     * ring an organization redefined under the same code answers the
+     * organization ring), and its {@code approval_policy} when present.
+     * The approval engine's ring leg (the precedence chain's first
+     * named binding).
+     */
+    @Override
+    @Transactional(readOnly = true)
+    public Optional<String> ringApprovalPolicyNameOf(UUID organizationId, UUID ringId) {
+        return rings.findById(ringId)
+                .flatMap(ring -> rings.byCode(ring.getCode(), organizationId))
+                .map(RingEntity::getApprovalPolicy)
+                .filter(policy -> policy != null && !policy.isBlank());
+    }
+
     // -------------------------------------------------------------------------
     // Views
     // -------------------------------------------------------------------------

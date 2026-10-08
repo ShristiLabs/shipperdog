@@ -838,21 +838,41 @@ public class ApprovalWorkflowService implements ReleaseApprovalSource {
     // -------------------------------------------------------------------------
 
     /**
-     * The definition a release resolves (the attachment precedence):
-     * the targeted environment's NAMED policy first (V27's binding —
-     * the most specific deployment context), else the starting ring's
-     * chain. Since S10-02 a named policy that does not resolve FAILS
-     * CLOSED: the organization bound a policy by name, and silently
-     * running a different (possibly weaker) chain would be the
-     * fail-open hole the #40 review flagged — the crossing refuses
-     * with {@code APPROVAL_POLICY_UNRESOLVED} and the release stays
-     * one status earlier until the binding or the definition is
-     * fixed. An environment that binds NOTHING falls through to the
-     * ring chain: absence is not misconfiguration (both legs are
-     * explicit configuration, and the ring chain is the organization's
-     * own default).
+     * The definition a release resolves (the attachment precedence,
+     * reconciled with the ring policies since S10-04, issue #43):
+     * the RING's named policy first — FR-017's "each ring carries its
+     * own approval policy" is the stage the release is being widened
+     * through, and if the environment's standing policy won instead,
+     * an organization that tightened its production ring would
+     * silently run the weaker chain at exactly the crossing that
+     * matters (the fail-open shape the #40 review flagged, at ring
+     * granularity) — then the targeted environment's NAMED policy
+     * (V27's binding, the release's own deployment context), then the
+     * ring's ATTACHED chains (V28's volunteer binding; the ring leg's
+     * organization-preferred resolution finds them under the shadowed
+     * code). A named policy that does not resolve FAILS CLOSED on
+     * both named legs: the organization bound a policy by name, and
+     * silently running a different (possibly weaker) chain would be
+     * the fail-open hole — the crossing refuses with {@code
+     * APPROVAL_POLICY_UNRESOLVED} and the release stays one status
+     * earlier until the binding or the definition is fixed. A leg
+     * that binds NOTHING falls through: absence is not
+     * misconfiguration (each leg is explicit configuration, and the
+     * ring chain is the organization's own default).
      */
     private Optional<ApprovalWorkflowEntity> resolveDefinitionFor(ReleaseAccess.ReleaseFacts facts) {
+        if (facts.ringId() != null) {
+            Optional<String> ringPolicy = releases.ringApprovalPolicyNameOf(facts.organizationId(), facts.ringId());
+            if (ringPolicy.isPresent()) {
+                return Optional.of(workflows
+                        .findByOrganizationIdAndName(facts.organizationId(), ringPolicy.get())
+                        .orElseThrow(() -> new WorkflowException(
+                                WorkflowException.Code.APPROVAL_POLICY_UNRESOLVED,
+                                "the ring's approval policy '" + ringPolicy.get()
+                                        + "' does not resolve to a defined workflow",
+                                Map.of("approvalPolicy", ringPolicy.get()))));
+            }
+        }
         if (facts.environmentId() != null) {
             Optional<String> policyName = environments.approvalPolicyNameOf(facts.environmentId());
             if (policyName.isPresent()) {

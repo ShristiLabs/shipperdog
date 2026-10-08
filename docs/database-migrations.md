@@ -39,6 +39,7 @@ backend/src/main/resources/db/
     V29__approval_modes.sql
     V30__approval_skipped_shape.sql
     V31__quality_gates.sql
+    V32__release_rings.sql
   seed/                 dev fixture, applied only when the seed location is active
     R__dev_seed.sql
 ```
@@ -574,6 +575,21 @@ backend/src/main/resources/db/
   when; the signed statuses (APPROVED/REJECTED) carry the full
   signature. Every existing row satisfies the new legs unchanged, so
   the drop-and-re-add carries no data.
+
+- `V32__release_rings.sql` (S10-04, issue #43) gives the V24 rings
+  reference table its PRD 8.10 behavior columns — `eligibility`
+  (jsonb, NULL = unconstrained; the service validates the shape and
+  the organization membership of every id), the NAME-ONLY
+  `approval_policy` and `distribution_channel` references (the V27
+  environments precedent — not foreign keys, so renaming a workflow
+  never strands a ring row; an unresolved policy name fails closed at
+  resolution), and `promotion_policy` (`MANUAL`/`AUTOMATIC`, default
+  MANUAL — AUTOMATIC acts with S10-06) — then materializes FR-017's
+  five defaults organization-grain for every EXISTING organization
+  (CROSS JOIN ... ON CONFLICT DO NOTHING, the V27 precedent); new
+  organizations seed through the API's creation hook
+  (`RingProvisioning`). The V24 system rows stay untouched as the
+  read-only fallback vocabulary. Expand-only and forward-only.
 
 ## Status and type columns
 
