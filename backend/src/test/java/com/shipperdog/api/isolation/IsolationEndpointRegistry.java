@@ -458,6 +458,45 @@ final class IsolationEndpointRegistry {
                         side -> "/api/v1/approval-workflows/" + UUID.randomUUID() + "?organizationId="
                                 + UUID.randomUUID()),
 
+                // Gate definitions (S10-03) ---------------------------------------
+                // org:gate-definitions:read is organization-grain (the
+                // RBAC matrix): the owning ORG_ADMIN lists (an empty page
+                // in the seeded world — no definition exists), the tenant
+                // persona conceals through the organization-grain
+                // permission check.
+                surface(
+                        "/api/v1/gate-definitions",
+                        side -> "/api/v1/gate-definitions?organizationId=" + side.organizationId(),
+                        200,
+                        404,
+                        side -> "/api/v1/gate-definitions?organizationId=" + UUID.randomUUID()),
+                // The gate definition item route (S10-03): the seeded
+                // world holds no definition, so own and miss probes share
+                // the route's miss shape; concealment of a REAL foreign
+                // definition is pinned with live definitions by the
+                // S10-03 gate suite.
+                surface(
+                        "/api/v1/gate-definitions/{definitionId}",
+                        side -> "/api/v1/gate-definitions/" + UUID.randomUUID() + "?organizationId="
+                                + side.organizationId(),
+                        404,
+                        404,
+                        side -> "/api/v1/gate-definitions/" + UUID.randomUUID() + "?organizationId="
+                                + UUID.randomUUID()),
+                // The release gates route (S10-03): the seeded world
+                // holds no release, so own-side probes address a random
+                // release id (the history route's rationale — the miss
+                // shape IS the correct own answer), and concealment of a
+                // REAL foreign release's gates is pinned with live
+                // releases by the S10-03 gate suite.
+                surface(
+                        "/api/v1/releases/{releaseId}/gates",
+                        side -> "/api/v1/releases/" + UUID.randomUUID() + "/gates?applicationId="
+                                + side.applicationId(),
+                        404,
+                        404,
+                        side -> "/api/v1/releases/" + UUID.randomUUID() + "/gates?applicationId=" + UUID.randomUUID()),
+
                 // Environments (S9-04) ---------------------------------------------
                 // org:environments:read is organization-grain (the RBAC
                 // matrix): the owning ORG_ADMIN lists the seeded defaults

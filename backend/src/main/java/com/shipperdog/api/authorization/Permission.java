@@ -57,6 +57,11 @@ public enum Permission {
     // governance configuration (the environments-manage personas).
     ORG_APPROVAL_WORKFLOWS_READ("org:approval-workflows:read"),
     ORG_APPROVAL_WORKFLOWS_MANAGE("org:approval-workflows:manage"),
+    // Issue #42 (S10-03): the required-gate definitions — the same
+    // governance personas (PRD 32's quality-gate block is the release
+    // governance surface the definitions configure).
+    ORG_GATE_DEFINITIONS_READ("org:gate-definitions:read"),
+    ORG_GATE_DEFINITIONS_MANAGE("org:gate-definitions:manage"),
 
     // tenant scope
     TENANT_TENANTS_READ("tenant:tenants:read"),
@@ -90,6 +95,13 @@ public enum Permission {
     // approval_step_role maps to exactly one approve permission.
     APP_RELEASES_APPROVE_PRODUCT("app:releases:approve-product"),
     APP_RELEASES_APPROVE_RELEASE("app:releases:approve-release"),
+    // Issue #42 (S10-03): the gate override — the governed exception
+    // path of FR-026 (a privileged role overrides a FAILED or NO_DATA
+    // gate with a mandatory, audited reason). Deliberately its own
+    // authority, not a leg of app:releases:manage: overriding a
+    // quality refusal is the exception the audit trail exists for,
+    // never a routine release-management act.
+    APP_RELEASES_GATE_OVERRIDE("app:releases:gate-override"),
     APP_TESTER_GROUPS_MANAGE("app:tester-groups:manage"),
     APP_FEEDBACK_READ("app:feedback:read");
 

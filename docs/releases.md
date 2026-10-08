@@ -415,6 +415,127 @@ Groups:      1 [ALL]     QA_ENGINEER
   crossing; the chain the policy verified and the chain the manifest
   froze are the same facts by construction.
 
+## Quality gates (S10-03)
+
+Promotion is mechanically blocked when quality criteria fail
+(FR-026, issue #42): required gates on rings and releases with
+recorded evidence, blocking semantics, and audited overrides. Gates
+are EVALUATED FACTS, not workflows — external systems submit results
+with evidence (FR-022: "external systems may submit"), the platform
+records and evaluates completeness, and the DECISION lives in the
+crossing: a required gate that is not passed refuses the VALIDATING to
+READY transition until it passes or someone overrides it. FR-026's
+"Approvals" gate is the approval workflow engine above — deliberately
+not duplicated here.
+
+### The model
+
+```text
+Gate definition "coverage-threshold"     (organization-grain)
+Required:    true
+Config:      {"threshold": 80}           (the expected result, as data)
+Ring:        qa                          (optional — PRD 33's per-ring gates)
+
+release_gates        the CURRENT state per release+gate ("latest wins")
+release_gate_results the append-only submission history (PRD P5)
+```
+
+- **The catalog** (`GateCatalog`, code — not rows): the FR-026
+  built-ins with their expected-result SCHEMAS — `unit-tests`,
+  `integration-tests`, `sast`, `dependency-scan`,
+  `mobile-security-scan` (PASS_FAIL: an externally reported binary
+  outcome), `coverage-threshold` (NUMERIC_MIN: a percentage the
+  definition's `threshold` pins), `crash-free-threshold` (NUMERIC_MIN,
+  metric-backed), and `open-critical-bugs` (COUNT_MAX: a ceiling,
+  typically 0, metric-backed). `gate_type` itself stays the V1 open
+  vocabulary (`varchar`, the ADR-0001-era decision `release_gates`
+  documents): an integration-defined kind is a legitimate definition
+  whose schema defaults to PASS_FAIL — a custom gate needs no platform
+  release to exist.
+- **Definitions** (`POST/PUT/GET /api/v1/gate-definitions`,
+  `org:gate-definitions:manage/read` — the same governance personas as
+  approval chains): a type of the open vocabulary, the required flag
+  (a non-required definition records results for visibility without
+  ever blocking), the config payload validated against the catalog's
+  schema for the type (a threshold 0-100 or a non-negative integer
+  ceiling; pass/fail kinds carry none), and the optional ring
+  attachment — PRD 33's rule that each ring carries its own gates. A
+  NULL ring is the organization-wide default; a ring-attached
+  definition of the same type OVERRIDES it for that ring (one
+  definition per org+type at each ring level, the precise 409). The
+  TYPE never moves on edit — it is the identity release rows key on.
+  Audited `GATE_DEFINITION_CREATED`/`_UPDATED`.
+- **Results** (`POST /api/v1/releases/{id}/gates/{gate}/result`,
+  `app:releases:manage` — the external-CI surface the CLI's
+  `shipperdog gate result` wires, the command S9-06 deferred to this
+  story): pass or fail, the MANDATORY evidence URL (an http(s) link a
+  human can follow), the submitter, and the observed value a
+  threshold/ceiling gate requires (the "Coverage 87% (threshold 80%)"
+  render — refused for pass/fail kinds). Idempotent per gate+release
+  as LATEST WINS: the current state mirrors the newest result while
+  the append-only `release_gate_results` history keeps every report.
+  Metric-backed types (`crash-free-threshold`, `open-critical-bugs`)
+  refuse submission outright — analytics owns their values.
+- **Metric gates fail closed** (AC4, the PRD 33 ethos):
+  metric-backed gates resolve their values from analytics AT
+  EVALUATION TIME through the `GateMetricSource` seam — the interface
+  ONLY in this story (S11-04's dependency-cycle break; that story will
+  register the single implementation). Until data exists the
+  evaluation records **NO_DATA** — a state DISTINCT from FAILED on the
+  dashboard (no data yet is not a bad result) that BLOCKS all the
+  same, until the data arrives or the gate is overridden. A value that
+  arrives is compared against the definition's threshold/ceiling and
+  the outcome recorded with source `METRIC`.
+- **Blocking** (AC3): the `ReleaseGatePolicy` contributor — the
+  second registrant on the S9-02 `ReleaseTransitionPolicy` seam —
+  refuses the VALIDATING to READY crossing while any required gate of
+  the release's ring is PENDING (nothing reported), FAILED (with its
+  evidence named), or NO_DATA (fail-closed); the 422's `errors` member
+  keys the refusal by the contributor with every blocking gate and its
+  reason. Gates never force the failure edge: VALIDATING to FAILED is
+  the operator's explicit crossing with its mandatory reason (S9-02's
+  rule) — gates are facts, the operator reads the refusal and acts.
+  An organization that defines no gates keeps the ungated machine
+  (FR-026's configurability). S10-05's ring promotion consults the
+  SAME evaluation through the `ReleaseGateEvaluation` port for the
+  TARGET ring (PRD 33: "promotion to the next ring automatically
+  evaluates the target ring's gates") — one evaluator, two consulters.
+- **The override** (`POST .../gates/{gate}/override`,
+  `app:releases:gate-override` — the Release Manager and Org Admin,
+  a DISTINCT authority from release management: overriding a quality
+  refusal is the governed exception, never a routine act): a FAILED
+  or NO_DATA gate stops blocking — exactly once, with the MANDATORY
+  reason, the actor, and the moment recorded on the row, rendered on
+  the dashboard, and audited as `RELEASE_GATE_OVERRIDDEN`. The row
+  keeps reporting the underlying state: an override never rewrites
+  what was reported, it governs only whether it still blocks.
+- **Instantiation**: the DRAFT to VALIDATING crossing instantiates
+  the ring's expected gate rows (PENDING) and resolves its
+  metric-backed required gates (NO_DATA until analytics answers)
+  INSIDE the crossing's transaction — the `ApprovalRoundListener`
+  precedent, so the dashboard's "awaiting result" set exists from the
+  moment the validation phase opens and a refused later crossing
+  rolls nothing back. Definitions attached after the crossing
+  instantiate at the first evaluation consult; the read derives the
+  expected set live either way.
+- **The dashboard feed** (`GET /api/v1/releases/{id}/gates`,
+  `app:releases:read`): every expected gate of the release's ring
+  beside every recorded result of gates outside the expected set (the
+  open vocabulary's integration-reported kinds) — states (PASSED,
+  FAILED, NO_DATA, PENDING, or null for expected-but-never-touched),
+  observed values against thresholds, evidence links, override
+  records, and the full history newest first. The S9-05 dashboard
+  renders this block per PRD 32 (✓/✗ with evidence links); the
+  console's override action and the CLI's `gate list` read the same
+  feed.
+- **Audits** (AC6): `RELEASE_GATE_RESULT_RECORDED` per report — the
+  outcome member carries pass and fail, the source member says
+  whether an external system submitted it or the evaluation resolved
+  it from analytics — and `RELEASE_GATE_OVERRIDDEN` with the mandatory
+  reason. Foreign releases conceal exactly like unknown ids through
+  every gate surface (the seam-served release resolution, the release
+  surface's standing).
+
 ## The frozen manifest (S9-03)
 
 Every release carries PRD 16's reproducibility artifact: a complete,
@@ -539,3 +660,13 @@ state-dependent miss), `RELEASE_MANIFEST_IMMUTABLE` (409), and
 `RELEASE_MANIFEST_CORRUPT` (500, the loud integrity failure), and the
 S9-04 environment values `ENVIRONMENT_NOT_FOUND` (404, the concealed
 environment miss of creation) and `ENVIRONMENT_DISABLED` (409).
+
+Since S10-03 the `RELEASE_TRANSITION_BLOCKED` refusals key a SECOND
+contributor beside the approval policy: `ReleaseGatePolicy` names the
+release's blocking quality gates (PENDING, FAILED with evidence, or
+the fail-closed NO_DATA) inside its denial message, and the gate
+surface's own codes — `GATE_DEFINITION_NOT_FOUND`,
+`GATE_DEFINITION_EXISTS`, `GATE_RESULT_INVALID` (422),
+`GATE_METRIC_BACKED` (422, the fail-closed metric kinds), and
+`GATE_OVERRIDE_INVALID` (409) — are registered in the [error
+codes](error-codes.md) gate section.

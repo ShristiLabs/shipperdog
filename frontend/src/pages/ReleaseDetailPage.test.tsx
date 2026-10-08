@@ -318,6 +318,16 @@ function notFound(code = "RELEASE_NOT_FOUND") {
   return { title: "Not Found", status: 404, code, detail: "Resource not found." };
 }
 
+/** The gate block an ungated ring answers: no expected set, no
+ * reported results — the honest empty (gates are configurable). */
+const GATES_EMPTY = {
+  releaseId: RELEASE_ID,
+  releaseRef: "R-101",
+  status: "DRAFT",
+  ring: "engineering",
+  gates: [],
+};
+
 function renderDetail(detail = DETAIL_DRAFT, extraRoutes: Parameters<typeof installFetchRouter>[0] = []) {
   // The fetch router matches in order, so overrides ride ahead of the
   // defaults (the manifest stub below is the honest 404 a pre-APPROVED
@@ -332,6 +342,12 @@ function renderDetail(detail = DETAIL_DRAFT, extraRoutes: Parameters<typeof inst
     },
     { method: "GET", url: `/api/v1/releases/${RELEASE_ID}/history`, status: 200, body: HISTORY },
     ...extraRoutes,
+    {
+      method: "GET",
+      url: `/api/v1/releases/${RELEASE_ID}/gates`,
+      status: 200,
+      body: GATES_EMPTY,
+    },
     {
       method: "GET",
       url: `/api/v1/releases/${RELEASE_ID}/manifest`,
@@ -371,8 +387,10 @@ describe("ReleaseDetailPage", () => {
     expect(screen.getByTestId("artifacts-section")).toHaveTextContent(ARTIFACT_ID);
     expect(screen.getByTestId("artifacts-section")).toHaveTextContent("freeze at APPROVED");
 
-    // E10 subsystems render their empty states, not dead sections.
-    expect(screen.getByTestId("gates-empty")).toBeInTheDocument();
+    // E10 subsystems render their empty states, not dead sections:
+    // the gates block answers its honest empty (nothing required for
+    // the ring, nothing reported) asynchronously with the release.
+    expect(await screen.findByTestId("gates-empty")).toBeInTheDocument();
     // The approvals block resolves its honest 404 (no bound policy)
     // asynchronously — the live state loads with the release.
     expect(await screen.findByTestId("approvals-empty")).toBeInTheDocument();
@@ -785,5 +803,233 @@ describe("ReleaseDetailPage", () => {
       applicationId: APPLICATION_ID,
     });
     expect(await screen.findByText(/Approval round restarted/)).toBeInTheDocument();
+  });
+
+  // ---------------------------------------------------------------------
+  // Quality gates (S10-03): the live §32 block
+  // ---------------------------------------------------------------------
+
+  it("renders the live gate block: states, thresholds, evidence, and the override record (S10-03)", async () => {
+    renderDetail(
+      { ...DETAIL_DRAFT, status: "VALIDATING" },
+      [
+        {
+          method: "GET",
+          url: `/api/v1/releases/${RELEASE_ID}/gates`,
+          status: 200,
+          body: {
+            releaseId: RELEASE_ID,
+            releaseRef: "R-101",
+            status: "VALIDATING",
+            ring: "qa",
+            gates: [
+              {
+                gateType: "unit-tests",
+                required: true,
+                attached: true,
+                schema: "PASS_FAIL",
+                metricBacked: false,
+                status: "PASSED",
+                observedValue: null,
+                threshold: null,
+                evidenceUrl: "https://ci.internal/run/9/tests",
+                source: "SUBMITTED",
+                submittedBy: ACTOR_ID,
+                evaluatedAt: "2026-10-03T10:00:00Z",
+                overridden: false,
+                overriddenBy: null,
+                overriddenReason: null,
+                overriddenAt: null,
+                history: [
+                  {
+                    outcome: "PASSED",
+                    observedValue: null,
+                    evidenceUrl: "https://ci.internal/run/9/tests",
+                    submittedBy: ACTOR_ID,
+                    source: "SUBMITTED",
+                    recordedAt: "2026-10-03T10:00:00Z",
+                  },
+                ],
+              },
+              {
+                gateType: "coverage-threshold",
+                required: true,
+                attached: true,
+                schema: "NUMERIC_MIN",
+                metricBacked: false,
+                status: "FAILED",
+                observedValue: 72.5,
+                threshold: 80,
+                evidenceUrl: "https://ci.internal/run/9/coverage",
+                source: "SUBMITTED",
+                submittedBy: ACTOR_ID,
+                evaluatedAt: "2026-10-03T10:00:00Z",
+                overridden: false,
+                overriddenBy: null,
+                overriddenReason: null,
+                overriddenAt: null,
+                history: [],
+              },
+              {
+                gateType: "crash-free-threshold",
+                required: true,
+                attached: true,
+                schema: "NUMERIC_MIN",
+                metricBacked: true,
+                status: "NO_DATA",
+                observedValue: null,
+                threshold: 99.5,
+                evidenceUrl: null,
+                source: "METRIC",
+                submittedBy: null,
+                evaluatedAt: "2026-10-03T10:00:00Z",
+                overridden: false,
+                overriddenBy: null,
+                overriddenReason: null,
+                overriddenAt: null,
+                history: [],
+              },
+              {
+                gateType: "sast",
+                required: false,
+                attached: true,
+                schema: "PASS_FAIL",
+                metricBacked: false,
+                status: "PENDING",
+                observedValue: null,
+                threshold: null,
+                evidenceUrl: null,
+                source: null,
+                submittedBy: null,
+                evaluatedAt: null,
+                overridden: false,
+                overriddenBy: null,
+                overriddenReason: null,
+                overriddenAt: null,
+                history: [],
+              },
+              {
+                gateType: "open-critical-bugs",
+                required: true,
+                attached: true,
+                schema: "COUNT_MAX",
+                metricBacked: true,
+                status: "NO_DATA",
+                observedValue: null,
+                threshold: 0,
+                evidenceUrl: null,
+                source: "METRIC",
+                submittedBy: null,
+                evaluatedAt: "2026-10-03T10:00:00Z",
+                overridden: true,
+                overriddenBy: ACTOR_ID,
+                overriddenReason: "telemetry lag accepted for the pilot",
+                overriddenAt: "2026-10-03T11:00:00Z",
+                history: [],
+              },
+            ],
+          },
+        },
+      ],
+    );
+
+    const section = await screen.findByTestId("gates-section");
+    expect(section).toHaveTextContent("Quality gates");
+
+    // PASSED with its evidence link (the block loads with the release).
+    const passed = within(await screen.findByTestId("gate-unit-tests"));
+    expect(passed.getByText("passed")).toBeInTheDocument();
+    expect(passed.getByTestId("gate-evidence-unit-tests").getAttribute("href")).toBe(
+      "https://ci.internal/run/9/tests",
+    );
+
+    // FAILED: BLOCKED (required, not overridden), the observed value
+    // beside the threshold — the "Coverage 72.5 (threshold 80)" render.
+    const failed = within(screen.getByTestId("gate-coverage-threshold"));
+    expect(failed.getByText("failed")).toBeInTheDocument();
+    expect(failed.getByText("BLOCKED")).toBeInTheDocument();
+    expect(failed.getByText("72.5 (threshold 80)")).toBeInTheDocument();
+
+    // NO_DATA renders distinctly from failed — the fail-closed state —
+    // and still blocks; the metric source note rides beside it.
+    const noData = within(screen.getByTestId("gate-crash-free-threshold"));
+    expect(noData.getByText("no data yet (fail-closed)")).toBeInTheDocument();
+    expect(noData.getByText("BLOCKED")).toBeInTheDocument();
+    expect(noData.getByText("from analytics")).toBeInTheDocument();
+    expect(noData.getByText("threshold 99.5")).toBeInTheDocument();
+
+    // PENDING: the honest not-reported state; an advisory gate never
+    // blocks, so no BLOCKED chip rides it.
+    const pending = within(screen.getByTestId("gate-sast"));
+    expect(pending.getByText("not reported yet")).toBeInTheDocument();
+    expect(pending.queryByText("BLOCKED")).not.toBeInTheDocument();
+    expect(screen.getByTestId("gate-sast")).toHaveTextContent("sast (advisory)");
+
+    // The override record: actor resolved through the roster, the
+    // mandatory reason, and no BLOCKED chip — the override governs.
+    const overridden = within(screen.getByTestId("gate-open-critical-bugs"));
+    expect(overridden.getByText("overridden")).toBeInTheDocument();
+    expect(overridden.getByText(/ShipperDog Dev Admin/)).toBeInTheDocument();
+    expect(overridden.getByText(/telemetry lag accepted for the pilot/)).toBeInTheDocument();
+    expect(overridden.queryByText("BLOCKED")).not.toBeInTheDocument();
+  });
+
+  it("overrides a blocking gate with the mandatory reason and posts the governed exception (S10-03)", async () => {
+    const gate = {
+      gateType: "sast",
+      required: true,
+      attached: true,
+      schema: "PASS_FAIL",
+      metricBacked: false,
+      status: "FAILED",
+      observedValue: null,
+      threshold: null,
+      evidenceUrl: "https://ci.internal/run/9/sast",
+      source: "SUBMITTED",
+      submittedBy: ACTOR_ID,
+      evaluatedAt: "2026-10-03T10:00:00Z",
+      overridden: false,
+      overriddenBy: null,
+      overriddenReason: null,
+      overriddenAt: null,
+      history: [],
+    };
+    renderDetail(
+      { ...DETAIL_DRAFT, status: "VALIDATING" },
+      [
+        {
+          method: "GET",
+          url: `/api/v1/releases/${RELEASE_ID}/gates`,
+          status: 200,
+          body: { releaseId: RELEASE_ID, releaseRef: "R-101", status: "VALIDATING", ring: "qa", gates: [gate] },
+        },
+        {
+          method: "POST",
+          url: `/api/v1/releases/${RELEASE_ID}/gates/sast/override`,
+          status: 200,
+          body: { ...gate, overridden: true, overriddenBy: ACTOR_ID, overriddenReason: "finding is a false positive" },
+        },
+      ],
+    );
+
+    // The override dialog demands its reason: the submit stays
+    // disabled until one is written (a rejection is never anonymous,
+    // and neither is an override).
+    await user.click(await screen.findByTestId("override-sast"));
+    const submit = screen.getByTestId("override-submit");
+    expect(submit).toBeDisabled();
+    await user.type(screen.getByTestId("override-reason"), "finding is a false positive");
+    expect(submit).toBeEnabled();
+    await user.click(submit);
+
+    const overrideCall = fetchCalls().find(
+      ([url]) => url === `/api/v1/releases/${RELEASE_ID}/gates/sast/override`,
+    );
+    expect(overrideCall).toBeDefined();
+    expect(JSON.parse((overrideCall![1] as RequestInit).body as string)).toEqual({
+      applicationId: APPLICATION_ID,
+      reason: "finding is a false positive",
+    });
+    expect(await screen.findByText(/Gate sast overridden/)).toBeInTheDocument();
   });
 });

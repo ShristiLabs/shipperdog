@@ -385,12 +385,14 @@ func newReleaseGetCmd() *cobra.Command {
 	)
 	cmd := &cobra.Command{
 		Use:   "get <release>",
-		Short: "Read a release (status, artifacts, targets, ring)",
+		Short: "Read a release (status, artifacts, targets, ring, gates)",
 		Long: "GET /api/v1/releases/{id}: the full creation record - status, per-platform\n" +
-			"artifact selection, the complete target set, ring and environment. Gates\n" +
-			"render their honest not-yet-reported state until the S10-03 gate subsystem\n" +
-			"lands; approvals are live since S10-02 (issue #41) - the transition\n" +
-			"refusal names pending approvals, and the console renders the rounds.\n" +
+			"artifact selection, the complete target set, ring and environment - with\n" +
+			"the live quality-gate block (S10-03, issue #42) appended: per-gate\n" +
+			"states (passed, failed, no-data fail-closed, not-reported), thresholds,\n" +
+			"evidence links, and override records. Approvals render in the console\n" +
+			"(the CLI approval surface stays with its own stories); a blocked READY\n" +
+			"crossing's refusal names the blocking gates either way.\n" +
 			"<release> is the quotable id (R-1028, r1028, 1028) or a\n" +
 			"uuid; --app (name or uuid) skips the cross-application lookup. --json emits\n" +
 			"the release detail verbatim for pipeline decisions.",
@@ -400,7 +402,11 @@ func newReleaseGetCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			_, detail, err := resolveReleaseFor(cmd.Context(), client, appRef, args[0])
+			app, detail, err := resolveReleaseFor(cmd.Context(), client, appRef, args[0])
+			if err != nil {
+				return err
+			}
+			gates, err := client.GetReleaseGates(cmd.Context(), app.ID, detail.ID)
 			if err != nil {
 				return err
 			}
@@ -408,6 +414,7 @@ func newReleaseGetCmd() *cobra.Command {
 				return output.JSON(cmd.OutOrStdout(), detail)
 			}
 			output.Line(cmd.OutOrStdout(), renderRelease(detail))
+			output.Line(cmd.OutOrStdout(), renderReleaseGates(gates))
 			return nil
 		},
 	}

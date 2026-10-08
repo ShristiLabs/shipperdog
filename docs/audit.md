@@ -124,7 +124,25 @@ document frozen in the APPROVED crossing's committing transaction,
 carrying `releaseRef`, the manifest's `sha256` content digest (the
 value that pins WHAT the release shipped, AC4), the artifact and
 target counts, and the `ring`; exactly one per release ever — the
-document is write-once, so the event is too),
+document is write-once, so the event is too;
+`RELEASE_GATE_RESULT_RECORDED` — S10-03/issue #42: one quality-gate
+result recorded for a release, carrying `releaseRef`, `gateType`,
+`outcome` (PASSED/FAILED as an external system submitted, or
+PASSED/FAILED/NO_DATA as the evaluation resolved a metric-backed gate
+from analytics — the `source` member says which), `evidenceUrl`, and
+the `observedValue` of a threshold/ceiling gate; the submission,
+pass, and fail events of the story's AC6 are this one event's outcome
+member — one record per report, the append-only history behind the
+current state's "latest wins"; and
+`RELEASE_GATE_OVERRIDDEN` — S10-03/issue #42: the governed exception
+of FR-026 — a blocking (FAILED or NO_DATA) gate overridden, carrying
+`releaseRef`, `gateType`, the overridden `state`, and the MANDATORY
+`reason` with the actor; the row keeps reporting the underlying
+state, the override governs only whether it still blocks; beside the
+definition surface's `GATE_DEFINITION_CREATED`/`GATE_DEFINITION_UPDATED`
+— the required-gate catalog an organization defines, carrying
+`gateType`, `required`, the expected-result `config`, and the `ring`
+attachment),
 artifact (`ARTIFACT_UPLOAD_SESSION_CREATED` — issue #20/S5-01: the
 resumable direct-to-storage handoff is granted, carrying the
 pre-allocated `artifactId` entity reference with `platform`,

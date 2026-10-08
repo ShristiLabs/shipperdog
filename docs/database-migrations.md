@@ -38,6 +38,7 @@ backend/src/main/resources/db/
     V28__approval_workflows.sql
     V29__approval_modes.sql
     V30__approval_skipped_shape.sql
+    V31__quality_gates.sql
   seed/                 dev fixture, applied only when the seed location is active
     R__dev_seed.sql
 ```

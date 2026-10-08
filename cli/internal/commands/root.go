@@ -31,7 +31,7 @@ func NewRoot() *cobra.Command {
 		return &UsageError{msg: err.Error()}
 	})
 
-	root.AddCommand(newLoginCmd(), newLogoutCmd(), newArtifactCmd(), newVersionCmd(), newReleaseCmd())
+	root.AddCommand(newLoginCmd(), newLogoutCmd(), newArtifactCmd(), newVersionCmd(), newReleaseCmd(), newGateCmd())
 	return root
 }
 

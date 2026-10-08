@@ -148,5 +148,28 @@ public enum AuditEventType {
      * rounds already run keep their frozen per-step copies (later rounds, including rework
      * restarts, instantiate the definition's current content).
      */
-    APPROVAL_WORKFLOW_UPDATED
+    APPROVAL_WORKFLOW_UPDATED,
+    /**
+     * A gate definition created (S10-03, FR-026): the gate type of the open vocabulary, the required
+     * flag, the expected-result config (a coverage threshold, a critical-bug ceiling), and the ring
+     * attachment when present — the required-gate catalog an organization defines.
+     */
+    GATE_DEFINITION_CREATED,
+    /** A gate definition edited (S10-03, FR-026): the changed required flag, config, and ring attachment. */
+    GATE_DEFINITION_UPDATED,
+    /**
+     * One gate result recorded (S10-03, FR-026, AC6): the release, the gate type, the outcome —
+     * PASSED or FAILED as an external system submitted it, or NO_DATA/PASSED/FAILED as the
+     * evaluation resolved it from analytics (the source member says which) — with the evidence URL
+     * and the observed value. The submission, pass, and fail events of the AC are this one event's
+     * outcome member: one record per report, the append-only history behind the current state.
+     */
+    RELEASE_GATE_RESULT_RECORDED,
+    /**
+     * A blocking gate overridden (S10-03, FR-026, AC6): the release, the gate, the state overridden
+     * (FAILED or NO_DATA), and the MANDATORY reason — the governed exception FR-026 demands,
+     * recorded with the actor; the row keeps reporting the underlying state, the override governs
+     * only whether it still blocks.
+     */
+    RELEASE_GATE_OVERRIDDEN
 }

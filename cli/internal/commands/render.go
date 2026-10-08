@@ -138,8 +138,7 @@ func renderRelease(d *api.ReleaseDetail) string {
 			fmt.Fprintf(&b, "    %s: tenant at large\n", target.TenantID)
 		}
 	}
-	fmt.Fprintf(&b, "  Gates:       not yet reported (quality gates arrive with S10-03)\n")
-	fmt.Fprintf(&b, "  Approvals:   not yet recorded (approval workflows arrive with S10-01)\n")
+	fmt.Fprintf(&b, "  Gates:       run 'shipperdog gate list %s' (or see this get's gate block)\n", d.ReleaseRef)
 	fmt.Fprintf(&b, "  Created:     %s by %s\n", d.CreatedAt, d.CreatedBy)
 	fmt.Fprintf(&b, "  Updated:     %s\n", d.UpdatedAt)
 	return b.String()

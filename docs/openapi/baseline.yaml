@@ -374,6 +374,61 @@ paths:
             '*/*':
               schema:
                 $ref: "#/components/schemas/IdpConfig"
+  /api/v1/gate-definitions/{definitionId}:
+    get:
+      tags:
+      - gate-controller
+      operationId: get_3
+      parameters:
+      - name: definitionId
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - name: organizationId
+        in: query
+        required: true
+        schema:
+          type: string
+          format: uuid
+      responses:
+        "200":
+          description: OK
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/DefinitionView"
+    put:
+      tags:
+      - gate-controller
+      operationId: update_2
+      parameters:
+      - name: definitionId
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - name: organizationId
+        in: query
+        required: true
+        schema:
+          type: string
+          format: uuid
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateRequest"
+        required: true
+      responses:
+        "200":
+          description: OK
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/DefinitionView"
   /api/v1/environments/{environmentId}/tenants:
     get:
       tags:
@@ -558,7 +613,7 @@ paths:
     get:
       tags:
       - workflow-controller
-      operationId: get_3
+      operationId: get_4
       parameters:
       - name: workflowId
         in: path
@@ -582,7 +637,7 @@ paths:
     put:
       tags:
       - workflow-controller
-      operationId: update_2
+      operationId: update_3
       parameters:
       - name: workflowId
         in: path
@@ -1155,6 +1210,66 @@ paths:
             '*/*':
               schema:
                 $ref: "#/components/schemas/ReleaseDetail"
+  /api/v1/releases/{releaseId}/gates/{gateType}/result:
+    post:
+      tags:
+      - gate-controller
+      operationId: submit
+      parameters:
+      - name: releaseId
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - name: gateType
+        in: path
+        required: true
+        schema:
+          type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ResultRequest"
+        required: true
+      responses:
+        "200":
+          description: OK
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/GateView"
+  /api/v1/releases/{releaseId}/gates/{gateType}/override:
+    post:
+      tags:
+      - gate-controller
+      operationId: override
+      parameters:
+      - name: releaseId
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - name: gateType
+        in: path
+        required: true
+        schema:
+          type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/OverrideRequest"
+        required: true
+      responses:
+        "200":
+          description: OK
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/GateView"
   /api/v1/releases/{releaseId}/approvals:
     get:
       tags:
@@ -1269,11 +1384,62 @@ paths:
             '*/*':
               schema:
                 $ref: "#/components/schemas/OrganizationResponse"
+  /api/v1/gate-definitions:
+    get:
+      tags:
+      - gate-controller
+      operationId: list_6
+      parameters:
+      - name: organizationId
+        in: query
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - name: ring
+        in: query
+        required: false
+        schema:
+          type: string
+      - name: limit
+        in: query
+        required: false
+        schema:
+          type: string
+      - name: cursor
+        in: query
+        required: false
+        schema:
+          type: string
+      responses:
+        "200":
+          description: OK
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/PageResponseDefinitionView"
+    post:
+      tags:
+      - gate-controller
+      operationId: create_6
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateRequest"
+        required: true
+      responses:
+        "201":
+          description: Created
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/DefinitionView"
   /api/v1/environments:
     get:
       tags:
       - environment-controller
-      operationId: list_6
+      operationId: list_7
       parameters:
       - name: organizationId
         in: query
@@ -1301,7 +1467,7 @@ paths:
     post:
       tags:
       - environment-controller
-      operationId: create_6
+      operationId: create_7
       requestBody:
         content:
           application/json:
@@ -1650,7 +1816,7 @@ paths:
     get:
       tags:
       - workflow-controller
-      operationId: list_7
+      operationId: list_8
       parameters:
       - name: organizationId
         in: query
@@ -1678,7 +1844,7 @@ paths:
     post:
       tags:
       - workflow-controller
-      operationId: create_7
+      operationId: create_8
       requestBody:
         content:
           application/json:
@@ -1696,7 +1862,7 @@ paths:
     get:
       tags:
       - application-controller
-      operationId: list_8
+      operationId: list_9
       parameters:
       - name: organizationId
         in: query
@@ -1724,7 +1890,7 @@ paths:
     post:
       tags:
       - application-controller
-      operationId: create_8
+      operationId: create_9
       requestBody:
         content:
           application/json:
@@ -1797,7 +1963,7 @@ paths:
     get:
       tags:
       - version-controller
-      operationId: list_9
+      operationId: list_10
       parameters:
       - name: applicationId
         in: path
@@ -1835,7 +2001,7 @@ paths:
     post:
       tags:
       - version-controller
-      operationId: create_9
+      operationId: create_10
       parameters:
       - name: applicationId
         in: path
@@ -1916,7 +2082,7 @@ paths:
     get:
       tags:
       - environment-controller
-      operationId: get_4
+      operationId: get_5
       parameters:
       - name: environmentId
         in: path
@@ -1934,7 +2100,7 @@ paths:
     patch:
       tags:
       - environment-controller
-      operationId: update_3
+      operationId: update_4
       parameters:
       - name: environmentId
         in: path
@@ -1959,7 +2125,7 @@ paths:
     get:
       tags:
       - application-controller
-      operationId: get_5
+      operationId: get_6
       parameters:
       - name: id
         in: path
@@ -1977,7 +2143,7 @@ paths:
     patch:
       tags:
       - application-controller
-      operationId: update_4
+      operationId: update_5
       parameters:
       - name: id
         in: path
@@ -2002,7 +2168,7 @@ paths:
     get:
       tags:
       - tester-controller
-      operationId: get_6
+      operationId: get_7
       parameters:
       - name: id
         in: path
@@ -2095,7 +2261,7 @@ paths:
     get:
       tags:
       - authorization-grant-controller
-      operationId: get_7
+      operationId: get_8
       parameters:
       - name: id
         in: path
@@ -2217,7 +2383,7 @@ paths:
     get:
       tags:
       - tenant-applications-controller
-      operationId: list_10
+      operationId: list_11
       parameters:
       - name: id
         in: path
@@ -2246,7 +2412,7 @@ paths:
     get:
       tags:
       - release-controller
-      operationId: get_8
+      operationId: get_9
       parameters:
       - name: releaseId
         in: path
@@ -2353,6 +2519,31 @@ paths:
             '*/*':
               schema:
                 $ref: "#/components/schemas/ReleaseHistoryView"
+  /api/v1/releases/{releaseId}/gates:
+    get:
+      tags:
+      - gate-controller
+      operationId: gates
+      parameters:
+      - name: releaseId
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - name: applicationId
+        in: query
+        required: true
+        schema:
+          type: string
+          format: uuid
+      responses:
+        "200":
+          description: OK
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/GatesView"
   /api/v1/organizations/{id}/members:
     get:
       tags:
@@ -2641,6 +2832,10 @@ paths:
           - RELEASE_APPROVAL_GRANTED
           - RELEASE_APPROVAL_REJECTED
           - APPROVAL_WORKFLOW_UPDATED
+          - GATE_DEFINITION_CREATED
+          - GATE_DEFINITION_UPDATED
+          - RELEASE_GATE_RESULT_RECORDED
+          - RELEASE_GATE_OVERRIDDEN
       - name: applicationId
         in: query
         required: false
@@ -2692,7 +2887,7 @@ paths:
     get:
       tags:
       - artifact-controller
-      operationId: get_9
+      operationId: get_10
       parameters:
       - name: artifactId
         in: path
@@ -2742,7 +2937,7 @@ paths:
     get:
       tags:
       - application-tenant-authorization-controller
-      operationId: list_11
+      operationId: list_12
       parameters:
       - name: id
         in: path
@@ -2771,7 +2966,7 @@ paths:
     get:
       tags:
       - version-controller
-      operationId: get_10
+      operationId: get_11
       parameters:
       - name: applicationId
         in: path
@@ -3115,6 +3310,8 @@ components:
     JsonNode:
       type: object
       properties:
+        container:
+          type: boolean
         nodeType:
           type: string
           enum:
@@ -3158,8 +3355,6 @@ components:
           type: boolean
         binary:
           type: boolean
-        container:
-          type: boolean
         floatingPointNumber:
           type: boolean
         empty:
@@ -3181,6 +3376,37 @@ components:
           type: string
         config:
           $ref: "#/components/schemas/JsonNode"
+        updatedAt:
+          type: string
+          format: date-time
+    DefinitionView:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        organizationId:
+          type: string
+          format: uuid
+        gateType:
+          type: string
+        required:
+          type: boolean
+        config:
+          type: object
+          additionalProperties: {}
+        schema:
+          type: string
+        metricBacked:
+          type: boolean
+        ring:
+          type: string
+        createdBy:
+          type: string
+          format: uuid
+        createdAt:
+          type: string
+          format: date-time
         updatedAt:
           type: string
           format: date-time
@@ -3536,6 +3762,93 @@ components:
           format: uuid
         to:
           type: string
+        reason:
+          type: string
+    ResultRequest:
+      type: object
+      description: "The gate result submission body: application, outcome, evidence\
+        \ URL, and the observed value of a threshold/ceiling gate."
+      properties:
+        applicationId:
+          type: string
+          format: uuid
+        status:
+          type: string
+        evidenceUrl:
+          type: string
+        observedValue:
+          type: number
+          format: double
+    GateView:
+      type: object
+      properties:
+        gateType:
+          type: string
+        required:
+          type: boolean
+        attached:
+          type: boolean
+        schema:
+          type: string
+        metricBacked:
+          type: boolean
+        status:
+          type: string
+        observedValue:
+          type: number
+          format: double
+        threshold:
+          type: number
+          format: double
+        evidenceUrl:
+          type: string
+        source:
+          type: string
+        submittedBy:
+          type: string
+          format: uuid
+        evaluatedAt:
+          type: string
+          format: date-time
+        overridden:
+          type: boolean
+        overriddenBy:
+          type: string
+          format: uuid
+        overriddenReason:
+          type: string
+        overriddenAt:
+          type: string
+          format: date-time
+        history:
+          type: array
+          items:
+            $ref: "#/components/schemas/ResultView"
+    ResultView:
+      type: object
+      properties:
+        outcome:
+          type: string
+        observedValue:
+          type: number
+          format: double
+        evidenceUrl:
+          type: string
+        submittedBy:
+          type: string
+          format: uuid
+        source:
+          type: string
+        recordedAt:
+          type: string
+          format: date-time
+    OverrideRequest:
+      type: object
+      description: "The gate override body: application and the mandatory reason."
+      properties:
+        applicationId:
+          type: string
+          format: uuid
         reason:
           type: string
     DecisionRequest:
@@ -4498,6 +4811,22 @@ components:
         occurredAt:
           type: string
           format: date-time
+    GatesView:
+      type: object
+      properties:
+        releaseId:
+          type: string
+          format: uuid
+        releaseRef:
+          type: string
+        status:
+          type: string
+        ring:
+          type: string
+        gates:
+          type: array
+          items:
+            $ref: "#/components/schemas/GateView"
     PageResponseOrganizationResponse:
       type: object
       properties:
@@ -4505,6 +4834,15 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/OrganizationResponse"
+        next_cursor:
+          type: string
+    PageResponseDefinitionView:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/DefinitionView"
         next_cursor:
           type: string
     PageResponseEnvironmentView:
@@ -4834,6 +5172,10 @@ components:
           - RELEASE_APPROVAL_GRANTED
           - RELEASE_APPROVAL_REJECTED
           - APPROVAL_WORKFLOW_UPDATED
+          - GATE_DEFINITION_CREATED
+          - GATE_DEFINITION_UPDATED
+          - RELEASE_GATE_RESULT_RECORDED
+          - RELEASE_GATE_OVERRIDDEN
         occurredAt:
           type: string
           format: date-time

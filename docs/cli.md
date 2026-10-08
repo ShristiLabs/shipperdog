@@ -44,6 +44,9 @@ design.
 | `release transition` | `POST /api/v1/releases/{id}/transitions` (client mirrors the PRD 17 vocabulary and the FAILED/ROLLED_BACK reason rule; the server is the authority) |
 | `release promote` | successive `POST …/transitions` walking PRD 17's forward path to PROMOTED; the first refusal (409 current/attempted, 422 policy seam) stops the walk with the reason list and exit 4 |
 | `release manifest` | `GET /api/v1/releases/{id}/manifest?applicationId=…` (+`format=yaml` for the compliance export) |
+| `gate result` | `POST /api/v1/releases/{id}/gates/{gate}/result` (S10-03's CI ingestion — the command S9-06 deferred; `--status pass\|fail`, mandatory `--evidence-url`, `--value` for threshold/ceiling gates; latest wins with history) |
+| `gate list` | `GET /api/v1/releases/{id}/gates?applicationId=…` (the §32 block: states, thresholds, evidence, override records) |
+| `gate override` | `POST /api/v1/releases/{id}/gates/{gate}/override` (mandatory `--reason`; requires the `app:releases:gate-override` authority) |
 
 Name resolution: application and version arguments accept a UUID
 (direct read) or a name (resolved through the caller's organization
@@ -71,12 +74,14 @@ from every pre-PROMOTED state, so the walk is deterministic — the
 command is a sequence of ordinary transition calls, never a bypass.
 Refusals render the problem+json `errors` member as a reason list
 (the 409 carries `current`/`attempted`; the approval policies refuse
-through the same member, keyed by contributor, since S10-01 — the
-gate policies join at S10-03) and the command exits 4. `release get`
-renders gates as not-yet-reported until S10-03 lands; approvals are
-live since S10-02 — the refusal names pending approvals (the
-group-shaped waiting-on list), and the console renders the rounds and
-takes decisions (the CLI approval command surface remains a later
+through the same member, keyed by contributor, since S10-01, and the
+gate policies since S10-03 — a blocked READY crossing names every
+blocking gate and its reason) and the command exits 4. `release get`
+renders the live gate block since S10-03 (per-gate states, thresholds,
+evidence, override records; `gate list` is the dedicated read);
+approvals are live since S10-02 — the refusal names pending approvals
+(the group-shaped waiting-on list), and the console renders the rounds
+and takes decisions (the CLI approval command surface remains a later
 story).
 
 The CLI mirrors the server's upload routing rule locally
@@ -106,9 +111,8 @@ version-stamped tarballs as workflow-run artifacts.
 
 ## Deferred
 
-- Gate-result submission (`shipperdog gate result`, S10-03's ingestion
-  contract — S9-06's issue anticipated the API; it lands with E10, whose
-  story owns both the endpoint and the CLI wiring), manifest diff and
-  environment commands, CI action packaging (S12-03), and browser-flow
-  login (PATs are the M1 credential; `SHIPPERDOG_TOKEN` already covers
-  the scripted, no-disk case).
+- Manifest diff and environment commands, CI action packaging
+  (S12-03), and browser-flow login (PATs are the M1 credential;
+  `SHIPPERDOG_TOKEN` already covers the scripted, no-disk case). The
+  gate-result submission S9-06 deferred (`shipperdog gate result`,
+  with `gate list` and `gate override`) LANDED with S10-03.

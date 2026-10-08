@@ -277,13 +277,21 @@ func TestReleaseGetResolutionFormsAndJSON(t *testing.T) {
 		}}, "next_cursor": ""}
 	})
 	f.handleJSON("/api/v1/releases/"+relUUID, func() any { return detailJSON() })
+	// The gate block read rides every get since S10-03 (issue #42):
+	// this release's ring expects nothing and nothing was reported.
+	f.handleJSON("/api/v1/releases/"+relUUID+"/gates", func() any {
+		return map[string]any{
+			"releaseId": relUUID, "releaseRef": "R-1001", "status": "DRAFT", "ring": "engineering",
+			"gates": []map[string]any{},
+		}
+	})
 
 	for _, ref := range []string{"R-1001", "r1001", "1001", relUUID} {
 		f.stdout.Reset()
 		if err := runCLI(t, f, "release", "get", ref); err != nil {
 			t.Fatalf("get %s: %v", ref, err)
 		}
-		if !strings.Contains(f.out(), "R-1001") || !strings.Contains(f.out(), "not yet reported") {
+		if !strings.Contains(f.out(), "R-1001") || !strings.Contains(f.out(), "No gates required") {
 			t.Errorf("get %s output:\n%s", ref, f.out())
 		}
 	}
