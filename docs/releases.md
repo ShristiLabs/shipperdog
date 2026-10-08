@@ -8,8 +8,9 @@ hope". This page covers the model, the creation API and its validation,
 the reads, the lifecycle (S9-02, issue #56: PRD 17's state machine,
 its transitions API, history, and the rolled-back download cutoff),
 the frozen manifest (S9-03, issue #57: PRD 16's reproducibility
-document and its diff), and the two distribution probes the S9-01
-landing bound.
+document and its diff), the promotion engine (S10-05, issue #44:
+FR-018's governed ring-to-ring move, its precheck, and its timeline),
+and the two distribution probes the S9-01 landing bound.
 
 ## Model
 
@@ -30,8 +31,9 @@ Status:      DRAFT
   The manifest (PRD 16) has run since S9-03 — see
   [the frozen manifest](#the-frozen-manifest-s9-03); approval
   workflows (FR-016) have run since S10-01 — see
-  [approval workflows](#approval-workflows-s10-01-advanced-modes-s10-02); rings' promotion
-  behavior (PRD 8.10) is the rest of E10.
+  [approval workflows](#approval-workflows-s10-01-advanced-modes-s10-02);
+  ring-to-ring promotion (FR-018, PRD 8.10) has run since S10-05 — see
+  [promotion](#promotion--the-governed-ring-to-ring-move-s10-05).
 - **One release per application and version** (V1's
   `uq_releases_application_version` is the authority; a duplicate is the
   precise `409 RELEASE_ALREADY_EXISTS`). A version can exist without a
@@ -543,8 +545,10 @@ each release rolls out through an ordered ladder of rings, and each
 ring carries its own rules — who it admits (eligibility), which
 approval chain governs it (the policy reference), which gates it must
 pass (the gate set), how it promotes (manual or automatic), and where
-it ships (the channel reference). Ring-transition EXECUTION is S10-05;
-this landing is the model and the rules.
+it ships (the channel reference). Ring-transition EXECUTION landed
+with S10-05 — see
+[promotion](#promotion--the-governed-ring-to-ring-move-s10-05); this
+landing is the model and the rules.
 
 ### The model
 
@@ -645,11 +649,109 @@ at ring granularity.
 
 Gate results stay RING-AGNOSTIC: `release_gates` keeps one current
 row per release and gate type (latest wins) and the append-only
-history records every report. The promotion precheck (S10-05)
-evaluates the TARGET ring's required set live through
-`ReleaseGateEvaluation`; if per-ring evidence becomes a requirement,
-S10-05 stamps the ring onto new result rows — the history discipline
-is untouched either way.
+history records every report. The promotion engine (S10-05) evaluates
+the TARGET ring's required set live through `ReleaseGateEvaluation`
+against those ring-agnostic rows — the #42 decision held: no ring
+stamping shipped, latest-wins rows with append-only history serve
+every ring's evaluation.
+
+## Promotion — the governed ring-to-ring move (S10-05)
+
+One action widens distribution (FR-018, issue #44, PRD 8.10/17/18/33):
+`POST /api/v1/releases/{releaseId}/promote` moves a release's targets
+one ring forward in the organization's effective order — but only when
+every leg of the TARGET ring's evaluation passes. A refused attempt
+answers `409 RELEASE_PROMOTION_BLOCKED` carrying the COMPLETE blocker
+list (`gate:TYPE`, `approval`, `eligibility:TENANT`, and every
+registered policy's name — each with its evidence), having first
+recorded the refusal on the append-only promotions timeline (PRD 33's
+recorded evidence).
+
+- **The legs** (the target ring's own rules, evaluated live at the
+  moment of the call): its required GATES (S10-03's set, overrides
+  honored, each denial naming its evidence URL); its APPROVAL policy —
+  the ring's named policy ONLY (PRD 8.10's stage rule: the environment
+  and attached-chain legs bound the APPROVAL_PENDING crossing the
+  release already passed; an unresolved name FAILS CLOSED, the S10-02
+  decision); its ELIGIBILITY (the S10-04 widening seam — every moved
+  tenant the ring would exclude, with the admission arithmetic's own
+  reasons); and every registered `ReleasePromotionPolicy` (the S10-06
+  seam — none ships, so no contributor's denial can appear yet).
+- **The approval round the first attempt opens**: a promote against a
+  policy-gated ring with no usable round IS PRD 51's
+  PROMOTION_REQUESTED act — the attempt opens a round like any other,
+  marked with the ring it gates (`promotion_ring_id`, V33), and then
+  answers blocked on the round it opened (first-refusal-stops). The
+  round commits in its OWN transaction and survives the refused
+  attempt's 409 rollback — a governed fact of the attempt; the next
+  attempt answers PENDING on it until approvers decide (the workflow
+  module's existing decide route), then proceeds when SATISFIED. A
+  REJECTED round's rework path is the next promote attempt: it opens a
+  fresh round of the same frozen definition.
+- **Per-target rings, selective hops** (AC3): every target row carries
+  its own `ring_id`; a hop moves a SET — every target, or the
+  selective tenants the body names (staged rollout: Acme first,
+  Contoso later). A move set must sit on ONE ring — a staggered set is
+  the `RELEASE_PROMOTION_RING_SPLIT` refusal naming each tenant's
+  ring; promote per ring group.
+- **The skip posture** (AC6): the only hop is the effective order's
+  position+1 — disallow is the DEFAULT. A body naming a farther ring
+  is `RELEASE_PROMOTION_RING_SKIP` (the `errors` member carries
+  `next` and `named`); a name outside the vocabulary is the 400. The
+  relaxation knob is a promotion-policy registrant (S10-06); none
+  ships, so the documented posture stands for every organization.
+- **The service window and the crossing** (PRD 17): promotion serves
+  live distribution — ACTIVE, or PROMOTED (whose hops continue
+  widening rings without a second crossing). Anything else is
+  `RELEASE_PROMOTION_INVALID_STATE`. When a hop lands the final ring
+  for EVERY target, the release crosses ACTIVE to PROMOTED exactly
+  once, with the state machine's own ceremony (timeline row,
+  `RELEASE_TRANSITIONED` audit and event); COMPLETED stays the
+  operator's explicit crossing, unchanged.
+- **Transactions**: the orchestration is deliberately not one
+  transaction. The refused attempt's evidence row commits in its own
+  `REQUIRES_NEW` transaction (the 409's rollback must not discard it);
+  the approval round commits independently beside it; the hop itself
+  is ONE atomic transaction that re-runs the precheck inside it (the
+  transitions route's shape — a leg that went stale between the read
+  and the move answers the same 409, evidence recorded the same way).
+- **Concurrency**: the ring move is a compare-and-set — a concurrent
+  promotion that moved a target first answers the precise
+  `RELEASE_PROMOTION_CONFLICT` (never a partial hop). The CAS also
+  carries the release's status: an operator's rollback committing
+  between the promote read and the hop moves NOTHING — the hop answers
+  `RELEASE_PROMOTION_INVALID_STATE` from the committed status, and no
+  COMPLETED row, ring move, or `RELEASE_PROMOTED` audit lands after a
+  rollback. Two concurrent first attempts against a policy-gated ring
+  open exactly one round (the unique guard); the loser answers from
+  the committed state — the same blocked 409 the sequential second
+  attempt gets, never a 500.
+- **INV-008 is absolute** (PRD 9): the engine writes ring ids,
+  promotion rows, status history, audits, and events — never an
+  artifact column, never the manifest (frozen at APPROVED, served
+  stored); the integration suite pins the artifact SHA-256s and the
+  manifest digest unchanged across every hop.
+
+### One evaluation, three surfaces (the issue's technical note)
+
+`GET /api/v1/releases/{releaseId}/promotion-precheck?applicationId=…`
+is the same evaluation the promote act runs, answered as a read —
+nothing written, no round opened (the approval leg reports NOT_OPEN
+when a policy gates the ring and no round exists yet; the promote act
+opens it). The blocker map the 409 carries is byte-for-byte the
+precheck's render, so the console's "why can't I promote" screen and
+the CLI's refusal output are the API's own answer.
+`GET /api/v1/releases/{releaseId}/promotions?applicationId=…` is the
+append-only timeline the dashboard renders beside the status history:
+every COMPLETED hop (both rings, moved tenants, actor, whether it
+crossed) and every BLOCKED attempt (its complete evidence).
+
+### Tables (V33)
+
+| Table | Shape |
+|---|---|
+| `release_promotions` | uuid PK, `release_id` FK, `from_ring_id`/`to_ring_id` ring FKs (the refused attempt records the ring it would have entered; COMPLETED rows carry both ends), `tenants` (jsonb), `status` (`COMPLETED`/`BLOCKED`), `blockers` (jsonb, the complete list), `actor_id`, `occurred_at` — append-only |
+| `release_approval_rounds` (V28 + V33) | + nullable `promotion_ring_id` ring FK — the ring a promotion round gates the release INTO (NULL = the APPROVAL_PENDING crossing's own round; the engine resolves its round by release AND ring) |
 
 ## The frozen manifest (S9-03)
 
@@ -780,7 +882,15 @@ since S10-04 — the ring family (see the Ring section of the registry):
 `RING_IN_USE` (409), `RING_ELIGIBILITY_INVALID` / `RING_POSITION_INVALID`
 / `RING_PRODUCTION_POLICY_REQUIRED` / `RING_PRODUCTION_GATES_REQUIRED`
 (the 422 family, `errors` keyed), and `RING_NOT_FOUND` (404, the
-organization-grain ring miss).
+organization-grain ring miss), and — since S10-05 — the promotion
+family (issue #44; see the registry's release section for the full
+entries): `RELEASE_PROMOTION_BLOCKED` (409, the complete blocker list
+in the `errors` member), `RELEASE_PROMOTION_INVALID_STATE` (409,
+`current`/`required`), `RELEASE_PROMOTION_RING_SPLIT` (409, each
+tenant's ring), `RELEASE_PROMOTION_RING_FINAL` (409),
+`RELEASE_PROMOTION_RING_SKIP` (409, `next`/`named`), and
+`RELEASE_PROMOTION_CONFLICT` (409, the concurrent-writer CAS
+conflict).
 
 Since S10-03 the `RELEASE_TRANSITION_BLOCKED` refusals key a SECOND
 contributor beside the approval policy: `ReleaseGatePolicy` names the

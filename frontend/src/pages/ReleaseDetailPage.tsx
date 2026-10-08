@@ -10,9 +10,13 @@
  * its reason, and the governed override action — approvals (S10-02:
  * the bound policy's rounds with their group modes, the waiting-on
  * list, recorded signatures and skip rationales, decisions, and the
- * rework restart), distribution (the starting ring and target set;
- * ring promotion tracking is E10), the append-only state timeline
- * (S9-02 history with actors/timestamps/reasons), the frozen manifest
+ * rework restart), distribution (the starting ring, the per-target
+ * rings S10-05's promotion engine moves, and the governed promote
+ * action with its one-screen blocker answer — the precheck is the
+ * same evaluation the promote act runs, the 409's errors member
+ * verbatim), the append-only state timeline beside the promotions
+ * timeline (S10-05: every hop and every recorded refusal, with the
+ * actor trail — PRD 18), the frozen manifest
  * viewer with the YAML compliance render and the diff against another
  * APPROVED release of the same application. Lifecycle actions offer
  * PRD 17's legal edges; no read-shaped surface is keyed to
@@ -47,7 +51,7 @@ import {
   Typography,
 } from "@mui/material";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useMemo, useState } from "react";
+import { useMemo, useState, type ReactNode } from "react";
 import { Link, useParams } from "react-router-dom";
 import { ApiError } from "../api/problem";
 import {
@@ -66,14 +70,18 @@ import {
 } from "../api/workflows";
 import {
   getManifestDiff,
+  getPromotionHistory,
+  getPromotionPrecheck,
   getRelease,
   getReleaseHistory,
   getReleaseManifest,
   getReleaseManifestYaml,
   listReleases,
+  promoteRelease,
   transitionRelease,
   type ManifestArtifactPin,
   type ManifestDiff,
+  type PromotionPrecheck,
   type ReleaseDetail,
   type ReleaseManifest,
   type ReleaseStatus,
@@ -112,6 +120,11 @@ export default function ReleaseDetailPage() {
 
   const [reasonTarget, setReasonTarget] = useState<ReleaseStatus | null>(null);
   const [compareOpen, setCompareOpen] = useState(false);
+  const [precheckOpen, setPrecheckOpen] = useState(false);
+  // The last refused hop's complete blocker list (the 409's errors
+  // member) — rendered inline until the next attempt, so "why can't I
+  // promote" is answered on the release's own screen.
+  const [promotionBlockers, setPromotionBlockers] = useState<Record<string, string> | null>(null);
 
   const detail = useQuery({
     queryKey: ["release", releaseIdSafe],
@@ -182,6 +195,28 @@ export default function ReleaseDetailPage() {
     refetchInterval: REFRESH_MS,
   });
 
+  // The promotions timeline (S10-05, PRD 18): the append-only hop
+  // record beside the state timeline — AC5's dashboard render.
+  const promotions = useQuery({
+    queryKey: ["release-promotions", releaseIdSafe],
+    queryFn: () => getPromotionHistory(applicationIdSafe, releaseIdSafe),
+    enabled: applicationIdSafe !== "" && releaseIdSafe !== "" && release !== null,
+    retry: false,
+    refetchInterval: REFRESH_MS,
+  });
+
+  // The promotion precheck: the same evaluation the promote act runs,
+  // answered as a read. Served only while the release distributes
+  // (ACTIVE) — the engine's hop resolution refuses every other status,
+  // and a release sitting on the final ring has no next hop to check.
+  const precheck = useQuery({
+    queryKey: ["release-precheck", releaseIdSafe],
+    queryFn: () => getPromotionPrecheck(applicationIdSafe, releaseIdSafe),
+    enabled: applicationIdSafe !== "" && releaseIdSafe !== "" && release?.status === "ACTIVE",
+    retry: false,
+    refetchInterval: REFRESH_MS,
+  });
+
   const directory = useAllApplications(orgId);
   const tenants = useAllTenants(orgId);
   const roster = useAllOrgMembers(orgId);
@@ -204,6 +239,8 @@ export default function ReleaseDetailPage() {
     void queryClient.invalidateQueries({ queryKey: ["release-manifest-yaml", releaseIdSafe] });
     void queryClient.invalidateQueries({ queryKey: ["release-approvals", releaseIdSafe] });
     void queryClient.invalidateQueries({ queryKey: ["release-gates", releaseIdSafe] });
+    void queryClient.invalidateQueries({ queryKey: ["release-promotions", releaseIdSafe] });
+    void queryClient.invalidateQueries({ queryKey: ["release-precheck", releaseIdSafe] });
     void queryClient.invalidateQueries({ queryKey: ["releases"] });
   }
 
@@ -215,6 +252,29 @@ export default function ReleaseDetailPage() {
       toast.showSuccess(`${updated.releaseRef} is now ${RELEASE_STATUS_LABELS[updated.status]}`);
     },
     onError: toast.showError,
+  });
+
+  // The governed ring hop (S10-05). A refused hop is the product's
+  // credibility moment: the 409's errors member — the COMPLETE blocker
+  // list, every blocker named with its evidence — renders inline (the
+  // same evaluation the precheck dialog shows), never just a toast.
+  const promote = useMutation({
+    mutationFn: () => promoteRelease(applicationIdSafe, releaseIdSafe),
+    onSuccess: (result) => {
+      setPromotionBlockers(null);
+      invalidateRelease();
+      toast.showSuccess(
+        result.crossedToPromoted
+          ? `${result.releaseRef} promoted ${result.fromRing} -> ${result.toRing} and crossed to PROMOTED`
+          : `${result.releaseRef} promoted ${result.fromRing} -> ${result.toRing}`,
+      );
+    },
+    onError: (error) => {
+      if (error instanceof ApiError && error.fieldErrors) {
+        setPromotionBlockers(error.fieldErrors);
+      }
+      toast.showError(error);
+    },
   });
 
   const decide = useMutation({
@@ -396,7 +456,27 @@ export default function ReleaseDetailPage() {
       </Stack>
 
       <Paper variant="outlined" sx={{ padding: 2 }} data-testid="distribution-section">
-        <Typography variant="h6">Distribution</Typography>
+        <Stack direction="row" spacing={2} sx={{ alignItems: "center" }}>
+          <Typography variant="h6" sx={{ flexGrow: 1 }}>
+            Distribution
+          </Typography>
+          <Button
+            size="small"
+            disabled={release.status !== "ACTIVE" || promote.isPending}
+            onClick={() => promote.mutate()}
+            data-testid="promote-button"
+          >
+            Promote to next ring
+          </Button>
+          <Button
+            size="small"
+            disabled={release.status !== "ACTIVE"}
+            onClick={() => setPrecheckOpen(true)}
+            data-testid="precheck-button"
+          >
+            Why can&apos;t I promote?
+          </Button>
+        </Stack>
         <Stack direction="row" spacing={1} sx={{ alignItems: "center", marginTop: 1, flexWrap: "wrap" }}>
           <Typography color="text.secondary">Starting ring:</Typography>
           <Chip size="small" color="primary" variant="filled" label={release.ringName} />
@@ -408,8 +488,8 @@ export default function ReleaseDetailPage() {
           ) : null}
         </Stack>
         <Typography color="text.secondary" sx={{ marginTop: 1 }}>
-          Ring promotion tracking (PRD 32&apos;s per-ring states) lands with E10&apos;s ring
-          behavior; M2 pins the starting ring and the target set.
+          Each target carries its own ring; promote widens them one governed hop at a
+          time (the final ring carries the release to PROMOTED — PRD 17/18).
         </Typography>
         <Stack spacing={0.5} sx={{ marginTop: 1 }}>
           {release.targets.map((target) => (
@@ -428,6 +508,19 @@ export default function ReleaseDetailPage() {
             </Typography>
           ))}
         </Stack>
+        {promotionBlockers ? (
+          <Alert severity="warning" sx={{ marginTop: 2 }} data-testid="promotion-blockers">
+            <Typography variant="body2">
+              The promotion is blocked — the complete blocker list (recorded on the
+              promotion timeline):
+            </Typography>
+            {Object.entries(promotionBlockers).map(([key, message]) => (
+              <Typography variant="body2" key={key} sx={{ display: "list-item", marginLeft: 2 }}>
+                <strong>{key}</strong>: {message}
+              </Typography>
+            ))}
+          </Alert>
+        ) : null}
       </Paper>
 
       <Paper variant="outlined" sx={{ padding: 2 }} data-testid="timeline-section">
@@ -465,6 +558,50 @@ export default function ReleaseDetailPage() {
               </Step>
             ))}
           </Stepper>
+        )}
+      </Paper>
+
+      <Paper variant="outlined" sx={{ padding: 2 }} data-testid="promotions-section">
+        <Typography variant="h6">Promotion timeline</Typography>
+        {promotions.isError ? (
+          <Alert severity="error">Failed to load the promotion history.</Alert>
+        ) : promotions.isPending ? (
+          <Typography aria-busy="true">Loading promotions...</Typography>
+        ) : promotions.data && promotions.data.promotions.length > 0 ? (
+          <Stack spacing={1} sx={{ marginTop: 1 }} data-testid="promotion-rows">
+            {promotions.data.promotions.map((record) => (
+              <Stack key={record.id} spacing={0.25} data-testid="promotion-row">
+                <Stack direction="row" spacing={1} sx={{ alignItems: "center", flexWrap: "wrap" }}>
+                  <Chip
+                    size="small"
+                    color={record.status === "COMPLETED" ? "success" : "warning"}
+                    label={record.status === "COMPLETED" ? "hop" : "blocked"}
+                  />
+                  <Typography variant="body2">
+                    {record.fromRing} → {record.toRing ?? "-"} ·{" "}
+                    {record.tenants
+                      .map((tenantId) => tenantNameById.get(tenantId) ?? tenantId)
+                      .join(", ")}
+                  </Typography>
+                </Stack>
+                <Typography variant="body2" color="text.secondary">
+                  {memberNameById.get(record.actorId) ?? record.actorId} ·{" "}
+                  {new Date(record.occurredAt).toLocaleString()}
+                </Typography>
+                {record.blockers && Object.keys(record.blockers).length > 0
+                  ? Object.entries(record.blockers).map(([key, message]) => (
+                      <Typography variant="body2" color="text.secondary" key={key} sx={{ marginLeft: 2 }}>
+                        {key}: {message}
+                      </Typography>
+                    ))
+                  : null}
+              </Stack>
+            ))}
+          </Stack>
+        ) : (
+          <Typography color="text.secondary" sx={{ marginTop: 1 }}>
+            No promotion attempts yet — the release sits at its starting ring.
+          </Typography>
         )}
       </Paper>
 
@@ -559,7 +696,115 @@ export default function ReleaseDetailPage() {
         tenantNameById={tenantNameById}
         onClose={() => setCompareOpen(false)}
       />
+
+      <PrecheckDialog
+        open={precheckOpen}
+        precheck={precheck.data ?? null}
+        loading={precheck.isPending}
+        failed={precheck.isError}
+        tenantNameById={tenantNameById}
+        onClose={() => setPrecheckOpen(false)}
+      />
     </Stack>
+  );
+}
+
+interface PrecheckDialogProps {
+  open: boolean;
+  precheck: PromotionPrecheck | null;
+  loading: boolean;
+  failed: boolean;
+  tenantNameById: Map<string, string>;
+  onClose: () => void;
+}
+
+/** The one-screen answer to "why can't I promote" (issue #44's
+ * technical note: one evaluation function, three surfaces — this is
+ * the SAME evaluation the promote act runs, served as a read): the
+ * verdict, the complete blocker list byte-for-byte as the 409's
+ * errors member, the target ring's gate states with their evidence
+ * links, the approval leg's standing with its waited-on list, and the
+ * widened eligibility rows with their exclusion reasons. Nothing is
+ * written and no approval round is opened. */
+function PrecheckDialog({ open, precheck, loading, failed, tenantNameById, onClose }: PrecheckDialogProps) {
+  return (
+    <Dialog open={open} onClose={onClose} maxWidth="sm" fullWidth data-testid="precheck-dialog">
+      <DialogTitle>Promotion precheck</DialogTitle>
+      <DialogContent>
+        {failed ? (
+          <Alert severity="error">Failed to run the precheck.</Alert>
+        ) : loading || precheck === null ? (
+          <Typography aria-busy="true">Evaluating the next hop...</Typography>
+        ) : (
+          <Stack spacing={1.5}>
+            <Alert severity={precheck.promotable ? "success" : "warning"}>
+              {precheck.promotable
+                ? "The next hop is clear: every gate, approval, and eligibility rule permits it."
+                : "The next hop is blocked — the complete blocker list:"}
+            </Alert>
+            {Object.entries(precheck.blockers).map(([key, message]) => (
+              <Typography variant="body2" key={key} sx={{ display: "list-item", marginLeft: 2 }} data-testid="precheck-blocker">
+                <strong>{key}</strong>: {message}
+              </Typography>
+            ))}
+            {precheck.gates.length > 0 ? (
+              <Box>
+                <Typography variant="subtitle2">Target ring gates</Typography>
+                {precheck.gates.map((gate) => (
+                  <Typography variant="body2" key={gate.gateType}>
+                    {gate.gateType}: {gate.status}
+                    {gate.overridden ? " (overridden)" : ""}{" "}
+                    {gate.evidenceUrl ? (
+                      <Linkish href={gate.evidenceUrl}>{gate.evidenceUrl}</Linkish>
+                    ) : null}
+                  </Typography>
+                ))}
+              </Box>
+            ) : null}
+            {precheck.approval.requirement !== "" ? (
+              <Box>
+                <Typography variant="subtitle2">Approval</Typography>
+                <Typography variant="body2">
+                  {precheck.approval.requirement}
+                  {precheck.approval.policyName ? ` — policy ${precheck.approval.policyName}` : ""}
+                  {precheck.approval.roundNumber ? `, round ${precheck.approval.roundNumber}` : ""}
+                </Typography>
+                {Object.entries(precheck.approval.waitedOn).map(([key, message]) => (
+                  <Typography variant="body2" color="text.secondary" key={key} sx={{ marginLeft: 2 }}>
+                    {key}: {message}
+                  </Typography>
+                ))}
+              </Box>
+            ) : null}
+            {precheck.eligibility.some((row) => !row.admitted) ? (
+              <Box>
+                <Typography variant="subtitle2">Eligibility exclusions</Typography>
+                {precheck.eligibility
+                  .filter((row) => !row.admitted)
+                  .map((row) => (
+                    <Typography variant="body2" key={row.tenantId}>
+                      {tenantNameById.get(row.tenantId) ?? row.tenantId}: {row.reasons.join("; ")}
+                    </Typography>
+                  ))}
+              </Box>
+            ) : null}
+          </Stack>
+        )}
+      </DialogContent>
+      <DialogActions>
+        <Button onClick={onClose}>Close</Button>
+      </DialogActions>
+    </Dialog>
+  );
+}
+
+/** An external evidence link inside the precheck dialog (opens in a
+ * new tab; the evidence URL is the gate's own recorded artifact). */
+function Linkish({ href, children }: { href: string; children: ReactNode }) {
+  return (
+    <a href={href} target="_blank" rel="noreferrer">
+      {children}
+    </a>
   );
 }
 

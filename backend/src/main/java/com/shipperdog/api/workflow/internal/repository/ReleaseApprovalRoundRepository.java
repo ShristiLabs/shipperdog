@@ -32,6 +32,16 @@ public interface ReleaseApprovalRoundRepository extends JpaRepository<ReleaseApp
     /** The release's LATEST round — the round decisions act on and the transition policy evaluates. */
     Optional<ReleaseApprovalRoundEntity> findFirstByReleaseIdOrderByRoundNumberDesc(UUID releaseId);
 
+    /**
+     * The release's LATEST promotion round FOR ONE RING (V33, S10-05):
+     * the round the promotion engine's approval leg resolves — by the
+     * ring marker, never the global latest (a promotion round can never
+     * shadow the crossing's own round in the latest-round rules, and a
+     * later hop's round never answers for an earlier ring's).
+     */
+    Optional<ReleaseApprovalRoundEntity> findFirstByReleaseIdAndPromotionRingIdOrderByRoundNumberDesc(
+            UUID releaseId, UUID promotionRingId);
+
     /** The round a per-step record belongs to, for the read view's assembly. */
     Optional<ReleaseApprovalRoundEntity> findByIdAndReleaseId(UUID id, UUID releaseId);
 

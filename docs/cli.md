@@ -1,8 +1,9 @@
-# CLI (S5-06 issue #25; releases S9-06 issue #60)
+# CLI (S5-06 issue #25; releases S9-06 issue #60; promotion S10-05 issue #44)
 
 The developer-side companion (PRD 20): `shipperdog login`, `artifact
 upload/list/view/revalidate`, `version list`, and the release verbs —
-`release create/list/get/transition/promote`, `release manifest` — the
+`release create/list/get/transition/promote`, `release
+precheck/promotions`, `release manifest` — the
 surface CI pipelines drive. Implementation lives in `cli/` (Go 1.26,
 ADR-0004); user-facing
 usage, install, credentials handling, and the exit-code table live in
@@ -42,7 +43,9 @@ design.
 | `release list` | `GET /api/v1/releases?applicationId=…` (`versionId` — resolved from name — `status`, `tenantId` filters; cursor-walked) |
 | `release get` | `GET /api/v1/releases/{id}?applicationId=…` |
 | `release transition` | `POST /api/v1/releases/{id}/transitions` (client mirrors the PRD 17 vocabulary and the FAILED/ROLLED_BACK reason rule; the server is the authority) |
-| `release promote` | successive `POST …/transitions` walking PRD 17's forward path to PROMOTED; the first refusal (409 current/attempted, 422 policy seam) stops the walk with the reason list and exit 4 |
+| `release promote` | state edges through `POST …/transitions` to ACTIVE, then ring hops through `POST /api/v1/releases/{id}/promote` (S10-05) until the final ring carries the release to PROMOTED; `--ring` asserts the release's starting ring (mismatch refuses — the wrong-release guard), `--tenant` (repeatable) narrows the hops to the selective staged rollout; the first refusal stops the walk with the reason list and exit 4 |
+| `release precheck` | `GET /api/v1/releases/{id}/promotion-precheck?applicationId=…` (S10-05: "why can't I promote" in one screen — the same evaluation promote runs, nothing written) |
+| `release promotions` | `GET /api/v1/releases/{id}/promotions?applicationId=…` (S10-05: the append-only timeline — every COMPLETED hop and every BLOCKED attempt with its evidence) |
 | `release manifest` | `GET /api/v1/releases/{id}/manifest?applicationId=…` (+`format=yaml` for the compliance export) |
 | `gate result` | `POST /api/v1/releases/{id}/gates/{gate}/result` (S10-03's CI ingestion — the command S9-06 deferred; `--status pass\|fail`, mandatory `--evidence-url`, `--value` for threshold/ceiling gates; latest wins with history) |
 | `gate list` | `GET /api/v1/releases/{id}/gates?applicationId=…` (the §32 block: states, thresholds, evidence, override records) |
@@ -69,20 +72,33 @@ form walks each application's listing (the release API exposes no
 quotable-id filter); a uuid probes each application's detail read,
 where a foreign id conceals as the standard 404.
 
-`release promote` semantics: PRD 17 offers exactly one forward edge
-from every pre-PROMOTED state, so the walk is deterministic — the
-command is a sequence of ordinary transition calls, never a bypass.
-Refusals render the problem+json `errors` member as a reason list
-(the 409 carries `current`/`attempted`; the approval policies refuse
-through the same member, keyed by contributor, since S10-01, and the
-gate policies since S10-03 — a blocked READY crossing names every
-blocking gate and its reason) and the command exits 4. `release get`
+`release promote` semantics: the walk is deterministic and never a
+bypass — PRD 17 offers exactly one forward edge from every
+pre-PROMOTED state, and since S10-05 the walk continues through the
+rings: at ACTIVE, each `POST …/promote` performs ONE governed hop (the
+target ring's gates, approvals, eligibility, and policies evaluated
+live; the final ring's hop carries the release across ACTIVE to
+PROMOTED with the state machine's own ceremony). Refusals render the
+problem+json `errors` member as a reason list (a refused state edge
+carries `current`/`attempted`; the approval policies refuse through
+the same member, keyed by contributor, since S10-01, and the gate
+policies since S10-03; a refused HOP answers the COMPLETE blocker
+list — every gate, approval, eligibility, and policy refusal named
+with its evidence) and the command exits 4. `--ring` asserts the
+release's STARTING ring, which never moves — a mismatch refuses (the
+wrong-release guard), and `--tenant` (repeatable) narrows the ring
+hops to the named targets, the selective staged rollout (Acme first,
+Contoso later; absent moves every target). A release already PROMOTED
+or COMPLETED is a success no-op; FAILED and ROLLED_BACK are terminal
+and refuse. `release get`
 renders the live gate block since S10-03 (per-gate states, thresholds,
 evidence, override records; `gate list` is the dedicated read);
 approvals are live since S10-02 — the refusal names pending approvals
 (the group-shaped waiting-on list), and the console renders the rounds
 and takes decisions (the CLI approval command surface remains a later
-story).
+story). `release precheck` answers the same evaluation the hop runs as
+a read (the approval leg reports NOT_OPEN before the first promote
+attempt opens the round); `release promotions` renders the timeline.
 
 The CLI mirrors the server's upload routing rule locally
 (`--multipart-limit`, default 100 MiB =

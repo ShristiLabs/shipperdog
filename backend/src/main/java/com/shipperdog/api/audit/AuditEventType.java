@@ -189,5 +189,19 @@ public enum AuditEventType {
      * that left the vocabulary (references refuse the deletion, so a deleted ring was never
      * load-bearing).
      */
-    RING_DELETED
+    RING_DELETED,
+    /**
+     * One committed ring promotion (S10-05, FR-018, PRD 51's RELEASE_PROMOTED): releaseRef, the two
+     * rings' codes, the tenants moved (selective promotion's record), and whether the hop carried the
+     * release onto PRD 17's PROMOTED crossing (the final ring, all targets) — one event per hop, the
+     * append-only promotions timeline beside it.
+     */
+    RELEASE_PROMOTED,
+    /**
+     * A promote attempt refused with recorded evidence (S10-05, FR-018, PRD 33): releaseRef, the ring
+     * the hop would have entered, and the complete blocker list — each gate, approval, eligibility,
+     * and policy refusal named with its evidence. The refused attempt writes its promotions-timeline
+     * row and this audit event; the artifacts and manifest the release froze are untouched (INV-008).
+     */
+    RELEASE_PROMOTION_BLOCKED
 }

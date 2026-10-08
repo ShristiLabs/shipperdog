@@ -431,6 +431,34 @@ final class IsolationEndpointRegistry {
                         404,
                         side -> "/api/v1/releases/" + UUID.randomUUID() + "/approvals?applicationId="
                                 + UUID.randomUUID()),
+                // The promotion precheck route (S10-05): the seeded world
+                // holds no release, so own and miss probes share the
+                // route's miss shape; concealment of a REAL foreign
+                // release's precheck is pinned with live releases by the
+                // S10-05 promotion suite.
+                surface(
+                        "/api/v1/releases/{releaseId}/promotion-precheck",
+                        side -> "/api/v1/releases/"
+                                + UUID.randomUUID()
+                                + "/promotion-precheck?applicationId="
+                                + side.applicationId(),
+                        404,
+                        404,
+                        side -> "/api/v1/releases/"
+                                + UUID.randomUUID()
+                                + "/promotion-precheck?applicationId="
+                                + UUID.randomUUID()),
+                // The promotions timeline route (S10-05): the same
+                // miss-shape rationale — the live concealment proof
+                // belongs to the promotion suite.
+                surface(
+                        "/api/v1/releases/{releaseId}/promotions",
+                        side -> "/api/v1/releases/" + UUID.randomUUID() + "/promotions?applicationId="
+                                + side.applicationId(),
+                        404,
+                        404,
+                        side -> "/api/v1/releases/" + UUID.randomUUID() + "/promotions?applicationId="
+                                + UUID.randomUUID()),
 
                 // Approval workflows (S10-01) ------------------------------------
                 // org:approval-workflows:read is organization-grain (the

@@ -155,7 +155,72 @@ public class ReleaseException extends RuntimeException {
         RELEASE_MANIFEST_CORRUPT(
                 HttpStatus.INTERNAL_SERVER_ERROR,
                 "RELEASE_MANIFEST_CORRUPT",
-                "The stored release manifest failed integrity verification.");
+                "The stored release manifest failed integrity verification."),
+        /**
+         * The promotion precheck refused the hop (issue #44 AC1, PRD
+         * 33): the target ring's gates, approvals, eligibility, or a
+         * registered promotion policy is unmet — 409 with the COMPLETE
+         * blocker list in the {@code errors} member, every blocker
+         * named with its evidence (the gate type and its evidence URL,
+         * the approval round and the steps it waits on, the tenant the
+         * ring's eligibility excludes). The refused attempt is itself
+         * recorded: a BLOCKED row on the append-only promotions
+         * timeline with this same list.
+         */
+        RELEASE_PROMOTION_BLOCKED(
+                HttpStatus.CONFLICT,
+                "RELEASE_PROMOTION_BLOCKED",
+                "The promotion is blocked; see the errors member for the complete blocker list."),
+        /**
+         * Promotion serves live distribution only (issue #44): the
+         * release's status is not ACTIVE — 409 naming the current
+         * status in the {@code errors} member. A release reaches its
+         * audience through PRD 17's machine (the transitions route);
+         * ring hops widen a distribution that is already running.
+         */
+        RELEASE_PROMOTION_INVALID_STATE(
+                HttpStatus.CONFLICT,
+                "RELEASE_PROMOTION_INVALID_STATE",
+                "Only an ACTIVE release can be promoted ring-to-ring."),
+        /**
+         * The move set sits on more than one ring (issue #44): staggered
+         * targets (an earlier selective promotion) cannot hop as one —
+         * 409 naming each tenant's current ring; the operator promotes
+         * each ring group (or names the tenants explicitly).
+         */
+        RELEASE_PROMOTION_RING_SPLIT(
+                HttpStatus.CONFLICT,
+                "RELEASE_PROMOTION_RING_SPLIT",
+                "The promotion's targets sit on more than one ring; promote them per ring."),
+        /**
+         * There is no next ring (issue #44): the move set sits on the
+         * final ring of the organization's effective vocabulary — the
+         * progression is complete. A release whose every target sits
+         * here has already crossed to PROMOTED (PRD 17).
+         */
+        RELEASE_PROMOTION_RING_FINAL(
+                HttpStatus.CONFLICT, "RELEASE_PROMOTION_RING_FINAL", "The targets already sit on the final ring."),
+        /**
+         * The named target ring is beyond the next ring (issue #44 AC6):
+         * skipping rings is DISALLOWED by default — the effective
+         * order's position+1 is the only hop. The relaxation knob is a
+         * promotion policy (the S10-06 seam); none ships, so the
+         * default stands for every organization until one registers.
+         */
+        RELEASE_PROMOTION_RING_SKIP(
+                HttpStatus.CONFLICT,
+                "RELEASE_PROMOTION_RING_SKIP",
+                "Skipping rings is disallowed; promotion moves one ring at a time."),
+        /**
+         * The hop lost its compare-and-set (issue #44, the V14 CAS
+         * discipline applied to ring moves): a concurrent promotion
+         * moved a target row first. The caller re-reads and retries —
+         * the precise conflict, never a silent partial move.
+         */
+        RELEASE_PROMOTION_CONFLICT(
+                HttpStatus.CONFLICT,
+                "RELEASE_PROMOTION_CONFLICT",
+                "A concurrent promotion moved the targets first; re-read and retry.");
 
         final HttpStatus httpStatus;
         final String code;

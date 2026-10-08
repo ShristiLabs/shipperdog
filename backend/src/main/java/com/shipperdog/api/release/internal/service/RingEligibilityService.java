@@ -187,6 +187,38 @@ public class RingEligibilityService implements RingEligibility {
     // Helpers: the admission arithmetic
     // -------------------------------------------------------------------------
 
+    /**
+     * The widening check (S10-05, issue #44 — the seam the RingEligibility
+     * contract reserved for the promotion engine): every target's
+     * admission row resolved against ONE named ring, the ring a
+     * promotion would move the targets INTO — the same arithmetic
+     * {@link #admissionRowsOf} runs per target's CURRENT ring, answered
+     * here against the hop's destination so the precheck lists exactly
+     * which tenants the target ring's eligibility would exclude (each
+     * with the reason). Package-private by design: the promotion engine
+     * is this module's own consumer (the port's javadoc names it), a
+     * sibling service in this package — the seam's public shape stays
+     * the live-ring read.
+     */
+    List<Admission.TargetAdmission> admissionsAgainst(UUID releaseId, RingEntity ring) {
+        ReleaseEntity release = releases.findScoped(releaseId).orElse(null);
+        if (release == null) {
+            return List.of();
+        }
+        List<ReleaseTargetEntity> targetRows = targets.findByReleaseIdOrderByTenantIdAsc(releaseId);
+        Map<UUID, List<UUID>> groupsByTenant = new LinkedHashMap<>();
+        for (ReleaseTargetGroupEntity group : targetGroups.findByReleaseIdOrderByTenantIdAscGroupIdAsc(releaseId)) {
+            groupsByTenant
+                    .computeIfAbsent(group.getTenantId(), tenant -> new ArrayList<>())
+                    .add(group.getGroupId());
+        }
+        List<Admission.TargetAdmission> rows = new ArrayList<>(targetRows.size());
+        for (ReleaseTargetEntity target : targetRows) {
+            rows.add(admissionOf(target, ring, groupsByTenant.getOrDefault(target.getTenantId(), List.of())));
+        }
+        return rows;
+    }
+
     /** The admission rows of one release: every target with its effective ring, verdict, audience, and reasons. */
     private Admission admissionRowsOf(ReleaseEntity release) {
         List<ReleaseTargetEntity> targetRows = targets.findByReleaseIdOrderByTenantIdAsc(release.getId());

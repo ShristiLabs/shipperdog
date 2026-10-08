@@ -11,6 +11,7 @@ import com.shipperdog.api.config.MetricNames;
 import com.shipperdog.api.config.TraceAttributes;
 import com.shipperdog.api.environment.EnvironmentAccess;
 import com.shipperdog.api.organization.OrganizationAccess;
+import com.shipperdog.api.release.PromotionApprovalSource;
 import com.shipperdog.api.release.ReleaseAccess;
 import com.shipperdog.api.release.ReleaseApprovalSource;
 import com.shipperdog.api.release.ReleaseException;
@@ -48,6 +49,7 @@ import java.util.Set;
 import java.util.UUID;
 import java.util.function.Supplier;
 import java.util.regex.Pattern;
+import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.data.domain.Page;
@@ -132,7 +134,7 @@ import org.springframework.transaction.annotation.Transactional;
  * the manifest froze are the same facts by construction.
  */
 @Service
-public class ApprovalWorkflowService implements ReleaseApprovalSource {
+public class ApprovalWorkflowService implements ReleaseApprovalSource, PromotionApprovalSource {
 
     /** The binding-name vocabulary (the environments shape): lowercase kebab. */
     private static final Pattern NAME_SHAPE = Pattern.compile("^[a-z][a-z0-9-]{0,63}$");
@@ -192,6 +194,16 @@ public class ApprovalWorkflowService implements ReleaseApprovalSource {
     private final TraceAttributes trace;
     private final MeterRegistry meters;
 
+    /**
+     * The proxied self: the promotion consult's concurrent-open
+     * recovery must run in transactions this service's own failed
+     * attempt cannot poison — the round opens (and, on the insert
+     * race, rolls back) inside the proxied body, and the loser's
+     * standing re-reads the committed round through a fresh proxy
+     * call. The provider hands the proxy back.
+     */
+    private final ObjectProvider<ApprovalWorkflowService> self;
+
     ApprovalWorkflowService(
             ApprovalWorkflowRepository workflows,
             ApprovalWorkflowStepRepository workflowSteps,
@@ -208,7 +220,8 @@ public class ApprovalWorkflowService implements ReleaseApprovalSource {
             ApplicationEventPublisher events,
             Clock clock,
             TraceAttributes trace,
-            MeterRegistry meters) {
+            MeterRegistry meters,
+            ObjectProvider<ApprovalWorkflowService> self) {
         this.workflows = workflows;
         this.workflowSteps = workflowSteps;
         this.rounds = rounds;
@@ -225,6 +238,7 @@ public class ApprovalWorkflowService implements ReleaseApprovalSource {
         this.clock = clock;
         this.trace = trace;
         this.meters = meters;
+        this.self = self;
     }
 
     // -------------------------------------------------------------------------
@@ -407,7 +421,7 @@ public class ApprovalWorkflowService implements ReleaseApprovalSource {
                     "release " + event.releaseRef() + " already carries an approval round at its crossing");
         }
         instantiateRound(
-                facts, workflow, 1, event.actorId(), "CROSSING", null, event.organizationId(), event.tenantId());
+                facts, workflow, 1, event.actorId(), "CROSSING", null, event.organizationId(), event.tenantId(), null);
     }
 
     // -------------------------------------------------------------------------
@@ -686,7 +700,15 @@ public class ApprovalWorkflowService implements ReleaseApprovalSource {
                     .orElseThrow(() -> new IllegalStateException("workflow " + latest.getWorkflowId()
                             + " missing for a restart of release " + facts.releaseRef()));
             ReleaseApprovalRoundEntity round = instantiateRound(
-                    facts, workflow, latest.getRoundNumber() + 1, actorId, "RESTART", validatedReason, null, null);
+                    facts,
+                    workflow,
+                    latest.getRoundNumber() + 1,
+                    actorId,
+                    "RESTART",
+                    validatedReason,
+                    null,
+                    null,
+                    null);
             return stateOf(facts);
         });
     }
@@ -739,6 +761,193 @@ public class ApprovalWorkflowService implements ReleaseApprovalSource {
                         .map(approval -> approval.getApprovalType().name())
                         .toList())
                 .orElseGet(List::of);
+    }
+
+    // -------------------------------------------------------------------------
+    // PromotionApprovalSource (S10-05, issue #44): the promotion leg
+    // -------------------------------------------------------------------------
+
+    /**
+     * The target ring's approval standing as a pure read (the precheck
+     * route's leg, S10-05): the organization-effective ring's NAMED
+     * policy only — the ring leg of the precedence, because the
+     * environment and attached-chain legs bound the APPROVAL_PENDING
+     * crossing the release already passed, and PRD 8.10's "each ring
+     * carries its own approval policy" is the stage rule a widening
+     * hop consults. A ring binding nothing answers NOT_REQUIRED
+     * (FR-016's configurable standing); a name that does not resolve
+     * answers UNRESOLVED — the leg's own words, never an exception:
+     * the promotion engine renders the fail-closed refusal as one
+     * blocker of its complete list (the S10-02 decision, honored as a
+     * leg state so the 409 answers everything at once).
+     */
+    @Override
+    @Transactional(readOnly = true)
+    public PromotionApprovalSource.Standing standingOf(UUID releaseId, UUID organizationId, UUID ringId) {
+        return promotionStandingOf(releaseId, organizationId, ringId, false, null);
+    }
+
+    /**
+     * The engine's consult (the promote act): the standing, with the
+     * round OPENED first when a resolved policy has none yet — the
+     * first promote attempt against a policy-gated ring IS PRD 51's
+     * PROMOTION_REQUESTED act: the round it opens is the approval
+     * demand, instantiated with the workflow module's own discipline
+     * (frozen per-step copies, one request event per demanded step,
+     * audited) and marked with the ring it gates. A REJECTED round's
+     * rework path is the next promote attempt: it opens a fresh round
+     * of the same frozen definition (the restart discipline,
+     * ring-scoped — the crossing restart route serves only
+     * APPROVAL_PENDING releases, so the promotion leg owns its own
+     * rework re-open). The round commits in its OWN transaction, the
+     * one {@link #openPromotionRound} runs here — the promote attempt
+     * runs no outer transaction, so a refused attempt's 409 rolls
+     * back nothing of the round: it is a governed fact of the attempt
+     * and must survive it (the next attempt answers pending — then,
+     * once decided, satisfied — on the same round), exactly as the
+     * blocked promotion record commits in the writer's own separate
+     * transaction.
+     *
+     * <p>Two concurrent first attempts against the same policy-gated
+     * ring both compute round N+1 — the unique guard admits one, and
+     * the loser's flush fails. The loser answers from the committed
+     * state: the standing re-read in a fresh transaction over the
+     * winner's committed round, the same blocked 409 the sequential
+     * second attempt answers — never an untranslated 500.
+     */
+    @Override
+    public PromotionApprovalSource.Standing openRoundFor(
+            UUID releaseId, UUID organizationId, UUID ringId, UUID actorId) {
+        try {
+            return self.getObject().openPromotionRound(releaseId, organizationId, ringId, actorId);
+        } catch (PromotionRoundInsertRaceException race) {
+            // The concurrent-open loser: the guard's violation only
+            // surfaces once the winner's round is committed, so the
+            // fresh read finds it — the same answer the sequential
+            // second attempt gets, from the state that won.
+            return self.getObject().standingOf(releaseId, organizationId, ringId);
+        }
+    }
+
+    /**
+     * The consult's transactional body: the round opens and commits
+     * in this transaction (REQUIRED — the promote attempt carries no
+     * outer one), so the round is durable before the attempt's
+     * evaluation and a later refusal rolls back nothing of it. On the
+     * concurrent-open insert race this transaction is spent — {@code
+     * instantiateRound} answers {@link PromotionRoundInsertRaceException}
+     * and the rollback discards only the loser's duplicate.
+     */
+    @Transactional
+    public PromotionApprovalSource.Standing openPromotionRound(
+            UUID releaseId, UUID organizationId, UUID ringId, UUID actorId) {
+        return promotionStandingOf(releaseId, organizationId, ringId, true, actorId);
+    }
+
+    /**
+     * The promotion leg's one body: resolve the ring's named policy,
+     * then the ring-marked round, opening a new round when the consult
+     * demands one and none usable exists (none at all, or rejected —
+     * the rework re-open). An unknown release or ring answers
+     * NOT_REQUIRED (the caller conceals misses its own way; the leg
+     * never guesses).
+     */
+    private PromotionApprovalSource.Standing promotionStandingOf(
+            UUID releaseId, UUID organizationId, UUID ringId, boolean openRound, UUID actorId) {
+        if (releaseId == null || ringId == null) {
+            return notRequired();
+        }
+        Optional<String> ringPolicy = releases.ringApprovalPolicyNameOf(organizationId, ringId);
+        if (ringPolicy.isEmpty()) {
+            return notRequired();
+        }
+        String policyName = ringPolicy.get();
+        Optional<ApprovalWorkflowEntity> resolved = workflows.findByOrganizationIdAndName(organizationId, policyName);
+        if (resolved.isEmpty()) {
+            return new PromotionApprovalSource.Standing(
+                    PromotionApprovalSource.Standing.Requirement.UNRESOLVED, policyName, null, null, Map.of());
+        }
+        ApprovalWorkflowEntity workflow = resolved.get();
+        ReleaseApprovalRoundEntity round = rounds.findFirstByReleaseIdAndPromotionRingIdOrderByRoundNumberDesc(
+                        releaseId, ringId)
+                .orElse(null);
+        if (openRound && (round == null || round.getStatus() == ReleaseApprovalRoundEntity.Status.REJECTED)) {
+            ReleaseAccess.ReleaseFacts facts = releases.factsOf(releaseId).orElse(null);
+            if (facts == null) {
+                return notRequired();
+            }
+            int nextNumber = rounds.findFirstByReleaseIdOrderByRoundNumberDesc(releaseId)
+                    .map(previous -> previous.getRoundNumber() + 1)
+                    .orElse(1);
+            round = instantiateRound(
+                    facts,
+                    workflow,
+                    nextNumber,
+                    actorId,
+                    "PROMOTION",
+                    null,
+                    facts.organizationId(),
+                    facts.tenantId(),
+                    ringId);
+        }
+        if (round == null) {
+            return new PromotionApprovalSource.Standing(
+                    PromotionApprovalSource.Standing.Requirement.NOT_OPEN, policyName, null, null, Map.of());
+        }
+        return switch (round.getStatus()) {
+            case SATISFIED ->
+                new PromotionApprovalSource.Standing(
+                        PromotionApprovalSource.Standing.Requirement.SATISFIED,
+                        policyName,
+                        round.getRoundNumber().longValue(),
+                        PromotionApprovalSource.Standing.RoundStatus.SATISFIED,
+                        Map.of());
+            case REJECTED ->
+                new PromotionApprovalSource.Standing(
+                        PromotionApprovalSource.Standing.Requirement.REJECTED,
+                        policyName,
+                        round.getRoundNumber().longValue(),
+                        PromotionApprovalSource.Standing.RoundStatus.REJECTED,
+                        Map.of());
+            case PENDING ->
+                new PromotionApprovalSource.Standing(
+                        PromotionApprovalSource.Standing.Requirement.PENDING,
+                        policyName,
+                        round.getRoundNumber().longValue(),
+                        PromotionApprovalSource.Standing.RoundStatus.PENDING,
+                        promotionWaitedOn(round));
+        };
+    }
+
+    /**
+     * The waited-on list of a pending promotion round: the decidable
+     * steps per the evaluator — the same arithmetic the crossing
+     * policy's refusal renders, keyed {@code step N (TYPE)} so the
+     * promotion blocker reads exactly like the approval refusal the
+     * operators already know.
+     */
+    private Map<String, String> promotionWaitedOn(ReleaseApprovalRoundEntity round) {
+        List<ReleaseApprovalEntity> chain = approvals.findByRoundIdOrderByPositionAsc(round.getId());
+        ApprovalRoundEvaluator.Evaluation evaluation = ApprovalRoundEvaluator.evaluate(
+                chain.stream().map(ApprovalRoundEvaluator.Step::of).toList());
+        Map<String, String> waitedOn = new LinkedHashMap<>();
+        for (ReleaseApprovalEntity step : chain) {
+            if (evaluation.decidablePositions().contains(step.getPosition())) {
+                waitedOn.put(
+                        "step " + step.getPosition() + " ("
+                                + step.getApprovalType().name() + ")",
+                        "awaiting approval (round " + round.getRoundNumber() + ")");
+            }
+        }
+        if (waitedOn.isEmpty()) {
+            waitedOn.put("round " + round.getRoundNumber(), "completing");
+        }
+        return waitedOn;
+    }
+
+    private static PromotionApprovalSource.Standing notRequired() {
+        return new PromotionApprovalSource.Standing(
+                PromotionApprovalSource.Standing.Requirement.NOT_REQUIRED, null, null, null, Map.of());
     }
 
     // -------------------------------------------------------------------------
@@ -911,7 +1120,8 @@ public class ApprovalWorkflowService implements ReleaseApprovalSource {
             String trigger,
             String note,
             UUID crossingOrganizationId,
-            UUID crossingTenantId) {
+            UUID crossingTenantId,
+            UUID promotionRingId) {
         List<ApprovalWorkflowStepEntity> definition =
                 workflowSteps.findByWorkflowIdOrderByPositionAsc(workflow.getId());
         Set<UUID> targetTenants = releases.targetTenantIdsOf(facts.releaseId());
@@ -948,8 +1158,8 @@ public class ApprovalWorkflowService implements ReleaseApprovalSource {
                     step.getGroupPosition(),
                     step.getGroupMode()));
         }
-        ReleaseApprovalRoundEntity round =
-                new ReleaseApprovalRoundEntity(facts.releaseId(), roundNumber, workflow.getId(), actorId);
+        ReleaseApprovalRoundEntity round = new ReleaseApprovalRoundEntity(
+                facts.releaseId(), roundNumber, workflow.getId(), promotionRingId, actorId);
         if (demanded.isEmpty()) {
             // Every step scoped away or excluded by its condition:
             // nothing was required — the round records the resolution
@@ -960,29 +1170,44 @@ public class ApprovalWorkflowService implements ReleaseApprovalSource {
         try {
             round = rounds.saveAndFlush(round);
         } catch (DataIntegrityViolationException e) {
-            // The double-restart insert race (the #40 review's
-            // follow-up): two concurrent restarts of the same rejected
-            // round both read it REJECTED and both insert round N+1 —
-            // the unique guard admits one. The loser answers from the
-            // committed state with the restart conflict, never an
-            // untranslated 500. The crossing path (round 1) cannot
-            // race itself (the state machine's CAS serializes the
-            // crossing), so a violation there is a machine bug that
-            // rolls the crossing back loudly.
-            if (e.getMessage() != null
-                    && e.getMessage().contains("uq_release_approval_rounds_release_number")
-                    && "RESTART".equals(trigger)) {
-                ReleaseApprovalRoundEntity committed = rounds.findFirstByReleaseIdOrderByRoundNumberDesc(
-                                facts.releaseId())
-                        .orElse(null);
-                throw new WorkflowException(
-                        WorkflowException.Code.APPROVAL_ROUND_NOT_RESTARTABLE,
-                        "only a rejected approval round can be restarted",
-                        Map.of(
-                                "current",
-                                committed == null
-                                        ? "NONE"
-                                        : committed.getStatus().name()));
+            // The double-insert races the unique guard closes (the
+            // #40 review's follow-up, extended to the promotion open
+            // by the #44 review): two concurrent RESTARTs of the same
+            // rejected round both read it REJECTED and both insert
+            // round N+1, and two concurrent first PROMOTION attempts
+            // against the same policy-gated ring both compute N+1 —
+            // the unique guard admits one. The RESTART loser answers
+            // from the committed state with the restart conflict;
+            // the PROMOTION loser answers from the committed state
+            // through the caller's fresh standing read — never an
+            // untranslated 500 either way. The crossing path (round
+            // 1) cannot race itself (the state machine's CAS
+            // serializes the crossing), so a violation there is a
+            // machine bug that rolls the crossing back loudly.
+            if (e.getMessage() != null && e.getMessage().contains("uq_release_approval_rounds_release_number")) {
+                if ("RESTART".equals(trigger)) {
+                    ReleaseApprovalRoundEntity committed = rounds.findFirstByReleaseIdOrderByRoundNumberDesc(
+                                    facts.releaseId())
+                            .orElse(null);
+                    throw new WorkflowException(
+                            WorkflowException.Code.APPROVAL_ROUND_NOT_RESTARTABLE,
+                            "only a rejected approval round can be restarted",
+                            Map.of(
+                                    "current",
+                                    committed == null
+                                            ? "NONE"
+                                            : committed.getStatus().name()));
+                }
+                if ("PROMOTION".equals(trigger)) {
+                    // The concurrent-open loser: a unique violation
+                    // against the winner's insert only surfaces once
+                    // that transaction committed, so the winner's
+                    // round (and its steps) are durable. This
+                    // transaction is spent — the flush failed — and
+                    // rolls back; openRoundFor re-reads the committed
+                    // standing in a fresh transaction.
+                    throw new PromotionRoundInsertRaceException(e);
+                }
             }
             throw e;
         }
@@ -1128,13 +1353,26 @@ public class ApprovalWorkflowService implements ReleaseApprovalSource {
         return facts;
     }
 
-    /** The round decisions act on: the latest, PENDING, of a release sitting in APPROVAL_PENDING. */
+    /**
+     * The round decisions act on: the latest, PENDING, of a release
+     * sitting where that round lives — APPROVAL_PENDING for a crossing
+     * round, and — since S10-05 — ACTIVE (or PROMOTED, whose hops keep
+     * widening rings) for a PROMOTION round: the ring hop's approval
+     * demand is decided while the release distributes at its current
+     * ring, exactly the widening the round gates. Any other status
+     * (a crossing round while the release has moved on, a promotion
+     * round of a release that rolled back) is the honest
+     * not-awaiting-decisions refusal.
+     */
     private ReleaseApprovalRoundEntity liveRoundOf(ReleaseAccess.ReleaseFacts facts) {
-        if (!"APPROVAL_PENDING".equals(facts.status())) {
-            throw notActive(facts, facts.status());
-        }
         ReleaseApprovalRoundEntity round = rounds.findFirstByReleaseIdOrderByRoundNumberDesc(facts.releaseId())
                 .orElse(null);
+        boolean promotionRoundLive = round != null && round.getPromotionRingId() != null;
+        boolean statusServesRound = "APPROVAL_PENDING".equals(facts.status())
+                || (promotionRoundLive && ("ACTIVE".equals(facts.status()) || "PROMOTED".equals(facts.status())));
+        if (!statusServesRound) {
+            throw notActive(facts, facts.status());
+        }
         if (round == null) {
             throw notActive(facts, "NO_ROUND");
         }
@@ -1600,5 +1838,21 @@ public class ApprovalWorkflowService implements ReleaseApprovalSource {
 
     private static WorkflowException invalid(Map<String, String> errors) {
         return new WorkflowException(WorkflowException.Code.INVALID_REQUEST, "the request is invalid", errors);
+    }
+
+    /**
+     * The concurrent promotion-open loser's internal signal: the
+     * winner's round is committed (a unique violation against an
+     * in-flight insert waits for that transaction and only surfaces
+     * once it commits), so the standing must be re-read in a fresh
+     * transaction — the opening transaction's flush is spent and
+     * rolls back. Never escapes the service: {@code openRoundFor}
+     * catches it and answers from the committed state.
+     */
+    private static final class PromotionRoundInsertRaceException extends RuntimeException {
+
+        PromotionRoundInsertRaceException(Throwable cause) {
+            super(cause);
+        }
     }
 }

@@ -28,7 +28,9 @@ func newReleaseCmd() *cobra.Command {
 		Long: "The release surface (PRD 17/20): create a release from a version's READY\n" +
 			"artifacts targeting tenants/groups on a ring, read it back by quotable id\n" +
 			"(R-1028), drive the state machine edge by edge with transition, or walk it\n" +
-			"to PROMOTED with promote. JSON output everywhere for pipelines.",
+			"to PROMOTED with promote - precheck answers \"why can't I promote\" in one\n" +
+			"screen and promotions reads the append-only hop timeline. JSON output\n" +
+			"everywhere for pipelines.",
 	}
 	cmd.AddCommand(
 		newReleaseCreateCmd(),
@@ -36,6 +38,8 @@ func newReleaseCmd() *cobra.Command {
 		newReleaseGetCmd(),
 		newReleaseTransitionCmd(),
 		newReleasePromoteCmd(),
+		newReleasePrecheckCmd(),
+		newReleasePromotionsCmd(),
 		newReleaseManifestCmd())
 	return cmd
 }
@@ -479,21 +483,26 @@ func newReleasePromoteCmd() *cobra.Command {
 	var (
 		appRef  string
 		ring    string
+		tenants []string
 		jsonOut bool
 	)
 	cmd := &cobra.Command{
 		Use:   "promote <release>",
-		Short: "Walk the state machine to PROMOTED, stopping at the first blocker",
+		Short: "Walk the state machine and the rings to PROMOTED, stopping at the first blocker",
 		Long: "The CI showcase (PRD 20/32): drives the release forward through PRD 17's\n" +
 			"edges - VALIDATING, READY, APPROVAL_PENDING, APPROVED (the manifest freeze),\n" +
-			"DEPLOYING, ACTIVE - to PROMOTED, one crossing at a time. Any refusal stops\n" +
-			"the walk: the blocker's code, detail, and full reason list print (the 409\n" +
-			"names the current and attempted states; E10's approval and gate policies\n" +
-			"will refuse edges through the same reason list) and the command exits\n" +
-			"non-zero. --ring asserts the release's starting ring (M2 releases keep\n" +
-			"the ring fixed at creation; ring-to-ring promotion arrives with S10-05).\n" +
-			"A release already PROMOTED or COMPLETED is a success no-op; FAILED and\n" +
-			"ROLLED_BACK are terminal and refuse.",
+			"DEPLOYING, ACTIVE - and then through the promotion engine's ring hops (S10-05:\n" +
+			"one ring at a time in the organization's effective order, the final ring\n" +
+			"carrying the release across ACTIVE to PROMOTED). Any refusal stops the walk:\n" +
+			"the blocker's code, detail, and full reason list print - a refused edge names\n" +
+			"the current and attempted states, a refused hop answers the COMPLETE blocker\n" +
+			"list (every gate, approval, eligibility, and policy refusal named with its\n" +
+			"evidence) - and the command exits non-zero. --ring asserts the release's\n" +
+			"STARTING ring (the creation ring never moves; mismatch refuses - the wrong-\n" +
+			"release guard). --tenant narrows the ring hops to the named targets (the\n" +
+			"selective staged rollout: Acme first, Contoso later); absent moves every\n" +
+			"target. A release already PROMOTED or COMPLETED is a success no-op; FAILED\n" +
+			"and ROLLED_BACK are terminal and refuse.",
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			client, err := dial()
@@ -507,14 +516,30 @@ func newReleasePromoteCmd() *cobra.Command {
 			if ring != "" {
 				normalized := strings.ToLower(strings.TrimSpace(ring))
 				if normalized != detail.Ring {
-					return usagef("release %s starts on ring %q, not %q; M2 releases keep their creation ring (ring-to-ring promotion arrives with S10-05)", detail.ReleaseRef, detail.Ring, normalized)
+					return usagef("release %s starts on ring %q, not %q; --ring asserts the creation ring (mismatch usually means the wrong release)", detail.ReleaseRef, detail.Ring, normalized)
 				}
 				fmt.Fprintf(os.Stderr, "Ring confirmed: %s\n", detail.Ring)
 			}
+			hopTenants := make([]string, 0, len(tenants))
+			for _, tenant := range tenants {
+				trimmed := strings.TrimSpace(tenant)
+				if trimmed == "" {
+					return usagef("--tenant requires a tenant uuid (empty entry refused)")
+				}
+				hopTenants = append(hopTenants, trimmed)
+			}
+			if len(hopTenants) == 0 {
+				hopTenants = nil
+			}
+			acted := false
 			for {
 				switch {
 				case detail.Status == "PROMOTED" || detail.Status == "COMPLETED":
-					fmt.Fprintf(os.Stderr, "%s is %s; nothing to promote\n", detail.ReleaseRef, detail.Status)
+					if !acted {
+						fmt.Fprintf(os.Stderr, "%s is %s; nothing to promote\n", detail.ReleaseRef, detail.Status)
+					} else {
+						fmt.Fprintf(os.Stderr, "%s is %s\n", detail.ReleaseRef, detail.Status)
+					}
 					if jsonOut {
 						return output.JSON(cmd.OutOrStdout(), detail)
 					}
@@ -522,6 +547,26 @@ func newReleasePromoteCmd() *cobra.Command {
 					return nil
 				case api.ReleaseTerminalState(detail.Status):
 					return &FailureError{msg: fmt.Sprintf("release %s is %s (terminal); a failed or pulled release never re-enters the machine - create a new release of a corrected version", detail.ReleaseRef, detail.Status)}
+				}
+				if detail.Status == "ACTIVE" {
+					// The ring walk (S10-05): one governed hop at a
+					// time - the engine evaluates the target ring's
+					// gates, approvals, eligibility, and policies, and
+					// a refusal answers the complete blocker list.
+					result, err := client.PromoteRelease(cmd.Context(), app.ID, detail.ID, hopTenants, "")
+					if err != nil {
+						return transitionFailure(fmt.Sprintf("promote %s past ring %s", detail.ReleaseRef, resultRingLabel(detail)), err)
+					}
+					acted = true
+					fmt.Fprintf(os.Stderr, "  ring %s -> %s (%s)\n", result.FromRing, result.ToRing, result.PromotionStatus)
+					if result.CrossedToPromoted {
+						fmt.Fprintf(os.Stderr, "  ACTIVE -> PROMOTED (the final ring)\n")
+					}
+					detail, err = client.GetRelease(cmd.Context(), app.ID, detail.ID)
+					if err != nil {
+						return err
+					}
+					continue
 				}
 				next := api.NextReleaseStateTowardPromoted(detail.Status)
 				if next == "" {
@@ -533,13 +578,194 @@ func newReleasePromoteCmd() *cobra.Command {
 				if err != nil {
 					return transitionFailure("promote past "+from, err)
 				}
+				acted = true
 			}
 		},
 	}
 	cmd.Flags().StringVar(&appRef, "app", "", "owning application (name or uuid; skips the lookup walk)")
 	cmd.Flags().StringVar(&ring, "ring", "", "assert the release's starting ring code (the PRD 20 example's flag; mismatch refuses)")
+	cmd.Flags().StringSliceVar(&tenants, "tenant", nil, "promote only these target tenants, repeatable (the selective staged rollout; absent moves every target)")
 	cmd.Flags().BoolVar(&jsonOut, "json", false, "machine-readable output (the final detail JSON)")
 	return cmd
+}
+
+// resultRingLabel names the ring the detail's targets sit on for the
+// refusal message - the common ring, or the honest split note when a
+// selective promotion staggered them.
+func resultRingLabel(detail *api.ReleaseDetail) string {
+	if len(detail.Targets) == 0 {
+		return detail.Ring
+	}
+	common := detail.Targets[0].Ring
+	for _, target := range detail.Targets[1:] {
+		if target.Ring != common {
+			return "a split set"
+		}
+	}
+	return common
+}
+
+func newReleasePrecheckCmd() *cobra.Command {
+	var (
+		appRef  string
+		jsonOut bool
+	)
+	cmd := &cobra.Command{
+		Use:   "precheck <release>",
+		Short: "Answer \"why can't I promote\" in one screen (the same evaluation promote runs)",
+		Long: "GET /api/v1/releases/{id}/promotion-precheck (S10-05, issue #44's technical\n" +
+			"note: one evaluation function, three surfaces): the SAME evaluation the\n" +
+			"promote act runs, answered as a read - the verdict, the complete blocker\n" +
+			"list (byte-for-byte the 409's errors member, every blocker named with its\n" +
+			"evidence), the target ring's gate states, the approval leg's standing, and\n" +
+			"the widened eligibility rows. Nothing is written and no approval round is\n" +
+			"opened; the first PROMOTE attempt opens the round a policy demands.\n" +
+			"Requires app:releases:read.",
+		Args: cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			client, err := dial()
+			if err != nil {
+				return err
+			}
+			app, detail, err := resolveReleaseFor(cmd.Context(), client, appRef, args[0])
+			if err != nil {
+				return err
+			}
+			precheck, err := client.GetPromotionPrecheck(cmd.Context(), app.ID, detail.ID)
+			if err != nil {
+				return err
+			}
+			if jsonOut {
+				return output.JSON(cmd.OutOrStdout(), precheck)
+			}
+			output.Line(cmd.OutOrStdout(), renderPromotionPrecheck(detail, precheck))
+			return nil
+		},
+	}
+	cmd.Flags().StringVar(&appRef, "app", "", "owning application (name or uuid; skips the lookup walk)")
+	cmd.Flags().BoolVar(&jsonOut, "json", false, "machine-readable output (the precheck JSON)")
+	return cmd
+}
+
+func newReleasePromotionsCmd() *cobra.Command {
+	var (
+		appRef  string
+		jsonOut bool
+	)
+	cmd := &cobra.Command{
+		Use:   "promotions <release>",
+		Short: "Read the append-only promotion timeline (every hop and every refusal)",
+		Long: "GET /api/v1/releases/{id}/promotions (S10-05, PRD 18: promotion preserves\n" +
+			"release history): the append-only timeline - every COMPLETED hop with its\n" +
+			"two rings, the tenants moved, and the actor, and every BLOCKED attempt\n" +
+			"with its recorded evidence (the complete blocker list the 409 answered).\n" +
+			"The record the release dashboard renders beside the state timeline.\n" +
+			"Requires app:releases:read.",
+		Args: cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			client, err := dial()
+			if err != nil {
+				return err
+			}
+			app, detail, err := resolveReleaseFor(cmd.Context(), client, appRef, args[0])
+			if err != nil {
+				return err
+			}
+			history, err := client.GetPromotionHistory(cmd.Context(), app.ID, detail.ID)
+			if err != nil {
+				return err
+			}
+			if jsonOut {
+				return output.JSON(cmd.OutOrStdout(), history)
+			}
+			output.Line(cmd.OutOrStdout(), renderPromotionHistory(history))
+			return nil
+		},
+	}
+	cmd.Flags().StringVar(&appRef, "app", "", "owning application (name or uuid; skips the lookup walk)")
+	cmd.Flags().BoolVar(&jsonOut, "json", false, "machine-readable output (the timeline JSON)")
+	return cmd
+}
+
+// renderPromotionPrecheck is the one-screen answer to "why can't I
+// promote": the verdict, the complete blocker list, and each leg's
+// own detail (gates with evidence, the approval standing, the
+// widened eligibility rows).
+func renderPromotionPrecheck(detail *api.ReleaseDetail, precheck *api.ReleasePromotionPrecheck) string {
+	var b strings.Builder
+	verdict := "promotable"
+	if !precheck.Promotable {
+		verdict = "BLOCKED"
+	}
+	fmt.Fprintf(&b, "Promotion precheck of %s (%s): %s\n", detail.ReleaseRef, detail.Status, verdict)
+	if len(precheck.Blockers) > 0 {
+		fmt.Fprintf(&b, "  Blockers:\n")
+		for _, key := range sortedKeys(precheck.Blockers) {
+			fmt.Fprintf(&b, "    %s: %s\n", key, precheck.Blockers[key])
+		}
+	}
+	if len(precheck.Gates) > 0 {
+		fmt.Fprintf(&b, "  Gates (the target ring's evaluation):\n")
+		for _, gate := range precheck.Gates {
+			state := gate.Status
+			if gate.Overridden {
+				state = state + " (overridden)"
+			}
+			fmt.Fprintf(&b, "    %s: %s", gate.GateType, state)
+			if gate.EvidenceURL != "" {
+				fmt.Fprintf(&b, " - %s", gate.EvidenceURL)
+			}
+			fmt.Fprintf(&b, "\n")
+		}
+	}
+	if precheck.Approval.Requirement != "" {
+		fmt.Fprintf(&b, "  Approval: %s", precheck.Approval.Requirement)
+		if precheck.Approval.PolicyName != "" {
+			fmt.Fprintf(&b, " (policy %s", precheck.Approval.PolicyName)
+			if precheck.Approval.RoundNumber != nil {
+				fmt.Fprintf(&b, ", round %d", *precheck.Approval.RoundNumber)
+			}
+			fmt.Fprintf(&b, ")")
+		}
+		fmt.Fprintf(&b, "\n")
+		for _, key := range sortedKeys(precheck.Approval.WaitedOn) {
+			fmt.Fprintf(&b, "    %s: %s\n", key, precheck.Approval.WaitedOn[key])
+		}
+	}
+	if len(precheck.Eligibility) > 0 {
+		fmt.Fprintf(&b, "  Eligibility against the target ring:\n")
+		for _, row := range precheck.Eligibility {
+			verdict := "admitted"
+			if !row.Admitted {
+				verdict = "excluded: " + strings.Join(row.Reasons, "; ")
+			}
+			fmt.Fprintf(&b, "    %s: %s\n", row.TenantID, verdict)
+		}
+	}
+	return b.String()
+}
+
+// renderPromotionHistory is the human view of the append-only
+// timeline: every hop and every refusal, with the actor trail.
+func renderPromotionHistory(history *api.ReleasePromotionHistory) string {
+	var b strings.Builder
+	fmt.Fprintf(&b, "Promotion history of %s (%s)\n", history.ReleaseRef, history.Status)
+	if len(history.Promotions) == 0 {
+		fmt.Fprintf(&b, "  No promotion attempts yet.\n")
+		return b.String()
+	}
+	for _, row := range history.Promotions {
+		to := orDash(row.ToRing)
+		fmt.Fprintf(&b, "  %s %s -> %s: %s by %s at %s\n", row.ID, row.FromRing, to, row.Status, row.ActorID, row.OccurredAt)
+		fmt.Fprintf(&b, "    tenants: %s\n", strings.Join(row.Tenants, ", "))
+		if len(row.Blockers) > 0 {
+			fmt.Fprintf(&b, "    blockers:\n")
+			for _, key := range sortedKeys(row.Blockers) {
+				fmt.Fprintf(&b, "      %s: %s\n", key, row.Blockers[key])
+			}
+		}
+	}
+	return b.String()
 }
 
 // transitionFailure converts a refused crossing into the CI-friendly

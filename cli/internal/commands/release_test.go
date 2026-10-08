@@ -373,13 +373,18 @@ func TestReleaseGetAmbiguousAcrossApps(t *testing.T) {
 	}
 }
 
-// transitionRecorder serves the transition POST, advancing a release
-// through PRD 17 from its starting status, and records every body.
+// transitionRecorder serves the transition POST and the S10-05 promote
+// POST, advancing a release through PRD 17 and then through the ring
+// order from its starting status, and records every body.
 type transitionRecorder struct {
-	mu     sync.Mutex
-	status string
-	bodies []map[string]any
-	refuse map[string]map[string]string // to-state -> errors member
+	mu         sync.Mutex
+	status     string
+	rings      []string
+	ringIdx    int
+	bodies     []map[string]any
+	promotes   []map[string]any
+	refuse     map[string]map[string]string // to-state -> errors member
+	refuseRing map[string]string            // non-nil -> every promote answers the 409
 }
 
 func (rec *transitionRecorder) handler(w http.ResponseWriter, r *http.Request) {
@@ -406,11 +411,59 @@ func (rec *transitionRecorder) handler(w http.ResponseWriter, r *http.Request) {
 	_ = json.NewEncoder(w).Encode(detailWithStatus(current, to))
 }
 
+// handlerPromote serves POST /promote (S10-05): one ring hop at a
+// time through the recorder's ring order, the final hop carrying the
+// release to PROMOTED; refuseRing turns every hop into the engine's
+// complete-blocker-list 409.
+func (rec *transitionRecorder) handlerPromote(w http.ResponseWriter, r *http.Request) {
+	var body map[string]any
+	_ = json.NewDecoder(r.Body).Decode(&body)
+	rec.mu.Lock()
+	rec.promotes = append(rec.promotes, body)
+	if rec.refuseRing != nil {
+		errorsMember := rec.refuseRing
+		rec.mu.Unlock()
+		w.Header().Set("Content-Type", "application/problem+json")
+		w.WriteHeader(http.StatusConflict)
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"status": 409, "code": "RELEASE_PROMOTION_BLOCKED",
+			"detail": "The promotion is blocked; see the errors member for the complete blocker list.",
+			"errors": errorsMember,
+		})
+		return
+	}
+	from := rec.rings[rec.ringIdx]
+	rec.ringIdx++
+	to := rec.rings[rec.ringIdx]
+	tenants, _ := body["tenants"].([]any)
+	if tenants == nil {
+		tenants = []any{tenantUUID}
+	}
+	crossed := rec.ringIdx == len(rec.rings)-1
+	if crossed {
+		rec.status = "PROMOTED"
+	}
+	status := rec.status
+	rec.mu.Unlock()
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(map[string]any{
+		"releaseId": relUUID, "releaseRef": "R-1001", "status": status,
+		"fromRing": from, "toRing": to, "tenants": tenants,
+		"crossedToPromoted": crossed, "promotionId": "11111111-1111-1111-1111-111111111111",
+		"promotionStatus": "COMPLETED", "blockers": map[string]string{},
+		"targets": []map[string]any{{"tenantId": tenantUUID, "ring": to}},
+	})
+}
+
 func (rec *transitionRecorder) handlerDetail(w http.ResponseWriter, _ *http.Request) {
 	rec.mu.Lock()
 	status := rec.status
+	ring := rec.rings[rec.ringIdx]
 	rec.mu.Unlock()
-	_ = json.NewEncoder(w).Encode(detailWithStatus(status, status))
+	detail := detailWithStatus(status, status)
+	targets, _ := detail["targets"].([]map[string]any)
+	targets[0]["ring"] = ring
+	_ = json.NewEncoder(w).Encode(detail)
 }
 
 func detailWithStatus(from, to string) map[string]any {
@@ -423,11 +476,15 @@ func detailWithStatus(from, to string) map[string]any {
 }
 
 // wireTransitionWorld mounts the recorder on the release world: the
-// release list, detail, and transitions routes.
+// release list, detail, transitions, and promote routes.
 func wireTransitionWorld(t *testing.T, starting string) (*fakeAPI, *transitionRecorder) {
 	t.Helper()
 	f := releaseWorld(t)
-	rec := &transitionRecorder{status: starting, refuse: map[string]map[string]string{}}
+	rec := &transitionRecorder{
+		status: starting,
+		rings:  []string{"engineering", "tenant-pilot", "uat", "production"},
+		refuse: map[string]map[string]string{},
+	}
 	f.handleJSON("/api/v1/releases", func() any {
 		return map[string]any{"items": []map[string]any{{
 			"id": relUUID, "releaseRef": "R-1001", "applicationId": appUUID, "versionId": verUUID, "status": starting,
@@ -435,6 +492,7 @@ func wireTransitionWorld(t *testing.T, starting string) (*fakeAPI, *transitionRe
 	})
 	f.HandleFunc("/api/v1/releases/"+relUUID, rec.handlerDetail)
 	f.HandleFunc("/api/v1/releases/"+relUUID+"/transitions", rec.handler)
+	f.HandleFunc("/api/v1/releases/"+relUUID+"/promote", rec.handlerPromote)
 	return f, rec
 }
 
@@ -468,7 +526,7 @@ func TestReleasePromoteWalkToPromoted(t *testing.T) {
 	if err := runCLI(t, f, "release", "promote", "R-1001", "--ring", "engineering"); err != nil {
 		t.Fatalf("promote: %v", err)
 	}
-	wantPath := []string{"VALIDATING", "READY", "APPROVAL_PENDING", "APPROVED", "DEPLOYING", "ACTIVE", "PROMOTED"}
+	wantPath := []string{"VALIDATING", "READY", "APPROVAL_PENDING", "APPROVED", "DEPLOYING", "ACTIVE"}
 	if len(rec.bodies) != len(wantPath) {
 		t.Fatalf("crossings = %d, want %d: %+v", len(rec.bodies), len(wantPath), rec.bodies)
 	}
@@ -477,8 +535,65 @@ func TestReleasePromoteWalkToPromoted(t *testing.T) {
 			t.Errorf("crossing %d = %v, want %s", i, rec.bodies[i]["to"], want)
 		}
 	}
+	// The ring walk (S10-05): three governed hops to the final ring,
+	// which carries the release across ACTIVE to PROMOTED.
+	wantRings := [][2]string{
+		{"engineering", "tenant-pilot"},
+		{"tenant-pilot", "uat"},
+		{"uat", "production"},
+	}
+	if len(rec.promotes) != len(wantRings) {
+		t.Fatalf("hops = %d, want %d", len(rec.promotes), len(wantRings))
+	}
 	if !strings.Contains(f.out(), "PROMOTED") {
 		t.Errorf("final detail missing:\n%s", f.out())
+	}
+}
+
+// The refused ring hop answers the COMPLETE blocker list (every
+// blocker named) and stops the walk (first-refusal-stops, exit 4).
+func TestReleasePromoteRingHopBlockedSurfacesReasons(t *testing.T) {
+	f, rec := wireTransitionWorld(t, "ACTIVE")
+	rec.refuseRing = map[string]string{
+		"gate:coverage":              "coverage 74% below the 80% threshold (evidence: https://ci.example/run/99)",
+		"approval":                   "approval policy 'prod-release' round 3 is pending",
+		"eligibility:" + tenantUUID2: "the ring's eligibility excludes this tenant: no testers in audience",
+	}
+	err := runCLI(t, f, "release", "promote", "R-1001")
+	var failure *FailureError
+	if !errors.As(err, &failure) {
+		t.Fatalf("err = %v, want FailureError", err)
+	}
+	if code := ExitCode(err); code != exitcode.Validation {
+		t.Errorf("exit code = %d, want validation", code)
+	}
+	msg := failure.Error()
+	for _, want := range []string{
+		"refused", "RELEASE_PROMOTION_BLOCKED", "reasons:",
+		"gate:coverage:", "evidence", "approval:", "eligibility:" + tenantUUID2,
+	} {
+		if !strings.Contains(msg, want) {
+			t.Errorf("message missing %q: %s", want, msg)
+		}
+	}
+	if len(rec.promotes) != 1 {
+		t.Errorf("the walk must stop at the first refused hop (hops = %d)", len(rec.promotes))
+	}
+}
+
+// The selective staged rollout: --tenant narrows the hops to the
+// named targets (absent moves every target).
+func TestReleasePromoteSelectiveTenants(t *testing.T) {
+	f, rec := wireTransitionWorld(t, "ACTIVE")
+	if err := runCLI(t, f, "release", "promote", "R-1001", "--tenant", tenantUUID, "--tenant", tenantUUID2); err != nil {
+		t.Fatalf("promote: %v", err)
+	}
+	if len(rec.promotes) == 0 {
+		t.Fatal("no promote POST recorded")
+	}
+	tenants, _ := rec.promotes[0]["tenants"].([]any)
+	if len(tenants) != 2 || tenants[0] != tenantUUID || tenants[1] != tenantUUID2 {
+		t.Errorf("hop tenants = %v", rec.promotes[0]["tenants"])
 	}
 }
 
@@ -515,8 +630,8 @@ func TestReleasePromoteRingAssertionAndTerminals(t *testing.T) {
 	if !errors.As(err, &usage) {
 		t.Errorf("ring mismatch: err = %v", err)
 	}
-	if !strings.Contains(err.Error(), "S10-05") {
-		t.Errorf("mismatch message should name the arriving engine: %v", err)
+	if !strings.Contains(err.Error(), "creation ring") {
+		t.Errorf("mismatch message should name the creation-ring assertion: %v", err)
 	}
 
 	f2, _ := wireTransitionWorld(t, "ROLLED_BACK")
@@ -535,6 +650,77 @@ func TestReleasePromoteRingAssertionAndTerminals(t *testing.T) {
 	}
 	if len(rec.bodies) != 0 {
 		t.Errorf("no-op promote crossed %d states", len(rec.bodies))
+	}
+}
+
+// The precheck read: the same evaluation the promote act runs,
+// rendered as the one-screen blocker answer (issue #44's technical
+// note), and the promotions timeline read.
+func TestReleasePrecheckAndPromotionsReads(t *testing.T) {
+	f, _ := wireTransitionWorld(t, "ACTIVE")
+	f.handleJSON("/api/v1/releases/"+relUUID+"/promotion-precheck", func() any {
+		return map[string]any{
+			"promotable": false,
+			"blockers": map[string]string{
+				"gate:coverage": "coverage 74% below the 80% threshold (evidence: https://ci.example/run/99)",
+				"approval":      "approval policy 'prod-release' round 3 is pending",
+			},
+			"gates": []map[string]any{{
+				"gateType": "coverage", "required": true, "status": "FAILING",
+				"evidenceUrl": "https://ci.example/run/99", "source": "SUBMITTED",
+			}},
+			"approval": map[string]any{
+				"requirement": "PENDING", "policyName": "prod-release", "roundNumber": 3,
+				"roundStatus": "PENDING",
+				"waitedOn":    map[string]string{"step 1 (ROLE:ORG_ADMIN)": "awaiting approval (round 3)"},
+			},
+			"eligibility": []map[string]any{{
+				"tenantId": tenantUUID, "admitted": true, "ring": "tenant-pilot",
+			}},
+		}
+	})
+	if err := runCLI(t, f, "release", "precheck", "R-1001"); err != nil {
+		t.Fatalf("precheck: %v", err)
+	}
+	out := f.out()
+	for _, want := range []string{
+		"BLOCKED", "gate:coverage:", "https://ci.example/run/99", "approval:",
+		"prod-release", "step 1 (ROLE:ORG_ADMIN)", "admitted",
+	} {
+		if !strings.Contains(out, want) {
+			t.Errorf("precheck render missing %q:\n%s", want, out)
+		}
+	}
+
+	f.stdout.Reset()
+	f.handleJSON("/api/v1/releases/"+relUUID+"/promotions", func() any {
+		return map[string]any{
+			"releaseId": relUUID, "releaseRef": "R-1001", "status": "ACTIVE",
+			"promotions": []map[string]any{
+				{
+					"id": "11111111-1111-1111-1111-111111111111", "fromRing": "engineering",
+					"toRing": "tenant-pilot", "tenants": []string{tenantUUID}, "status": "COMPLETED",
+					"actorId": "u-1", "occurredAt": "2026-10-07T11:00:00Z",
+				},
+				{
+					"id": "22222222-2222-2222-2222-222222222222", "fromRing": "tenant-pilot",
+					"toRing": "uat", "tenants": []string{tenantUUID}, "status": "BLOCKED",
+					"blockers": map[string]string{"gate:coverage": "coverage 74% below the 80% threshold"},
+					"actorId":  "u-1", "occurredAt": "2026-10-07T12:00:00Z",
+				},
+			},
+		}
+	})
+	if err := runCLI(t, f, "release", "promotions", "R-1001"); err != nil {
+		t.Fatalf("promotions: %v", err)
+	}
+	out = f.out()
+	for _, want := range []string{
+		"engineering -> tenant-pilot: COMPLETED", "tenant-pilot -> uat: BLOCKED", "blockers:", "gate:coverage:",
+	} {
+		if !strings.Contains(out, want) {
+			t.Errorf("promotions render missing %q:\n%s", want, out)
+		}
 	}
 }
 

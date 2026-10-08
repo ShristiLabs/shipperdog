@@ -142,11 +142,19 @@ state, the override governs only whether it still blocks; beside the
 definition surface's `GATE_DEFINITION_CREATED`/`GATE_DEFINITION_UPDATED`
 — the required-gate catalog an organization defines, carrying
 `gateType`, `required`, the expected-result `config`, and the `ring`
-attachment), and the ring surface's `RING_CREATED`/`RING_UPDATED`/
+attachment), the ring surface's `RING_CREATED`/`RING_UPDATED`/
 `RING_DELETED` — S10-04/issue #43: every ring edit audited because it
 changes who can receive what — creation and deletion carry the full
 facts (`code`, `name`, `position`, the eligibility summary, the three
-references), edits carry only the CHANGED members,
+references), edits carry only the CHANGED members, and the promotion
+engine's pair — S10-05/issue #44: `RELEASE_PROMOTED`, one event per
+committed hop, carrying `releaseRef`, the two rings' codes, the
+tenants moved (the selective record), and whether the hop carried the
+release onto PRD 17's PROMOTED crossing; and
+`RELEASE_PROMOTION_BLOCKED`, a refused attempt with recorded evidence,
+carrying `releaseRef`, the ring the hop would have entered, and the
+complete blocker list (the append-only promotions timeline beside it;
+INV-008 — the artifacts and manifest the release froze are untouched),
 artifact (`ARTIFACT_UPLOAD_SESSION_CREATED` — issue #20/S5-01: the
 resumable direct-to-storage handoff is granted, carrying the
 pre-allocated `artifactId` entity reference with `platform`,

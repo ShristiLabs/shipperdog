@@ -57,6 +57,15 @@ public class ReleaseApprovalRoundEntity {
 
     private UUID workflowId;
 
+    /**
+     * The promotion marker (V33, S10-05): the ring a promotion round
+     * gates the release INTO; null for crossing and rework rounds. A
+     * promotion round exists only after the release crossed
+     * APPROVAL_PENDING, so it can never shadow the crossing's own round
+     * in the latest-round rules.
+     */
+    private UUID promotionRingId;
+
     @Enumerated(EnumType.STRING)
     @JdbcTypeCode(SqlTypes.NAMED_ENUM)
     private Status status;
@@ -75,9 +84,23 @@ public class ReleaseApprovalRoundEntity {
      * frozen, and the actor whose act created it.
      */
     public ReleaseApprovalRoundEntity(UUID releaseId, int roundNumber, UUID workflowId, UUID createdBy) {
+        this(releaseId, roundNumber, workflowId, null, createdBy);
+    }
+
+    /**
+     * One round as instantiated, with the promotion marker (V33,
+     * S10-05): {@code promotionRingId} names the ring a promotion round
+     * gates the release INTO — null for the crossing and rework rounds,
+     * which no hop owns. The marker is how the promotion engine resolves
+     * ITS round (by release and ring) without disturbing the
+     * latest-round rule the crossing policies consult.
+     */
+    public ReleaseApprovalRoundEntity(
+            UUID releaseId, int roundNumber, UUID workflowId, UUID promotionRingId, UUID createdBy) {
         this.releaseId = releaseId;
         this.roundNumber = roundNumber;
         this.workflowId = workflowId;
+        this.promotionRingId = promotionRingId;
         this.createdBy = createdBy;
         this.status = Status.PENDING;
     }
@@ -113,6 +136,10 @@ public class ReleaseApprovalRoundEntity {
 
     public UUID getWorkflowId() {
         return workflowId;
+    }
+
+    public UUID getPromotionRingId() {
+        return promotionRingId;
     }
 
     public Status getStatus() {

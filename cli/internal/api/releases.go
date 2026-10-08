@@ -207,6 +207,55 @@ func (c *Client) GetReleaseManifest(ctx context.Context, applicationID, releaseI
 	return &view, nil, nil
 }
 
+// PromoteRelease performs one governed ring hop (S10-05, FR-018):
+// POST /releases/{id}/promote. tenants nil (or empty) moves every
+// target; to, when set, must equal the effective order's next ring -
+// anything farther answers the skip 409, anything unknown the 422. A
+// refused hop answers 409 RELEASE_PROMOTION_BLOCKED whose errors
+// member is the COMPLETE blocker list (every gate, approval,
+// eligibility, and policy refusal named with its evidence) - the same
+// evaluation the precheck read serves, byte-for-byte.
+func (c *Client) PromoteRelease(ctx context.Context, applicationID, releaseID string, tenants []string, to string) (*ReleasePromotionResult, error) {
+	ctx, cancel := context.WithTimeout(ctx, shortTimeout)
+	defer cancel()
+	body := ReleasePromoteRequest{ApplicationID: applicationID, Tenants: tenants, To: to}
+	var result ReleasePromotionResult
+	if err := c.callJSON(ctx, http.MethodPost, pathReleasePromote, []string{releaseID}, nil, body, &result, "promote release"); err != nil {
+		return nil, err
+	}
+	return &result, nil
+}
+
+// GetPromotionPrecheck reads the promotion precheck: the SAME
+// evaluation the promote act runs, answered as a read (issue #44's
+// technical note - one evaluation function, three surfaces). Nothing
+// is written and no approval round is opened; the blockers map is
+// byte-for-byte the 409's errors member.
+func (c *Client) GetPromotionPrecheck(ctx context.Context, applicationID, releaseID string) (*ReleasePromotionPrecheck, error) {
+	ctx, cancel := context.WithTimeout(ctx, shortTimeout)
+	defer cancel()
+	q := url.Values{"applicationId": {applicationID}}
+	var precheck ReleasePromotionPrecheck
+	if err := c.callJSON(ctx, http.MethodGet, pathReleasePromotionPre, []string{releaseID}, q, nil, &precheck, "read promotion precheck"); err != nil {
+		return nil, err
+	}
+	return &precheck, nil
+}
+
+// GetPromotionHistory reads the append-only promotions timeline (PRD
+// 18): every COMPLETED hop with its two rings, moved tenants, and
+// actor, and every BLOCKED attempt with its recorded evidence.
+func (c *Client) GetPromotionHistory(ctx context.Context, applicationID, releaseID string) (*ReleasePromotionHistory, error) {
+	ctx, cancel := context.WithTimeout(ctx, shortTimeout)
+	defer cancel()
+	q := url.Values{"applicationId": {applicationID}}
+	var history ReleasePromotionHistory
+	if err := c.callJSON(ctx, http.MethodGet, pathReleasePromotions, []string{releaseID}, q, nil, &history, "read promotion history"); err != nil {
+		return nil, err
+	}
+	return &history, nil
+}
+
 // ResolveRelease turns a release reference (uuid, R-number, or bare
 // number) plus an optional --app into the application and the release
 // detail. Every release route is application-addressed, so without

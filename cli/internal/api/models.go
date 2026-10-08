@@ -280,6 +280,110 @@ type ReleaseTransitionRequest struct {
 	Reason        string `json:"reason,omitempty"`
 }
 
+// ReleasePromoteRequest is POST /api/v1/releases/{id}/promote: the
+// permission-target application, the optional selective tenant set
+// (absent moves every target), and the optional asserted target ring
+// (the effective order's next ring - anything farther is the skip
+// refusal).
+type ReleasePromoteRequest struct {
+	ApplicationID string   `json:"applicationId"`
+	Tenants       []string `json:"tenants,omitempty"`
+	To            string   `json:"to,omitempty"`
+}
+
+// ReleasePromotionResult is the promote act's answer: the hop's two
+// rings, the tenants moved, whether the hop carried the release onto
+// PRD 17's PROMOTED crossing, and the refreshed per-target rings.
+type ReleasePromotionResult struct {
+	ReleaseID         string            `json:"releaseId"`
+	ReleaseRef        string            `json:"releaseRef"`
+	Status            string            `json:"status"`
+	FromRing          string            `json:"fromRing"`
+	ToRing            string            `json:"toRing"`
+	Tenants           []string          `json:"tenants"`
+	CrossedToPromoted bool              `json:"crossedToPromoted"`
+	PromotionID       string            `json:"promotionId"`
+	PromotionStatus   string            `json:"promotionStatus"`
+	Blockers          map[string]string `json:"blockers"`
+	Targets           []PromotionTarget `json:"targets"`
+}
+
+// PromotionTarget is one target's refreshed ring after a hop.
+type PromotionTarget struct {
+	TenantID string `json:"tenantId"`
+	Ring     string `json:"ring"`
+}
+
+// ReleasePromotionPrecheck is GET /api/v1/releases/{id}/promotion-
+// precheck: the SAME evaluation the promote act runs, answered as a
+// read - the verdict, the complete blocker list (byte-for-byte the
+// 409's errors member), the target ring's gate states, the approval
+// leg's standing, and the widened eligibility rows.
+type ReleasePromotionPrecheck struct {
+	Promotable  bool                   `json:"promotable"`
+	Blockers    map[string]string      `json:"blockers"`
+	Gates       []PrecheckGateState    `json:"gates"`
+	Approval    PrecheckApproval       `json:"approval"`
+	Eligibility []PrecheckAdmissionRow `json:"eligibility"`
+}
+
+// PrecheckGateState is one gate of the target ring's evaluation.
+type PrecheckGateState struct {
+	GateType         string   `json:"gateType"`
+	Required         bool     `json:"required"`
+	Status           string   `json:"status"`
+	ObservedValue    *float64 `json:"observedValue"`
+	Threshold        *float64 `json:"threshold"`
+	EvidenceURL      string   `json:"evidenceUrl"`
+	Source           string   `json:"source"`
+	Overridden       bool     `json:"overridden"`
+	OverriddenBy     string   `json:"overriddenBy"`
+	OverriddenReason string   `json:"overriddenReason"`
+}
+
+// PrecheckApproval is the approval leg's standing (NOT_REQUIRED,
+// SATISFIED, PENDING, REJECTED, NOT_OPEN, UNRESOLVED).
+type PrecheckApproval struct {
+	Requirement string            `json:"requirement"`
+	PolicyName  string            `json:"policyName"`
+	RoundNumber *int64            `json:"roundNumber"`
+	RoundStatus string            `json:"roundStatus"`
+	WaitedOn    map[string]string `json:"waitedOn"`
+}
+
+// PrecheckAdmissionRow is one target's eligibility row against the
+// target ring (the widening seam's own answer).
+type PrecheckAdmissionRow struct {
+	TenantID       string   `json:"tenantId"`
+	Ring           string   `json:"ring"`
+	Admitted       bool     `json:"admitted"`
+	AudienceGroups []string `json:"audienceGroups"`
+	TenantAtLarge  bool     `json:"tenantAtLarge"`
+	Reasons        []string `json:"reasons"`
+}
+
+// ReleasePromotionHistory is GET /api/v1/releases/{id}/promotions: the
+// append-only timeline of hops and refused attempts.
+type ReleasePromotionHistory struct {
+	ReleaseID  string                `json:"releaseId"`
+	ReleaseRef string                `json:"releaseRef"`
+	Status     string                `json:"status"`
+	Promotions []ReleasePromotionRow `json:"promotions"`
+}
+
+// ReleasePromotionRow is one timeline row: a COMPLETED hop or a
+// BLOCKED attempt with its recorded evidence.
+type ReleasePromotionRow struct {
+	ID         string            `json:"id"`
+	FromRing   string            `json:"fromRing"`
+	ToRing     string            `json:"toRing"`
+	Tenants    []string          `json:"tenants"`
+	Status     string            `json:"status"`
+	Blockers   map[string]string `json:"blockers"`
+	ActorID    string            `json:"actorId"`
+	OccurredAt string            `json:"occurredAt"`
+}
+
 // ReleaseManifestView is GET /api/v1/releases/{id}/manifest: the
 // storage metadata (digest, freeze facts) beside the stored PRD 16
 // document, kept verbatim for --json output.

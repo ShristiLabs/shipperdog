@@ -3,14 +3,24 @@
  * the transition actions (legal edges; mandatory-reason dialog for
  * FAILED/ROLLED_BACK), the timeline with actors/timestamps/reasons,
  * the frozen-manifest viewer with YAML render and download, the
- * not-frozen 404 state, and the manifest diff surfacing pin identity. */
+ * not-frozen 404 state, and the manifest diff surfacing pin identity.
+ * Promotion-engine surfaces (issue #44, S10-05): the Promote action
+ * with its governed hop, the complete-blocker 409 render, the
+ * "why can't I promote" precheck dialog, and the append-only
+ * promotion timeline. */
 import { cleanup, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it } from "vitest";
 import { Route, Routes } from "react-router-dom";
 import ReleaseDetailPage from "./ReleaseDetailPage";
 import { installFetchRouter, renderConsole, seedSession } from "../test/harness";
-import type { ReleaseDetail, ReleaseManifest } from "../api/releases";
+import type {
+  PromotionHistory,
+  PromotionPrecheck,
+  PromotionResult,
+  ReleaseDetail,
+  ReleaseManifest,
+} from "../api/releases";
 
 const user = userEvent.setup();
 
@@ -317,6 +327,96 @@ function directoryRoutes(): Parameters<typeof installFetchRouter>[0] {
 function notFound(code = "RELEASE_NOT_FOUND") {
   return { title: "Not Found", status: 404, code, detail: "Resource not found." };
 }
+
+/** The governed hop's answer (S10-05): the two rings, the moved
+ * tenants, and the widened per-target rings read back. */
+const PROMOTION_RESULT: PromotionResult = {
+  releaseId: RELEASE_ID,
+  releaseRef: "R-101",
+  status: "ACTIVE",
+  fromRing: "engineering",
+  toRing: "tenant-pilot",
+  tenants: [TENANT_ACME],
+  crossedToPromoted: false,
+  promotionId: "80000000-0000-4000-8000-000000000001",
+  promotionStatus: "COMPLETED",
+  blockers: {},
+  targets: [{ tenantId: TENANT_ACME, ring: "tenant-pilot" }],
+};
+
+/** The blocked precheck (issue #44's technical note: one evaluation,
+ * three surfaces): the complete blocker list byte-for-byte the 409's
+ * errors member, the target ring's gate states with evidence, the
+ * approval standing with its waited-on list, and the widened
+ * eligibility rows with exclusion reasons. */
+const PRECHECK_BLOCKED: PromotionPrecheck = {
+  promotable: false,
+  blockers: {
+    "gate:coverage": "coverage 74% below the 80% threshold (evidence: https://ci.internal/run/9/coverage)",
+    approval: "approval policy 'pilot-promo' round 3 is pending: awaiting QA",
+  },
+  gates: [
+    {
+      gateType: "coverage",
+      required: true,
+      status: "FAILED",
+      observedValue: 74,
+      threshold: 80,
+      evidenceUrl: "https://ci.internal/run/9/coverage",
+      source: "SUBMITTED",
+      overridden: false,
+      overriddenBy: null,
+      overriddenReason: null,
+    },
+  ],
+  approval: {
+    requirement: "PENDING",
+    policyName: "pilot-promo",
+    roundNumber: 3,
+    roundStatus: "PENDING",
+    waitedOn: { "step 1 (ROLE:QA_ENGINEER)": "awaiting approval" },
+  },
+  eligibility: [
+    {
+      tenantId: TENANT_ACME,
+      ring: "tenant-pilot",
+      admitted: false,
+      audienceGroups: [],
+      tenantAtLarge: true,
+      reasons: ["no testers in audience"],
+    },
+  ],
+};
+
+/** The append-only timeline (AC5): a completed hop beside a refused
+ * attempt carrying its recorded evidence. */
+const PROMOTION_HISTORY: PromotionHistory = {
+  releaseId: RELEASE_ID,
+  releaseRef: "R-101",
+  status: "ACTIVE",
+  promotions: [
+    {
+      id: "81000000-0000-4000-8000-000000000001",
+      fromRing: "engineering",
+      toRing: "tenant-pilot",
+      tenants: [TENANT_ACME],
+      status: "COMPLETED",
+      blockers: null,
+      actorId: ACTOR_ID,
+      occurredAt: "2026-10-03T10:00:00Z",
+    },
+    {
+      id: "81000000-0000-4000-8000-000000000002",
+      fromRing: "tenant-pilot",
+      toRing: "uat",
+      tenants: [TENANT_ACME],
+      status: "BLOCKED",
+      blockers: { "gate:coverage": "coverage 74% below the 80% threshold" },
+      actorId: ACTOR_ID,
+      occurredAt: "2026-10-03T11:00:00Z",
+    },
+  ],
+};
 
 /** The gate block an ungated ring answers: no expected set, no
  * reported results — the honest empty (gates are configurable). */
@@ -1031,5 +1131,188 @@ describe("ReleaseDetailPage", () => {
       reason: "finding is a false positive",
     });
     expect(await screen.findByText(/Gate sast overridden/)).toBeInTheDocument();
+  });
+
+  // ---------------------------------------------------------------------
+  // Promotion engine (S10-05): the governed ring hop and its surfaces
+  // ---------------------------------------------------------------------
+
+  it("performs the governed hop from the Promote action and toasts the widened ring (S10-05)", async () => {
+    renderDetail(DETAIL_ACTIVE, [
+      {
+        method: "POST",
+        url: `/api/v1/releases/${RELEASE_ID}/promote`,
+        status: 200,
+        body: PROMOTION_RESULT,
+      },
+    ]);
+
+    await user.click(await screen.findByTestId("promote-button"));
+
+    // The console moves every target (no selective tenants, no asserted
+    // ring): the body addresses the application, nothing else.
+    await waitFor(() => {
+      const calls = fetchCalls().filter(([url]) => url.endsWith("/promote"));
+      expect(calls).toHaveLength(1);
+      expect(JSON.parse(String(calls[0]?.[1]?.body))).toEqual({
+        applicationId: APPLICATION_ID,
+      });
+    });
+    expect(await screen.findByText(/R-101 promoted engineering -> tenant-pilot/)).toBeInTheDocument();
+    // A committed hop renders no blocker alert.
+    expect(screen.queryByTestId("promotion-blockers")).not.toBeInTheDocument();
+  });
+
+  it("renders the complete blocker list inline when the hop is refused (S10-05 AC1)", async () => {
+    renderDetail(DETAIL_ACTIVE, [
+      {
+        method: "POST",
+        url: `/api/v1/releases/${RELEASE_ID}/promote`,
+        status: 409,
+        body: {
+          title: "Conflict",
+          status: 409,
+          code: "RELEASE_PROMOTION_BLOCKED",
+          detail: "the promotion to ring 'tenant-pilot' is blocked",
+          errors: {
+            "gate:coverage": "coverage 74% below the 80% threshold (evidence: https://ci.internal/run/9/coverage)",
+            approval: "approval policy 'pilot-promo' round 3 is pending: awaiting QA",
+            [`eligibility:${TENANT_ACME}`]: "the ring's eligibility excludes this tenant: no testers in audience",
+          },
+        },
+      },
+    ]);
+
+    await user.click(await screen.findByTestId("promote-button"));
+
+    // The credibility moment: the 409's errors member — the COMPLETE
+    // list — renders inline with every blocker named, never just a toast.
+    const alert = await screen.findByTestId("promotion-blockers");
+    expect(alert).toHaveTextContent("The promotion is blocked");
+    expect(alert).toHaveTextContent("gate:coverage");
+    expect(alert).toHaveTextContent("https://ci.internal/run/9/coverage");
+    expect(alert).toHaveTextContent("approval");
+    expect(alert).toHaveTextContent("pilot-promo");
+    expect(alert).toHaveTextContent(`eligibility:${TENANT_ACME}`);
+    expect(alert).toHaveTextContent("no testers in audience");
+  });
+
+  it("answers why-can't-I-promote from the precheck read: verdict, blockers, gates, approval, exclusions (S10-05)", async () => {
+    renderDetail(DETAIL_ACTIVE, [
+      {
+        method: "GET",
+        url: `/api/v1/releases/${RELEASE_ID}/promotion-precheck`,
+        status: 200,
+        body: PRECHECK_BLOCKED,
+      },
+    ]);
+
+    await user.click(await screen.findByTestId("precheck-button"));
+
+    const dialog = await screen.findByTestId("precheck-dialog");
+    expect(dialog).toHaveTextContent("The next hop is blocked");
+
+    // The complete blocker list, one entry per blocker with its evidence.
+    expect(within(dialog).getAllByTestId("precheck-blocker")).toHaveLength(2);
+    expect(dialog).toHaveTextContent("gate:coverage");
+    expect(dialog).toHaveTextContent("https://ci.internal/run/9/coverage");
+    expect(dialog).toHaveTextContent("approval");
+    expect(dialog).toHaveTextContent("pilot-promo");
+
+    // The target ring's gate states carry their evidence as links.
+    expect(dialog).toHaveTextContent("Target ring gates");
+    expect(dialog).toHaveTextContent("coverage: FAILED");
+    expect(
+      within(dialog)
+        .getByRole("link", { name: /ci\.internal\/run\/9\/coverage/ })
+        .getAttribute("href"),
+    ).toBe("https://ci.internal/run/9/coverage");
+
+    // The approval standing: requirement, policy, round, waited-on.
+    expect(dialog).toHaveTextContent("Approval");
+    expect(dialog).toHaveTextContent("PENDING — policy pilot-promo, round 3");
+    expect(dialog).toHaveTextContent("step 1 (ROLE:QA_ENGINEER): awaiting approval");
+
+    // The exclusion resolves the tenant's name, with its reasons.
+    expect(dialog).toHaveTextContent("Eligibility exclusions");
+    expect(dialog).toHaveTextContent("Acme: no testers in audience");
+  });
+
+  it("shows the clear verdict when the precheck finds the next hop promotable (S10-05)", async () => {
+    renderDetail(DETAIL_ACTIVE, [
+      {
+        method: "GET",
+        url: `/api/v1/releases/${RELEASE_ID}/promotion-precheck`,
+        status: 200,
+        body: {
+          ...PRECHECK_BLOCKED,
+          promotable: true,
+          blockers: {},
+          gates: [],
+          approval: {
+            requirement: "NOT_REQUIRED",
+            policyName: null,
+            roundNumber: null,
+            roundStatus: null,
+            waitedOn: {},
+          },
+          eligibility: [],
+        },
+      },
+    ]);
+
+    await user.click(await screen.findByTestId("precheck-button"));
+
+    const dialog = await screen.findByTestId("precheck-dialog");
+    expect(dialog).toHaveTextContent("The next hop is clear");
+    expect(within(dialog).queryAllByTestId("precheck-blocker")).toHaveLength(0);
+  });
+
+  it("renders the promotion timeline: hops, blocked attempts with recorded evidence, actors (S10-05 AC5)", async () => {
+    renderDetail(DETAIL_ACTIVE, [
+      {
+        method: "GET",
+        url: `/api/v1/releases/${RELEASE_ID}/promotions`,
+        status: 200,
+        body: PROMOTION_HISTORY,
+      },
+    ]);
+
+    const rows = await screen.findAllByTestId("promotion-row");
+    expect(rows).toHaveLength(2);
+
+    // The completed hop: chip, both rings, the moved tenant resolved by
+    // name, and the actor resolved through the roster.
+    expect(rows[0]).toHaveTextContent("hop");
+    expect(rows[0]).toHaveTextContent("engineering → tenant-pilot");
+    expect(rows[0]).toHaveTextContent("Acme");
+    expect(rows[0]).toHaveTextContent("ShipperDog Dev Admin");
+
+    // The refused attempt: chip, the ring it was refused entry to, and
+    // the recorded evidence riding the row.
+    expect(rows[1]).toHaveTextContent("blocked");
+    expect(rows[1]).toHaveTextContent("tenant-pilot → uat");
+    expect(rows[1]).toHaveTextContent("gate:coverage: coverage 74% below the 80% threshold");
+  });
+
+  it("shows the honest empty state before any promotion attempt (S10-05)", async () => {
+    renderDetail(DETAIL_ACTIVE, [
+      {
+        method: "GET",
+        url: `/api/v1/releases/${RELEASE_ID}/promotions`,
+        status: 200,
+        body: { releaseId: RELEASE_ID, releaseRef: "R-101", status: "ACTIVE", promotions: [] },
+      },
+    ]);
+
+    expect(await screen.findByText(/No promotion attempts yet/)).toBeInTheDocument();
+  });
+
+  it("disables the promote actions off the ACTIVE runway (S10-05)", async () => {
+    renderDetail(DETAIL_DRAFT);
+
+    await screen.findByTestId("distribution-section");
+    expect(screen.getByTestId("promote-button")).toBeDisabled();
+    expect(screen.getByTestId("precheck-button")).toBeDisabled();
   });
 });

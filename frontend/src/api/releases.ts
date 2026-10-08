@@ -201,6 +201,132 @@ export function getReleaseHistory(
   );
 }
 
+/** The promote act's answer (S10-05): the hop's two rings, the tenants
+ * moved, whether the hop carried the release onto PRD 17's PROMOTED
+ * crossing, and the refreshed per-target rings — the widened
+ * distribution read back. */
+export interface PromotionResult {
+  releaseId: string;
+  releaseRef: string;
+  status: ReleaseStatus;
+  fromRing: string;
+  toRing: string;
+  tenants: string[];
+  crossedToPromoted: boolean;
+  promotionId: string;
+  promotionStatus: "COMPLETED";
+  blockers: Record<string, string>;
+  targets: Array<{ tenantId: string; ring: string }>;
+}
+
+/** One gate of the target ring's evaluation inside the precheck — the
+ * same state the gates block serves, stamped by the hop's target ring. */
+export interface PrecheckGateState {
+  gateType: string;
+  required: boolean;
+  status: string;
+  observedValue: number | null;
+  threshold: number | null;
+  evidenceUrl: string | null;
+  source: string;
+  overridden: boolean;
+  overriddenBy: string | null;
+  overriddenReason: string | null;
+}
+
+/** The approval leg's standing: NOT_REQUIRED (the ring binds nothing),
+ * SATISFIED, PENDING (the round it waits on), REJECTED, NOT_OPEN (the
+ * promote act opens it), or UNRESOLVED (fail closed, S10-02). */
+export interface PrecheckApproval {
+  requirement: string;
+  policyName: string | null;
+  roundNumber: number | null;
+  roundStatus: string | null;
+  waitedOn: Record<string, string>;
+}
+
+/** One target's eligibility row against the hop's target ring (the
+ * widening seam's own answer, with the exclusion reasons). */
+export interface PrecheckAdmission {
+  tenantId: string;
+  ring: string;
+  admitted: boolean;
+  audienceGroups: string[];
+  tenantAtLarge: boolean;
+  reasons: string[];
+}
+
+/** The promotion precheck (issue #44's technical note: one evaluation
+ * function, three surfaces): the SAME evaluation the promote act runs,
+ * answered as a read. The blockers map is byte-for-byte the 409's
+ * errors member — the console's "why can't I promote" answer. */
+export interface PromotionPrecheck {
+  promotable: boolean;
+  blockers: Record<string, string>;
+  gates: PrecheckGateState[];
+  approval: PrecheckApproval;
+  eligibility: PrecheckAdmission[];
+}
+
+/** One row of the append-only promotions timeline (PRD 18): a
+ * COMPLETED hop or a BLOCKED attempt with its recorded evidence. */
+export interface PromotionRecord {
+  id: string;
+  fromRing: string;
+  toRing: string | null;
+  tenants: string[];
+  status: "COMPLETED" | "BLOCKED";
+  blockers: Record<string, string> | null;
+  actorId: string;
+  occurredAt: string;
+}
+
+export interface PromotionHistory {
+  releaseId: string;
+  releaseRef: string;
+  status: ReleaseStatus;
+  promotions: PromotionRecord[];
+}
+
+/** One governed ring hop (S10-05, FR-018). `tenants` omitted moves
+ * every target; `to`, when set, must equal the effective order's next
+ * ring (a farther ring answers the skip 409). A refused hop answers
+ * 409 RELEASE_PROMOTION_BLOCKED whose errors member is the COMPLETE
+ * blocker list. */
+export function promoteRelease(
+  applicationId: string,
+  releaseId: string,
+  input: { tenants?: string[]; to?: string } = {},
+): Promise<PromotionResult> {
+  const tenants = input.tenants?.filter((tenant) => tenant.trim() !== "");
+  return apiFetch<PromotionResult>(`/releases/${releaseId}/promote`, {
+    method: "POST",
+    body: {
+      applicationId,
+      ...(tenants && tenants.length > 0 ? { tenants } : {}),
+      ...(input.to ? { to: input.to } : {}),
+    },
+  });
+}
+
+export function getPromotionPrecheck(
+  applicationId: string,
+  releaseId: string,
+): Promise<PromotionPrecheck> {
+  return apiFetch<PromotionPrecheck>(
+    `/releases/${releaseId}/promotion-precheck?applicationId=${encodeURIComponent(applicationId)}`,
+  );
+}
+
+export function getPromotionHistory(
+  applicationId: string,
+  releaseId: string,
+): Promise<PromotionHistory> {
+  return apiFetch<PromotionHistory>(
+    `/releases/${releaseId}/promotions?applicationId=${encodeURIComponent(applicationId)}`,
+  );
+}
+
 export function getReleaseManifest(
   applicationId: string,
   releaseId: string,

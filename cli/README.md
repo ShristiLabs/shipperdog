@@ -109,12 +109,24 @@ shipperdog release promote R-1028
   so one pass fixes the whole target set.
 - **promote** drives the machine forward one legal edge at a time
   (VALIDATING, READY, APPROVAL_PENDING — the APPROVED crossing freezes
-  the manifest — DEPLOYING, ACTIVE, PROMOTED). Any refusal stops the
-  walk: the blocker's code, detail, and reason list print and the
-  command exits 4 — the same surface E10's approval and gate policies
-  will refuse through. `--ring` asserts the release's starting ring
-  (M2 releases keep their creation ring; ring-to-ring promotion arrives
-  with S10-05). FAILED/ROLLED_BACK releases are terminal and refuse.
+  the manifest — DEPLOYING, ACTIVE) and then, since S10-05, through
+  the promotion engine's ring hops: one governed ring at a time in the
+  organization's effective order, the final ring's hop carrying the
+  release across ACTIVE to PROMOTED. Any refusal stops the walk: the
+  blocker's code, detail, and full reason list print and the
+  command exits 4 — a refused hop answers the COMPLETE blocker list
+  (every gate with its evidence URL, the approval round it waits on,
+  eligibility exclusions). `--ring` asserts the release's starting
+  ring (which never moves; mismatch refuses — usually the wrong
+  release). `--tenant` (repeatable) narrows the hops to the named
+  targets — the selective staged rollout; absent moves every target.
+  FAILED/ROLLED_BACK releases are terminal and refuse; PROMOTED and
+  COMPLETED are success no-ops.
+- **precheck** answers "why can't I promote" in one screen — the same
+  evaluation promote runs, as a read (nothing written, no approval
+  round opened); **promotions** renders the append-only timeline:
+  every completed hop and every recorded refusal with its evidence
+  and actor.
 - **transition** is the direct edge-by-edge drive for humans and
   scripts that want one crossing at a time.
 - **gates** are live since S10-03 (see the next section): `release
