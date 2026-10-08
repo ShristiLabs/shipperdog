@@ -388,8 +388,10 @@ func newReleaseGetCmd() *cobra.Command {
 		Short: "Read a release (status, artifacts, targets, ring)",
 		Long: "GET /api/v1/releases/{id}: the full creation record - status, per-platform\n" +
 			"artifact selection, the complete target set, ring and environment. Gates\n" +
-			"and approvals render their honest not-yet-reported state until E10 lands\n" +
-			"(S10-01/S10-03). <release> is the quotable id (R-1028, r1028, 1028) or a\n" +
+			"render their honest not-yet-reported state until the S10-03 gate subsystem\n" +
+			"lands; approvals are live since S10-02 (issue #41) - the transition\n" +
+			"refusal names pending approvals, and the console renders the rounds.\n" +
+			"<release> is the quotable id (R-1028, r1028, 1028) or a\n" +
 			"uuid; --app (name or uuid) skips the cross-application lookup. --json emits\n" +
 			"the release detail verbatim for pipeline decisions.",
 		Args: cobra.ExactArgs(1),

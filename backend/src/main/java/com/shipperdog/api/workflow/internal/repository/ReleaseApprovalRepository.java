@@ -48,4 +48,24 @@ public interface ReleaseApprovalRepository extends JpaRepository<ReleaseApproval
             @Param("approverRole") String approverRole,
             @Param("reason") String reason,
             @Param("decidedAt") java.time.Instant decidedAt);
+
+    /**
+     * The skip's compare-and-set (S10-02, the CAS doctrine): moves a
+     * still-PENDING sibling of a satisfied ANY group to SKIPPED,
+     * recording the rationale and the moment — 1 when this call
+     * skipped the step, 0 when a concurrent decision (a racing sibling
+     * approver or rejecter) moved it first, in which case the caller
+     * recomputes the round from the committed rows. A decided row is
+     * terminal forever; the skip carries no signature.
+     */
+    @Modifying(clearAutomatically = true, flushAutomatically = true)
+    @Query(
+            value = "update release_approvals set status = 'SKIPPED', "
+                    + "reason = :reason, decided_at = :decidedAt, updated_at = now() "
+                    + "where id = :approvalId and status = 'PENDING'",
+            nativeQuery = true)
+    int skipIfPending(
+            @Param("approvalId") UUID approvalId,
+            @Param("reason") String reason,
+            @Param("decidedAt") java.time.Instant decidedAt);
 }

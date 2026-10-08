@@ -1,6 +1,7 @@
 package com.shipperdog.api.workflow.internal.service;
 
 import com.shipperdog.api.release.ReleaseTransitionPolicy;
+import com.shipperdog.api.workflow.internal.entity.ApprovalWorkflowStepEntity.GroupMode;
 import com.shipperdog.api.workflow.internal.entity.ReleaseApprovalEntity;
 import com.shipperdog.api.workflow.internal.entity.ReleaseApprovalRoundEntity;
 import com.shipperdog.api.workflow.internal.repository.ReleaseApprovalRepository;
@@ -11,18 +12,20 @@ import java.util.UUID;
 import org.springframework.stereotype.Component;
 
 /**
- * The approval-completion policy (issue #40, S10-01, AC4): the first
- * registered {@link ReleaseTransitionPolicy} contributor — the seam's
- * javadoc named this exact registration ("E10/S10-01's approval
- * evaluation ... the crossing APPROVAL_PENDING to APPROVED"). The
- * crossing is denied while the release's latest approval round is
- * PENDING (the chain has not finished) or REJECTED (progression is
- * blocked — the rework path is a new round, never an un-reject), and
- * permitted when the round is SATISFIED — all steps signed, the chain
- * FR-016 demanded — or when NO round exists: approval workflows are
- * CONFIGURABLE, and an organization that defined none keeps the
- * ungated machine S9-02 shipped (a seam that denied by default would
- * block the machine this story exists to build).
+ * The approval-completion policy (issue #40, S10-01, AC4; the group
+ * semantics since #41, S10-02): the first registered
+ * {@link ReleaseTransitionPolicy} contributor — the seam's javadoc
+ * named this exact registration ("E10/S10-01's approval evaluation
+ * ... the crossing APPROVAL_PENDING to APPROVED"). The crossing is
+ * denied while the release's latest approval round is PENDING (the
+ * chain has not finished) or REJECTED (progression is blocked — the
+ * rework path is a new round, never an un-reject), and permitted when
+ * the round is SATISFIED — every group satisfied per its mode (ALL:
+ * every step signed; ANY: one signature recorded, siblings skipped;
+ * the chain FR-016 demanded) — or when NO round exists: approval
+ * workflows are CONFIGURABLE, and an organization that defined none
+ * keeps the ungated machine S9-02 shipped (a seam that denied by
+ * default would block the machine this story exists to build).
  *
  * <p>Reads run inside the transition's committing transaction (the
  * seam consults every contributor before the CAS commits): the round
@@ -77,20 +80,40 @@ public class ReleaseApprovalPolicy implements ReleaseTransitionPolicy {
         };
     }
 
-    /** The pending chain's refusal: which step the chain waits on, in chain order. */
+    /**
+     * The pending chain's refusal: what the round waits on, per the
+     * evaluator. A single waiting step keeps the S10-01 wording
+     * verbatim ("awaits step N of M (TYPE)" — every sequential round
+     * reads exactly as before); a parallel group's simultaneous
+     * demands name the group, its mode, and every waiting step (the
+     * dashboard's waiting-on list, the policy's own).
+     */
     private String pendingDenial(UUID releaseId, ReleaseApprovalRoundEntity round) {
         List<ReleaseApprovalEntity> chain = approvals.findByRoundIdOrderByPositionAsc(round.getId());
-        ReleaseApprovalEntity waiting = chain.stream()
-                .filter(step -> step.getStatus() == ReleaseApprovalEntity.Status.PENDING)
-                .findFirst()
-                .orElse(null);
-        if (waiting == null) {
-            // A PENDING round with no pending step is mid-decision (the
-            // last approval's transaction has not committed its
-            // SATISFIED crossing yet) — the serialized answer.
+        ApprovalRoundEvaluator.Evaluation evaluation = ApprovalRoundEvaluator.evaluate(
+                chain.stream().map(ApprovalRoundEvaluator.Step::of).toList());
+        List<ReleaseApprovalEntity> waiting = chain.stream()
+                .filter(step -> evaluation.decidablePositions().contains(step.getPosition()))
+                .toList();
+        if (waiting.isEmpty()) {
+            // A PENDING round with no decidable step is mid-decision
+            // (the last decision's terminal crossing has not committed
+            // yet) — the serialized answer.
             return "approval round " + round.getRoundNumber() + " is completing";
         }
-        return "approval round " + round.getRoundNumber() + " awaits step " + waiting.getPosition() + " of "
-                + chain.size() + " (" + waiting.getApprovalType().name() + ")";
+        if (waiting.size() == 1) {
+            ReleaseApprovalEntity step = waiting.get(0);
+            return "approval round " + round.getRoundNumber() + " awaits step " + step.getPosition() + " of "
+                    + chain.size() + " (" + step.getApprovalType().name() + ")";
+        }
+        String demands = waiting.stream()
+                .map(step -> step.getApprovalType().name())
+                .toList()
+                .toString();
+        String modeNote = evaluation.activeGroupMode() == GroupMode.ANY
+                ? "ANY, first approval satisfies"
+                : "ALL, every step required";
+        return "approval round " + round.getRoundNumber() + " awaits group " + evaluation.activeGroupPosition() + " ("
+                + modeNote + "): " + demands;
     }
 }

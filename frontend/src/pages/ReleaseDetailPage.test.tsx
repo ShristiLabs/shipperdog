@@ -108,6 +108,129 @@ const HISTORY = {
   ],
 };
 
+const WORKFLOW_ID = "70000000-0000-4000-8000-000000000001";
+
+/** The live round of the PRD FR-016 topology — QA signed, the parallel
+ * group holding a pending Security sibling beside a condition-skipped
+ * Compliance sibling, an ANY group waiting — beside the rejected
+ * round 1 it reworked from. */
+const APPROVAL_STATE = {
+  releaseId: RELEASE_ID,
+  releaseRef: "R-101",
+  applicationId: APPLICATION_ID,
+  releaseStatus: "APPROVAL_PENDING",
+  currentRoundNumber: 2,
+  currentRoundStatus: "PENDING",
+  rounds: [
+    {
+      roundNumber: 1,
+      status: "REJECTED",
+      workflowId: WORKFLOW_ID,
+      workflowName: "enterprise",
+      createdBy: ACTOR_ID,
+      createdAt: "2026-10-01T11:00:00Z",
+      steps: [
+        {
+          position: 1,
+          approvalType: "QA_ENGINEER",
+          tenantId: null,
+          groupPosition: 1,
+          groupMode: "ALL",
+          status: "REJECTED",
+          approverId: ACTOR_ID,
+          approverRole: "QA_ENGINEER",
+          reason: "flaky test suite",
+          decidedAt: "2026-10-01T11:30:00Z",
+        },
+      ],
+    },
+    {
+      roundNumber: 2,
+      status: "PENDING",
+      workflowId: WORKFLOW_ID,
+      workflowName: "enterprise",
+      createdBy: ACTOR_ID,
+      createdAt: "2026-10-01T12:00:00Z",
+      steps: [
+        {
+          position: 1,
+          approvalType: "QA_ENGINEER",
+          tenantId: null,
+          groupPosition: 1,
+          groupMode: "ALL",
+          status: "APPROVED",
+          approverId: ACTOR_ID,
+          approverRole: "QA_ENGINEER",
+          reason: null,
+          decidedAt: "2026-10-01T12:10:00Z",
+        },
+        {
+          position: 2,
+          approvalType: "SECURITY_REVIEWER",
+          tenantId: null,
+          groupPosition: 2,
+          groupMode: "ALL",
+          status: "PENDING",
+          approverId: null,
+          approverRole: null,
+          reason: null,
+          decidedAt: null,
+        },
+        {
+          position: 3,
+          approvalType: "COMPLIANCE_REVIEWER",
+          tenantId: null,
+          groupPosition: 2,
+          groupMode: "ALL",
+          status: "SKIPPED",
+          approverId: null,
+          approverRole: null,
+          reason: "condition ENVIRONMENT_EQUALS(production) unmet (environment=qa)",
+          decidedAt: "2026-10-01T12:00:00Z",
+        },
+        {
+          position: 4,
+          approvalType: "APP_OWNER",
+          tenantId: null,
+          groupPosition: 3,
+          groupMode: "ANY",
+          status: "PENDING",
+          approverId: null,
+          approverRole: null,
+          reason: null,
+          decidedAt: null,
+        },
+      ],
+    },
+  ],
+};
+
+/** The rejected moment: the rework restart is offerable exactly here. */
+const APPROVAL_STATE_REJECTED = {
+  ...APPROVAL_STATE,
+  currentRoundStatus: "REJECTED",
+  rounds: APPROVAL_STATE.rounds.map((round) =>
+    round.roundNumber === 2
+      ? {
+          ...round,
+          status: "REJECTED",
+          steps: round.steps.map((step) =>
+            step.position === 2
+              ? {
+                  ...step,
+                  status: "REJECTED",
+                  approverId: ACTOR_ID,
+                  approverRole: "SECURITY_REVIEWER",
+                  reason: "CVE in a pinned dependency",
+                  decidedAt: "2026-10-01T12:20:00Z",
+                }
+              : step,
+          ),
+        }
+      : round,
+  ),
+};
+
 function fetchCalls(): Array<[string, RequestInit | undefined]> {
   const mock = fetch as unknown as { mock: { calls: Array<[string, RequestInit]> } };
   return mock.mock.calls;
@@ -250,7 +373,9 @@ describe("ReleaseDetailPage", () => {
 
     // E10 subsystems render their empty states, not dead sections.
     expect(screen.getByTestId("gates-empty")).toBeInTheDocument();
-    expect(screen.getByTestId("approvals-empty")).toBeInTheDocument();
+    // The approvals block resolves its honest 404 (no bound policy)
+    // asynchronously — the live state loads with the release.
+    expect(await screen.findByTestId("approvals-empty")).toBeInTheDocument();
 
     // Distribution: the starting ring and the resolved tenant target.
     expect(screen.getByTestId("distribution-section")).toHaveTextContent("Engineering");
@@ -472,7 +597,7 @@ describe("ReleaseDetailPage", () => {
     // resolved snapshot, not pointers).
     expect(document).toHaveTextContent("version 2 · 2 config keys");
     // The frozen required-approver set renders once a policy exists.
-    expect(screen.getByTestId("approvals-empty")).toHaveTextContent("QA, SECURITY");
+    expect(await screen.findByTestId("approvals-empty")).toHaveTextContent("QA, SECURITY");
     // The timeline renders the crossing's timestamp, not just the row.
     expect(screen.getByTestId("timeline-section")).toHaveTextContent(
       new Date("2026-10-02T13:00:00Z").toLocaleString(),
@@ -542,5 +667,123 @@ describe("ReleaseDetailPage", () => {
     // The toast convention: the problem+json code and detail, not a
     // generic message (the server stays the authority on transitions).
     expect(await screen.findByText(/RELEASE_TRANSITION_INVALID/)).toBeInTheDocument();
+  });
+
+  it("renders the live approval state: group modes, waiting-on, skips, and the earlier rejected round (S10-02)", async () => {
+    renderDetail(
+      { ...DETAIL_ACTIVE, status: "APPROVAL_PENDING" },
+      [
+        {
+          method: "GET",
+          url: `/api/v1/releases/${RELEASE_ID}/manifest`,
+          status: 404,
+          body: notFound("RELEASE_MANIFEST_NOT_FOUND"),
+        },
+        {
+          method: "GET",
+          url: `/api/v1/releases/${RELEASE_ID}/approvals`,
+          status: 200,
+          body: APPROVAL_STATE,
+        },
+      ],
+    );
+
+    const section = await screen.findByTestId("approvals-section");
+    // The live round's identity: number, status, the definition's name.
+    await waitFor(() => expect(section).toHaveTextContent("round 2 · pending · enterprise"));
+    // AC5: the waiting-on list the evaluator derives — the active ALL
+    // group's pending sibling (its sibling was condition-skipped).
+    expect(screen.getByTestId("approvals-waiting-on")).toHaveTextContent("Waiting on: Security");
+    // The recorded signature resolves its approver through the roster.
+    expect(section).toHaveTextContent("ShipperDog Dev Admin");
+    // The condition-excluded sibling renders its recorded rationale.
+    expect(section).toHaveTextContent("condition ENVIRONMENT_EQUALS(production) unmet");
+    // Decisions are offered on exactly the decidable step.
+    expect(screen.getByTestId("approve-step-2")).toBeInTheDocument();
+    expect(screen.getByTestId("reject-step-2")).toBeInTheDocument();
+    expect(screen.queryByTestId("approve-step-4")).not.toBeInTheDocument();
+    // The rework history: round 1's rejection with its reason.
+    expect(section).toHaveTextContent("round 1 rejected");
+    expect(section).toHaveTextContent("QA rejected");
+    expect(section).toHaveTextContent("flaky test suite");
+  });
+
+  it("records a decision from the dashboard and invalidates the live state", async () => {
+    renderDetail(
+      { ...DETAIL_ACTIVE, status: "APPROVAL_PENDING" },
+      [
+        {
+          method: "GET",
+          url: `/api/v1/releases/${RELEASE_ID}/manifest`,
+          status: 404,
+          body: notFound("RELEASE_MANIFEST_NOT_FOUND"),
+        },
+        {
+          method: "GET",
+          url: `/api/v1/releases/${RELEASE_ID}/approvals`,
+          status: 200,
+          body: APPROVAL_STATE,
+        },
+        {
+          method: "POST",
+          url: `/api/v1/releases/${RELEASE_ID}/approvals`,
+          status: 200,
+          body: APPROVAL_STATE,
+        },
+      ],
+    );
+
+    await user.click(await screen.findByTestId("approve-step-2"));
+
+    // The decision body addresses the asserted step (the server's CAS
+    // is the authority; the console asserts what the evaluator named).
+    const approveCall = fetchCalls().find(
+      ([url, request]) =>
+        url === `/api/v1/releases/${RELEASE_ID}/approvals` && request?.method === "POST",
+    );
+    expect(approveCall).toBeDefined();
+    expect(JSON.parse((approveCall![1] as RequestInit).body as string)).toEqual({
+      applicationId: APPLICATION_ID,
+      decision: "APPROVE",
+      step: 2,
+    });
+    expect(await screen.findByText(/Approval decision recorded/)).toBeInTheDocument();
+  });
+
+  it("offers the rework restart on a rejected round and posts the new round", async () => {
+    renderDetail(
+      { ...DETAIL_ACTIVE, status: "APPROVAL_PENDING" },
+      [
+        {
+          method: "GET",
+          url: `/api/v1/releases/${RELEASE_ID}/manifest`,
+          status: 404,
+          body: notFound("RELEASE_MANIFEST_NOT_FOUND"),
+        },
+        {
+          method: "GET",
+          url: `/api/v1/releases/${RELEASE_ID}/approvals`,
+          status: 200,
+          body: APPROVAL_STATE_REJECTED,
+        },
+        {
+          method: "POST",
+          url: `/api/v1/releases/${RELEASE_ID}/approvals/rounds`,
+          status: 200,
+          body: APPROVAL_STATE,
+        },
+      ],
+    );
+
+    await user.click(await screen.findByTestId("approvals-restart"));
+
+    const restartCall = fetchCalls().find(
+      ([url]) => url === `/api/v1/releases/${RELEASE_ID}/approvals/rounds`,
+    );
+    expect(restartCall).toBeDefined();
+    expect(JSON.parse((restartCall![1] as RequestInit).body as string)).toEqual({
+      applicationId: APPLICATION_ID,
+    });
+    expect(await screen.findByText(/Approval round restarted/)).toBeInTheDocument();
   });
 });

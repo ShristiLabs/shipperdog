@@ -141,5 +141,12 @@ public enum AuditEventType {
      * the approver, and the mandatory reason — the rejection that blocks progression and opens the
      * rework path.
      */
-    RELEASE_APPROVAL_REJECTED
+    RELEASE_APPROVAL_REJECTED,
+    /**
+     * An approval workflow definition edited (S10-02, FR-016): the name, the ring attachment, and
+     * the reordered/re-grouped chain — definitions are editable so governance can evolve, while
+     * rounds already run keep their frozen per-step copies (later rounds, including rework
+     * restarts, instantiate the definition's current content).
+     */
+    APPROVAL_WORKFLOW_UPDATED
 }

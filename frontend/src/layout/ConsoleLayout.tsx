@@ -8,6 +8,7 @@
  */
 import AppsIcon from "@mui/icons-material/Apps";
 import BusinessIcon from "@mui/icons-material/Business";
+import ChecklistIcon from "@mui/icons-material/Checklist";
 import LogoutIcon from "@mui/icons-material/Logout";
 import RocketLaunchIcon from "@mui/icons-material/RocketLaunch";
 import {
@@ -29,6 +30,7 @@ import { NavLink, Outlet, useNavigate } from "react-router-dom";
 import { useAuth } from "../auth/AuthContext";
 import { usePermission } from "../hooks/usePermission";
 import { listApplications } from "../api/applications";
+import { listApprovalWorkflows } from "../api/workflows";
 import { listTenants } from "../api/tenants";
 
 const DRAWER_WIDTH = 240;
@@ -52,6 +54,17 @@ export default function ConsoleLayout() {
   const applicationsNav = usePermission(
     `applications:${orgId ?? "none"}`,
     () => listApplications({ organizationId: orgId as string, limit: 1 }),
+    orgId !== null,
+  );
+
+  // The Approval workflows section (S10-02 AC4) probes the definition
+  // listing its editor loads first: org:approval-workflows:read holders
+  // (org admins and the governance roles) see the editor; everyone else
+  // is conceal-denied and the section hides. Writes stay
+  // server-enforced regardless.
+  const workflowsNav = usePermission(
+    `approval-workflows:${orgId ?? "none"}`,
+    () => listApprovalWorkflows({ organizationId: orgId as string, limit: 1 }),
     orgId !== null,
   );
 
@@ -123,6 +136,21 @@ export default function ConsoleLayout() {
                   <AppsIcon />
                 </ListItemIcon>
                 <ListItemText primary="Applications" />
+              </ListItemButton>
+            </List>
+          ) : null}
+          {orgId !== null && workflowsNav.allowed ? (
+            <List>
+              <ListItemButton
+                component={NavLink}
+                to="/approval-workflows"
+                data-testid="nav-approval-workflows"
+                sx={{ "&.active": { backgroundColor: "action.selected" } }}
+              >
+                <ListItemIcon>
+                  <ChecklistIcon />
+                </ListItemIcon>
+                <ListItemText primary="Approval workflows" />
               </ListItemButton>
             </List>
           ) : null}

@@ -82,7 +82,7 @@ Prometheus registry renders underscores + `_seconds` units):
 | `shipperdog_ratelimit_rejected_total` | The in-app rate limiter (S8-05), tag `rule=login\|downloads`, one increment per 429 — on the login rule, the brute-force early warning beside the identity lockout | S8-05 (issue #39) |
 | `shipperdog_installation_count` | reserved | E11 |
 | `shipperdog_promotion_duration_seconds` | reserved | E10 |
-| `shipperdog_approval_duration_seconds` | reserved | E10 |
+| `shipperdog_approval_duration_seconds` | Wired live since S10-02 (issue #41): a timer of every approval round's terminal crossing — the span from a round's instantiation to SATISFIED or REJECTED, tag `outcome=satisfied\|rejected`. Rework is a NEW round, so each round times its own governance moment (rework cycles read as multiple recordings for one release) | E10 (S10-02, issue #41) |
 
 JVM and HTTP metrics come from the actuator defaults
 (`jvm_memory_used_bytes`, `http_server_requests_seconds_*`). The HTTP

@@ -554,6 +554,61 @@ paths:
             '*/*':
               schema:
                 $ref: "#/components/schemas/ConfigSnapshotView"
+  /api/v1/approval-workflows/{workflowId}:
+    get:
+      tags:
+      - workflow-controller
+      operationId: get_3
+      parameters:
+      - name: workflowId
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - name: organizationId
+        in: query
+        required: true
+        schema:
+          type: string
+          format: uuid
+      responses:
+        "200":
+          description: OK
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/WorkflowView"
+    put:
+      tags:
+      - workflow-controller
+      operationId: update_2
+      parameters:
+      - name: workflowId
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - name: organizationId
+        in: query
+        required: true
+        schema:
+          type: string
+          format: uuid
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateRequest"
+        required: true
+      responses:
+        "200":
+          description: OK
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/WorkflowView"
   /api/v1/applications/{applicationId}/versions/{versionId}/tags:
     put:
       tags:
@@ -1861,7 +1916,7 @@ paths:
     get:
       tags:
       - environment-controller
-      operationId: get_3
+      operationId: get_4
       parameters:
       - name: environmentId
         in: path
@@ -1879,7 +1934,7 @@ paths:
     patch:
       tags:
       - environment-controller
-      operationId: update_2
+      operationId: update_3
       parameters:
       - name: environmentId
         in: path
@@ -1904,7 +1959,7 @@ paths:
     get:
       tags:
       - application-controller
-      operationId: get_4
+      operationId: get_5
       parameters:
       - name: id
         in: path
@@ -1922,7 +1977,7 @@ paths:
     patch:
       tags:
       - application-controller
-      operationId: update_3
+      operationId: update_4
       parameters:
       - name: id
         in: path
@@ -1947,7 +2002,7 @@ paths:
     get:
       tags:
       - tester-controller
-      operationId: get_5
+      operationId: get_6
       parameters:
       - name: id
         in: path
@@ -2040,7 +2095,7 @@ paths:
     get:
       tags:
       - authorization-grant-controller
-      operationId: get_6
+      operationId: get_7
       parameters:
       - name: id
         in: path
@@ -2191,7 +2246,7 @@ paths:
     get:
       tags:
       - release-controller
-      operationId: get_7
+      operationId: get_8
       parameters:
       - name: releaseId
         in: path
@@ -2585,6 +2640,7 @@ paths:
           - RELEASE_APPROVAL_ROUND_STARTED
           - RELEASE_APPROVAL_GRANTED
           - RELEASE_APPROVAL_REJECTED
+          - APPROVAL_WORKFLOW_UPDATED
       - name: applicationId
         in: query
         required: false
@@ -2636,7 +2692,7 @@ paths:
     get:
       tags:
       - artifact-controller
-      operationId: get_8
+      operationId: get_9
       parameters:
       - name: artifactId
         in: path
@@ -2682,31 +2738,6 @@ paths:
             '*/*':
               schema:
                 $ref: "#/components/schemas/DownloadIssuanceView"
-  /api/v1/approval-workflows/{workflowId}:
-    get:
-      tags:
-      - workflow-controller
-      operationId: get_9
-      parameters:
-      - name: workflowId
-        in: path
-        required: true
-        schema:
-          type: string
-          format: uuid
-      - name: organizationId
-        in: query
-        required: true
-        schema:
-          type: string
-          format: uuid
-      responses:
-        "200":
-          description: OK
-          content:
-            '*/*':
-              schema:
-                $ref: "#/components/schemas/WorkflowView"
   /api/v1/applications/{id}/tenants:
     get:
       tags:
@@ -3084,8 +3115,6 @@ components:
     JsonNode:
       type: object
       properties:
-        floatingPointNumber:
-          type: boolean
         nodeType:
           type: string
           enum:
@@ -3130,6 +3159,8 @@ components:
         binary:
           type: boolean
         container:
+          type: boolean
+        floatingPointNumber:
           type: boolean
         empty:
           type: boolean
@@ -3269,6 +3300,59 @@ components:
           type: string
           format: uuid
         createdAt:
+          type: string
+          format: date-time
+    ConditionView:
+      type: object
+      properties:
+        type:
+          type: string
+        key:
+          type: string
+        value:
+          type: string
+    WorkflowStepView:
+      type: object
+      properties:
+        position:
+          type: integer
+          format: int32
+        requiredRole:
+          type: string
+        tenantId:
+          type: string
+          format: uuid
+        groupPosition:
+          type: integer
+          format: int32
+        groupMode:
+          type: string
+        condition:
+          $ref: "#/components/schemas/ConditionView"
+    WorkflowView:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        organizationId:
+          type: string
+          format: uuid
+        name:
+          type: string
+        ring:
+          type: string
+        steps:
+          type: array
+          items:
+            $ref: "#/components/schemas/WorkflowStepView"
+        createdBy:
+          type: string
+          format: uuid
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
           type: string
           format: date-time
     ReplaceTagsRequest:
@@ -3526,6 +3610,11 @@ components:
         tenantId:
           type: string
           format: uuid
+        groupPosition:
+          type: integer
+          format: int32
+        groupMode:
+          type: string
         status:
           type: string
         approverId:
@@ -3890,43 +3979,6 @@ components:
         uploadUrl:
           type: string
         expiresAt:
-          type: string
-          format: date-time
-    WorkflowStepView:
-      type: object
-      properties:
-        position:
-          type: integer
-          format: int32
-        requiredRole:
-          type: string
-        tenantId:
-          type: string
-          format: uuid
-    WorkflowView:
-      type: object
-      properties:
-        id:
-          type: string
-          format: uuid
-        organizationId:
-          type: string
-          format: uuid
-        name:
-          type: string
-        ring:
-          type: string
-        steps:
-          type: array
-          items:
-            $ref: "#/components/schemas/WorkflowStepView"
-        createdBy:
-          type: string
-          format: uuid
-        createdAt:
-          type: string
-          format: date-time
-        updatedAt:
           type: string
           format: date-time
     ApplicationView:
@@ -4781,6 +4833,7 @@ components:
           - RELEASE_APPROVAL_ROUND_STARTED
           - RELEASE_APPROVAL_GRANTED
           - RELEASE_APPROVAL_REJECTED
+          - APPROVAL_WORKFLOW_UPDATED
         occurredAt:
           type: string
           format: date-time

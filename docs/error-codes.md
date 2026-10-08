@@ -174,6 +174,7 @@ The approval engine's codes (S10-01, issue #40; rendered by
 | `APPROVAL_ROLE_NOT_HELD` | 403 | The caller does not hold the role this step requires. (issue AC2 — the precise per-step refusal after the route's read gate passed; `errors` carries `requiredRole`, `approvalType`, and `permission` so the right approver is findable) |
 | `APPROVAL_SELF_APPROVAL` | 403 | The release creator may not approve their own release. (issue AC5 — the delegation rule, whatever roles the creator holds) |
 | `APPROVAL_REJECT_REASON_REQUIRED` | 422 | A reason is required to reject an approval step. (issue AC6, the S4-03 revoke analog; `errors` names the `reason` field) |
+| `APPROVAL_POLICY_UNRESOLVED` | 422 | The environment's approval policy does not resolve to a defined workflow. (S10-02, issue #41 — the fail-closed resolution: the READY to APPROVAL_PENDING crossing refuses and the release stays one status earlier; `errors.approvalPolicy` carries the dangling name, and defining the named workflow unblocks the same crossing. Rendered by the release module's transition route — the workflow module's refusal composes into its crossing) |
 
 ## Environment (`EnvironmentException.Code`)
 

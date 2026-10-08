@@ -57,9 +57,15 @@ Config:       version 2          (the ledger's current snapshot)
   organization — the chain a release targeting this environment
   resolves at its APPROVAL_PENDING crossing (environment binding
   first, else the starting ring's chain; see
-  [releases](releases.md#approval-workflows-s10-01)). The bind is a
-  reference, not a foreign key: an environment may bind before its
-  workflow exists.
+  [releases](releases.md#approval-workflows-s10-01-advanced-modes-s10-02)). The bind
+  is a reference, not a foreign key: an environment may bind before
+  its workflow exists — but since S10-02 (issue #41) a release
+  CROSSING while the bound name does not resolve is refused
+  (`422 APPROVAL_POLICY_UNRESOLVED`, the release stays one status
+  earlier): a bound-but-dangling name fails CLOSED, never silently
+  falling through to a possibly weaker chain. An environment binding
+  nothing still falls through to the ring chain — absence is not
+  misconfiguration.
 
 ### Tables (V27)
 

@@ -3,6 +3,7 @@ import { AuthProvider } from "./auth/AuthContext";
 import { RequireAuth } from "./auth/RequireAuth";
 import { ToastProvider } from "./components/ToastContext";
 import ConsoleLayout from "./layout/ConsoleLayout";
+import ApprovalWorkflowsPage from "./pages/ApprovalWorkflowsPage";
 import ApplicationDetailPage from "./pages/ApplicationDetailPage";
 import ApplicationsPage from "./pages/ApplicationsPage";
 import LoginPage from "./pages/LoginPage";
@@ -30,6 +31,7 @@ export default function App() {
             <Route path="tenants/:tenantId/members" element={<TenantMembersPage />} />
             <Route path="applications" element={<ApplicationsPage />} />
             <Route path="applications/:applicationId" element={<ApplicationDetailPage />} />
+            <Route path="approval-workflows" element={<ApprovalWorkflowsPage />} />
             <Route path="releases" element={<ReleasesPage />} />
             <Route path="releases/:applicationId" element={<ReleasesPage />} />
             <Route
