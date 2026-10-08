@@ -30,7 +30,7 @@ Status:      DRAFT
   The manifest (PRD 16) has run since S9-03 — see
   [the frozen manifest](#the-frozen-manifest-s9-03); approval
   workflows (FR-016) have run since S10-01 — see
-  [approval workflows](#approval-workflows-s10-01); rings' promotion
+  [approval workflows](#approval-workflows-s10-01-advanced-modes-s10-02); rings' promotion
   behavior (PRD 8.10) is the rest of E10.
 - **One release per application and version** (V1's
   `uq_releases_application_version` is the authority; a duplicate is the
@@ -217,7 +217,7 @@ engine's `ReleaseApprovalPolicy` refuses APPROVAL_PENDING to APPROVED
 while the release's latest approval round is PENDING or REJECTED and
 permits when it is SATISFIED — or when no round exists, the ungated
 crossing an organization that configured no workflow keeps (see
-[approval workflows](#approval-workflows-s10-01)). Later
+[approval workflows](#approval-workflows-s10-01-advanced-modes-s10-02)). Later
 gates/distribution preconditions (E11/E13) compose on the same seam
 without touching the machine. Policies refuse; they can never widen
 PRD 17's graph.
@@ -241,47 +241,91 @@ the record the S9-05 dashboard renders; nothing ever updates or deletes
 a row (PRD P5). A release of another application conceals exactly like
 an unknown id.
 
-## Approval workflows (S10-01)
+## Approval workflows (S10-01, advanced modes S10-02)
 
 Nothing reaches testers or production without the right sign-offs
-(FR-016, issue #40): an organization configures approval chains as
-DATA — ordered steps, each demanding a role — and the engine gates the
-APPROVAL_PENDING to APPROVED crossing through the S9-02 policy seam
-until the chain is satisfied. Sequential only in this story; parallel,
-any-of, and conditional modes are S10-02 (mode flags extend the same
-tables, the story's technical note).
+(FR-016, issues #40/#41): an organization configures approval chains as
+DATA — ordered GROUPS of steps, each step demanding a role — and the
+engine gates the APPROVAL_PENDING to APPROVED crossing through the
+S9-02 policy seam until the chain is satisfied. S10-01 shipped the
+sequential engine; S10-02 added the full FR-016 mode vocabulary —
+PARALLEL groups, OR groups, and conditional steps — plus editable
+definitions.
 
 ### The model
 
 ```text
-Approval workflow "standard-chain"        (organization-grain)
+Approval workflow "enterprise"            (organization-grain)
 Ring:        qa                            (direct attachment)
-Steps:       1 QA_ENGINEER
-             2 SECURITY_REVIEWER
-             3 APP_OWNER                  (Product — PRD 7.3)
-             4 RELEASE_MANAGER            (the final sign-off — PRD 7.6)
+Groups:      1 [ALL]     QA_ENGINEER
+             2 [ALL]     SECURITY_REVIEWER
+               [ALL]     COMPLIANCE_REVIEWER   (if environment=production)
+             3 [ALL]     APP_OWNER              (Product — PRD 7.3)
              (each step optionally narrowed to a tenant the release
               must target — a skipped step is never a failure)
 ```
 
-- **Definitions** (`POST/GET /api/v1/approval-workflows`,
+- **Definitions** (`POST/PUT/GET /api/v1/approval-workflows`,
   `org:approval-workflows:manage/read` — the Release Manager, App
   Owner, and Org Admin personas): a lowercase-kebab binding NAME and
   an optional ring attachment; one name and one ring attachment per
-  organization (409). Steps come from the five-role approval
-  vocabulary — exactly the roles the RBAC matrix grants an
-  `app:releases:approve-*` permission (`QA_ENGINEER`,
-  `SECURITY_REVIEWER`, `COMPLIANCE_REVIEWER`, `APP_OWNER`,
-  `RELEASE_MANAGER`), each at most once per chain, 1-10 steps.
+  organization (409). The chain is either flat `steps` (S10-01's
+  sequential shape — degenerate groups of one) or `groups`, each
+  carrying its mode and its own ordered steps — never both. Steps come
+  from the five-role approval vocabulary — exactly the roles the RBAC
+  matrix grants an `app:releases:approve-*` permission
+  (`QA_ENGINEER`, `SECURITY_REVIEWER`, `COMPLIANCE_REVIEWER`,
+  `APP_OWNER`, `RELEASE_MANAGER`), each at most once across the WHOLE
+  definition, 1-10 steps, every group non-empty. Since S10-02 a
+  definition is EDITABLE (`PUT /{workflowId}` — the console editor's
+  surface): the chain replaces and the ring re-attaches (an absent
+  ring DETACHES); the name never moves (it is the binding vocabulary
+  environments reference). Rounds already run keep their frozen
+  per-step copies — a later round, a rework restart included,
+  instantiates the definition's CURRENT content. Audited as
+  `APPROVAL_WORKFLOW_UPDATED`.
+- **Group modes** (S10-02, FR-016's vocabulary): groups run
+  SEQUENTIALLY in order — group N+1 is not decidable until group N is
+  satisfied. Within a group:
+  - `ALL` — the PARALLEL mode: every step must approve; all PENDING
+    siblings of the active group are decidable AT ONCE.
+  - `ANY` — the OR mode: the FIRST approval satisfies the group; the
+    remaining PENDING siblings become `SKIPPED` by a compare-and-set
+    beside the satisfying signature, and the skip's `reason` records
+    WHICH signature satisfied the group (`satisfied by position 2
+    (COMPLIANCE)`) — deterministic and auditable. A skip never
+    satisfies; only a signature does. A group whose every step was
+    excluded at instantiation is satisfied vacuously (nothing was
+    required).
+  - A REJECTED step anywhere rejects the round in EITHER mode — a no
+    is never outvoted; the losing opinion is recorded and the rework
+    path restarts.
+- **Conditional steps** (S10-02): a step may carry a trigger
+  predicate, evaluated at round instantiation with its rationale
+  recorded. The stub vocabulary (S10-06's expression evaluator
+  migrates it): `ENVIRONMENT_EQUALS` (the targeted environment code)
+  and `FEATURE_FLAG_CONTAINS` (the environment's resolved
+  configuration contains the key, optionally exactly the value). An
+  unmet condition instantiates the step `SKIPPED` — never a silent
+  omission — with the rationale on the row (`condition
+  ENVIRONMENT_EQUALS(production) unmet (environment=qa)`) and in the
+  round-start audit's `skippedConditionalSteps`.
 - **Resolution** happens at the READY to APPROVAL_PENDING crossing,
   most specific first: the targeted environment's `approvalPolicy`
   NAME binding (V27's reserved reference — the environment update
   surface binds it) resolves against the organization's workflow
-  names; else the starting ring's attached chain. Neither resolves ->
-  no round, no gate: approval workflows are CONFIGURABLE (FR-016),
-  and an unconfigured organization keeps the ungated machine S9-02
-  shipped. A workflow defined AFTER a release crossed into
-  APPROVAL_PENDING never retro-opens its gate.
+  names; else the starting ring's attached chain. A named policy that
+  does not resolve FAILS CLOSED since S10-02 (the #40 review's
+  fail-open hole): the crossing refuses `422
+  APPROVAL_POLICY_UNRESOLVED` carrying the dangling name, and the
+  release stays one status earlier until the binding or the
+  definition is fixed — silently running a different (possibly
+  weaker) chain is never an option. An environment binding NOTHING
+  falls through to the ring chain: absence is not misconfiguration.
+  Neither leg resolves -> no round, no gate: approval workflows are
+  CONFIGURABLE (FR-016), and an unconfigured organization keeps the
+  ungated machine S9-02 shipped. A workflow defined AFTER a release
+  crossed into APPROVAL_PENDING never retro-opens its gate.
 - **Rounds** instantiate inside the crossing's transaction (the
   event-seam composition the manifest freeze uses): round 1 with one
   `release_approvals` record per applicable step (PRD 13's table —
@@ -294,42 +338,77 @@ Steps:       1 QA_ENGINEER
   scoped away stands SATISFIED by the same act.
 - **Decisions** (`POST /api/v1/releases/{releaseId}/approvals`,
   body `{applicationId, decision: APPROVE|REJECT, step?, reason?}`):
-  the chain's CURRENT step only — an out-of-order or already-decided
-  assertion is `409 APPROVAL_STEP_OUT_OF_ORDER` carrying `current`
-  and `attempted` (AC2). Authority is precise: the route's coarse
-  gate is the release read authority every approver role holds (the
-  evaluator's throwing concealment makes permission disjunctions
-  unusable as gates), and the service checks the step's mapped
-  `app:releases:approve-*` permission through the programmatic
+  the round's DECIDABLE set only — the ACTIVE group's PENDING steps
+  (`ApprovalRoundEvaluator`, the pure function everything renders
+  from: sequential chains are groups of one, so S10-01's
+  current-step rule is the degenerate case verbatim; an ALL group's
+  pending siblings are all decidable at once; an ANY group's too
+  until its first approval). An out-of-group, already-decided, or
+  not-yet-reachable assertion is `409 APPROVAL_STEP_OUT_OF_ORDER`
+  carrying `current` and `attempted` (and `group` when a group is
+  active). Without an assertion the caller's authority addresses the
+  step: exactly one decidable step may match the caller's
+  permissions; several demand the explicit assertion (`400`, the
+  errors member naming the decidable positions — the platform
+  administrator, who passes every approve permission, is the
+  canonical multi-authority caller). Authority is precise: the
+  route's coarse gate is the release read authority every approver
+  role holds (the evaluator's throwing concealment makes permission
+  disjunctions unusable as gates), and the service checks the step's
+  mapped `app:releases:approve-*` permission through the programmatic
   application-grant probe — a caller who holds no approval authority
   gets `403 APPROVAL_ROLE_NOT_HELD` naming the required role and
-  permission. The release's CREATOR signs nothing (AC5,
+  permission; since S10-02 the probe's denials record the same
+  `ACCESS_DENIED` audit and decision-timer deny leg the annotation
+  path records (a denial about a visible resource belongs in the
+  trail). The release's CREATOR signs nothing (AC5,
   `403 APPROVAL_SELF_APPROVAL`). REJECT requires its reason (AC6,
   `422 APPROVAL_REJECT_REASON_REQUIRED`). Every decision is audited
   (`RELEASE_APPROVAL_GRANTED`/`REJECTED`, reason included) and the
   signature is a fact: `approver` + `approver_role` recorded at
   decision time — roles change later, the record does not. Decided
   exactly once (the repository's compare-and-set); racing approvers
-  can never double-sign.
+  can never double-sign, and racing siblings of an ANY group both
+  commit their signatures and both recompute to the same terminal
+  state (the loser answers from the committed rows).
 - **Rejection blocks progression** (AC3): a rejected round is
   terminal, the release STAYS APPROVAL_PENDING with the rejection
   recorded, and the APPROVED crossing keeps refusing (422 naming the
-  rejected round). The documented rework path is a NEW round — never
-  an un-reject: `POST /api/v1/releases/{releaseId}/approvals/rounds`
+  rejected round — the group-shaped refusal names the active group's
+  mode and BOTH demands when a parallel group waits). The documented
+  rework path is a NEW round — never an un-reject: `POST
+  /api/v1/releases/{releaseId}/approvals/rounds`
   (`app:releases:manage` — restarting a chain is release management,
-  not a signature; only a REJECTED round restarts, 409 otherwise)
-  instantiates round N+1 of the SAME frozen definition, one request
-  event per step, the optional note audited.
-- **All steps complete** (AC4): the last approval satisfies the round
-  and the crossing becomes fireable through the ordinary transition
-  route — the state machine stays the single writer of release status
-  (one authority, one audit trail), and the manifest freezes the
-  satisfied chain into `approval.required` at that same crossing.
+  not a signature; only a REJECTED round restarts, 409 otherwise —
+  the loser of two concurrent restarts answers the same 409 from the
+  committed state, never an untranslated 500) instantiates round N+1
+  of the SAME frozen definition, one request event per step, the
+  optional note audited.
+- **All steps complete** (AC4): the last group's satisfaction
+  satisfies the round and the crossing becomes fireable through the
+  ordinary transition route — the state machine stays the single
+  writer of release status (one authority, one audit trail), and the
+  manifest freezes the satisfied chain into `approval.required` at
+  that same crossing: the SIGNED steps in CHAIN order — SKIPPED rows
+  demanded nothing (the ANY group's skip rationale and the
+  conditional exclusions live in the rounds, not the frozen
+  document), the deterministic projection whatever the signing
+  interleaving was. Every round terminal crossing (satisfied or
+  rejected) records the reserved `approval_duration` timer, tagged
+  `outcome=satisfied|rejected` — rework is a NEW round, so each round
+  times its own governance moment.
 - **The read** (`GET /api/v1/releases/{releaseId}/approvals?applicationId=…`,
   `app:releases:read`): every round with its steps and signatures —
   the rejected rounds and their reasons beside the live or satisfied
-  one, the full audit-read of the approval moment. Foreign releases
-  conceal exactly like unknown ids.
+  one, the full audit-read of the approval moment, each step carrying
+  its group facts and — when SKIPPED — the recorded rationale.
+  Foreign releases conceal exactly like unknown ids. The S9-05
+  dashboard renders this state live (the approvals block since
+  S10-02): the current round's group modes, the waiting-on list the
+  evaluator derives, recorded signatures, skip rationales, the
+  decision affordances on exactly the decidable steps, and the rework
+  restart; the console's Approval workflows screen edits the
+  definitions (see [docs/frontend.md](frontend.md)).
 - **INV-008 discipline** (approvals never mutate artifacts): approvals
   run against the artifact set INV-004 froze at CREATION, and the
   manifest — approval block included — is the document OF the APPROVED

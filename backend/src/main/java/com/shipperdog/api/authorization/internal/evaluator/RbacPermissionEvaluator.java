@@ -166,8 +166,9 @@ public class RbacPermissionEvaluator implements PermissionEvaluator, Application
     }
 
     /**
-     * The programmatic application-grant probe (S10-01, issue #40):
-     * the same answer the annotation form renders for
+     * The programmatic application-grant probe (S10-01, issue #40;
+     * audited and metered since #41, S10-02): the same answer the
+     * annotation form renders for
      * {@code hasPermission(applicationId, 'application', code)} — the
      * same snapshot (memoized per request), the same
      * application-to-owner hop, the same union and wildcard semantics
@@ -175,17 +176,37 @@ public class RbacPermissionEvaluator implements PermissionEvaluator, Application
      * path's job. The approval surface calls this for the step's
      * precise role requirement after its route-level coarse gate
      * passed; it never widens anything the annotation form denies.
+     * The probe feeds the SAME decision timer (outcome-tagged, the
+     * SLO's one metric family) and, on a denial, the SAME ACCESS_
+     * DENIED audit the annotation path records — a denial here is a
+     * real authorization decision about a visible resource (the
+     * caller passed the coarse gate), so the who/what belongs in the
+     * trail even though the caller's own surface answers the precise
+     * refusal.
      */
     @Override
     public boolean permits(UUID userId, UUID applicationId, Permission permission) {
         if (userId == null || applicationId == null || permission == null) {
             return false;
         }
-        UserRolesSnapshot snapshot = grants.snapshot(userId);
-        if (snapshot.platformAdmin()) {
-            return RolePermissions.platformAdminPasses(permission);
+        boolean allowed = false;
+        Timer.Sample sample = Timer.start(meters);
+        try {
+            UserRolesSnapshot snapshot = grants.snapshot(userId);
+            if (snapshot.platformAdmin()) {
+                allowed = RolePermissions.platformAdminPasses(permission);
+            } else {
+                allowed = appGrants(snapshot, applicationId, "application", permission);
+            }
+        } finally {
+            sample.stop(Timer.builder(MetricNames.AUTHORIZATION_DECISION_DURATION)
+                    .tag("outcome", allowed ? "allow" : "deny")
+                    .register(meters));
         }
-        return appGrants(snapshot, applicationId, "application", permission);
+        if (!allowed) {
+            recordDenial(userId, permission);
+        }
+        return allowed;
     }
 
     private boolean decide(Authentication authentication, Serializable targetId, String targetType, Object permission) {
@@ -322,7 +343,14 @@ public class RbacPermissionEvaluator implements PermissionEvaluator, Application
      */
     private void recordDenial(UUID actor, Object permission) {
         Map<String, String> detail = new LinkedHashMap<>();
-        detail.put("permission", permission == null ? "unknown" : permission.toString());
+        // The annotation path passes the permission CODE (the SpEL
+        // string); the programmatic probe (S10-02) passes the enum —
+        // render one vocabulary either way.
+        if (permission instanceof Permission required) {
+            detail.put("permission", required.code());
+        } else {
+            detail.put("permission", permission == null ? "unknown" : permission.toString());
+        }
         if (RequestContextHolder.getRequestAttributes() instanceof ServletRequestAttributes attributes) {
             detail.put("method", attributes.getRequest().getMethod());
             detail.put("uri", attributes.getRequest().getRequestURI());

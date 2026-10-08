@@ -73,9 +73,11 @@ Refusals render the problem+json `errors` member as a reason list
 (the 409 carries `current`/`attempted`; the approval policies refuse
 through the same member, keyed by contributor, since S10-01 — the
 gate policies join at S10-03) and the command exits 4. `release get`
-renders gates and approvals as not-yet-reported: the approval API
-lives since S10-01 but the CLI's approval wiring is a later story
-(S10-02/03); gates land with S10-03.
+renders gates as not-yet-reported until S10-03 lands; approvals are
+live since S10-02 — the refusal names pending approvals (the
+group-shaped waiting-on list), and the console renders the rounds and
+takes decisions (the CLI approval command surface remains a later
+story).
 
 The CLI mirrors the server's upload routing rule locally
 (`--multipart-limit`, default 100 MiB =

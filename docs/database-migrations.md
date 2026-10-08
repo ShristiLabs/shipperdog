@@ -36,6 +36,8 @@ backend/src/main/resources/db/
     V26__release_manifest.sql
     V27__environment_management.sql
     V28__approval_workflows.sql
+    V29__approval_modes.sql
+    V30__approval_skipped_shape.sql
   seed/                 dev fixture, applied only when the seed location is active
     R__dev_seed.sql
 ```
@@ -537,6 +539,40 @@ backend/src/main/resources/db/
   would be unsatisfiable) — and `release_approval_round_status`
   (`PENDING`/`SATISFIED`/`REJECTED`); step status reuses V1's
   `approval_status` verbatim. Expand-only and forward-only.
+
+- `V29__approval_modes.sql` (S10-02, issue #41) extends the same
+  tables with FR-016's advanced modes — a definition is an ordered
+  list of GROUPS. New enum types: `approval_group_mode` (`ALL` — the
+  PARALLEL mode, every step must approve; `ANY` — the OR mode, the
+  first approval satisfies and the remaining siblings become
+  optional-skipped) and `approval_step_condition_type` (the trigger
+  predicate stub vocabulary S10-06's expression evaluator migrates:
+  `ENVIRONMENT_EQUALS`, `FEATURE_FLAG_CONTAINS`).
+  `approval_workflow_steps` gains `group_position` (1..m contiguous;
+  V28 chains backfill to their own position — every one a sequential
+  group of one), `group_mode` (default `ALL`), and the optional
+  condition columns (`condition_type`/`condition_key`/
+  `condition_value`, shape-checked: a flag condition names its key, a
+  conditionless step carries none of the three).
+  `release_approvals` copies its rows' group facts at instantiation
+  (`group_position`, `group_mode`) — the round freezes the
+  definition's shape it ran, the same discipline as the per-step
+  position copy. `ALTER TYPE approval_status ADD VALUE 'SKIPPED'` (an
+  ANY-group sibling after the group's first approval, or a
+  condition-excluded step at instantiation — terminal, no signature,
+  always a reason). Expand-only and forward-only; every backfill is a
+  no-op on greenfield rows.
+
+- `V30__approval_skipped_shape.sql` (S10-02, issue #41) lands the
+  decision-shape CHECK that references `SKIPPED` — the pair exists
+  because a new enum value cannot be USED in the transaction that
+  adds it and Flyway runs each migration as one transaction (the V14
+  enum-precedent's transactional edge). The V28 two-leg check is
+  replaced by the three-leg widening: PENDING carries nothing
+  decided; SKIPPED carries no signature but must explain itself and
+  when; the signed statuses (APPROVED/REJECTED) carry the full
+  signature. Every existing row satisfies the new legs unchanged, so
+  the drop-and-re-add carries no data.
 
 ## Status and type columns
 

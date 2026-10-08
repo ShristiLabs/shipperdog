@@ -1,6 +1,7 @@
 package com.shipperdog.api.release;
 
 import com.shipperdog.api.version.VersionException;
+import com.shipperdog.api.workflow.WorkflowException;
 import org.springframework.core.annotation.Order;
 import org.springframework.http.MediaType;
 import org.springframework.http.ProblemDetail;
@@ -25,6 +26,13 @@ import org.springframework.web.bind.annotation.RestControllerAdvice;
  * The artifact miss reuses the artifact read's public code through this
  * module's own value of it (the {@code APPLICATION_ARCHIVED} pattern:
  * one public code, the surface that emits it owns its value).
+ *
+ * <p>The workflow module's refusal — S10-02's fail-closed resolution:
+ * the targeted environment's named approval policy does not resolve —
+ * composes into the READY to APPROVAL_PENDING crossing through the
+ * transition listener, so it escapes through THIS module's transition
+ * route and is re-rendered verbatim here, the same precedent (the
+ * workflow surface's own advice serves only its own routes).
  */
 @Order(0)
 @RestControllerAdvice(assignableTypes = ReleaseController.class)
@@ -41,6 +49,14 @@ public class ReleaseExceptionHandler {
     @ExceptionHandler(VersionException.class)
     ResponseEntity<ProblemDetail> handle(VersionException exception) {
         return ResponseEntity.status(exception.status())
+                .contentType(MediaType.APPLICATION_PROBLEM_JSON)
+                .body(exception.problem());
+    }
+
+    /** The workflow module's composed crossing refusal, re-rendered verbatim (see class javadoc). */
+    @ExceptionHandler(WorkflowException.class)
+    ResponseEntity<ProblemDetail> handle(WorkflowException exception) {
+        return ResponseEntity.status(exception.problem().getStatus())
                 .contentType(MediaType.APPLICATION_PROBLEM_JSON)
                 .body(exception.problem());
     }

@@ -3,18 +3,20 @@
  * product": one screen per release showing build, quality, approvals,
  * and distribution state so a Release Manager judges release health at
  * a glance. Blocks: the artifact slots with their frozen pins (hashes
- * at APPROVED, the S9-03 manifest), quality gates and approvals (E10
- * data — honest empty states until S10-01/S10-03 land, per the story's
- * build-against-stable-APIs note), distribution (the starting ring and
- * target set; ring promotion tracking is E10), the append-only state
- * timeline (S9-02 history with actors/timestamps/reasons), the frozen
- * manifest viewer with the YAML compliance render and the diff against
- * another APPROVED release of the same application. Lifecycle actions
- * offer PRD 17's legal edges; no read-shaped surface is keyed to
+ * at APPROVED, the S9-03 manifest), quality gates (honest empty state
+ * until the S10-03 gate subsystem), approvals — LIVE since S10-02: the
+ * bound policy's rounds with their group modes, the waiting-on list,
+ * recorded signatures and skip rationales, decisions, and the rework
+ * restart — distribution (the starting ring and target set; ring
+ * promotion tracking is E10), the append-only state timeline (S9-02
+ * history with actors/timestamps/reasons), the frozen manifest viewer
+ * with the YAML compliance render and the diff against another
+ * APPROVED release of the same application. Lifecycle actions offer
+ * PRD 17's legal edges; no read-shaped surface is keyed to
  * app:releases:manage, so actions render for every legal edge and the
  * server's verdict is the gate (denials surface the problem+json code,
- * the ApplicationDetailPage precedent). Detail and timeline
- * auto-refresh (30s) — the dashboard is a live view.
+ * the ApplicationDetailPage precedent). Detail, timeline, approvals,
+ * and manifest auto-refresh (30s) — the dashboard is a live view.
  */
 import ArrowBackIcon from "@mui/icons-material/ArrowBack";
 import CompareArrowsIcon from "@mui/icons-material/CompareArrows";
@@ -46,6 +48,13 @@ import { Link, useParams } from "react-router-dom";
 import { ApiError } from "../api/problem";
 import { getApplicationVersion } from "../api/versions";
 import {
+  decideReleaseApproval,
+  getReleaseApprovals,
+  restartApprovalRound,
+  type ApprovalState,
+  type ApprovalStep,
+} from "../api/workflows";
+import {
   getManifestDiff,
   getRelease,
   getReleaseHistory,
@@ -62,6 +71,7 @@ import {
 import { useAuth } from "../auth/AuthContext";
 import { useToast } from "../components/ToastContext";
 import { useAllApplications, useAllOrgMembers, useAllTenants } from "../hooks/useOrganizationDirectory";
+import { evaluateRound, roleLabel } from "./approvalRules";
 import {
   RELEASE_STATUS_COLORS,
   RELEASE_STATUS_LABELS,
@@ -137,6 +147,20 @@ export default function ReleaseDetailPage() {
     retry: false,
   });
 
+  // The approval state exists exactly when the release bound a policy
+  // at its crossing into APPROVAL_PENDING; before that the surface's
+  // honest 404 is the empty state, not an error (the manifest's own
+  // pattern). Every other failure is a real error.
+  const approvals = useQuery({
+    queryKey: ["release-approvals", releaseIdSafe],
+    queryFn: () => getReleaseApprovals(applicationIdSafe, releaseIdSafe),
+    enabled: applicationIdSafe !== "" && releaseIdSafe !== "" && release !== null,
+    retry: false,
+    refetchInterval: REFRESH_MS,
+  });
+  const approvalsMissing =
+    approvals.isError && approvals.error instanceof ApiError && approvals.error.status === 404;
+
   const directory = useAllApplications(orgId);
   const tenants = useAllTenants(orgId);
   const roster = useAllOrgMembers(orgId);
@@ -157,6 +181,7 @@ export default function ReleaseDetailPage() {
     void queryClient.invalidateQueries({ queryKey: ["release-history", releaseIdSafe] });
     void queryClient.invalidateQueries({ queryKey: ["release-manifest", releaseIdSafe] });
     void queryClient.invalidateQueries({ queryKey: ["release-manifest-yaml", releaseIdSafe] });
+    void queryClient.invalidateQueries({ queryKey: ["release-approvals", releaseIdSafe] });
     void queryClient.invalidateQueries({ queryKey: ["releases"] });
   }
 
@@ -166,6 +191,25 @@ export default function ReleaseDetailPage() {
     onSuccess: (updated) => {
       invalidateRelease();
       toast.showSuccess(`${updated.releaseRef} is now ${RELEASE_STATUS_LABELS[updated.status]}`);
+    },
+    onError: toast.showError,
+  });
+
+  const decide = useMutation({
+    mutationFn: (input: { decision: "APPROVE" | "REJECT"; step: number; reason?: string }) =>
+      decideReleaseApproval(applicationIdSafe, releaseIdSafe, input),
+    onSuccess: () => {
+      invalidateRelease();
+      toast.showSuccess("Approval decision recorded");
+    },
+    onError: toast.showError,
+  });
+
+  const restart = useMutation({
+    mutationFn: (reason?: string) => restartApprovalRound(applicationIdSafe, releaseIdSafe, reason),
+    onSuccess: () => {
+      invalidateRelease();
+      toast.showSuccess("Approval round restarted");
     },
     onError: toast.showError,
   });
@@ -304,17 +348,18 @@ export default function ReleaseDetailPage() {
           </Typography>
         </Paper>
 
-        <Paper variant="outlined" sx={{ padding: 2, flexGrow: 1 }} data-testid="approvals-section">
-          <Typography variant="h6">Approvals</Typography>
-          <Typography color="text.secondary" sx={{ marginTop: 1 }} data-testid="approvals-empty">
-            Approval policies and per-role approval state arrive with E10 (S10-01).{" "}
-            {manifest.data
-              ? manifest.data.manifest.approval.required.length > 0
-                ? `Frozen document requires: ${manifest.data.manifest.approval.required.join(", ")}.`
-                : "The frozen document records no required approvers."
-              : "The frozen manifest will record the required-approver set once frozen."}
-          </Typography>
-        </Paper>
+        <ApprovalsSection
+          state={approvals.data ?? null}
+          missing={approvalsMissing}
+          failed={approvals.isError && !approvalsMissing}
+          releaseStatus={release.status}
+          memberNameById={memberNameById}
+          deciding={decide.isPending}
+          onDecide={(input) => decide.mutate(input)}
+          restarting={restart.isPending}
+          onRestart={(reason) => restart.mutate(reason)}
+          frozenRequired={manifest.data?.manifest.approval.required ?? null}
+        />
       </Stack>
 
       <Paper variant="outlined" sx={{ padding: 2 }} data-testid="distribution-section">
@@ -482,6 +527,269 @@ export default function ReleaseDetailPage() {
         onClose={() => setCompareOpen(false)}
       />
     </Stack>
+  );
+}
+
+interface ApprovalsSectionProps {
+  state: ApprovalState | null;
+  missing: boolean;
+  failed: boolean;
+  releaseStatus: string;
+  memberNameById: Map<string, string>;
+  deciding: boolean;
+  onDecide: (input: { decision: "APPROVE" | "REJECT"; step: number; reason?: string }) => void;
+  restarting: boolean;
+  onRestart: (reason?: string) => void;
+  frozenRequired: string[] | null;
+}
+
+const STEP_STATUS_COLORS: Record<ApprovalStep["status"], "success" | "error" | "default" | "warning"> = {
+  APPROVED: "success",
+  REJECTED: "error",
+  PENDING: "default",
+  SKIPPED: "warning",
+};
+
+/** The approvals block (PRD 32; S10-02 AC5): the live round's topology
+ * — groups with their modes, each step's demand, signature, or
+ * recorded skip — with the waiting-on list the evaluator derives (the
+ * active group's pending steps; approvalRules mirrors the backend
+ * evaluator), the decision affordances on exactly those steps, the
+ * rework restart on a rejected round, and the earlier rounds with
+ * their rejection reasons. Group modes render verbatim: an ALL group
+ * waits on every pending sibling; an ANY group is satisfied by the
+ * first signature and its siblings carry the skip rationale naming
+ * which signature satisfied the group. */
+function ApprovalsSection({
+  state,
+  missing,
+  failed,
+  releaseStatus,
+  memberNameById,
+  deciding,
+  onDecide,
+  restarting,
+  onRestart,
+  frozenRequired,
+}: ApprovalsSectionProps) {
+  const [rejectTarget, setRejectTarget] = useState<number | null>(null);
+  const current =
+    state === null ? null : state.rounds.find((round) => round.roundNumber === state.currentRoundNumber) ?? null;
+  const evaluation = current === null ? null : evaluateRound(current.steps);
+  const waitingNames = evaluation === null ? [] : evaluation.waitingOn.map((step) => roleLabel(step.approvalType));
+  const earlierRounds = state === null ? [] : state.rounds.filter((round) => round.roundNumber !== state.currentRoundNumber);
+
+  return (
+    <Paper variant="outlined" sx={{ padding: 2, flexGrow: 1 }} data-testid="approvals-section">
+      <Typography variant="h6">Approvals</Typography>
+      {failed ? (
+        <Alert severity="error" sx={{ marginTop: 1 }} data-testid="approvals-error">
+          Failed to load the approval state.
+        </Alert>
+      ) : missing ? (
+        <Typography color="text.secondary" sx={{ marginTop: 1 }} data-testid="approvals-empty">
+          No approval policy bound this release — it crossed without sign-offs.
+          {frozenRequired !== null && frozenRequired.length > 0
+            ? ` The frozen document records the required-approver set: ${frozenRequired.join(", ")}.`
+            : ""}
+        </Typography>
+      ) : state === null ? (
+        <Typography color="text.secondary" sx={{ marginTop: 1 }} data-testid="approvals-loading" aria-busy="true">
+          Loading approvals...
+        </Typography>
+      ) : current === null ? (
+        <Typography color="text.secondary" sx={{ marginTop: 1 }} data-testid="approvals-empty">
+          No approval rounds recorded for this release.
+        </Typography>
+      ) : (
+        <Stack spacing={1} sx={{ marginTop: 1 }}>
+          <Stack direction="row" spacing={1} sx={{ alignItems: "center", flexWrap: "wrap" as const }}>
+            <Chip
+              size="small"
+              color={current.status === "SATISFIED" ? "success" : current.status === "REJECTED" ? "error" : "default"}
+              variant="outlined"
+              label={`round ${current.roundNumber} · ${current.status.toLowerCase()} · ${current.workflowName}`}
+            />
+            {evaluation !== null && evaluation.outcome === "PENDING" ? (
+              <Typography variant="body2" data-testid="approvals-waiting-on">
+                Waiting on: {waitingNames.join(", ")}
+              </Typography>
+            ) : null}
+          </Stack>
+          <Stack spacing={0.5}>
+            {current.steps.map((step) => {
+              const waiting =
+                evaluation !== null && evaluation.waitingOn.some((pending) => pending.position === step.position);
+              return (
+                <Stack key={step.position} spacing={0.25} data-testid={`approval-step-${step.position}`}>
+                  <Stack direction="row" spacing={1} sx={{ alignItems: "center", flexWrap: "wrap" as const }}>
+                    <Typography variant="body2" sx={{ minWidth: 90 }}>
+                      {roleLabel(step.approvalType)}
+                      {step.groupMode === "ANY" ? " (any-of)" : ""}
+                    </Typography>
+                    <Chip
+                      size="small"
+                      color={STEP_STATUS_COLORS[step.status]}
+                      variant={step.status === "PENDING" ? "outlined" : "filled"}
+                      label={waiting ? "WAITING" : step.status.toLowerCase()}
+                    />
+                    {step.status === "APPROVED" && step.decidedAt !== null ? (
+                      <Typography variant="body2" color="text.secondary">
+                        {memberNameById.get(step.approverId ?? "") ?? step.approverId} ·{" "}
+                        {new Date(step.decidedAt).toLocaleString()}
+                      </Typography>
+                    ) : null}
+                    {step.status === "SKIPPED" && step.reason !== null ? (
+                      <Tooltip title={step.reason}>
+                        <Typography variant="body2" color="text.secondary" sx={{ fontStyle: "italic" }}>
+                          skipped — {step.reason}
+                        </Typography>
+                      </Tooltip>
+                    ) : null}
+                    {step.status === "REJECTED" && step.reason !== null ? (
+                      <Typography variant="body2" color="text.secondary" sx={{ fontStyle: "italic" }}>
+                        &ldquo;{step.reason}&rdquo;
+                      </Typography>
+                    ) : null}
+                    {waiting ? (
+                      <>
+                        <Button
+                          size="small"
+                          variant="outlined"
+                          color="success"
+                          disabled={deciding}
+                          onClick={() => onDecide({ decision: "APPROVE", step: step.position })}
+                          data-testid={`approve-step-${step.position}`}
+                        >
+                          Approve
+                        </Button>
+                        <Button
+                          size="small"
+                          variant="outlined"
+                          color="error"
+                          disabled={deciding}
+                          onClick={() => setRejectTarget(step.position)}
+                          data-testid={`reject-step-${step.position}`}
+                        >
+                          Reject
+                        </Button>
+                      </>
+                    ) : null}
+                  </Stack>
+                </Stack>
+              );
+            })}
+          </Stack>
+          {current.status === "REJECTED" && releaseStatus === "APPROVAL_PENDING" ? (
+            <Button
+              size="small"
+              variant="outlined"
+              disabled={restarting}
+              onClick={() => onRestart()}
+              data-testid="approvals-restart"
+            >
+              {restarting ? "Restarting..." : "Restart approval round (rework)"}
+            </Button>
+          ) : null}
+          {earlierRounds.length > 0 ? (
+            <Stack spacing={0.25}>
+              <Typography variant="body2" color="text.secondary">
+                Earlier rounds:{" "}
+                {earlierRounds
+                  .map((round) => `round ${round.roundNumber} ${round.status.toLowerCase()}`)
+                  .join(" · ")}
+              </Typography>
+              {earlierRounds
+                .filter((round) => round.status === "REJECTED")
+                .flatMap((round) =>
+                  round.steps
+                    .filter((step) => step.status === "REJECTED" && step.reason !== null)
+                    .map((step) => (
+                      <Typography key={`${round.roundNumber}-${step.position}`} variant="body2" color="text.secondary">
+                        Round {round.roundNumber}: {roleLabel(step.approvalType)} rejected — &ldquo;{step.reason}&rdquo;
+                      </Typography>
+                    )),
+                )}
+            </Stack>
+          ) : null}
+          <RejectDialog
+            open={rejectTarget !== null}
+            onClose={() => setRejectTarget(null)}
+            onSubmit={async (reason) => {
+              if (rejectTarget === null) return;
+              onDecide({ decision: "REJECT", step: rejectTarget, reason });
+            }}
+          />
+        </Stack>
+      )}
+    </Paper>
+  );
+}
+
+interface RejectDialogProps {
+  open: boolean;
+  onClose: () => void;
+  onSubmit: (reason: string) => Promise<void>;
+}
+
+/** The mandatory-reason dialog for a rejection (the reason rides the
+ * rejection row and the audit event; a rejection is never anonymous). */
+function RejectDialog({ open, onClose, onSubmit }: RejectDialogProps) {
+  const toast = useToast();
+  const [reason, setReason] = useState("");
+  const [submitting, setSubmitting] = useState(false);
+  const trimmed = reason.trim();
+  const error = trimmed === "" ? "A rejection explains itself — the reason is required" : undefined;
+
+  async function handleSubmit() {
+    if (trimmed === "") return;
+    setSubmitting(true);
+    try {
+      await onSubmit(trimmed);
+      onClose();
+      setReason("");
+    } catch (submitError) {
+      toast.showError(submitError);
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  return (
+    <Dialog open={open} onClose={onClose} fullWidth maxWidth="sm">
+      <DialogTitle>Reject this approval step?</DialogTitle>
+      <DialogContent>
+        <Stack spacing={2} sx={{ marginTop: 1 }}>
+          <Typography>
+            A rejection terminates the round and blocks the release&apos;s progression — the release
+            stays in approval pending until the rework restart opens a new round. The reason is
+            recorded permanently.
+          </Typography>
+          <TextField
+            label="Reason (required)"
+            value={reason}
+            onChange={(event) => setReason(event.target.value)}
+            error={error !== undefined}
+            helperText={error ?? "Recorded with the rejection"}
+            multiline
+            minRows={2}
+            slotProps={{ htmlInput: { "data-testid": "reject-reason" } }}
+          />
+        </Stack>
+      </DialogContent>
+      <DialogActions>
+        <Button onClick={onClose}>Cancel</Button>
+        <Button
+          color="error"
+          variant="contained"
+          onClick={() => void handleSubmit()}
+          disabled={submitting || error !== undefined}
+          data-testid="confirm-reject"
+        >
+          {submitting ? "Working..." : "Reject"}
+        </Button>
+      </DialogActions>
+    </Dialog>
   );
 }
 

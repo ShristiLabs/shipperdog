@@ -26,7 +26,8 @@ package com.shipperdog.api.config;
  *   <li>{@code shipperdog.promotion.duration} — E10 promotion
  *       ({@code promotion_duration})</li>
  *   <li>{@code shipperdog.approval.duration} — E10 approvals
- *       ({@code approval_duration})</li>
+ *       ({@code approval_duration}); recorded since issue #41
+ *       (S10-02) as {@link #APPROVAL_DURATION}</li>
  *   <li>{@link #AUTHORIZATION_DECISION_DURATION} — recorded since this
  *       issue by the RBAC enforcement point (SLO: under 100 ms, PRD
  *       section 42); since S7-01 (issue #30) the layered authorization
@@ -122,6 +123,17 @@ public final class MetricNames {
      * {@code Retry-After} header; the meter is the aggregate view.
      */
     public static final String RATE_LIMIT_REJECTED = "shipperdog.ratelimit.rejected";
+
+    /**
+     * Timer of every approval round's terminal crossing (issue #41,
+     * S10-02 — the reserved {@code approval_duration} of PRD 28, E10):
+     * the span from a round's instantiation to its terminal status,
+     * tagged {@code outcome=satisfied|rejected}. Rework is a NEW round
+     * (each round times its own span), so the metric observes one
+     * governance moment per recording — rework cycles read as multiple
+     * recordings for one release.
+     */
+    public static final String APPROVAL_DURATION = "shipperdog.approval.duration";
 
     private MetricNames() {}
 }

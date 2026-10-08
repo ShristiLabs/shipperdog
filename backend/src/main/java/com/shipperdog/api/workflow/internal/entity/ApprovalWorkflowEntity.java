@@ -58,6 +58,17 @@ public class ApprovalWorkflowEntity {
         this.createdBy = createdBy;
     }
 
+    /**
+     * Re-attaches the definition's ring (S10-02's edit surface): null
+     * detaches (the definition becomes name-only — environments still
+     * bind it by name). The name never moves: it is the binding
+     * vocabulary environments reference, and renaming would strand
+     * their bindings.
+     */
+    public void reattach(UUID ringId) {
+        this.ringId = ringId;
+    }
+
     @PrePersist
     void onCreate() {
         Instant now = Instant.now();

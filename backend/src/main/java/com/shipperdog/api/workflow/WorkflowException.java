@@ -121,7 +121,19 @@ public class WorkflowException extends RuntimeException {
         APPROVAL_REJECT_REASON_REQUIRED(
                 HttpStatus.UNPROCESSABLE_ENTITY,
                 "APPROVAL_REJECT_REASON_REQUIRED",
-                "A reason is required to reject an approval step.");
+                "A reason is required to reject an approval step."),
+        /**
+         * The environment's approval-policy binding names a workflow
+         * the organization has not defined (S10-02's fail-closed
+         * resolution, issue #41): the crossing that would instantiate
+         * the round refuses — the release stays one status earlier —
+         * rather than silently running a different (possibly weaker)
+         * chain. The {@code errors} member carries the dangling name.
+         */
+        APPROVAL_POLICY_UNRESOLVED(
+                HttpStatus.UNPROCESSABLE_ENTITY,
+                "APPROVAL_POLICY_UNRESOLVED",
+                "The environment's approval policy does not resolve to a defined workflow.");
 
         final HttpStatus httpStatus;
         final String code;

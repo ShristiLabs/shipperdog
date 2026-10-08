@@ -22,6 +22,15 @@ import java.util.UUID;
  * is a fact the manifest records like any other). Implementations
  * resolve by release id alone and never widen scope: the freeze runs
  * inside the crossing's committed transaction and bound scope.
+ *
+ * <p><strong>Single registrant.</strong> The freeze consumes exactly
+ * ONE implementation: the manifest's approval block is one list from
+ * one authority, and the ordered-sublist merge two sources would
+ * demand has no defined meaning — the workflow module's
+ * {@code ApprovalWorkflowService} is the registrant (the seam
+ * composition's {@code @ConditionalOnMissingBean}-style expectation:
+ * a second bean would be a modeling error to surface at startup, not
+ * a silent interleaving).
  */
 public interface ReleaseApprovalSource {
 

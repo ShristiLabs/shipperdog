@@ -166,21 +166,47 @@ allowed.
   server rejects anything else with the precise 409, and the
   failure/rollback edges open a mandatory-reason dialog); the artifacts
   block shows the creation slots and flips to the frozen content pins
-  (build, sha256, size, filename) once the manifest exists; quality
-  gates and approvals render documented empty states until their
-  console wiring lands (the approval API lives since S10-01; gates
-  arrive with S10-03) — the block layout is the E10 landing zone;
-  distribution shows the starting ring, the targeted environment
-  (S9-04), and the resolved target set; the state timeline renders the
-  append-only history with roster-resolved actors, timestamps, and
-  reasons; the frozen-manifest section shows the digest and freeze
-  facts, the document summary, the YAML compliance render, a YAML
-  download, and a diff against another APPROVED release of the same
-  application (artifact pins rendered by their content facts — the
-  identity a CHANGED verdict actually used). Detail, history, and
-  manifest queries auto-refresh every 30 seconds; before APPROVED the
-  manifest panel shows the honest not-frozen state (the surface's 404),
-  never an error.
+  (build, sha256, size, filename) once the manifest exists; the
+  approvals block renders LIVE since S10-02 (issue #41): the bound
+  policy's rounds with their group modes, the waiting-on list
+  (`approvalRules.ts` mirrors the backend evaluator — the active
+  group's pending steps), recorded signatures with roster-resolved
+  approvers, skip rationales (which signature satisfied an ANY group;
+  the condition's evaluation), approve/reject affordances on exactly
+  the decidable steps (rejections open the mandatory-reason dialog),
+  the rework restart on a rejected round, and the earlier rounds with
+  their rejection reasons; a release no policy bound renders the
+  honest empty state (the surface's 404); quality gates keep their
+  documented empty state until S10-03; distribution shows the starting
+  ring, the targeted environment (S9-04), and the resolved target
+  set; the state timeline renders the append-only history with
+  roster-resolved actors, timestamps, and reasons; the frozen-manifest
+  section shows the digest and freeze facts, the document summary,
+  the YAML compliance render, a YAML download, and a diff against
+  another APPROVED release of the same application (artifact pins
+  rendered by their content facts — the identity a CHANGED verdict
+  actually used). Detail, history, approvals, and manifest queries
+  auto-refresh every 30 seconds; before APPROVED the manifest panel
+  shows the honest not-frozen state (the surface's 404), never an
+  error.
+- **Approval workflows** (`/approval-workflows`, S10-02, issue #41):
+  the definitions editor the issue's AC4 names — the organization's
+  chains listed with their group-shaped summaries, and the create/edit
+  dialog that composes the ordered chain as GROUPS (the simplified
+  tree editor): each group an ALL/ANY mode toggle (the PARALLEL and OR
+  modes) holding its ordered steps — each step a role from the
+  five-role vocabulary, an optional tenant scope, and an optional
+  trigger condition (`ENVIRONMENT_EQUALS` /
+  `FEATURE_FLAG_CONTAINS`, the stub vocabulary). Client-side
+  validation (`approvalRules.ts`) refuses before any write the shapes
+  that would make a step unreachable — an empty definition, an empty
+  group, a role demanded twice, the ten-step ceiling, a malformed
+  condition or binding name — and the server re-validates everything
+  (the console is never the gate; refusals surface the problem+json
+  code). The name is set at creation only (the binding vocabulary
+  environments reference); edits replace the chain and re-attach the
+  ring (an emptied ring detaches). The nav section renders under the
+  `org:approval-workflows:read` probe.
 
 ## CI and verification
 

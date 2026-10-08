@@ -7,7 +7,7 @@ import com.shipperdog.api.identity.AuthenticatedPrincipal;
 import com.shipperdog.api.workflow.internal.service.ApprovalWorkflowService;
 import com.shipperdog.api.workflow.internal.service.ApprovalWorkflowService.ApprovalStateView;
 import com.shipperdog.api.workflow.internal.service.ApprovalWorkflowService.CreateCommand;
-import com.shipperdog.api.workflow.internal.service.ApprovalWorkflowService.StepCommand;
+import com.shipperdog.api.workflow.internal.service.ApprovalWorkflowService.UpdateCommand;
 import com.shipperdog.api.workflow.internal.service.ApprovalWorkflowService.WorkflowView;
 import io.swagger.v3.oas.annotations.media.Schema;
 import java.util.List;
@@ -20,6 +20,7 @@ import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.ResponseStatus;
@@ -94,14 +95,17 @@ public class WorkflowController {
     // -------------------------------------------------------------------------
 
     /**
-     * Creates an approval workflow definition (AC1): the binding
-     * name, the optional ring attachment, and the ordered steps.
-     * Validations refuse before any write — the organization must
-     * exist, the ring must resolve in its vocabulary, the chain is at
-     * least one and at most ten steps, each role once, every tenant
-     * scope inside the organization. One name and one ring attachment
-     * per organization (the precise 409); audited with the whole
-     * chain.
+     * Creates an approval workflow definition (AC1 + S10-02's group
+     * vocabulary): the binding name, the optional ring attachment,
+     * and the ordered chain — flat steps (S10-01's sequential shape)
+     * or groups (each ALL — the PARALLEL mode — or ANY — the OR mode
+     * — with optionally conditional steps). Validations refuse before
+     * any write — the organization must exist, the ring must resolve
+     * in its vocabulary, the chain is at least one and at most ten
+     * steps, each role once across the definition, every tenant scope
+     * inside the organization, every condition well-shaped. One name
+     * and one ring attachment per organization (the precise 409);
+     * audited with the whole chain.
      */
     @PostMapping("/api/v1/approval-workflows")
     @ResponseStatus(HttpStatus.CREATED)
@@ -114,11 +118,39 @@ public class WorkflowController {
                         request.organizationId(),
                         request.name(),
                         request.ring(),
-                        request.steps() == null
-                                ? List.of()
-                                : request.steps().stream()
-                                        .map(step -> new StepCommand(step.role(), step.tenantId()))
-                                        .toList()));
+                        WorkflowRequests.stepCommandsOf(request.steps()),
+                        WorkflowRequests.groupCommandsOf(request.groups())));
+    }
+
+    /**
+     * Edits an approval workflow definition (S10-02's console-editor
+     * surface, issue #41 AC4): replaces the chain (flat or grouped,
+     * the creation shape) and re-attaches the ring — an absent ring
+     * DETACHES. The name never moves (it is the binding vocabulary an
+     * environment's {@code approval_policy} references). Rounds
+     * already run keep their frozen per-step copies; a later round —
+     * a rework restart included — instantiates the definition's
+     * current content. Audited as {@code APPROVAL_WORKFLOW_UPDATED}.
+     * The {@code organizationId} query parameter carries the
+     * permission target; a workflow of another organization conceals
+     * exactly like an unknown id.
+     */
+    @PutMapping("/api/v1/approval-workflows/{workflowId}")
+    @Idempotent
+    @PreAuthorize("hasPermission(#organizationId, 'organization', 'org:approval-workflows:manage')")
+    WorkflowView update(
+            @AuthenticationPrincipal Object principal,
+            @PathVariable UUID workflowId,
+            @RequestParam UUID organizationId,
+            @RequestBody UpdateRequest request) {
+        return workflows.update(
+                requireUserId(principal),
+                organizationId,
+                workflowId,
+                new UpdateCommand(
+                        request.ring(),
+                        WorkflowRequests.stepCommandsOf(request.steps()),
+                        WorkflowRequests.groupCommandsOf(request.groups())));
     }
 
     /**
@@ -234,20 +266,56 @@ public class WorkflowController {
     }
 
     /**
-     * The definition creation body (AC1): the owning organization, the
-     * binding name (lowercase kebab — the vocabulary an environment's
-     * {@code approval_policy} references), the optional starting-ring
-     * attachment (resolved in the organization's ring vocabulary),
-     * and the ordered steps — list order IS chain order.
+     * The definition creation body (AC1 + S10-02): the owning
+     * organization, the binding name (lowercase kebab — the vocabulary
+     * an environment's {@code approval_policy} references), the
+     * optional starting-ring attachment (resolved in the
+     * organization's ring vocabulary), and the ordered chain — either
+     * {@code steps} (S10-01's flat sequential shape; list order IS
+     * chain order) or {@code groups} (each with its ALL/ANY mode and
+     * its own ordered steps), never both.
      */
     @Schema(
             description = "The approval workflow creation body: owning organization, binding name, optional ring "
-                    + "attachment, and the ordered approval steps (list order is chain order; each step a required "
-                    + "role, optionally narrowed to a tenant the release must target).")
-    public record CreateRequest(UUID organizationId, String name, String ring, List<StepRequest> steps) {}
+                    + "attachment, and the ordered approval chain — either flat steps (sequential) or groups (each "
+                    + "ALL = every step must approve, or ANY = first approval satisfies and siblings skip), never "
+                    + "both; each step a required role, optionally narrowed to a tenant the release must target and "
+                    + "optionally carrying a trigger condition evaluated at round instantiation.")
+    public record CreateRequest(
+            UUID organizationId, String name, String ring, List<StepRequest> steps, List<GroupRequest> groups) {}
 
-    /** One step of a definition: the required role and the optional tenant scope. */
-    public record StepRequest(String role, UUID tenantId) {}
+    /**
+     * The definition edit body (S10-02): the chain replaces (exactly
+     * the creation shapes) and the ring re-attaches (absent detaches).
+     */
+    @Schema(
+            description = "The approval workflow edit body: the chain replaces and the ring attachment re-binds "
+                    + "(absent ring detaches); the name is not editable.")
+    public record UpdateRequest(String ring, List<StepRequest> steps, List<GroupRequest> groups) {}
+
+    /**
+     * One step of a definition: the required role, the optional tenant
+     * scope, and the optional trigger condition (S10-02).
+     */
+    public record StepRequest(String role, UUID tenantId, ConditionRequest condition) {}
+
+    /**
+     * One group of a definition (S10-02): the satisfaction mode — ALL
+     * (the PARALLEL mode: every step must approve) or ANY (the OR
+     * mode: the first approval satisfies, remaining siblings become
+     * SKIPPED with the satisfying signature recorded) — and its
+     * ordered steps.
+     */
+    public record GroupRequest(String mode, List<StepRequest> steps) {}
+
+    /**
+     * One trigger predicate (S10-02's stub vocabulary; S10-06's
+     * expression evaluator migrates it): ENVIRONMENT_EQUALS takes
+     * {@code value} (the environment code); FEATURE_FLAG_CONTAINS
+     * takes {@code key} (the flag name) and optionally {@code value}
+     * (the exact flag value).
+     */
+    public record ConditionRequest(String type, String key, String value) {}
 
     /**
      * The decision body (AC2/AC5/AC6): the application id (the
