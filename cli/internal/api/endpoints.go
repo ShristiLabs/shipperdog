@@ -27,10 +27,13 @@ const (
 	pathApplicationVersions   = "/api/v1/applications/{applicationId}/versions"
 	pathApplicationVersionOne = "/api/v1/applications/{applicationId}/versions/{versionId}"
 
-	pathReleases           = "/api/v1/releases"
-	pathReleaseOne         = "/api/v1/releases/{releaseId}"
-	pathReleaseTransitions = "/api/v1/releases/{releaseId}/transitions"
-	pathReleaseManifest    = "/api/v1/releases/{releaseId}/manifest"
+	pathReleases            = "/api/v1/releases"
+	pathReleaseOne          = "/api/v1/releases/{releaseId}"
+	pathReleaseTransitions  = "/api/v1/releases/{releaseId}/transitions"
+	pathReleaseManifest     = "/api/v1/releases/{releaseId}/manifest"
+	pathReleaseGates        = "/api/v1/releases/{releaseId}/gates"
+	pathReleaseGateResult   = "/api/v1/releases/{releaseId}/gates/{gateType}/result"
+	pathReleaseGateOverride = "/api/v1/releases/{releaseId}/gates/{gateType}/override"
 )
 
 // endpointTemplates lists every template above; endpoints_test.go
@@ -50,6 +53,9 @@ var endpointTemplates = []string{
 	pathReleaseOne,
 	pathReleaseTransitions,
 	pathReleaseManifest,
+	pathReleaseGates,
+	pathReleaseGateResult,
+	pathReleaseGateOverride,
 }
 
 // expand replaces each {placeholder} in order with the given segment

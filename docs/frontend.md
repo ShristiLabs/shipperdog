@@ -176,8 +176,11 @@ allowed.
   the decidable steps (rejections open the mandatory-reason dialog),
   the rework restart on a rejected round, and the earlier rounds with
   their rejection reasons; a release no policy bound renders the
-  honest empty state (the surface's 404); quality gates keep their
-  documented empty state until S10-03; distribution shows the starting
+  honest empty state (the surface's 404); quality gates render LIVE
+  since S10-03 (per-gate states with evidence links, observed values
+  against thresholds, the distinct NO_DATA fail-closed state, override
+  records, and the mandatory-reason override action on blocking
+  gates); distribution shows the starting
   ring, the targeted environment (S9-04), and the resolved target
   set; the state timeline renders the append-only history with
   roster-resolved actors, timestamps, and reasons; the frozen-manifest

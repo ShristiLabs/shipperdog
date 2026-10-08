@@ -117,11 +117,51 @@ shipperdog release promote R-1028
   with S10-05). FAILED/ROLLED_BACK releases are terminal and refuse.
 - **transition** is the direct edge-by-edge drive for humans and
   scripts that want one crossing at a time.
-- Gates render their honest not-yet-reported state in `release get`
-  until S10-03 lands; approvals are live since S10-02 — a blocked
-  crossing names its pending approvals, and the console renders the
-  rounds and takes decisions (the CLI approval command surface remains
-  a later story).
+- **gates** are live since S10-03 (see the next section): `release
+  get` renders the gate block, and a blocked READY crossing names its
+  blocking gates; approvals are live since S10-02 — a blocked crossing
+  names its pending approvals, and the console renders the rounds and
+  takes decisions (the CLI approval command surface remains a later
+  story).
+
+## Quality gates (S10-03)
+
+The CI-facing quality-gate surface (FR-026, PRD 32): submit results
+from your pipeline with evidence, read the release's gate block, and
+override a blocking gate when the exception is warranted. Gate types
+are an open vocabulary — the FR-026 built-ins (`unit-tests`,
+`integration-tests`, `sast`, `dependency-scan`, `mobile-security-scan`,
+`coverage-threshold`, `crash-free-threshold`, `open-critical-bugs`) or
+your integration's own kind.
+
+```
+# Submit from CI: pass/fail + the evidence report URL (mandatory)
+shipperdog gate result R-1028 unit-tests \
+    --status pass --evidence-url https://ci.internal/run/9/tests
+shipperdog gate result R-1028 coverage-threshold \
+    --status pass --value 87.5 --evidence-url https://ci.internal/run/9/cov
+
+# Read the block: per-gate states, thresholds, evidence, overrides
+shipperdog gate list R-1028
+
+# The governed exception (requires the gate-override authority)
+shipperdog gate override R-1028 coverage-threshold \
+    --reason "coverage dip is a known flaky-suite artifact"
+```
+
+- Re-submitting a gate is the re-run path: latest wins, history kept
+  (the append-only trail answers what was reported when).
+- Threshold/ceiling gates require `--value` (the observed number
+  rendered beside the organization's threshold); pass/fail gates
+  refuse it.
+- `crash-free-threshold` and `open-critical-bugs` are metric-backed:
+  CI cannot submit them (422 `GATE_METRIC_BACKED`) — analytics
+  resolves their values at evaluation time, fail-closed NO_DATA until
+  the S11-04 feeds land.
+- A failed or data-less REQUIRED gate blocks the release's READY
+  crossing (the 422 names every blocking gate and its reason); an
+  override — exactly once, with the mandatory reason — stops the gate
+  blocking and is audited with actor and reason.
 
 ### GitHub Actions showcase
 

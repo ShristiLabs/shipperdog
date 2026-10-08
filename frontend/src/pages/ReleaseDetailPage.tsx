@@ -3,20 +3,24 @@
  * product": one screen per release showing build, quality, approvals,
  * and distribution state so a Release Manager judges release health at
  * a glance. Blocks: the artifact slots with their frozen pins (hashes
- * at APPROVED, the S9-03 manifest), quality gates (honest empty state
- * until the S10-03 gate subsystem), approvals — LIVE since S10-02: the
- * bound policy's rounds with their group modes, the waiting-on list,
- * recorded signatures and skip rationales, decisions, and the rework
- * restart — distribution (the starting ring and target set; ring
- * promotion tracking is E10), the append-only state timeline (S9-02
- * history with actors/timestamps/reasons), the frozen manifest viewer
- * with the YAML compliance render and the diff against another
+ * at APPROVED, the S9-03 manifest), quality gates — LIVE since S10-03:
+ * the ring's expected set with per-gate states (passed, failed,
+ * no-data fail-closed, not-reported), observed values against the
+ * definitions' thresholds, evidence links, the override record with
+ * its reason, and the governed override action — approvals (S10-02:
+ * the bound policy's rounds with their group modes, the waiting-on
+ * list, recorded signatures and skip rationales, decisions, and the
+ * rework restart), distribution (the starting ring and target set;
+ * ring promotion tracking is E10), the append-only state timeline
+ * (S9-02 history with actors/timestamps/reasons), the frozen manifest
+ * viewer with the YAML compliance render and the diff against another
  * APPROVED release of the same application. Lifecycle actions offer
  * PRD 17's legal edges; no read-shaped surface is keyed to
  * app:releases:manage, so actions render for every legal edge and the
  * server's verdict is the gate (denials surface the problem+json code,
- * the ApplicationDetailPage precedent). Detail, timeline, approvals,
- * and manifest auto-refresh (30s) — the dashboard is a live view.
+ * the ApplicationDetailPage precedent). Detail, timeline, gates,
+ * approvals, and manifest auto-refresh (30s) — the dashboard is a
+ * live view.
  */
 import ArrowBackIcon from "@mui/icons-material/ArrowBack";
 import CompareArrowsIcon from "@mui/icons-material/CompareArrows";
@@ -46,6 +50,12 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useMemo, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import { ApiError } from "../api/problem";
+import {
+  getReleaseGates,
+  overrideGate,
+  type ReleaseGate,
+  type ReleaseGates,
+} from "../api/gates";
 import { getApplicationVersion } from "../api/versions";
 import {
   decideReleaseApproval,
@@ -161,6 +171,17 @@ export default function ReleaseDetailPage() {
   const approvalsMissing =
     approvals.isError && approvals.error instanceof ApiError && approvals.error.status === 404;
 
+  // The gate block resolves for every readable release (the view
+  // carries the ring's expected set beside the recorded results); only
+  // a genuine failure is an error — there is no miss state.
+  const gates = useQuery({
+    queryKey: ["release-gates", releaseIdSafe],
+    queryFn: () => getReleaseGates(applicationIdSafe, releaseIdSafe),
+    enabled: applicationIdSafe !== "" && releaseIdSafe !== "" && release !== null,
+    retry: false,
+    refetchInterval: REFRESH_MS,
+  });
+
   const directory = useAllApplications(orgId);
   const tenants = useAllTenants(orgId);
   const roster = useAllOrgMembers(orgId);
@@ -182,6 +203,7 @@ export default function ReleaseDetailPage() {
     void queryClient.invalidateQueries({ queryKey: ["release-manifest", releaseIdSafe] });
     void queryClient.invalidateQueries({ queryKey: ["release-manifest-yaml", releaseIdSafe] });
     void queryClient.invalidateQueries({ queryKey: ["release-approvals", releaseIdSafe] });
+    void queryClient.invalidateQueries({ queryKey: ["release-gates", releaseIdSafe] });
     void queryClient.invalidateQueries({ queryKey: ["releases"] });
   }
 
@@ -210,6 +232,16 @@ export default function ReleaseDetailPage() {
     onSuccess: () => {
       invalidateRelease();
       toast.showSuccess("Approval round restarted");
+    },
+    onError: toast.showError,
+  });
+
+  const override = useMutation({
+    mutationFn: (input: { gateType: string; reason: string }) =>
+      overrideGate(applicationIdSafe, releaseIdSafe, input.gateType, input.reason),
+    onSuccess: (gate) => {
+      invalidateRelease();
+      toast.showSuccess(`Gate ${gate.gateType} overridden`);
     },
     onError: toast.showError,
   });
@@ -340,13 +372,14 @@ export default function ReleaseDetailPage() {
           </Stack>
         </Paper>
 
-        <Paper variant="outlined" sx={{ padding: 2, flexGrow: 1 }} data-testid="gates-section">
-          <Typography variant="h6">Quality gates</Typography>
-          <Typography color="text.secondary" sx={{ marginTop: 1 }} data-testid="gates-empty">
-            Gate results arrive with the quality-gate subsystem (E10, S10-03). This block renders
-            them per gate — passed, failed, or blocking — when the data lands.
-          </Typography>
-        </Paper>
+        <GatesSection
+          gates={gates.data ?? null}
+          loading={gates.isPending}
+          failed={gates.isError}
+          memberNameById={memberNameById}
+          overriding={override.isPending}
+          onOverride={(gateType, reason) => override.mutate({ gateType, reason })}
+        />
 
         <ApprovalsSection
           state={approvals.data ?? null}
@@ -527,6 +560,221 @@ export default function ReleaseDetailPage() {
         onClose={() => setCompareOpen(false)}
       />
     </Stack>
+  );
+}
+
+interface GatesSectionProps {
+  gates: ReleaseGates | null;
+  loading: boolean;
+  failed: boolean;
+  memberNameById: Map<string, string>;
+  overriding: boolean;
+  onOverride: (gateType: string, reason: string) => void;
+}
+
+/** The Quality Gates block of PRD 32, live since S10-03: the ring's
+ * expected set with per-gate states — passed with its evidence link,
+ * failed (BLOCKED while required and not overridden), the metric
+ * gates' NO_DATA (fail-closed "no data yet", visually distinct from a
+ * failure), and the not-reported PENDING state — numeric gates
+ * rendered as "observed (threshold T)", the override record with its
+ * actor and mandatory reason, and the governed override action (the
+ * server's app:releases:gate-override verdict is the authority; a
+ * refusal surfaces its problem+json code). */
+function GatesSection({ gates, loading, failed, memberNameById, overriding, onOverride }: GatesSectionProps) {
+  const [overrideTarget, setOverrideTarget] = useState<string | null>(null);
+
+  return (
+    <Paper variant="outlined" sx={{ padding: 2, flexGrow: 1 }} data-testid="gates-section">
+      <Typography variant="h6">Quality gates</Typography>
+      {failed ? (
+        <Alert severity="error" sx={{ marginTop: 1 }} data-testid="gates-error">
+          Failed to load the gate state.
+        </Alert>
+      ) : loading || gates === null ? (
+        <Typography color="text.secondary" sx={{ marginTop: 1 }} data-testid="gates-loading" aria-busy="true">
+          Loading gates...
+        </Typography>
+      ) : gates.gates.length === 0 ? (
+        <Typography color="text.secondary" sx={{ marginTop: 1 }} data-testid="gates-empty">
+          No gates required for this ring and none reported — the organization defines required
+          gates per ring (org-wide defaults or ring-specific overrides).
+        </Typography>
+      ) : (
+        <Stack spacing={1} sx={{ marginTop: 1 }}>
+          <Stack spacing={0.5}>
+            {gates.gates.map((gate) => (
+              <GateRow
+                key={gate.gateType}
+                gate={gate}
+                memberNameById={memberNameById}
+                overriding={overriding}
+                onOverride={setOverrideTarget}
+              />
+            ))}
+          </Stack>
+          <Typography variant="body2" color="text.secondary">
+            A failed or data-less required gate blocks the READY crossing until passed or
+            overridden; overrides are audited with actor and reason.
+          </Typography>
+        </Stack>
+      )}
+      <OverrideDialog
+        open={overrideTarget !== null}
+        gateType={overrideTarget}
+        onClose={() => setOverrideTarget(null)}
+        overriding={overriding}
+        onSubmit={(reason) => {
+          if (overrideTarget === null) return;
+          onOverride(overrideTarget, reason);
+        }}
+      />
+    </Paper>
+  );
+}
+
+/** One gate of the block: the type, the state chip (BLOCKED for a
+ * required failed gate), the numeric render, the evidence link, the
+ * metric source note, the override record, and the override action. */
+function GateRow({
+  gate,
+  memberNameById,
+  overriding,
+  onOverride,
+}: {
+  gate: ReleaseGate;
+  memberNameById: Map<string, string>;
+  overriding: boolean;
+  onOverride: (gateType: string) => void;
+}) {
+  const blocking = gate.required && !gate.overridden && gate.status !== "PASSED";
+  const thresholdLabel =
+    gate.threshold === null
+      ? null
+      : gate.schema === "COUNT_MAX"
+        ? `max ${gate.threshold}`
+        : `threshold ${gate.threshold}`;
+  return (
+    <Stack spacing={0.25} data-testid={`gate-${gate.gateType}`}>
+      <Stack direction="row" spacing={1} sx={{ alignItems: "center", flexWrap: "wrap" as const }}>
+        <Typography variant="body2" sx={{ minWidth: 150 }}>
+          {gate.gateType}
+          {gate.required ? "" : " (advisory)"}
+        </Typography>
+        {gate.status === "PASSED" ? (
+          <Chip size="small" color="success" variant="filled" label="passed" />
+        ) : gate.status === "FAILED" ? (
+          <Chip size="small" color="error" variant="filled" label="failed" />
+        ) : gate.status === "NO_DATA" ? (
+          <Chip size="small" color="warning" variant="outlined" label="no data yet (fail-closed)" />
+        ) : (
+          <Chip size="small" color="default" variant="outlined" label="not reported yet" />
+        )}
+        {blocking ? <Chip size="small" color="error" variant="outlined" label="BLOCKED" /> : null}
+        {gate.overridden ? (
+          <Chip size="small" color="warning" variant="filled" label="overridden" />
+        ) : null}
+        {gate.observedValue !== null && thresholdLabel !== null ? (
+          <Typography variant="body2" color="text.secondary">
+            {gate.observedValue} ({thresholdLabel})
+          </Typography>
+        ) : thresholdLabel !== null ? (
+          <Typography variant="body2" color="text.secondary">
+            {thresholdLabel}
+          </Typography>
+        ) : null}
+        {gate.source === "METRIC" ? (
+          <Tooltip title="Resolved from analytics at evaluation time (S11-04's feeds)">
+            <Typography variant="body2" color="text.secondary" sx={{ fontStyle: "italic" }}>
+              from analytics
+            </Typography>
+          </Tooltip>
+        ) : null}
+        {gate.evidenceUrl !== null ? (
+          <a href={gate.evidenceUrl} target="_blank" rel="noreferrer" data-testid={`gate-evidence-${gate.gateType}`}>
+            evidence
+          </a>
+        ) : null}
+        {gate.status !== "PASSED" && gate.status !== null && !gate.overridden && gate.status !== "PENDING" ? (
+          <Button
+            size="small"
+            variant="outlined"
+            color="warning"
+            disabled={overriding}
+            onClick={() => onOverride(gate.gateType)}
+            data-testid={`override-${gate.gateType}`}
+          >
+            Override
+          </Button>
+        ) : null}
+      </Stack>
+      {gate.overridden && gate.overriddenBy !== null ? (
+        <Typography variant="body2" color="text.secondary" sx={{ fontStyle: "italic" }}>
+          overridden by {memberNameById.get(gate.overriddenBy) ?? gate.overriddenBy} — &ldquo;
+          {gate.overriddenReason}&rdquo;
+          {gate.overriddenAt !== null ? ` (${new Date(gate.overriddenAt).toLocaleString()})` : ""}
+        </Typography>
+      ) : null}
+      {gate.history.length > 1 ? (
+        <Typography variant="body2" color="text.secondary">
+          {gate.history.length} recorded results (latest wins)
+        </Typography>
+      ) : null}
+    </Stack>
+  );
+}
+
+interface OverrideDialogProps {
+  open: boolean;
+  gateType: string | null;
+  onClose: () => void;
+  overriding: boolean;
+  onSubmit: (reason: string) => void;
+}
+
+/** The mandatory-reason dialog of the gate override (AC3): the
+ * governed exception explains itself — actor, reason, and moment ride
+ * the row and the audit event. */
+function OverrideDialog({ open, gateType, onClose, overriding, onSubmit }: OverrideDialogProps) {
+  const [reason, setReason] = useState("");
+  const canSubmit = reason.trim().length > 0 && !overriding;
+  return (
+    <Dialog open={open && gateType !== null} onClose={onClose} maxWidth="sm" fullWidth>
+      <DialogTitle>Override gate {gateType}</DialogTitle>
+      <DialogContent>
+        <TextField
+          autoFocus
+          fullWidth
+          multiline
+          minRows={2}
+          label="Reason (mandatory, audited)"
+          value={reason}
+          onChange={(event) => setReason(event.target.value)}
+          sx={{ marginTop: 1 }}
+          slotProps={{ htmlInput: { "data-testid": "override-reason" } }}
+        />
+        <Typography variant="body2" color="text.secondary" sx={{ marginTop: 1 }}>
+          The gate keeps its recorded state; the override alone stops it blocking, and the record
+          (actor, reason, moment) stays on the release.
+        </Typography>
+      </DialogContent>
+      <DialogActions>
+        <Button onClick={onClose}>Cancel</Button>
+        <Button
+          variant="contained"
+          color="warning"
+          disabled={!canSubmit}
+          onClick={() => {
+            onSubmit(reason.trim());
+            setReason("");
+            onClose();
+          }}
+          data-testid="override-submit"
+        >
+          {overriding ? "Overriding..." : "Override"}
+        </Button>
+      </DialogActions>
+    </Dialog>
   );
 }
 

@@ -176,6 +176,27 @@ The approval engine's codes (S10-01, issue #40; rendered by
 | `APPROVAL_REJECT_REASON_REQUIRED` | 422 | A reason is required to reject an approval step. (issue AC6, the S4-03 revoke analog; `errors` names the `reason` field) |
 | `APPROVAL_POLICY_UNRESOLVED` | 422 | The environment's approval policy does not resolve to a defined workflow. (S10-02, issue #41 — the fail-closed resolution: the READY to APPROVAL_PENDING crossing refuses and the release stays one status earlier; `errors.approvalPolicy` carries the dangling name, and defining the named workflow unblocks the same crossing. Rendered by the release module's transition route — the workflow module's refusal composes into its crossing) |
 
+## Gate (`GateException.Code`)
+
+The quality-gate surface (S10-03, issue #42): the organization-grain
+definition routes and the release-addressed result/read/override
+routes. Definition-route permission denials conceal as
+`ORGANIZATION_NOT_FOUND` at the permission target; release-route
+denials conceal as `APPLICATION_NOT_FOUND` there, and a genuine
+release miss renders `RELEASE_NOT_FOUND` here — the gate module's own
+value of the release read's public code (byte-identical concealment).
+
+| Code | HTTP | Detail |
+|---|---|---|
+| `GATE_DEFINITION_NOT_FOUND` | 404 | Resource not found. (the definition detail's concealed miss — a definition of another organization is indistinguishable from an unknown id through the `organizationId` query parameter's permission target) |
+| `ORGANIZATION_NOT_FOUND` | 404 | Resource not found. (the definition surface's organization-miss backstop) |
+| `RELEASE_NOT_FOUND` | 404 | Resource not found. (the gate surface's release miss — the release module's own public code, so the concealed miss is byte-identical through either module) |
+| `INVALID_REQUEST` | 400 | The request is invalid. (malformed definitions — a non-kebab gate type, config that fails the catalog's expected-result schema, an unknown ring — and malformed submissions: an unknown `status` value; the `errors` member keys the offending field) |
+| `GATE_DEFINITION_EXISTS` | 409 | A definition already exists for this gate type. (V31's one-definition-per-org+type guards at each ring level; the pre-check and the lost-race translation answer identically) |
+| `GATE_RESULT_INVALID` | 422 | The gate result is invalid. (a threshold/ceiling gate without its `observedValue`, a pass/fail gate carrying one, a missing or non-http(s) `evidenceUrl`; the `errors` member keys the field) |
+| `GATE_METRIC_BACKED` | 422 | Metric-backed gates resolve their values from analytics at evaluation time. (`crash-free-threshold`, `open-critical-bugs` — manual submission is refused; the value comes from the `GateMetricSource` seam when S11-04's feeds land, fail-closed NO_DATA until then) |
+| `GATE_OVERRIDE_INVALID` | 409 | This gate cannot be overridden. (only a FAILED or NO_DATA gate, exactly once — a passed gate needs no override, a pending one has nothing to override, and a used override is a recorded fact that never moves; `errors` carries the `state` or names the `gate`) |
+
 ## Environment (`EnvironmentException.Code`)
 
 The environment surface (S9-04, issue #58): the organization-grain

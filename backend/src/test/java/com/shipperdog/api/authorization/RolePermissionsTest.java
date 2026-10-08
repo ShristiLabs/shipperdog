@@ -69,7 +69,11 @@ class RolePermissionsTest {
                         // S10-01 (issue #40): approval-chain reads join the
                         // read-only surface (a viewer can see the chains
                         // their releases run, never decide them).
-                        Permission.ORG_APPROVAL_WORKFLOWS_READ);
+                        Permission.ORG_APPROVAL_WORKFLOWS_READ,
+                        // S10-03 (issue #42): gate-definition reads join
+                        // the same read-only surface (a viewer sees the
+                        // gates their releases must pass, never overrides).
+                        Permission.ORG_GATE_DEFINITIONS_READ);
     }
 
     @Test

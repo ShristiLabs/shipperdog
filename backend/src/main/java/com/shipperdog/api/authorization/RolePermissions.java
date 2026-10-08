@@ -32,6 +32,7 @@ import java.util.Set;
  *                       org:tenants:create          org:tenants:read
  *                       org:environments:read/manage (S9-04)
  *                       org:approval-workflows:read/manage (S10-01)
+ *                       org:gate-definitions:read/manage (S10-03)
  *                       tenant:tenants:read         tenant:tenants:update
  *                       tenant:members:read         tenant:members:manage
  *                       tenant:testers:read/manage (S6-03)
@@ -39,6 +40,7 @@ import java.util.Set;
  *                       tenant:authorization-grants:read/manage (S7-02)
  *                       app:applications:read/write app:versions:read
  *                       app:releases:read           app:tester-groups:manage
+ *                       app:releases:gate-override  (S10-03)
  *                       app:feedback:read
  * APP_OWNER             app:applications:read/write app:versions:read/write
  *                       app:artifacts:read          app:releases:read/manage
@@ -46,33 +48,41 @@ import java.util.Set;
  *                       app:feedback:read
  *                       org:environments:read/manage (S9-04)
  *                       org:approval-workflows:read/manage (S10-01)
+ *                       org:gate-definitions:read/manage (S10-03)
  *                       tenant:authorization-grants:read/manage (S7-02,
  *                       through the owning-organization overlay)
  * DEVELOPER             app:artifacts:read          app:artifacts:upload
  *                       app:versions:read           app:releases:read
  *                       org:environments:read       (S9-04)
  *                       org:approval-workflows:read (S10-01)
+ *                       org:gate-definitions:read   (S10-03)
  * QA_ENGINEER           app:applications:read       app:versions:read
  *                       app:releases:read           app:releases:approve-qa
  *                       app:tester-groups:manage    app:feedback:read
  *                       org:environments:read       (S9-04)
  *                       org:approval-workflows:read (S10-01)
+ *                       org:gate-definitions:read   (S10-03)
  * RELEASE_MANAGER       app:applications:read       app:versions:read
  *                       app:artifacts:read          app:releases:read/manage
  *                       app:releases:approve-release (S10-01)
+ *                       app:releases:gate-override  (S10-03)
  *                       org:environments:read/manage (S9-04)
  *                       org:approval-workflows:read/manage (S10-01)
+ *                       org:gate-definitions:read/manage (S10-03)
  * SECURITY_REVIEWER     app:applications:read       app:versions:read
  *                       app:releases:read           app:releases:approve-security
  *                       org:environments:read       (S9-04)
  *                       org:approval-workflows:read (S10-01)
+ *                       org:gate-definitions:read   (S10-03)
  * COMPLIANCE_REVIEWER   app:applications:read       app:versions:read
  *                       app:releases:read           app:releases:approve-compliance
  *                       org:environments:read       (S9-04)
  *                       org:approval-workflows:read (S10-01)
+ *                       org:gate-definitions:read   (S10-03)
  * VIEWER                app:applications:read       app:versions:read
  *                       app:releases:read           org:environments:read (S9-04)
  *                       org:approval-workflows:read (S10-01)
+ *                       org:gate-definitions:read   (S10-03)
  * TENANT_ADMIN          tenant:tenants:read         tenant:members:read
  *                       tenant:members:manage       tenant:applications:read
  *                       tenant:testers:read/manage (S6-03)
@@ -110,6 +120,12 @@ public final class RolePermissions {
             // S10-01 (issue #40): the approval-chain definitions.
             Permission.ORG_APPROVAL_WORKFLOWS_READ,
             Permission.ORG_APPROVAL_WORKFLOWS_MANAGE,
+            // S10-03 (issue #42): the required-gate definitions, and
+            // the override authority of a blocking gate — the
+            // organization administrator's governance standing.
+            Permission.ORG_GATE_DEFINITIONS_READ,
+            Permission.ORG_GATE_DEFINITIONS_MANAGE,
+            Permission.APP_RELEASES_GATE_OVERRIDE,
             Permission.TENANT_TENANTS_READ,
             Permission.TENANT_TENANTS_UPDATE,
             Permission.TENANT_MEMBERS_READ,
@@ -147,6 +163,10 @@ public final class RolePermissions {
             // run (the same governance persona).
             Permission.ORG_APPROVAL_WORKFLOWS_READ,
             Permission.ORG_APPROVAL_WORKFLOWS_MANAGE,
+            // S10-03 (issue #42): the quality gates those releases
+            // must pass (still the same governance persona).
+            Permission.ORG_GATE_DEFINITIONS_READ,
+            Permission.ORG_GATE_DEFINITIONS_MANAGE,
             // S7-02 (issue #31): app owners administer tester grants
             // inside their organization's tenants through the
             // owning-organization overlay (PRD 26's tenant-admin /
@@ -160,7 +180,10 @@ public final class RolePermissions {
             Permission.APP_VERSIONS_READ,
             Permission.APP_RELEASES_READ,
             Permission.ORG_ENVIRONMENTS_READ,
-            Permission.ORG_APPROVAL_WORKFLOWS_READ);
+            Permission.ORG_APPROVAL_WORKFLOWS_READ,
+            // S10-03 (issue #42): the gate vocabulary their CI reports
+            // into (the submission itself rides app:releases:manage).
+            Permission.ORG_GATE_DEFINITIONS_READ);
 
     private static final Set<Permission> QA_ENGINEER = Set.of(
             Permission.APP_APPLICATIONS_READ,
@@ -170,7 +193,10 @@ public final class RolePermissions {
             Permission.APP_TESTER_GROUPS_MANAGE,
             Permission.APP_FEEDBACK_READ,
             Permission.ORG_ENVIRONMENTS_READ,
-            Permission.ORG_APPROVAL_WORKFLOWS_READ);
+            Permission.ORG_APPROVAL_WORKFLOWS_READ,
+            // S10-03 (issue #42): the story's own persona — the QA
+            // engineer reads the gates their evidence feeds.
+            Permission.ORG_GATE_DEFINITIONS_READ);
 
     private static final Set<Permission> RELEASE_MANAGER = Set.of(
             Permission.APP_APPLICATIONS_READ,
@@ -181,6 +207,9 @@ public final class RolePermissions {
             // S10-01 (issue #40): the Release Manager's own final
             // sign-off of FR-016's chain.
             Permission.APP_RELEASES_APPROVE_RELEASE,
+            // S10-03 (issue #42): the governed exception — overriding
+            // a blocking gate is the Release Manager's audited act.
+            Permission.APP_RELEASES_GATE_OVERRIDE,
             // S9-04 (issue #58): the release manager binds environments
             // to the releases they govern.
             Permission.ORG_ENVIRONMENTS_READ,
@@ -188,7 +217,11 @@ public final class RolePermissions {
             // S10-01 (issue #40): and configures the approval chains
             // those releases run (the story's persona).
             Permission.ORG_APPROVAL_WORKFLOWS_READ,
-            Permission.ORG_APPROVAL_WORKFLOWS_MANAGE);
+            Permission.ORG_APPROVAL_WORKFLOWS_MANAGE,
+            // S10-03 (issue #42): and the quality gates those releases
+            // must pass (the same persona).
+            Permission.ORG_GATE_DEFINITIONS_READ,
+            Permission.ORG_GATE_DEFINITIONS_MANAGE);
 
     private static final Set<Permission> SECURITY_REVIEWER = Set.of(
             Permission.APP_APPLICATIONS_READ,
@@ -196,7 +229,9 @@ public final class RolePermissions {
             Permission.APP_RELEASES_READ,
             Permission.APP_RELEASES_APPROVE_SECURITY,
             Permission.ORG_ENVIRONMENTS_READ,
-            Permission.ORG_APPROVAL_WORKFLOWS_READ);
+            Permission.ORG_APPROVAL_WORKFLOWS_READ,
+            // S10-03 (issue #42): the scan gates are theirs to read.
+            Permission.ORG_GATE_DEFINITIONS_READ);
 
     private static final Set<Permission> COMPLIANCE_REVIEWER = Set.of(
             Permission.APP_APPLICATIONS_READ,
@@ -204,14 +239,18 @@ public final class RolePermissions {
             Permission.APP_RELEASES_READ,
             Permission.APP_RELEASES_APPROVE_COMPLIANCE,
             Permission.ORG_ENVIRONMENTS_READ,
-            Permission.ORG_APPROVAL_WORKFLOWS_READ);
+            Permission.ORG_APPROVAL_WORKFLOWS_READ,
+            // S10-03 (issue #42): the override records are theirs to
+            // audit.
+            Permission.ORG_GATE_DEFINITIONS_READ);
 
     private static final Set<Permission> VIEWER = Set.of(
             Permission.APP_APPLICATIONS_READ,
             Permission.APP_VERSIONS_READ,
             Permission.APP_RELEASES_READ,
             Permission.ORG_ENVIRONMENTS_READ,
-            Permission.ORG_APPROVAL_WORKFLOWS_READ);
+            Permission.ORG_APPROVAL_WORKFLOWS_READ,
+            Permission.ORG_GATE_DEFINITIONS_READ);
 
     /** ORG_MEMBER deliberately holds nothing (deny-by-default, PRD P3). */
     private static final Set<Permission> ORG_MEMBER = Set.of();
