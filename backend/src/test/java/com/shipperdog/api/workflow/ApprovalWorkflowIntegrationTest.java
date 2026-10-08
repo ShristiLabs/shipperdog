@@ -421,6 +421,68 @@ class ApprovalWorkflowIntegrationTest {
                 .isEqualTo("APPROVAL_ROUND_NOT_RESTARTABLE");
     }
 
+    /**
+     * The #40 follow-up (folded by #45's delivery): the RESTART
+     * double-insert race had no dedicated test — the shared
+     * translation existed since #40's review fix and the #44 fix
+     * extended it to PROMOTION opens (which that story's suite pins),
+     * but the RESTART leg was exercised only by construction. Two
+     * concurrent restarts of the same rejected round both read it
+     * REJECTED and both insert round N+1: the unique guard admits
+     * one; the loser's spent transaction rolls back and answers from
+     * the committed state — the precise 409, never an untranslated
+     * 500 — and exactly one new round exists.
+     */
+    @Test
+    void concurrentRestartsOfARejectedRoundAdmitOneAndNeverAnswer500() throws Exception {
+        World world = world("wf-restart-race");
+        createWorkflow(world.managerToken, world.org, "qa-only", "qa", chain(List.of("QA_ENGINEER"), null), 201);
+        Release release = releaseAtApprovalPending(world, "qa", world.tenantA, null);
+        decide(world.qaToken, world, release, "REJECT", 1, "flaky suite", 200);
+
+        CyclicBarrier barrier = new CyclicBarrier(2);
+        ExecutorService pool = Executors.newFixedThreadPool(2);
+        List<Integer> statuses = new CopyOnWriteArrayList<>();
+        List<String> codes = new CopyOnWriteArrayList<>();
+        try {
+            List<Future<?>> calls = new ArrayList<>();
+            for (int i = 0; i < 2; i++) {
+                calls.add(pool.submit(() -> {
+                    barrier.await(10, TimeUnit.SECONDS);
+                    Recording answer = exchange(
+                            "/api/v1/releases/" + release.id() + "/approvals/rounds",
+                            world.managerToken,
+                            "POST",
+                            Map.of("applicationId", world.app.toString(), "reason", "concurrent rework"),
+                            null);
+                    statuses.add(answer.status());
+                    codes.add(answer.body().path("code").asText(""));
+                    return null;
+                }));
+            }
+            for (Future<?> call : calls) {
+                call.get(30, TimeUnit.SECONDS);
+            }
+        } finally {
+            pool.shutdownNow();
+        }
+
+        assertThat(statuses).hasSize(2);
+        assertThat(statuses).noneMatch(status -> status >= 500);
+        assertThat(statuses).contains(200);
+        assertThat(codes).doesNotContain("INTERNAL_ERROR");
+        // One winner restarted; the loser answered the precise 409
+        // (either the not-restartable conflict from the committed
+        // winner's PENDING round, or the same from a stale read — the
+        // interleaving decides which leg says it, never a 500).
+        assertThat(statuses.stream().filter(status -> status == 200).count()).isEqualTo(1);
+        assertThat(statuses.stream().filter(status -> status == 409).count()).isEqualTo(1);
+        JsonNode state = approvalsOf(world, release);
+        assertThat(state.get("rounds").size()).isEqualTo(2);
+        assertThat(state.get("rounds").get(0).get("status").asText()).isEqualTo("REJECTED");
+        assertThat(state.get("rounds").get(1).get("status").asText()).isEqualTo("PENDING");
+    }
+
     // -----------------------------------------------------------------------
     // Resolution: the environment binding over the ring chain; tenant
     // scope; the ungated organization

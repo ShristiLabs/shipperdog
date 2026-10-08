@@ -68,6 +68,12 @@ public enum Permission {
     // personas as the chains and the gates it composes with).
     ORG_RINGS_READ("org:rings:read"),
     ORG_RINGS_MANAGE("org:rings:manage"),
+    // Issue #45 (S10-06): the declarative release policy rules —
+    // the standing BLOCK/HOLD governance an organization authors
+    // once and every promotion evaluates (the same governance
+    // personas as the chains, gates, and rings it composes with).
+    ORG_RELEASE_POLICIES_READ("org:release-policies:read"),
+    ORG_RELEASE_POLICIES_MANAGE("org:release-policies:manage"),
 
     // tenant scope
     TENANT_TENANTS_READ("tenant:tenants:read"),
@@ -108,6 +114,12 @@ public enum Permission {
     // quality refusal is the exception the audit trail exists for,
     // never a routine release-management act.
     APP_RELEASES_GATE_OVERRIDE("app:releases:gate-override"),
+    // Issue #45 (S10-06): the policy-hold acknowledge — proceeding
+    // past a fired HOLD_FOR_REVIEW rule is the explicit privileged
+    // decision AC2 demands, audited with its mandatory reason. Its
+    // own authority, the gate-override precedent: the exception the
+    // audit trail exists for, never a routine release-management act.
+    APP_RELEASES_POLICY_ACKNOWLEDGE("app:releases:policy-acknowledge"),
     APP_TESTER_GROUPS_MANAGE("app:tester-groups:manage"),
     APP_FEEDBACK_READ("app:feedback:read");
 

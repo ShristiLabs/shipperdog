@@ -257,11 +257,122 @@ paths:
             '*/*':
               schema:
                 $ref: "#/components/schemas/GrantView"
+  /api/v1/release-policies/{ruleId}:
+    get:
+      tags:
+      - release-policy-controller
+      operationId: get_2
+      parameters:
+      - name: ruleId
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - name: organizationId
+        in: query
+        required: true
+        schema:
+          type: string
+          format: uuid
+      responses:
+        "200":
+          description: OK
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/RuleView"
+    put:
+      tags:
+      - release-policy-controller
+      operationId: update_1
+      parameters:
+      - name: ruleId
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - name: organizationId
+        in: query
+        required: true
+        schema:
+          type: string
+          format: uuid
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RuleRequest"
+        required: true
+      responses:
+        "200":
+          description: OK
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/RuleView"
+    delete:
+      tags:
+      - release-policy-controller
+      operationId: delete_1
+      parameters:
+      - name: ruleId
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - name: organizationId
+        in: query
+        required: true
+        schema:
+          type: string
+          format: uuid
+      responses:
+        "204":
+          description: No Content
+  /api/v1/release-policies/skip-allowances:
+    get:
+      tags:
+      - release-policy-controller
+      operationId: skipAllowances
+      parameters:
+      - name: organizationId
+        in: query
+        required: true
+        schema:
+          type: string
+          format: uuid
+      responses:
+        "200":
+          description: OK
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/SkipAllowancesView"
+    put:
+      tags:
+      - release-policy-controller
+      operationId: replaceSkipAllowances
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SkipAllowancesRequest"
+        required: true
+      responses:
+        "200":
+          description: OK
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/SkipAllowancesView"
   /api/v1/organizations/{id}:
     get:
       tags:
       - organization-controller
-      operationId: get_2
+      operationId: get_3
       parameters:
       - name: id
         in: path
@@ -279,7 +390,7 @@ paths:
     put:
       tags:
       - organization-controller
-      operationId: update_1
+      operationId: update_2
       parameters:
       - name: id
         in: path
@@ -378,7 +489,7 @@ paths:
     get:
       tags:
       - gate-controller
-      operationId: get_3
+      operationId: get_4
       parameters:
       - name: definitionId
         in: path
@@ -402,7 +513,7 @@ paths:
     put:
       tags:
       - gate-controller
-      operationId: update_2
+      operationId: update_3
       parameters:
       - name: definitionId
         in: path
@@ -613,7 +724,7 @@ paths:
     get:
       tags:
       - workflow-controller
-      operationId: get_4
+      operationId: get_5
       parameters:
       - name: workflowId
         in: path
@@ -637,7 +748,7 @@ paths:
     put:
       tags:
       - workflow-controller
-      operationId: update_3
+      operationId: update_4
       parameters:
       - name: workflowId
         in: path
@@ -1281,6 +1392,37 @@ paths:
             '*/*':
               schema:
                 $ref: "#/components/schemas/PromotionResultView"
+  /api/v1/releases/{releaseId}/policy-holds/{holdId}/acknowledge:
+    post:
+      tags:
+      - release-policy-controller
+      operationId: acknowledge
+      parameters:
+      - name: releaseId
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - name: holdId
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AcknowledgeRequest"
+        required: true
+      responses:
+        "200":
+          description: OK
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/HoldView"
   /api/v1/releases/{releaseId}/gates/{gateType}/result:
     post:
       tags:
@@ -1415,11 +1557,57 @@ paths:
             '*/*':
               schema:
                 $ref: "#/components/schemas/ApprovalStateView"
+  /api/v1/release-policies:
+    get:
+      tags:
+      - release-policy-controller
+      operationId: list_6
+      parameters:
+      - name: organizationId
+        in: query
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - name: limit
+        in: query
+        required: false
+        schema:
+          type: string
+      - name: cursor
+        in: query
+        required: false
+        schema:
+          type: string
+      responses:
+        "200":
+          description: OK
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/PageResponseRuleView"
+    post:
+      tags:
+      - release-policy-controller
+      operationId: create_6
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RuleRequest"
+        required: true
+      responses:
+        "201":
+          description: Created
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/RuleView"
   /api/v1/organizations:
     get:
       tags:
       - organization-controller
-      operationId: list_6
+      operationId: list_7
       parameters:
       - name: limit
         in: query
@@ -1441,7 +1629,7 @@ paths:
     post:
       tags:
       - organization-controller
-      operationId: create_6
+      operationId: create_7
       requestBody:
         content:
           application/json:
@@ -1459,7 +1647,7 @@ paths:
     get:
       tags:
       - gate-controller
-      operationId: list_7
+      operationId: list_8
       parameters:
       - name: organizationId
         in: query
@@ -1492,7 +1680,7 @@ paths:
     post:
       tags:
       - gate-controller
-      operationId: create_7
+      operationId: create_8
       requestBody:
         content:
           application/json:
@@ -1510,7 +1698,7 @@ paths:
     get:
       tags:
       - environment-controller
-      operationId: list_8
+      operationId: list_9
       parameters:
       - name: organizationId
         in: query
@@ -1538,7 +1726,7 @@ paths:
     post:
       tags:
       - environment-controller
-      operationId: create_8
+      operationId: create_9
       requestBody:
         content:
           application/json:
@@ -1887,7 +2075,7 @@ paths:
     get:
       tags:
       - workflow-controller
-      operationId: list_9
+      operationId: list_10
       parameters:
       - name: organizationId
         in: query
@@ -1915,7 +2103,7 @@ paths:
     post:
       tags:
       - workflow-controller
-      operationId: create_9
+      operationId: create_10
       requestBody:
         content:
           application/json:
@@ -1933,7 +2121,7 @@ paths:
     get:
       tags:
       - application-controller
-      operationId: list_10
+      operationId: list_11
       parameters:
       - name: organizationId
         in: query
@@ -1961,7 +2149,7 @@ paths:
     post:
       tags:
       - application-controller
-      operationId: create_10
+      operationId: create_11
       requestBody:
         content:
           application/json:
@@ -2034,7 +2222,7 @@ paths:
     get:
       tags:
       - version-controller
-      operationId: list_11
+      operationId: list_12
       parameters:
       - name: applicationId
         in: path
@@ -2072,7 +2260,7 @@ paths:
     post:
       tags:
       - version-controller
-      operationId: create_11
+      operationId: create_12
       parameters:
       - name: applicationId
         in: path
@@ -2153,7 +2341,7 @@ paths:
     get:
       tags:
       - ring-controller
-      operationId: get_5
+      operationId: get_6
       parameters:
       - name: ringId
         in: path
@@ -2177,7 +2365,7 @@ paths:
     delete:
       tags:
       - ring-controller
-      operationId: delete_1
+      operationId: delete_2
       parameters:
       - name: ringId
         in: path
@@ -2197,7 +2385,7 @@ paths:
     patch:
       tags:
       - ring-controller
-      operationId: update_4
+      operationId: update_5
       parameters:
       - name: ringId
         in: path
@@ -2228,7 +2416,7 @@ paths:
     get:
       tags:
       - environment-controller
-      operationId: get_6
+      operationId: get_7
       parameters:
       - name: environmentId
         in: path
@@ -2246,7 +2434,7 @@ paths:
     patch:
       tags:
       - environment-controller
-      operationId: update_5
+      operationId: update_6
       parameters:
       - name: environmentId
         in: path
@@ -2271,7 +2459,7 @@ paths:
     get:
       tags:
       - application-controller
-      operationId: get_7
+      operationId: get_8
       parameters:
       - name: id
         in: path
@@ -2289,7 +2477,7 @@ paths:
     patch:
       tags:
       - application-controller
-      operationId: update_6
+      operationId: update_7
       parameters:
       - name: id
         in: path
@@ -2314,7 +2502,7 @@ paths:
     get:
       tags:
       - tester-controller
-      operationId: get_8
+      operationId: get_9
       parameters:
       - name: id
         in: path
@@ -2407,7 +2595,7 @@ paths:
     get:
       tags:
       - authorization-grant-controller
-      operationId: get_9
+      operationId: get_10
       parameters:
       - name: id
         in: path
@@ -2529,7 +2717,7 @@ paths:
     get:
       tags:
       - tenant-applications-controller
-      operationId: list_12
+      operationId: list_13
       parameters:
       - name: id
         in: path
@@ -2558,7 +2746,7 @@ paths:
     get:
       tags:
       - release-controller
-      operationId: get_10
+      operationId: get_11
       parameters:
       - name: releaseId
         in: path
@@ -2629,6 +2817,81 @@ paths:
             '*/*':
               schema:
                 $ref: "#/components/schemas/PrecheckView"
+  /api/v1/releases/{releaseId}/policy-holds:
+    get:
+      tags:
+      - release-policy-controller
+      operationId: holds
+      parameters:
+      - name: releaseId
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - name: applicationId
+        in: query
+        required: true
+        schema:
+          type: string
+          format: uuid
+      responses:
+        "200":
+          description: OK
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/HoldsView"
+  /api/v1/releases/{releaseId}/policy-evaluations:
+    get:
+      tags:
+      - release-policy-controller
+      operationId: evaluations
+      parameters:
+      - name: releaseId
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - name: applicationId
+        in: query
+        required: true
+        schema:
+          type: string
+          format: uuid
+      responses:
+        "200":
+          description: OK
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/EvaluationsView"
+  /api/v1/releases/{releaseId}/policy-dry-run:
+    get:
+      tags:
+      - release-policy-controller
+      operationId: dryRun
+      parameters:
+      - name: releaseId
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - name: applicationId
+        in: query
+        required: true
+        schema:
+          type: string
+          format: uuid
+      responses:
+        "200":
+          description: OK
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/DryRunView"
   /api/v1/releases/{releaseId}/manifest:
     get:
       tags:
@@ -3068,6 +3331,12 @@ paths:
           - RING_DELETED
           - RELEASE_PROMOTED
           - RELEASE_PROMOTION_BLOCKED
+          - RELEASE_POLICY_RULE_CREATED
+          - RELEASE_POLICY_RULE_UPDATED
+          - RELEASE_POLICY_RULE_DELETED
+          - RELEASE_POLICY_SETTINGS_UPDATED
+          - RELEASE_POLICY_EVALUATED
+          - RELEASE_POLICY_HOLD_ACKNOWLEDGED
       - name: applicationId
         in: query
         required: false
@@ -3119,7 +3388,7 @@ paths:
     get:
       tags:
       - artifact-controller
-      operationId: get_11
+      operationId: get_12
       parameters:
       - name: artifactId
         in: path
@@ -3169,7 +3438,7 @@ paths:
     get:
       tags:
       - application-tenant-authorization-controller
-      operationId: list_13
+      operationId: list_14
       parameters:
       - name: id
         in: path
@@ -3198,7 +3467,7 @@ paths:
     get:
       tags:
       - version-controller
-      operationId: get_12
+      operationId: get_13
       parameters:
       - name: applicationId
         in: path
@@ -3514,6 +3783,97 @@ components:
         updatedAt:
           type: string
           format: date-time
+    RuleRequest:
+      type: object
+      description: "The policy rule body: name, scope and its reference, action (BLOCK,\
+        \ HOLD_FOR_REVIEW, ALLOW), the typed condition tree, the evaluation position,\
+        \ and the enabled standing."
+      properties:
+        organizationId:
+          type: string
+          format: uuid
+        name:
+          type: string
+        scope:
+          type: string
+        applicationId:
+          type: string
+          format: uuid
+        ring:
+          type: string
+        environmentId:
+          type: string
+          format: uuid
+        action:
+          type: string
+        condition:
+          type: object
+          additionalProperties: {}
+        position:
+          type: integer
+          format: int32
+        enabled:
+          type: boolean
+    RuleView:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        organizationId:
+          type: string
+          format: uuid
+        name:
+          type: string
+        scope:
+          type: string
+        applicationId:
+          type: string
+          format: uuid
+        ring:
+          type: string
+        environmentId:
+          type: string
+          format: uuid
+        action:
+          type: string
+        condition:
+          type: object
+          additionalProperties: {}
+        conditionSummary:
+          type: string
+        position:
+          type: integer
+          format: int32
+        enabled:
+          type: boolean
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+    SkipAllowancesRequest:
+      type: object
+      description: "The skip-allowances body: the whole replacement set of ring codes."
+      properties:
+        organizationId:
+          type: string
+          format: uuid
+        rings:
+          type: array
+          items:
+            type: string
+    SkipAllowancesView:
+      type: object
+      properties:
+        organizationId:
+          type: string
+          format: uuid
+        rings:
+          type: array
+          items:
+            type: string
     OrganizationResponse:
       type: object
       properties:
@@ -3542,8 +3902,6 @@ components:
     JsonNode:
       type: object
       properties:
-        container:
-          type: boolean
         nodeType:
           type: string
           enum:
@@ -3588,6 +3946,8 @@ components:
         binary:
           type: boolean
         floatingPointNumber:
+          type: boolean
+        container:
           type: boolean
         empty:
           type: boolean
@@ -4091,6 +4451,45 @@ components:
           format: uuid
         ring:
           type: string
+    AcknowledgeRequest:
+      type: object
+      description: "The policy-hold acknowledge body: the application id and the mandatory\
+        \ reason."
+      properties:
+        applicationId:
+          type: string
+          format: uuid
+        reason:
+          type: string
+    HoldView:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        ruleId:
+          type: string
+          format: uuid
+        ruleName:
+          type: string
+        ring:
+          type: string
+        status:
+          type: string
+        evidence:
+          type: object
+          additionalProperties: {}
+        acknowledgedBy:
+          type: string
+          format: uuid
+        acknowledgedAt:
+          type: string
+          format: date-time
+        acknowledgeReason:
+          type: string
+        createdAt:
+          type: string
+          format: date-time
     ResultRequest:
       type: object
       description: "The gate result submission body: application, outcome, evidence\
@@ -5132,6 +5531,88 @@ components:
           type: array
           items:
             type: string
+    HoldsView:
+      type: object
+      properties:
+        releaseId:
+          type: string
+          format: uuid
+        releaseRef:
+          type: string
+        holds:
+          type: array
+          items:
+            $ref: "#/components/schemas/HoldView"
+    EvaluationView:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        ring:
+          type: string
+        trigger:
+          type: string
+        verdict:
+          type: string
+        winningRuleId:
+          type: string
+          format: uuid
+        actorId:
+          type: string
+          format: uuid
+        occurredAt:
+          type: string
+          format: date-time
+        rules:
+          type: array
+          items:
+            $ref: "#/components/schemas/RuleOutcomeView"
+    EvaluationsView:
+      type: object
+      properties:
+        releaseId:
+          type: string
+          format: uuid
+        releaseRef:
+          type: string
+        evaluations:
+          type: array
+          items:
+            $ref: "#/components/schemas/EvaluationView"
+    RuleOutcomeView:
+      type: object
+      properties:
+        ruleId:
+          type: string
+          format: uuid
+        ruleName:
+          type: string
+        action:
+          type: string
+        outcome:
+          type: string
+        detail:
+          type: string
+        position:
+          type: integer
+          format: int32
+    DryRunView:
+      type: object
+      properties:
+        releaseId:
+          type: string
+          format: uuid
+        releaseRef:
+          type: string
+        ring:
+          type: string
+        verdict:
+          type: string
+        rules:
+          type: array
+          items:
+            $ref: "#/components/schemas/RuleOutcomeView"
     ArtifactChange:
       type: object
       properties:
@@ -5312,6 +5793,15 @@ components:
           $ref: "#/components/schemas/Admission"
         admitsTester:
           type: boolean
+    PageResponseRuleView:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/RuleView"
+        next_cursor:
+          type: string
     PageResponseOrganizationResponse:
       type: object
       properties:
@@ -5610,6 +6100,12 @@ components:
           - RING_DELETED
           - RELEASE_PROMOTED
           - RELEASE_PROMOTION_BLOCKED
+          - RELEASE_POLICY_RULE_CREATED
+          - RELEASE_POLICY_RULE_UPDATED
+          - RELEASE_POLICY_RULE_DELETED
+          - RELEASE_POLICY_SETTINGS_UPDATED
+          - RELEASE_POLICY_EVALUATED
+          - RELEASE_POLICY_HOLD_ACKNOWLEDGED
         occurredAt:
           type: string
           format: date-time

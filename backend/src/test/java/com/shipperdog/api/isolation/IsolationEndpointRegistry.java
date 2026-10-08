@@ -564,6 +564,76 @@ final class IsolationEndpointRegistry {
                         side -> "/api/v1/releases/" + UUID.randomUUID() + "/eligibility?applicationId="
                                 + UUID.randomUUID()),
 
+                // Release policies (S10-06) -----------------------------------------
+                // org:release-policies:read is organization-grain (the
+                // RBAC matrix): the owning ORG_ADMIN lists (an empty page
+                // in the seeded world — no rule exists), the tenant
+                // persona conceals through the organization-grain
+                // permission check (the approval-workflows shape).
+                surface(
+                        "/api/v1/release-policies",
+                        side -> "/api/v1/release-policies?organizationId=" + side.organizationId(),
+                        200,
+                        404,
+                        side -> "/api/v1/release-policies?organizationId=" + UUID.randomUUID()),
+                // The rule item route (S10-06): the seeded world holds no
+                // rule, so own and miss probes share the route's miss
+                // shape; concealment of a REAL foreign rule is pinned with
+                // live rules by the S10-06 policy suite.
+                surface(
+                        "/api/v1/release-policies/{ruleId}",
+                        side -> "/api/v1/release-policies/" + UUID.randomUUID() + "?organizationId="
+                                + side.organizationId(),
+                        404,
+                        404,
+                        side -> "/api/v1/release-policies/" + UUID.randomUUID() + "?organizationId="
+                                + UUID.randomUUID()),
+                // The skip-allowances route (S10-06): organization-grain
+                // like the rule listing; the empty-set answer is the
+                // honest own-side standing for a world that never edited
+                // the knob.
+                surface(
+                        "/api/v1/release-policies/skip-allowances",
+                        side -> "/api/v1/release-policies/skip-allowances?organizationId=" + side.organizationId(),
+                        200,
+                        404,
+                        side -> "/api/v1/release-policies/skip-allowances?organizationId=" + UUID.randomUUID()),
+                // The policy dry-run route (S10-06): the seeded world
+                // holds no release, so own and miss probes share the
+                // route's miss shape; concealment of a REAL foreign
+                // release's dry-run is pinned with live releases by the
+                // S10-06 policy suite.
+                surface(
+                        "/api/v1/releases/{releaseId}/policy-dry-run",
+                        side -> "/api/v1/releases/" + UUID.randomUUID() + "/policy-dry-run?applicationId="
+                                + side.applicationId(),
+                        404,
+                        404,
+                        side -> "/api/v1/releases/" + UUID.randomUUID() + "/policy-dry-run?applicationId="
+                                + UUID.randomUUID()),
+                // The policy holds route (S10-06): the same miss-shape
+                // rationale — the live concealment proof belongs to the
+                // S10-06 policy suite.
+                surface(
+                        "/api/v1/releases/{releaseId}/policy-holds",
+                        side -> "/api/v1/releases/" + UUID.randomUUID() + "/policy-holds?applicationId="
+                                + side.applicationId(),
+                        404,
+                        404,
+                        side -> "/api/v1/releases/" + UUID.randomUUID() + "/policy-holds?applicationId="
+                                + UUID.randomUUID()),
+                // The policy evaluations route (S10-06): the same
+                // miss-shape rationale — the live concealment proof
+                // belongs to the S10-06 policy suite.
+                surface(
+                        "/api/v1/releases/{releaseId}/policy-evaluations",
+                        side -> "/api/v1/releases/" + UUID.randomUUID() + "/policy-evaluations?applicationId="
+                                + side.applicationId(),
+                        404,
+                        404,
+                        side -> "/api/v1/releases/" + UUID.randomUUID() + "/policy-evaluations?applicationId="
+                                + UUID.randomUUID()),
+
                 // Environments (S9-04) ---------------------------------------------
                 // org:environments:read is organization-grain (the RBAC
                 // matrix): the owning ORG_ADMIN lists the seeded defaults

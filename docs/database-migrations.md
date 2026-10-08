@@ -41,6 +41,7 @@ backend/src/main/resources/db/
     V31__quality_gates.sql
     V32__release_rings.sql
     V33__release_promotion.sql
+    V34__release_policy_engine.sql
   seed/                 dev fixture, applied only when the seed location is active
     R__dev_seed.sql
 ```
@@ -639,6 +640,20 @@ There are no down-migrations and no automated rollback.
   never in the same step as the introduction.
 - Point-in-time recovery of the database is the escape hatch for true
   disasters; Flyway history is rebuildable from source.
+
+- `V34__release_policy_engine.sql` (S10-06, issue #45) lands the
+  declarative policy engine's five tables — `release_policy_rules`
+  (the org-grain rule store: name unique per organization, the
+  shape-checked scope with `application_id`/`environment_id` foreign
+  keys and the NAME-ONLY `ring` code, the validated `condition` jsonb,
+  the evaluation position), `release_policy_holds` (the HOLD ledger,
+  UNIQUE (release, rule, ring), the acknowledge triple shape-checked),
+  `release_policy_evaluations` + `release_policy_evaluation_rules`
+  (the append-only per-attempt log; the child rows keep LOOSE rule ids
+  beside name snapshots so history survives a rule's deletion), and
+  `release_policy_settings` (the skip-relaxation knob, one row per
+  organization created lazily — absence IS the empty set). Expand-only
+  and forward-only: five new tables, nothing dropped or narrowed.
 
 ## Verifying migrations
 

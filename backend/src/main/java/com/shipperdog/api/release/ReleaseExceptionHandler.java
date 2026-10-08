@@ -35,7 +35,7 @@ import org.springframework.web.bind.annotation.RestControllerAdvice;
  * workflow surface's own advice serves only its own routes).
  */
 @Order(0)
-@RestControllerAdvice(assignableTypes = ReleaseController.class)
+@RestControllerAdvice(assignableTypes = {ReleaseController.class, ReleasePolicyController.class})
 public class ReleaseExceptionHandler {
 
     @ExceptionHandler(ReleaseException.class)

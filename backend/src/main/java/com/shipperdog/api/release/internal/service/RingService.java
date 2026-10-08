@@ -465,9 +465,10 @@ public class RingService implements RingProvisioning {
      * system default whose code the organization has not redefined,
      * ordered (position, organization ring first at a tie, code) —
      * the order {@code resolveByCode} prefers and the promotion engine
-     * walks.
+     * walks. Public since S10-06: the policy engine's dry-run resolves
+     * the next ring the same way (the module's own internal surface).
      */
-    List<RingEntity> effectiveVocabularyOf(UUID organizationId) {
+    public List<RingEntity> effectiveVocabularyOf(UUID organizationId) {
         List<RingEntity> own = rings.findByOrganizationIdOrderByPositionAscCodeAsc(organizationId);
         Set<String> ownCodes = new LinkedHashSet<>();
         own.forEach(ring -> ownCodes.add(ring.getCode()));

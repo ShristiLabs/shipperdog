@@ -155,7 +155,18 @@ release onto PRD 17's PROMOTED crossing; and
 carrying `releaseRef`, the ring the hop would have entered, and the
 complete blocker list (the append-only promotions timeline beside it;
 INV-008 — the artifacts and manifest the release froze are untouched),
-artifact (`ARTIFACT_UPLOAD_SESSION_CREATED` — issue #20/S5-01: the
+the policy engine's own family — S10-06/issue #45 (PRD 33):
+`RELEASE_POLICY_RULE_CREATED` / `RELEASE_POLICY_RULE_UPDATED` /
+`RELEASE_POLICY_RULE_DELETED` (the standing rules' authoring, audited
+in full — rule edits change what mechanically refuses a promotion, the
+rings' governance standing); `RELEASE_POLICY_SETTINGS_UPDATED` (the
+skip-relaxation knob — widening the promotion walk is a governed act);
+`RELEASE_POLICY_EVALUATED` (one per promote attempt: the ring, the
+verdict, every fired rule named — the summary beside the evaluation
+log's per-rule rows); and `RELEASE_POLICY_HOLD_ACKNOWLEDGED` (the
+explicit privileged decision to proceed past a fired HOLD rule — rule,
+ring, and the mandatory reason, with the actor),
+and artifact (`ARTIFACT_UPLOAD_SESSION_CREATED` — issue #20/S5-01: the
 resumable direct-to-storage handoff is granted, carrying the
 pre-allocated `artifactId` entity reference with `platform`,
 `fileName`, and `expiresAt` in the detail map; and
