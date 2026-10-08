@@ -220,7 +220,38 @@ public class ReleaseException extends RuntimeException {
         RELEASE_PROMOTION_CONFLICT(
                 HttpStatus.CONFLICT,
                 "RELEASE_PROMOTION_CONFLICT",
-                "A concurrent promotion moved the targets first; re-read and retry.");
+                "A concurrent promotion moved the targets first; re-read and retry."),
+        /**
+         * One rule name per organization (issue #45, S10-06; V34's
+         * {@code uq_release_policy_rules_org_name} is the authority;
+         * the pre-check and the lost-race translation answer it
+         * identically, the ring-code precedent).
+         */
+        POLICY_RULE_NAME_TAKEN(
+                HttpStatus.CONFLICT,
+                "POLICY_RULE_NAME_TAKEN",
+                "A policy rule with this name already exists for the organization."),
+        /**
+         * A rule the hold ledger references cannot be deleted (issue
+         * #45): the ledger is audit evidence — the rule's holds record
+         * governed decisions that must keep their reference. Disable
+         * the rule instead ({@code enabled = false}); the evaluation
+         * log's name snapshots survive either way.
+         */
+        POLICY_RULE_IN_USE(
+                HttpStatus.CONFLICT,
+                "POLICY_RULE_IN_USE",
+                "The rule is referenced by recorded policy holds; disable it instead of deleting it."),
+        /**
+         * A hold can be acknowledged once (issue #45, S10-06 AC2):
+         * the recorded decision STANDS for later hops of the same
+         * release into the same ring — re-acknowledging is not a
+         * thing, and a second actor's intent is a new hop's question.
+         */
+        POLICY_HOLD_ALREADY_ACKNOWLEDGED(
+                HttpStatus.CONFLICT,
+                "POLICY_HOLD_ALREADY_ACKNOWLEDGED",
+                "The hold is already acknowledged; its decision stands.");
 
         final HttpStatus httpStatus;
         final String code;

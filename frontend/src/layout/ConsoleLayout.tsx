@@ -9,6 +9,7 @@
 import AppsIcon from "@mui/icons-material/Apps";
 import BusinessIcon from "@mui/icons-material/Business";
 import ChecklistIcon from "@mui/icons-material/Checklist";
+import PolicyIcon from "@mui/icons-material/Policy";
 import TollIcon from "@mui/icons-material/Toll";
 import LogoutIcon from "@mui/icons-material/Logout";
 import RocketLaunchIcon from "@mui/icons-material/RocketLaunch";
@@ -31,6 +32,7 @@ import { NavLink, Outlet, useNavigate } from "react-router-dom";
 import { useAuth } from "../auth/AuthContext";
 import { usePermission } from "../hooks/usePermission";
 import { listApplications } from "../api/applications";
+import { probePolicyRules } from "../api/policies";
 import { listRings } from "../api/rings";
 import { listApprovalWorkflows } from "../api/workflows";
 import { listTenants } from "../api/tenants";
@@ -66,6 +68,17 @@ export default function ConsoleLayout() {
   const ringsNav = usePermission(
     `rings:${orgId ?? "none"}`,
     () => listRings(orgId as string),
+    orgId !== null,
+  );
+
+  // The Release policies section (S10-06) probes the rule listing its
+  // editor loads first: org:release-policies:read holders (the
+  // governance roles) see the rule store; everyone else is
+  // conceal-denied and the section hides. Writes stay
+  // server-enforced regardless.
+  const policiesNav = usePermission(
+    `release-policies:${orgId ?? "none"}`,
+    () => probePolicyRules(orgId as string),
     orgId !== null,
   );
 
@@ -183,6 +196,21 @@ export default function ConsoleLayout() {
                   <TollIcon />
                 </ListItemIcon>
                 <ListItemText primary="Release rings" />
+              </ListItemButton>
+            </List>
+          ) : null}
+          {orgId !== null && policiesNav.allowed ? (
+            <List>
+              <ListItemButton
+                component={NavLink}
+                to="/release-policies"
+                data-testid="nav-release-policies"
+                sx={{ "&.active": { backgroundColor: "action.selected" } }}
+              >
+                <ListItemIcon>
+                  <PolicyIcon />
+                </ListItemIcon>
+                <ListItemText primary="Release policies" />
               </ListItemButton>
             </List>
           ) : null}

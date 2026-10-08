@@ -675,8 +675,10 @@ recorded evidence).
   release already passed; an unresolved name FAILS CLOSED, the S10-02
   decision); its ELIGIBILITY (the S10-04 widening seam — every moved
   tenant the ring would exclude, with the admission arithmetic's own
-  reasons); and every registered `ReleasePromotionPolicy` (the S10-06
-  seam — none ships, so no contributor's denial can appear yet).
+  reasons); and every registered `ReleasePromotionPolicy` — the
+  S10-06 seam, whose first registrant shipped with S10-06 (issue #45):
+  the declarative policy engine, whose refusals render keyed
+  `ReleasePolicyEngine` (see the Release policies section).
 - **The approval round the first attempt opens**: a promote against a
   policy-gated ring with no usable round IS PRD 51's
   PROMOTION_REQUESTED act — the attempt opens a round like any other,
@@ -698,8 +700,11 @@ recorded evidence).
   position+1 — disallow is the DEFAULT. A body naming a farther ring
   is `RELEASE_PROMOTION_RING_SKIP` (the `errors` member carries
   `next` and `named`); a name outside the vocabulary is the 400. The
-  relaxation knob is a promotion-policy registrant (S10-06); none
-  ships, so the documented posture stands for every organization.
+  relaxation knob is the organization's skip allowances (S10-06,
+  issue #45): the named rings an organization admits beyond the next
+  widen the walk — forward only, every registered promotion policy
+  must admit the hop (fail-closed composition), and an organization
+  that never edits the knob keeps the default posture.
 - **The service window and the crossing** (PRD 17): promotion serves
   live distribution — ACTIVE, or PROMOTED (whose hops continue
   widening rings without a second crossing). Anything else is
@@ -752,6 +757,103 @@ crossed) and every BLOCKED attempt (its complete evidence).
 |---|---|
 | `release_promotions` | uuid PK, `release_id` FK, `from_ring_id`/`to_ring_id` ring FKs (the refused attempt records the ring it would have entered; COMPLETED rows carry both ends), `tenants` (jsonb), `status` (`COMPLETED`/`BLOCKED`), `blockers` (jsonb, the complete list), `actor_id`, `occurred_at` — append-only |
 | `release_approval_rounds` (V28 + V33) | + nullable `promotion_ring_id` ring FK — the ring a promotion round gates the release INTO (NULL = the APPROVAL_PENDING crossing's own round; the engine resolves its round by release AND ring) |
+
+## Release policies — the declarative engine (S10-06)
+
+PRD 33's standing rules as DATA, not code (issue #45): an organization
+authors IF-condition-THEN-action rules once, and every promotion
+attempt evaluates them mechanically at the target ring's precheck —
+governance that no longer depends on someone remembering a checklist.
+The engine is the FIRST registered `ReleasePromotionPolicy` (the seam
+S10-05 reserved); its refusals render in the promotion 409's `errors`
+member keyed `ReleasePolicyEngine`, the rule's reference and evidence
+inside the message.
+
+- **The rule model**: a name (unique per organization), a SCOPE
+  (organization-wide, an application, the ring a hop ENTERS, or the
+  release's targeted environment), an ACTION (`BLOCK`,
+  `HOLD_FOR_REVIEW`, or `ALLOW`), the typed condition tree, a position
+  (the evaluation order), and the enabled standing. `BLOCK` refuses
+  the hop absolutely; `HOLD_FOR_REVIEW` refuses it until a privileged
+  acknowledge records the decision; `ALLOW` evaluates and logs but
+  decides nothing in v1 — it is the seam V3's automated promotion will
+  act on, deliberately not built here (the ring's `promotionPolicy`
+  AUTOMATIC standing stays reference data; the `ReleasePromotedEvent`
+  hook waits for that story).
+- **The condition vocabulary** (the S10-02 conditional-predicate
+  format — typed JSON validated at write, never a string expression
+  language): combinators `allOf`/`anyOf` (bounded, nestable), and the
+  atoms `{"metric": NAME, "operator": OP, "value": N}` over PRD 33's
+  metric list (`CRITICAL_VULNERABILITIES`, `CRASH_FREE_RATE`,
+  `ANR_RATE`, `UNINSTALL_RATE`, `INSTALL_SUCCESS_RATE`,
+  `TESTER_ENGAGEMENT`, `TESTER_APPROVAL_RATE`, `OPEN_CRITICAL_BUGS`),
+  `{"gate": TYPE, "status": PASSED|FAILED|PENDING|NO_DATA}` (the
+  target ring's live evaluation; an audited override is honored — an
+  overridden FAILED gate never re-fires a standing rule),
+  `{"approvalBlocked": BOOL}` (the hop's approval standing), and
+  `{"artifactPlatform": CODE}` (the platforms the release ships).
+- **Fail closed, always** (AC4, FR-026's ethos): a metric analytics
+  cannot answer is NEVER a zero and never a pass — the rule fires with
+  the explicit `NO_DATA` outcome and the missing metric named.
+  Metrics resolve through the `ReleasePolicyMetricSource` seam; no
+  registrant ships until S11-04's analytics feeds land, so a
+  metric-atom rule holds every promotion until then (an organization's
+  own authoring choice). A stored condition that cannot be parsed
+  (impossible through the write surface) evaluates FIRED — a rule the
+  engine cannot answer never silently permits. Evaluation is
+  three-valued (`NO_DATA` dominates absent a definitive answer) and
+  deterministic.
+- **Order and first-wins** (AC5): rules evaluate in the defined order
+  (position, then name); the FIRST `BLOCK` rule to fire wins the 409's
+  reference (later BLOCK rules still log); every evaluated rule logs
+  its outcome — `NOT_MET`, `FIRED`, `NO_DATA`, or `ACKNOWLEDGED` —
+  with its evidence, one row per promote attempt (the precheck read
+  and the hop's in-transaction revalidation write nothing: one log row
+  per attempt, exactly).
+- **HOLD and the explicit acknowledge** (AC2): a fired HOLD rule
+  records one PENDING hold per (release, rule, ring) — the ring the
+  hop would enter — and the promotion answers the same 409 naming it.
+  `POST /api/v1/releases/{releaseId}/policy-holds/{holdId}/acknowledge`
+  (body: `applicationId`, MANDATORY `reason`;
+  `app:releases:policy-acknowledge`, the gate-override authority)
+  flips the hold to ACKNOWLEDGED with actor, reason, and moment —
+  audited — and the decision STANDS: later hops of the same release
+  into the same ring pass the hold, the log naming every suppressed
+  firing `ACKNOWLEDGED`. A concurrent double-insert of the same hold
+  triple admits one (the unique guard).
+- **The dry-run** (AC3): `GET /api/v1/releases/{releaseId}/policy-dry-run`
+  (`app:releases:read`) answers the SAME evaluation the promote act
+  runs — the next ring resolved the promotion engine's way, every
+  scoped rule's outcome with its evidence — as a pure read: no
+  evaluation row, no hold.
+- **The rule store** (AC1/AC6): organization-grain CRUD
+  (`org:release-policies:read|manage`) at `/api/v1/release-policies` —
+  create validates EVERYTHING before any write (the condition parses,
+  the scope's reference resolves: the application belongs to the
+  organization, the ring code is in its vocabulary, the environment is
+  its own, the gate type is a catalog kind or one the organization
+  defines); the console editor renders exactly these errors. A rule
+  the hold ledger references refuses deletion
+  (`POLICY_RULE_IN_USE` — disable it instead); the evaluation log's
+  name snapshots survive by design.
+- **The evaluation log**: `GET /api/v1/releases/{releaseId}/policy-evaluations`
+  (`app:releases:read`) — every attempt, newest first, with the
+  verdict, the winning rule, and every per-rule outcome in the order
+  evaluated.
+- **The skip allowances**: `GET|PUT /api/v1/release-policies/skip-allowances`
+  — the named rings a promotion may carry BEYOND the next (validated
+  against the vocabulary; the PUT replaces the whole set). See the
+  Promotion section's skip posture above.
+
+### Tables (V34)
+
+| Table | Shape |
+|---|---|
+| `release_policy_rules` | uuid PK, `organization_id` FK, `name` (unique per org), `scope` (`ORGANIZATION`/`APPLICATION`/`RING`/`ENVIRONMENT`, shape-checked), `application_id`/`environment_id` FKs and the name-only `ring` code (the V27/V32 precedent), `action` (`BLOCK`/`HOLD_FOR_REVIEW`/`ALLOW`), `condition` (jsonb, the validated tree), `position`, `enabled`, timestamps |
+| `release_policy_holds` | uuid PK, `release_id`/`rule_id`/`organization_id` FKs, `ring` (the guarded entry), `status` (`PENDING`/`ACKNOWLEDGED`, ack shape-checked), `evidence` (jsonb), the acknowledge triple, timestamps — UNIQUE (release, rule, ring) |
+| `release_policy_evaluations` | uuid PK, `release_id`/`organization_id` FKs, `ring`, `trigger` (`PROMOTE`), `verdict` (`ALLOWED`/`BLOCKED`/`HELD`), `winning_rule_id` (loose), `actor_id`, `occurred_at` — append-only |
+| `release_policy_evaluation_rules` | uuid PK, `evaluation_id` FK, `rule_id` (LOOSE — history survives deletion) + `rule_name` snapshot, `rule_position`, `action`, `outcome` (`NOT_MET`/`FIRED`/`NO_DATA`/`ACKNOWLEDGED`), `detail` |
+| `release_policy_settings` | `organization_id` PK, `skip_allowances` (jsonb, default `[]` — absence IS the empty set), `updated_at` |
 
 ## The frozen manifest (S9-03)
 
@@ -887,7 +989,11 @@ family (issue #44; see the registry's release section for the full
 entries): `RELEASE_PROMOTION_BLOCKED` (409, the complete blocker list
 in the `errors` member), `RELEASE_PROMOTION_INVALID_STATE` (409,
 `current`/`required`), `RELEASE_PROMOTION_RING_SPLIT` (409, each
-tenant's ring), `RELEASE_PROMOTION_RING_FINAL` (409),
+tenant's ring), `RELEASE_PROMOTION_RING_FINAL` (409), and — since S10-06 — the
+policy family: `POLICY_RULE_NAME_TAKEN` (409, one rule name per
+organization), `POLICY_RULE_IN_USE` (409, the hold ledger references
+the rule), and `POLICY_HOLD_ALREADY_ACKNOWLEDGED` (409, the recorded
+decision stands).
 `RELEASE_PROMOTION_RING_SKIP` (409, `next`/`named`), and
 `RELEASE_PROMOTION_CONFLICT` (409, the concurrent-writer CAS
 conflict).

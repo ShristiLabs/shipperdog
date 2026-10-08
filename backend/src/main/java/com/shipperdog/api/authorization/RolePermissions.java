@@ -129,6 +129,13 @@ public final class RolePermissions {
             // eligibility rules — the rollout ladder itself.
             Permission.ORG_RINGS_READ,
             Permission.ORG_RINGS_MANAGE,
+            // S10-06 (issue #45): the declarative policy rules —
+            // the standing BLOCK/HOLD governance of the promotions
+            // the organization runs, and the acknowledge authority
+            // of a fired HOLD (the gate-override standing).
+            Permission.ORG_RELEASE_POLICIES_READ,
+            Permission.ORG_RELEASE_POLICIES_MANAGE,
+            Permission.APP_RELEASES_POLICY_ACKNOWLEDGE,
             Permission.APP_RELEASES_GATE_OVERRIDE,
             Permission.TENANT_TENANTS_READ,
             Permission.TENANT_TENANTS_UPDATE,
@@ -175,6 +182,10 @@ public final class RolePermissions {
             // through (still the same governance persona).
             Permission.ORG_RINGS_READ,
             Permission.ORG_RINGS_MANAGE,
+            // S10-06 (issue #45): the policy rules those releases
+            // mechanically answer to (still the same persona).
+            Permission.ORG_RELEASE_POLICIES_READ,
+            Permission.ORG_RELEASE_POLICIES_MANAGE,
             // S7-02 (issue #31): app owners administer tester grants
             // inside their organization's tenants through the
             // owning-organization overlay (PRD 26's tenant-admin /
@@ -194,7 +205,10 @@ public final class RolePermissions {
             Permission.ORG_GATE_DEFINITIONS_READ,
             // S10-04 (issue #43): the rollout ladder their releases
             // climb (read-only; the rollout is governed elsewhere).
-            Permission.ORG_RINGS_READ);
+            Permission.ORG_RINGS_READ,
+            // S10-06 (issue #45): the policy rules that ladder's
+            // promotions answer to (read-only).
+            Permission.ORG_RELEASE_POLICIES_READ);
 
     private static final Set<Permission> QA_ENGINEER = Set.of(
             Permission.APP_APPLICATIONS_READ,
@@ -209,7 +223,10 @@ public final class RolePermissions {
             // engineer reads the gates their evidence feeds.
             Permission.ORG_GATE_DEFINITIONS_READ,
             // S10-04 (issue #43): and the rings the QA stage sits in.
-            Permission.ORG_RINGS_READ);
+            Permission.ORG_RINGS_READ,
+            // S10-06 (issue #45): the rules that govern climbing
+            // them (read-only).
+            Permission.ORG_RELEASE_POLICIES_READ);
 
     private static final Set<Permission> RELEASE_MANAGER = Set.of(
             Permission.APP_APPLICATIONS_READ,
@@ -238,7 +255,13 @@ public final class RolePermissions {
             // S10-04 (issue #43): and the rings those releases widen
             // through (the same persona).
             Permission.ORG_RINGS_READ,
-            Permission.ORG_RINGS_MANAGE);
+            Permission.ORG_RINGS_MANAGE,
+            // S10-06 (issue #45): the policy rules that mechanically
+            // govern those promotions (the same persona), and the
+            // HOLD acknowledge (the gate-override standing).
+            Permission.ORG_RELEASE_POLICIES_READ,
+            Permission.ORG_RELEASE_POLICIES_MANAGE,
+            Permission.APP_RELEASES_POLICY_ACKNOWLEDGE);
 
     private static final Set<Permission> SECURITY_REVIEWER = Set.of(
             Permission.APP_APPLICATIONS_READ,
@@ -251,7 +274,12 @@ public final class RolePermissions {
             Permission.ORG_GATE_DEFINITIONS_READ,
             // S10-04 (issue #43): the security stage's ring is theirs
             // to read.
-            Permission.ORG_RINGS_READ);
+            Permission.ORG_RINGS_READ,
+            // S10-06 (issue #45): the story's own persona — the
+            // Security Reviewer authors no rules here (a rule they
+            // demand is a governance decision), but reads every
+            // standing rule and its evaluation trail.
+            Permission.ORG_RELEASE_POLICIES_READ);
 
     private static final Set<Permission> COMPLIANCE_REVIEWER = Set.of(
             Permission.APP_APPLICATIONS_READ,
@@ -265,7 +293,10 @@ public final class RolePermissions {
             Permission.ORG_GATE_DEFINITIONS_READ,
             // S10-04 (issue #43): the ring edits are theirs to audit
             // too (they change who can receive what).
-            Permission.ORG_RINGS_READ);
+            Permission.ORG_RINGS_READ,
+            // S10-06 (issue #45): the policy rules' evaluations are
+            // theirs to audit the same way.
+            Permission.ORG_RELEASE_POLICIES_READ);
 
     private static final Set<Permission> VIEWER = Set.of(
             Permission.APP_APPLICATIONS_READ,
@@ -274,7 +305,8 @@ public final class RolePermissions {
             Permission.ORG_ENVIRONMENTS_READ,
             Permission.ORG_APPROVAL_WORKFLOWS_READ,
             Permission.ORG_GATE_DEFINITIONS_READ,
-            Permission.ORG_RINGS_READ);
+            Permission.ORG_RINGS_READ,
+            Permission.ORG_RELEASE_POLICIES_READ);
 
     /** ORG_MEMBER deliberately holds nothing (deny-by-default, PRD P3). */
     private static final Set<Permission> ORG_MEMBER = Set.of();

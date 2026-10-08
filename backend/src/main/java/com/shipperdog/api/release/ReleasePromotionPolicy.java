@@ -13,22 +13,15 @@ import java.util.UUID;
  * one blocker of the complete list the 409 answers (keyed by the
  * contributor's name, the transition seam's rendering).
  *
- * <p>NO CONTRIBUTOR SHIPS WITH THIS STORY — the seam is the hook the
- * issue's scope line names ("policy rules S10-06"). S10-06's engine is
- * the intended registrant, answering at minimum:
- *
- * <ul>
- *   <li><strong>Skip relaxation</strong> — the ring-skip refusal is
- *       the DEFAULT posture this story pins (promotion moves exactly
- *       one ring in the effective order; PRD 17's progression is
- *       governed, never leapt); an organization policy that admits
- *       named skips registers here and widens the walk.</li>
- *   <li><strong>AUTOMATIC promotion</strong> — the ring's
- *       {@code promotionPolicy} AUTOMATIC standing (V32's column) is
- *       reference data this story reads but never acts on: the
- *       scheduler that watches {@link ReleasePromotedEvent} and drives
- *       governed hops without an operator is S10-06's build.</li>
- * </ul>
+ * <p>The FIRST registrants are S10-06's (issue #45): the declarative
+ * policy engine (BLOCK/HOLD rules over the issue's decision inputs,
+ * the evaluation logged per attempt) and the skip-relaxation knob it
+ * carries (an organization's named skip allowances widen the walk).
+ * The ring's {@code promotionPolicy} AUTOMATIC standing (V32's
+ * column) stays reference data no registrant acts on: the scheduler
+ * that would watch {@link ReleasePromotedEvent} and drive governed
+ * hops without an operator is a later story's build (V3's automated
+ * promotion), not the declarative v1 this story ships.
  *
  * <p>Contributors see only this interface — tuples, never rows (the
  * ArchUnit boundary; the check carries the hop's complete self-
@@ -44,11 +37,41 @@ public interface ReleasePromotionPolicy {
     Optional<String> denial(PromotionCheck check);
 
     /**
+     * Whether this contributor admits the NAMED SKIP the request
+     * carries: a {@code to} ring BEYOND the effective order's next
+     * (never backward — rollback is the transitions route's own
+     * crossing). The default REFUSES: one-ring-at-a-time is the #44
+     * posture, and it stands for every organization unless every
+     * registered contributor admits the wider hop (fail-closed
+     * composition — one refusing contributor keeps the refusal). The
+     * skip consult addresses the NAMED ring as {@code toRing}.
+     */
+    default boolean admitsSkip(PromotionCheck check) {
+        return false;
+    }
+
+    /**
+     * Why the engine is asking (S10-06): a contributor with governed
+     * side effects — the policy engine's evaluation log and hold
+     * ledger — writes ONLY on the promote ATTEMPT; the precheck read
+     * and the hop's in-transaction revalidation answer the same
+     * evaluation as pure reads (one log row per attempt, exactly).
+     */
+    enum Purpose {
+        /** The precheck read (or a dry-run): the same evaluation, nothing written. */
+        PRECHECK,
+        /** The promote act: governed writes (the evaluation log, the hold ledger) are sanctioned. */
+        ATTEMPT,
+        /** The hop's in-transaction revalidation: a pure read (the ATTEMPT phase already logged). */
+        RE_COMMIT
+    }
+
+    /**
      * The hop under consideration — the release's identity and owning
-     * organization, the two rings (the effective codes), and the
-     * tenant set the hop would move: a policy answers from facts it
-     * may read through public ports, never by reaching into the
-     * release module's storage.
+     * organization, the two rings (the effective codes), the tenant
+     * set the hop would move, the actor, and the asking surface: a
+     * policy answers from facts it may read through public ports,
+     * never by reaching into the release module's storage.
      */
     record PromotionCheck(
             UUID releaseId,
@@ -57,5 +80,7 @@ public interface ReleasePromotionPolicy {
             UUID organizationId,
             String fromRing,
             String toRing,
-            List<UUID> tenants) {}
+            List<UUID> tenants,
+            UUID actorId,
+            Purpose purpose) {}
 }

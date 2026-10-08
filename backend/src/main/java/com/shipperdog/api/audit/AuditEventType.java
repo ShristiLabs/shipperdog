@@ -203,5 +203,37 @@ public enum AuditEventType {
      * and policy refusal named with its evidence. The refused attempt writes its promotions-timeline
      * row and this audit event; the artifacts and manifest the release froze are untouched (INV-008).
      */
-    RELEASE_PROMOTION_BLOCKED
+    RELEASE_PROMOTION_BLOCKED,
+    /**
+     * A policy rule authored (S10-06, issue #45, PRD 33): the organization's standing declarative
+     * rule created — name, scope, action, condition, position, enabled — audited in full.
+     */
+    RELEASE_POLICY_RULE_CREATED,
+    /**
+     * A policy rule edited (S10-06): the rule's meaning end to end revalidated and replaced; the
+     * changed facts audited (ring edits change who can receive what; rule edits change what
+     * mechanically refuses a promotion — the same governance standing).
+     */
+    RELEASE_POLICY_RULE_UPDATED,
+    /**
+     * A policy rule deleted (S10-06): the full deleted facts audited; the hold ledger's references
+     * refuse the delete (they are audit evidence), and the evaluation log's name snapshots survive.
+     */
+    RELEASE_POLICY_RULE_DELETED,
+    /**
+     * The skip-relaxation knob turned (S10-06): the named rings a promotion may carry beyond the
+     * next — the widening of the #44 default posture, a governed act in its own right.
+     */
+    RELEASE_POLICY_SETTINGS_UPDATED,
+    /**
+     * One promote attempt's policy evaluation (S10-06, PRD 33): the ring evaluated, the verdict
+     * (ALLOWED, BLOCKED, HELD), every fired rule named — the summary beside the evaluation log's
+     * per-rule rows (which rule fired, with what evidence).
+     */
+    RELEASE_POLICY_EVALUATED,
+    /**
+     * A policy hold acknowledged (S10-06 AC2): the explicit privileged decision to proceed past a
+     * fired HOLD_FOR_REVIEW rule — rule, ring, and the mandatory reason — audited with the actor.
+     */
+    RELEASE_POLICY_HOLD_ACKNOWLEDGED
 }

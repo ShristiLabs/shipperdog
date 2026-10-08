@@ -175,7 +175,12 @@ allowed.
   the condition's evaluation), approve/reject affordances on exactly
   the decidable steps (rejections open the mandatory-reason dialog),
   the rework restart on a rejected round, and the earlier rounds with
-  their rejection reasons; a release no policy bound renders the
+  their rejection reasons; a policy holds section renders since
+  S10-06 (issue #45) when the engine's ledger carries any — every
+  fired HOLD rule's demand with its evidence, the privileged
+  acknowledge (mandatory reason, `app:releases:policy-acknowledge`)
+  beside each PENDING hold, the acknowledged history with actor,
+  reason, and moment; a release no policy bound renders the
   honest empty state (the surface's 404); quality gates render LIVE
   since S10-03 (per-gate states with evidence links, observed values
   against thresholds, the distinct NO_DATA fail-closed state, override
@@ -230,6 +235,21 @@ allowed.
   the rules (the documented reset). The server re-validates
   everything (the console is never the gate). The nav section renders
   under the `org:rings:read` probe.
+- **Release policies** (`/release-policies`, S10-06, issue #45): the
+  declarative rule store — the organization's standing BLOCK /
+  HOLD_FOR_REVIEW / ALLOW rules in the defined evaluation order, each
+  row with its action chip, scope chip, and the server-rendered
+  condition summary. The create/edit dialog writes name, action,
+  scope (with its reference: application id, ring picker from the
+  vocabulary, environment id), position, enabled, and the condition
+  as JSON — with the PRD 33 examples as one-click templates, a
+  client-side JSON-parse gate, and the server's field validation
+  (references resolvable, the condition compiles) rendered inline.
+  The skip-allowances panel edits the promotion seam's widening knob
+  (comma-separated ring codes; an untouched Save re-puts the loaded
+  set — the PUT is whole-set). The nav section renders under the
+  `org:release-policies:read` probe (limit-1, the sibling probes'
+  shape).
 
 ## CI and verification
 

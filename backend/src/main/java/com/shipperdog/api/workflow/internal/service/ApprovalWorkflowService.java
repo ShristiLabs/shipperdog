@@ -845,6 +845,20 @@ public class ApprovalWorkflowService implements ReleaseApprovalSource, Promotion
     }
 
     /**
+     * The latest committed round of a release, read in a FRESH
+     * transaction ({@code REQUIRES_NEW}): the restart race's loser
+     * answers from the state that won while its own transaction sits
+     * aborted (the #45 fold-in's recovery read — the same fresh-read
+     * discipline the promotion loser's {@code standingOf} recovery
+     * uses, applied to the RESTART leg the #40 follow-up test
+     * exposed).
+     */
+    @Transactional(propagation = org.springframework.transaction.annotation.Propagation.REQUIRES_NEW)
+    public ReleaseApprovalRoundEntity committedLatestRoundOf(UUID releaseId) {
+        return rounds.findFirstByReleaseIdOrderByRoundNumberDesc(releaseId).orElse(null);
+    }
+
+    /**
      * The promotion leg's one body: resolve the ring's named policy,
      * then the ring-marked round, opening a new round when the consult
      * demands one and none usable exists (none at all, or rejected —
@@ -1186,9 +1200,15 @@ public class ApprovalWorkflowService implements ReleaseApprovalSource, Promotion
             // machine bug that rolls the crossing back loudly.
             if (e.getMessage() != null && e.getMessage().contains("uq_release_approval_rounds_release_number")) {
                 if ("RESTART".equals(trigger)) {
-                    ReleaseApprovalRoundEntity committed = rounds.findFirstByReleaseIdOrderByRoundNumberDesc(
-                                    facts.releaseId())
-                            .orElse(null);
+                    // The loser's transaction is ABORTED (the failed
+                    // insert poisoned it — Postgres refuses further
+                    // statements in it), so the committed state must
+                    // be re-read in a FRESH transaction, never here:
+                    // the recovery read runs through the proxied self
+                    // with REQUIRES_NEW (the #45 fold-in's fix — the
+                    // in-transaction re-read the #40 follow-up test
+                    // exposed as an untranslated 500).
+                    ReleaseApprovalRoundEntity committed = self.getObject().committedLatestRoundOf(facts.releaseId());
                     throw new WorkflowException(
                             WorkflowException.Code.APPROVAL_ROUND_NOT_RESTARTABLE,
                             "only a rejected approval round can be restarted",

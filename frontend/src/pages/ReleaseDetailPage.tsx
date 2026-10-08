@@ -55,6 +55,11 @@ import { useMemo, useState, type ReactNode } from "react";
 import { Link, useParams } from "react-router-dom";
 import { ApiError } from "../api/problem";
 import {
+  acknowledgePolicyHold,
+  listPolicyHolds,
+  type PolicyHold,
+} from "../api/policies";
+import {
   getReleaseGates,
   overrideGate,
   type ReleaseGate,
@@ -203,6 +208,36 @@ export default function ReleaseDetailPage() {
     enabled: applicationIdSafe !== "" && releaseIdSafe !== "" && release !== null,
     retry: false,
     refetchInterval: REFRESH_MS,
+  });
+
+  // The policy hold ledger (S10-06 AC2): the fired HOLD rules'
+  // demands — PENDING first-class (the acknowledge records the
+  // privileged decision that proceeds), the acknowledged history
+  // beside them. Errors stay quiet: a caller without the read (or a
+  // backend without holds yet) simply renders no section.
+  const policyHolds = useQuery({
+    queryKey: ["release-policy-holds", releaseIdSafe],
+    queryFn: () => listPolicyHolds(applicationIdSafe, releaseIdSafe),
+    enabled: applicationIdSafe !== "" && releaseIdSafe !== "" && release !== null,
+    retry: false,
+    refetchInterval: REFRESH_MS,
+  });
+  const [holdReasons, setHoldReasons] = useState<Record<string, string>>({});
+  const acknowledgeHold = useMutation({
+    mutationFn: (hold: PolicyHold) =>
+      acknowledgePolicyHold(
+        applicationIdSafe,
+        releaseIdSafe,
+        hold.id,
+        holdReasons[hold.id]?.trim() ?? "",
+      ),
+    onSuccess: async () => {
+      toast.showSuccess("Hold acknowledged — the decision stands, audited");
+      await queryClient.invalidateQueries({ queryKey: ["release-policy-holds", releaseIdSafe] });
+    },
+    onError: (error) => {
+      toast.showError(error);
+    },
   });
 
   // The promotion precheck: the same evaluation the promote act runs,
@@ -604,6 +639,65 @@ export default function ReleaseDetailPage() {
           </Typography>
         )}
       </Paper>
+
+      {policyHolds.data && policyHolds.data.holds.length > 0 ? (
+        <Paper variant="outlined" sx={{ padding: 2 }} data-testid="policy-holds-section">
+          <Typography variant="h6">Policy holds</Typography>
+          <Typography color="text.secondary">
+            Fired HOLD_FOR_REVIEW rules: a pending hold refuses promotion until a privileged
+            acknowledge records the decision with its reason (the acknowledged decision stands for
+            later hops into the same ring).
+          </Typography>
+          <Stack spacing={1} sx={{ marginTop: 1 }} data-testid="policy-hold-rows">
+            {policyHolds.data.holds.map((hold) => (
+              <Stack
+                key={hold.id}
+                spacing={1}
+                direction="row"
+                sx={{ alignItems: "center", flexWrap: "wrap" as const }}
+                data-testid={`policy-hold-${hold.status}`}
+              >
+                <Chip
+                  size="small"
+                  color={hold.status === "PENDING" ? "warning" : "default"}
+                  label={hold.status === "PENDING" ? "pending acknowledge" : "acknowledged"}
+                />
+                <Typography variant="body2" sx={{ fontFamily: "monospace" }}>
+                  {hold.ruleName ?? hold.ruleId} · ring {hold.ring}
+                </Typography>
+                {hold.status === "ACKNOWLEDGED" ? (
+                  <Typography variant="body2" color="text.secondary">
+                    by {hold.acknowledgedBy} · {new Date(hold.acknowledgedAt ?? hold.createdAt).toLocaleString()}
+                    {hold.acknowledgeReason ? ` · "${hold.acknowledgeReason}"` : ""}
+                  </Typography>
+                ) : (
+                  <>
+                    <TextField
+                      size="small"
+                      sx={{ minWidth: 280 }}
+                      label="Reason (required)"
+                      value={holdReasons[hold.id] ?? ""}
+                      onChange={(event) =>
+                        setHoldReasons({ ...holdReasons, [hold.id]: event.target.value })
+                      }
+                      data-testid={`policy-hold-reason-${hold.id}`}
+                    />
+                    <Button
+                      size="small"
+                      variant="outlined"
+                      disabled={acknowledgeHold.isPending}
+                      onClick={() => acknowledgeHold.mutate(hold)}
+                      data-testid={`policy-hold-acknowledge-${hold.id}`}
+                    >
+                      Acknowledge
+                    </Button>
+                  </>
+                )}
+              </Stack>
+            ))}
+          </Stack>
+        </Paper>
+      ) : null}
 
       <Paper variant="outlined" sx={{ padding: 2 }} data-testid="manifest-section">
         <Stack direction="row" spacing={2} sx={{ alignItems: "center" }}>

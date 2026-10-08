@@ -77,7 +77,11 @@ class RolePermissionsTest {
                         // S10-04 (issue #43): ring reads join the
                         // read-only surface (a viewer sees the ladder
                         // their releases climb, never edits it).
-                        Permission.ORG_RINGS_READ);
+                        Permission.ORG_RINGS_READ,
+                        // S10-06 (issue #45): policy-rule reads join
+                        // the same surface (a viewer sees the standing
+                        // rules, never authors or acknowledges them).
+                        Permission.ORG_RELEASE_POLICIES_READ);
     }
 
     @Test

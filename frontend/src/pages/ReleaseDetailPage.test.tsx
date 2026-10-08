@@ -1238,6 +1238,77 @@ describe("ReleaseDetailPage", () => {
     expect(dialog).toHaveTextContent("Acme: no testers in audience");
   });
 
+  it("renders the policy hold ledger and acknowledges with a mandatory reason (S10-06)", async () => {
+    const HOLD_ID = "82000000-0000-4000-8000-000000000001";
+    renderDetail(DETAIL_ACTIVE, [
+      {
+        method: "GET",
+        url: `/api/v1/releases/${RELEASE_ID}/policy-holds`,
+        status: 200,
+        body: {
+          releaseId: RELEASE_ID,
+          releaseRef: "R-101",
+          holds: [
+            {
+              id: HOLD_ID,
+              ruleId: "40000000-0000-4000-8000-000000000009",
+              ruleName: "engagement-floor",
+              ring: "tenant-pilot",
+              status: "PENDING",
+              evidence: { detail: "metric TESTER_ENGAGEMENT = 0.2 < 0.5 (met)" },
+              acknowledgedBy: null,
+              acknowledgedAt: null,
+              acknowledgeReason: null,
+              createdAt: "2026-10-03T12:00:00Z",
+            },
+          ],
+        },
+      },
+      {
+        method: "POST",
+        url: `/api/v1/releases/${RELEASE_ID}/policy-holds/${HOLD_ID}/acknowledge`,
+        status: 200,
+        body: {
+          id: HOLD_ID,
+          ruleId: "40000000-0000-4000-8000-000000000009",
+          ruleName: "engagement-floor",
+          ring: "tenant-pilot",
+          status: "ACKNOWLEDGED",
+          evidence: null,
+          acknowledgedBy: ACTOR_ID,
+          acknowledgedAt: "2026-10-03T12:30:00Z",
+          acknowledgeReason: "engagement accepted for the pilot ring",
+          createdAt: "2026-10-03T12:00:00Z",
+        },
+      },
+    ]);
+
+    const section = await screen.findByTestId("policy-holds-section");
+    expect(section).toHaveTextContent("engagement-floor");
+    expect(section).toHaveTextContent("pending acknowledge");
+
+    const reasonInput = screen
+      .getByTestId(`policy-hold-reason-${HOLD_ID}`)
+      .querySelector("input") as HTMLInputElement;
+    await user.type(reasonInput, "engagement accepted for the pilot ring");
+    await user.click(screen.getByTestId(`policy-hold-acknowledge-${HOLD_ID}`));
+
+    await waitFor(() => {
+      const calls = (fetch as unknown as { mock: { calls: Array<[string, RequestInit]> } })
+        .mock.calls;
+      const call = calls.find(
+        ([candidate, init]) =>
+          candidate === `/api/v1/releases/${RELEASE_ID}/policy-holds/${HOLD_ID}/acknowledge` &&
+          init?.method === "POST",
+      );
+      expect(call, "the acknowledge was issued").toBeDefined();
+      expect(JSON.parse((call![1] as RequestInit).body as string)).toEqual({
+        applicationId: APPLICATION_ID,
+        reason: "engagement accepted for the pilot ring",
+      });
+    });
+  });
+
   it("shows the clear verdict when the precheck finds the next hop promotable (S10-05)", async () => {
     renderDetail(DETAIL_ACTIVE, [
       {

@@ -175,14 +175,14 @@ public class PromotionService {
         return inScope(application, actorId, () -> {
             ReleaseEntity release = scopedReleaseOf(applicationId, releaseId);
             Instant occurredAt = Instant.now(clock);
-            Hop hop = hopOf(release, command);
+            Hop hop = hopOf(release, command, actorId);
             // The engine's consult: opens the approval round a resolved
             // policy demands (its own committed transaction — the round
             // is a governed fact of the ATTEMPT, recorded even when the
             // attempt refuses).
             PromotionApprovalSource.Standing approval = approvalLeg.openRoundFor(
                     release.getId(), release.getOrganizationId(), hop.toRing().getId(), actorId);
-            Precheck precheck = evaluate(release, hop, approval);
+            Precheck precheck = evaluate(release, hop, approval, actorId, ReleasePromotionPolicy.Purpose.ATTEMPT);
             if (!precheck.blockers().isEmpty()) {
                 throw blocked(release, hop, precheck, actorId, occurredAt);
             }
@@ -204,7 +204,9 @@ public class PromotionService {
                                     approvalLeg.standingOf(
                                             release.getId(),
                                             release.getOrganizationId(),
-                                            hop.toRing().getId()))
+                                            hop.toRing().getId()),
+                                    actorId,
+                                    ReleasePromotionPolicy.Purpose.RE_COMMIT)
                             .blockers());
             boolean crossed = record != null && allTargetsAtFinalRing(release);
             String status =
@@ -258,14 +260,16 @@ public class PromotionService {
         ApplicationAccess.ApplicationProfile application = profileOf(applicationId);
         return inScope(application, actorId, () -> {
             ReleaseEntity release = scopedReleaseOf(applicationId, releaseId);
-            Hop hop = hopOf(release, new PromoteCommand(null, null));
+            Hop hop = hopOf(release, new PromoteCommand(null, null), actorId);
             Precheck precheck = evaluate(
                     release,
                     hop,
                     approvalLeg.standingOf(
                             release.getId(),
                             release.getOrganizationId(),
-                            hop.toRing().getId()));
+                            hop.toRing().getId()),
+                    actorId,
+                    ReleasePromotionPolicy.Purpose.PRECHECK);
             return precheck.viewOf();
         });
     }
@@ -323,7 +327,7 @@ public class PromotionService {
      * BLOCKED timeline rows belong to precheck refusals, which name
      * the ring they were refused entry to.
      */
-    private Hop hopOf(ReleaseEntity release, PromoteCommand command) {
+    private Hop hopOf(ReleaseEntity release, PromoteCommand command, UUID actorId) {
         if (!PROMOTABLE_STATUSES.contains(release.getStatus())) {
             throw invalidState(release);
         }
@@ -361,28 +365,77 @@ public class PromotionService {
         if (command.to() != null && !command.to().isBlank()) {
             String named = command.to().trim().toLowerCase(Locale.ROOT);
             if (!named.equals(toRing.getCode())) {
-                if (ringPositionOf(order, named) == -1) {
+                int namedPosition = ringPositionOf(order, named);
+                if (namedPosition == -1) {
                     throw new ReleaseException(
                             ReleaseException.Code.INVALID_REQUEST,
                             "the request is invalid",
                             Map.of("to", "unknown ring code '" + named + "' for this organization"));
                 }
-                throw new ReleaseException(
-                        ReleaseException.Code.RELEASE_PROMOTION_RING_SKIP,
-                        "skipping rings is disallowed; promotion moves one ring at a time",
-                        Map.of(
-                                "next",
-                                toRing.getCode(),
-                                "named",
-                                named,
-                                "note",
-                                "the skip posture is the default; a promotion policy may relax it (S10-06)"));
+                if (namedPosition > position
+                        && skipAdmitted(release, command, moveSet, order, position, namedPosition, actorId)) {
+                    // The organization's skip-relaxation knob admits
+                    // the wider hop (S10-06's registrant): the walk
+                    // carries straight to the named ring, every leg of
+                    // the precheck evaluating entry to THAT ring.
+                    toRing = order.get(namedPosition);
+                } else {
+                    throw new ReleaseException(
+                            ReleaseException.Code.RELEASE_PROMOTION_RING_SKIP,
+                            "skipping rings is disallowed; promotion moves one ring at a time",
+                            Map.of(
+                                    "next",
+                                    toRing.getCode(),
+                                    "named",
+                                    named,
+                                    "note",
+                                    "the skip posture is the default; the organization's policy settings may relax it"));
+                }
             }
         }
         RingEntity fromRing = order.get(position);
         List<UUID> tenants =
                 moveSet.stream().map(ReleaseTargetEntity::getTenantId).toList();
         return new Hop(moveSet, fromRing, toRing, tenants);
+    }
+
+    /**
+     * The skip-relaxation consult (S10-06, the seam's widening path):
+     * a named ring BEYOND the next is admitted only when EVERY
+     * registered {@link ReleasePromotionPolicy} admits it (fail-closed
+     * composition — the default implementation refuses, so the #44
+     * posture stands unless every contributor deliberately widens
+     * it). A named ring at or before the current position is never a
+     * skip to admit — backward movement is rollback's own crossing.
+     */
+    private boolean skipAdmitted(
+            ReleaseEntity release,
+            PromoteCommand command,
+            List<ReleaseTargetEntity> moveSet,
+            List<RingEntity> order,
+            int position,
+            int namedPosition,
+            UUID actorId) {
+        if (namedPosition <= position) {
+            return false;
+        }
+        List<UUID> tenants =
+                moveSet.stream().map(ReleaseTargetEntity::getTenantId).toList();
+        ReleasePromotionPolicy.PromotionCheck check = new ReleasePromotionPolicy.PromotionCheck(
+                release.getId(),
+                release.releaseRef(),
+                release.getApplicationId(),
+                release.getOrganizationId(),
+                order.get(position).getCode(),
+                order.get(namedPosition).getCode(),
+                tenants,
+                actorId,
+                ReleasePromotionPolicy.Purpose.ATTEMPT);
+        boolean admitted = true;
+        for (ReleasePromotionPolicy policy : promotionPolicies.orderedStream().toList()) {
+            admitted &= policy.admitsSkip(check);
+        }
+        return admitted;
     }
 
     /** The move set: the body's selective tenants (every one must be a target), or every target. */
@@ -444,7 +497,12 @@ public class PromotionService {
      * renders, keyed {@code gate:TYPE}, {@code approval}, {@code
      * eligibility:TENANT}, and the contributor's name.
      */
-    private Precheck evaluate(ReleaseEntity release, Hop hop, PromotionApprovalSource.Standing approval) {
+    private Precheck evaluate(
+            ReleaseEntity release,
+            Hop hop,
+            PromotionApprovalSource.Standing approval,
+            UUID actorId,
+            ReleasePromotionPolicy.Purpose purpose) {
         Map<String, String> blockers = new LinkedHashMap<>();
         List<ReleaseGateEvaluation.Evaluation.GateState> gates = List.of();
         ReleaseGateEvaluation.Evaluation evaluation =
@@ -511,7 +569,9 @@ public class PromotionService {
                             release.getOrganizationId(),
                             hop.fromRing().getCode(),
                             hop.toRing().getCode(),
-                            hop.tenants()))
+                            hop.tenants(),
+                            actorId,
+                            purpose))
                     .orElse(null);
             if (denial != null) {
                 blockers.put(policy.getClass().getSimpleName(), denial);
