@@ -467,7 +467,7 @@ public class RingService implements RingProvisioning {
      * the order {@code resolveByCode} prefers and the promotion engine
      * walks.
      */
-    private List<RingEntity> effectiveVocabularyOf(UUID organizationId) {
+    List<RingEntity> effectiveVocabularyOf(UUID organizationId) {
         List<RingEntity> own = rings.findByOrganizationIdOrderByPositionAscCodeAsc(organizationId);
         Set<String> ownCodes = new LinkedHashSet<>();
         own.forEach(ring -> ownCodes.add(ring.getCode()));

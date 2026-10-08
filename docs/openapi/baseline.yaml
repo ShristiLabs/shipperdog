@@ -1256,6 +1256,31 @@ paths:
             '*/*':
               schema:
                 $ref: "#/components/schemas/ReleaseDetail"
+  /api/v1/releases/{releaseId}/promote:
+    post:
+      tags:
+      - release-controller
+      operationId: promote
+      parameters:
+      - name: releaseId
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PromoteRequest"
+        required: true
+      responses:
+        "200":
+          description: OK
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/PromotionResultView"
   /api/v1/releases/{releaseId}/gates/{gateType}/result:
     post:
       tags:
@@ -2554,6 +2579,56 @@ paths:
             '*/*':
               schema:
                 $ref: "#/components/schemas/ReleaseDetail"
+  /api/v1/releases/{releaseId}/promotions:
+    get:
+      tags:
+      - release-controller
+      operationId: promotions
+      parameters:
+      - name: releaseId
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - name: applicationId
+        in: query
+        required: true
+        schema:
+          type: string
+          format: uuid
+      responses:
+        "200":
+          description: OK
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/PromotionHistoryView"
+  /api/v1/releases/{releaseId}/promotion-precheck:
+    get:
+      tags:
+      - release-controller
+      operationId: promotionPrecheck
+      parameters:
+      - name: releaseId
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - name: applicationId
+        in: query
+        required: true
+        schema:
+          type: string
+          format: uuid
+      responses:
+        "200":
+          description: OK
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/PrecheckView"
   /api/v1/releases/{releaseId}/manifest:
     get:
       tags:
@@ -2991,6 +3066,8 @@ paths:
           - RING_CREATED
           - RING_UPDATED
           - RING_DELETED
+          - RELEASE_PROMOTED
+          - RELEASE_PROMOTION_BLOCKED
       - name: applicationId
         in: query
         required: false
@@ -3465,17 +3542,7 @@ components:
     JsonNode:
       type: object
       properties:
-        string:
-          type: boolean
-        floatingPointNumber:
-          type: boolean
-        binary:
-          type: boolean
-        pojo:
-          type: boolean
-        valueNode:
-          type: boolean
-        missingNode:
+        container:
           type: boolean
         nodeType:
           type: string
@@ -3489,7 +3556,17 @@ components:
           - OBJECT
           - POJO
           - STRING
+        string:
+          type: boolean
         integralNumber:
+          type: boolean
+        missingNode:
+          type: boolean
+        valueNode:
+          type: boolean
+        pojo:
+          type: boolean
+        number:
           type: boolean
         short:
           type: boolean
@@ -3508,9 +3585,9 @@ components:
           deprecated: true
         boolean:
           type: boolean
-        number:
+        binary:
           type: boolean
-        container:
+        floatingPointNumber:
           type: boolean
         empty:
           type: boolean
@@ -3953,6 +4030,66 @@ components:
         to:
           type: string
         reason:
+          type: string
+    PromoteRequest:
+      type: object
+      description: "The ring-promotion body: the permission-target application id,\
+        \ the optional selective tenant set, and the optional asserted target ring\
+        \ code (the effective order's next ring)."
+      properties:
+        applicationId:
+          type: string
+          format: uuid
+        tenants:
+          type: array
+          items:
+            type: string
+            format: uuid
+        to:
+          type: string
+    PromotionResultView:
+      type: object
+      properties:
+        releaseId:
+          type: string
+          format: uuid
+        releaseRef:
+          type: string
+        status:
+          type: string
+        fromRing:
+          type: string
+        toRing:
+          type: string
+        tenants:
+          type: array
+          items:
+            type: string
+            format: uuid
+        crossedToPromoted:
+          type: boolean
+        promotionId:
+          type: string
+          format: uuid
+        promotionStatus:
+          type: string
+          enum:
+          - COMPLETED
+        blockers:
+          type: object
+          additionalProperties:
+            type: string
+        targets:
+          type: array
+          items:
+            $ref: "#/components/schemas/TargetRingView"
+    TargetRingView:
+      type: object
+      properties:
+        tenantId:
+          type: string
+          format: uuid
+        ring:
           type: string
     ResultRequest:
       type: object
@@ -4874,6 +5011,127 @@ components:
         updatedAt:
           type: string
           format: date-time
+    PromotionHistoryView:
+      type: object
+      properties:
+        releaseId:
+          type: string
+          format: uuid
+        releaseRef:
+          type: string
+        status:
+          type: string
+        promotions:
+          type: array
+          items:
+            $ref: "#/components/schemas/PromotionRecordView"
+    PromotionRecordView:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        fromRing:
+          type: string
+        toRing:
+          type: string
+        tenants:
+          type: array
+          items:
+            type: string
+            format: uuid
+        status:
+          type: string
+        blockers:
+          type: object
+          additionalProperties: {}
+        actorId:
+          type: string
+          format: uuid
+        occurredAt:
+          type: string
+          format: date-time
+    ApprovalView:
+      type: object
+      properties:
+        requirement:
+          type: string
+        policyName:
+          type: string
+        roundNumber:
+          type: integer
+          format: int64
+        roundStatus:
+          type: string
+        waitedOn:
+          type: object
+          additionalProperties:
+            type: string
+    GateState:
+      type: object
+      properties:
+        gateType:
+          type: string
+        required:
+          type: boolean
+        status:
+          type: string
+        observedValue:
+          type: number
+          format: double
+        threshold:
+          type: number
+          format: double
+        evidenceUrl:
+          type: string
+        source:
+          type: string
+        overridden:
+          type: boolean
+        overriddenBy:
+          type: string
+        overriddenReason:
+          type: string
+    PrecheckView:
+      type: object
+      properties:
+        promotable:
+          type: boolean
+        blockers:
+          type: object
+          additionalProperties:
+            type: string
+        gates:
+          type: array
+          items:
+            $ref: "#/components/schemas/GateState"
+        approval:
+          $ref: "#/components/schemas/ApprovalView"
+        eligibility:
+          type: array
+          items:
+            $ref: "#/components/schemas/TargetAdmission"
+    TargetAdmission:
+      type: object
+      properties:
+        tenantId:
+          type: string
+          format: uuid
+        ring:
+          type: string
+        admitted:
+          type: boolean
+        audienceGroups:
+          type: array
+          items:
+            type: string
+            format: uuid
+        tenantAtLarge:
+          type: boolean
+        reasons:
+          type: array
+          items:
+            type: string
     ArtifactChange:
       type: object
       properties:
@@ -5054,27 +5312,6 @@ components:
           $ref: "#/components/schemas/Admission"
         admitsTester:
           type: boolean
-    TargetAdmission:
-      type: object
-      properties:
-        tenantId:
-          type: string
-          format: uuid
-        ring:
-          type: string
-        admitted:
-          type: boolean
-        audienceGroups:
-          type: array
-          items:
-            type: string
-            format: uuid
-        tenantAtLarge:
-          type: boolean
-        reasons:
-          type: array
-          items:
-            type: string
     PageResponseOrganizationResponse:
       type: object
       properties:
@@ -5371,6 +5608,8 @@ components:
           - RING_CREATED
           - RING_UPDATED
           - RING_DELETED
+          - RELEASE_PROMOTED
+          - RELEASE_PROMOTION_BLOCKED
         occurredAt:
           type: string
           format: date-time

@@ -991,6 +991,23 @@ public class ReleaseService implements ReleaseAccess, VersionDistributionContrib
                     .computeIfAbsent(group.getTenantId(), tenant -> new ArrayList<>())
                     .add(group.getGroupId());
         }
+        // Each target renders its OWN ring's code (S10-05: per-target
+        // ring moves) — resolved organization-preferred, the shadowing
+        // contract, so a code always renders the meaning the
+        // organization gives it (all targets share the starting ring
+        // until the promotion engine moves them).
+        Map<UUID, String> targetRingCodes = new LinkedHashMap<>();
+        for (ReleaseTargetEntity row : targetRows) {
+            if (row.getRingId() != null && !targetRingCodes.containsKey(row.getRingId())) {
+                rings.findById(row.getRingId()).ifPresent(targetRing -> {
+                    targetRingCodes.put(
+                            row.getRingId(),
+                            rings.byCode(targetRing.getCode(), release.getOrganizationId())
+                                    .map(RingEntity::getCode)
+                                    .orElse(targetRing.getCode()));
+                });
+            }
+        }
         EnvironmentAccess.EnvironmentState environment = release.getEnvironmentId() == null
                 ? null
                 : environments.stateOf(release.getEnvironmentId()).orElse(null);
@@ -1011,7 +1028,7 @@ public class ReleaseService implements ReleaseAccess, VersionDistributionContrib
                 targetRows.stream()
                         .map(row -> new TargetView(
                                 row.getTenantId(),
-                                ring == null ? null : ring.getCode(),
+                                targetRingCodes.getOrDefault(row.getRingId(), ring == null ? null : ring.getCode()),
                                 groupsByTenant.getOrDefault(row.getTenantId(), List.of())))
                         .toList(),
                 release.getCreatedBy(),

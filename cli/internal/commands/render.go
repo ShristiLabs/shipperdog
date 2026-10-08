@@ -132,11 +132,11 @@ func renderRelease(d *api.ReleaseDetail) string {
 	}
 	fmt.Fprintf(&b, "  Targets:     %d tenant(s)\n", len(d.Targets))
 	for _, target := range d.Targets {
+		groups := "tenant at large"
 		if len(target.TesterGroupIDs) > 0 {
-			fmt.Fprintf(&b, "    %s: groups %s\n", target.TenantID, strings.Join(target.TesterGroupIDs, ", "))
-		} else {
-			fmt.Fprintf(&b, "    %s: tenant at large\n", target.TenantID)
+			groups = "groups " + strings.Join(target.TesterGroupIDs, ", ")
 		}
+		fmt.Fprintf(&b, "    %s: ring %s, %s\n", target.TenantID, orDash(target.Ring), groups)
 	}
 	fmt.Fprintf(&b, "  Gates:       run 'shipperdog gate list %s' (or see this get's gate block)\n", d.ReleaseRef)
 	fmt.Fprintf(&b, "  Created:     %s by %s\n", d.CreatedAt, d.CreatedBy)

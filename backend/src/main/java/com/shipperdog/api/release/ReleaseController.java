@@ -7,6 +7,11 @@ import com.shipperdog.api.identity.AuthenticatedPrincipal;
 import com.shipperdog.api.release.internal.manifest.ReleaseManifestService;
 import com.shipperdog.api.release.internal.manifest.ReleaseManifestService.ManifestDiffView;
 import com.shipperdog.api.release.internal.manifest.ReleaseManifestService.ManifestView;
+import com.shipperdog.api.release.internal.service.PromotionService;
+import com.shipperdog.api.release.internal.service.PromotionService.PrecheckView;
+import com.shipperdog.api.release.internal.service.PromotionService.PromoteCommand;
+import com.shipperdog.api.release.internal.service.PromotionService.PromotionHistoryView;
+import com.shipperdog.api.release.internal.service.PromotionService.PromotionResultView;
 import com.shipperdog.api.release.internal.service.ReleaseService;
 import com.shipperdog.api.release.internal.service.ReleaseService.ArtifactSlot;
 import com.shipperdog.api.release.internal.service.ReleaseService.CreateCommand;
@@ -88,9 +93,12 @@ public class ReleaseController {
 
     private final ReleaseManifestService manifests;
 
-    ReleaseController(ReleaseService releases, ReleaseManifestService manifests) {
+    private final PromotionService promotions;
+
+    ReleaseController(ReleaseService releases, ReleaseManifestService manifests, PromotionService promotions) {
         this.releases = releases;
         this.manifests = manifests;
+        this.promotions = promotions;
     }
 
     /**
@@ -263,6 +271,73 @@ public class ReleaseController {
         return manifests.diff(requireUserId(principal), applicationId, releaseId, otherReleaseId);
     }
 
+    /**
+     * One ring promotion (issue #44 AC1-AC3, S10-05, FR-018, PRD 33):
+     * the governed ring-to-ring move. The body names the permission
+     * target (the application id), optionally the SELECTIVE tenant set
+     * (absent moves every target — per-target rings are the staged
+     * rollout groundwork) and optionally the asserted target ring
+     * (must equal the effective order's next ring; a farther ring is
+     * the skip refusal — disallowed by default). The engine evaluates
+     * the target ring's gates, approvals, eligibility, and promotion
+     * policies: any unmet leg answers 409 with the COMPLETE blocker
+     * list in the {@code errors} member, every blocker named with its
+     * evidence, the refused attempt recorded on the append-only
+     * promotions timeline. A passing hop moves the targets' rings,
+     * records the hop, audits with the actor, and — when it lands the
+     * final ring for every target — carries the release across PRD
+     * 17's ACTIVE to PROMOTED edge. Requires {@code
+     * app:releases:manage}. Not idempotency-keyed: the targets' rings
+     * are the replay answer (the lifecycle precedent).
+     */
+    @PostMapping("/{releaseId}/promote")
+    @PreAuthorize("hasPermission(#request.applicationId(), 'application', 'app:releases:manage')")
+    PromotionResultView promote(
+            @AuthenticationPrincipal Object principal,
+            @PathVariable UUID releaseId,
+            @RequestBody PromoteRequest request) {
+        return promotions.promote(
+                requireUserId(principal),
+                request.applicationId(),
+                releaseId,
+                new PromoteCommand(request.tenants(), request.to()));
+    }
+
+    /**
+     * The promotion precheck (issue #44's technical note: one
+     * evaluation function, three surfaces): the SAME evaluation the
+     * promote act runs, answered as a read — the next ring, the
+     * verdict, the complete blocker list (byte-for-byte the 409's
+     * {@code errors} member), the target ring's gate states with
+     * their evidence URLs, the approval leg's standing, and the
+     * widened eligibility rows. Nothing is written and no approval
+     * round is opened. The console's "why can't I promote" screen and
+     * the CLI's precheck render this verbatim. Requires {@code
+     * app:releases:read}.
+     */
+    @GetMapping("/{releaseId}/promotion-precheck")
+    @PreAuthorize("hasPermission(#applicationId, 'application', 'app:releases:read')")
+    PrecheckView promotionPrecheck(
+            @AuthenticationPrincipal Object principal, @PathVariable UUID releaseId, @RequestParam UUID applicationId) {
+        return promotions.precheck(requireUserId(principal), applicationId, releaseId);
+    }
+
+    /**
+     * The promotion history (issue #44 AC5, PRD 18): the release's
+     * append-only promotions timeline — every COMPLETED hop with its
+     * two rings, moved tenants, and actor, and every BLOCKED attempt
+     * with its recorded evidence — the record the release dashboard
+     * renders beside the status timeline. The {@code applicationId}
+     * query parameter carries the permission target; a release of
+     * another application is the standard concealed miss.
+     */
+    @GetMapping("/{releaseId}/promotions")
+    @PreAuthorize("hasPermission(#applicationId, 'application', 'app:releases:read')")
+    PromotionHistoryView promotions(
+            @AuthenticationPrincipal Object principal, @PathVariable UUID releaseId, @RequestParam UUID applicationId) {
+        return promotions.history(requireUserId(principal), applicationId, releaseId);
+    }
+
     private static UUID requireUserId(Object principal) {
         if (principal instanceof Jwt jwt) {
             return UUID.fromString(jwt.getSubject());
@@ -315,4 +390,16 @@ public class ReleaseController {
             description = "The release transition body: the permission-target application id, the target state "
                     + "of PRD 17's vocabulary, and the reason (mandatory for failure and rollback transitions).")
     public record TransitionRequest(UUID applicationId, String to, String reason) {}
+
+    /**
+     * The promote body (S10-05, FR-018): the permission-target
+     * application id, the optional SELECTIVE tenant set (absent moves
+     * every target), and the optional asserted target ring code
+     * (must equal the effective order's next ring — a farther ring is
+     * the skip refusal, disallowed by default).
+     */
+    @Schema(
+            description = "The ring-promotion body: the permission-target application id, the optional selective "
+                    + "tenant set, and the optional asserted target ring code (the effective order's next ring).")
+    public record PromoteRequest(UUID applicationId, List<UUID> tenants, String to) {}
 }

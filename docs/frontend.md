@@ -182,7 +182,13 @@ allowed.
   records, and the mandatory-reason override action on blocking
   gates); distribution shows the starting
   ring, the targeted environment (S9-04), and the resolved target
-  set; the state timeline renders the append-only history with
+  set; the promotion engine renders LIVE since S10-05 (issue #44): a
+  Promote action on the release's own screen (its 409 rendering the
+  COMPLETE blocker list the API answered, verbatim), the "why can't I
+  promote" precheck dialog (the same evaluation as a read), and the
+  append-only promotions timeline — every COMPLETED hop and every
+  BLOCKED attempt with its recorded evidence — beside the state
+  timeline; the state timeline renders the append-only history with
   roster-resolved actors, timestamps, and reasons; the frozen-manifest
   section shows the digest and freeze facts, the document summary,
   the YAML compliance render, a YAML download, and a diff against

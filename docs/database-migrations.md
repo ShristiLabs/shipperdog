@@ -40,6 +40,7 @@ backend/src/main/resources/db/
     V30__approval_skipped_shape.sql
     V31__quality_gates.sql
     V32__release_rings.sql
+    V33__release_promotion.sql
   seed/                 dev fixture, applied only when the seed location is active
     R__dev_seed.sql
 ```
@@ -590,6 +591,19 @@ backend/src/main/resources/db/
   organizations seed through the API's creation hook
   (`RingProvisioning`). The V24 system rows stay untouched as the
   read-only fallback vocabulary. Expand-only and forward-only.
+- `V33__release_promotion.sql` (S10-05, issue #44) lands the promotion
+  engine's facts: `release_promotions` — the append-only timeline, one
+  row per governed promote ATTEMPT (`COMPLETED` hops and `BLOCKED`
+  precheck refusals both record, the `blockers` jsonb carrying the
+  complete named list the 409 answered; pre-ring refusals — state,
+  split, final, skip — answer alone and record nothing, request-shape
+  conflicts are not governed evidence) — and the nullable
+  `release_approval_rounds.promotion_ring_id` marking a round the
+  PROMOTION engine opened (the ring it gates the release INTO; the
+  engine resolves its round by release AND ring, so each hop's
+  approvals are its own and the crossing's latest-round rule is
+  untouched). Expand-only and forward-only: one new table, one new
+  nullable column.
 
 ## Status and type columns
 
