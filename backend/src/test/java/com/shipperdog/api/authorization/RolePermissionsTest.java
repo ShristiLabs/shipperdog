@@ -73,7 +73,11 @@ class RolePermissionsTest {
                         // S10-03 (issue #42): gate-definition reads join
                         // the same read-only surface (a viewer sees the
                         // gates their releases must pass, never overrides).
-                        Permission.ORG_GATE_DEFINITIONS_READ);
+                        Permission.ORG_GATE_DEFINITIONS_READ,
+                        // S10-04 (issue #43): ring reads join the
+                        // read-only surface (a viewer sees the ladder
+                        // their releases climb, never edits it).
+                        Permission.ORG_RINGS_READ);
     }
 
     @Test

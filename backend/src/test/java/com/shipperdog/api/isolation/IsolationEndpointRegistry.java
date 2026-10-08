@@ -497,6 +497,45 @@ final class IsolationEndpointRegistry {
                         404,
                         side -> "/api/v1/releases/" + UUID.randomUUID() + "/gates?applicationId=" + UUID.randomUUID()),
 
+                // Rings (S10-04) ----------------------------------------------------
+                // org:rings:read is organization-grain (the RBAC matrix):
+                // the owning ORG_ADMIN lists the effective vocabulary
+                // (its own seeded five plus any system defaults it has not
+                // redefined), the tenant persona conceals through the
+                // organization-grain permission check.
+                surface(
+                        "/api/v1/rings",
+                        side -> "/api/v1/rings?organizationId=" + side.organizationId(),
+                        200,
+                        404,
+                        side -> "/api/v1/rings?organizationId=" + UUID.randomUUID()),
+                // The ring item route (S10-04): the seeded world holds no
+                // ORG ring (the harness's worlds predate V32 or seed via
+                // SQL), so own and miss probes share the route's miss
+                // shape unless the org was created through the API;
+                // concealment of a REAL foreign ring is pinned with live
+                // rings by the S10-04 ring suite.
+                surface(
+                        "/api/v1/rings/{ringId}",
+                        side -> "/api/v1/rings/" + UUID.randomUUID() + "?organizationId=" + side.organizationId(),
+                        404,
+                        404,
+                        side -> "/api/v1/rings/" + UUID.randomUUID() + "?organizationId=" + UUID.randomUUID()),
+                // The release eligibility route (S10-04): the seeded world
+                // holds no release, so own-side probes address a random
+                // release id (the history route's rationale — the miss
+                // shape IS the correct own answer), and concealment of a
+                // REAL foreign release's eligibility is pinned with live
+                // releases by the S10-04 ring suite.
+                surface(
+                        "/api/v1/releases/{releaseId}/eligibility",
+                        side -> "/api/v1/releases/" + UUID.randomUUID() + "/eligibility?applicationId="
+                                + side.applicationId(),
+                        404,
+                        404,
+                        side -> "/api/v1/releases/" + UUID.randomUUID() + "/eligibility?applicationId="
+                                + UUID.randomUUID()),
+
                 // Environments (S9-04) ---------------------------------------------
                 // org:environments:read is organization-grain (the RBAC
                 // matrix): the owning ORG_ADMIN lists the seeded defaults

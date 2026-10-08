@@ -62,6 +62,12 @@ public enum Permission {
     // governance surface the definitions configure).
     ORG_GATE_DEFINITIONS_READ("org:gate-definitions:read"),
     ORG_GATE_DEFINITIONS_MANAGE("org:gate-definitions:manage"),
+    // Issue #43 (S10-04): the release rings — the progressive rollout
+    // stages and their eligibility rules (FR-017: ring edits change
+    // who can receive what, so the surface rides the same governance
+    // personas as the chains and the gates it composes with).
+    ORG_RINGS_READ("org:rings:read"),
+    ORG_RINGS_MANAGE("org:rings:manage"),
 
     // tenant scope
     TENANT_TENANTS_READ("tenant:tenants:read"),

@@ -70,6 +70,17 @@ public interface ReleaseAccess {
     Optional<String> ringCodeOf(UUID ringId);
 
     /**
+     * The approval-policy NAME the organization-effective ring of this
+     * ring id carries (S10-04, issue #43): the ring row resolved
+     * organization-preferred (a system ring shadowed by an organization
+     * ring of the same code answers the organization ring's policy),
+     * and its {@code approval_policy} when it names one. Empty when
+     * the ring is unknown or carries no policy — the approval engine
+     * falls through to the next leg of its precedence chain.
+     */
+    Optional<String> ringApprovalPolicyNameOf(UUID organizationId, UUID ringId);
+
+    /**
      * The tenants the release targets (S10-01's tenant-scoped approval
      * steps test applicability against this set). Empty for an unknown
      * or out-of-scope release, like every read here.

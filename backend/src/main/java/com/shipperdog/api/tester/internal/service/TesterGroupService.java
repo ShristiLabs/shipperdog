@@ -388,6 +388,22 @@ public class TesterGroupService implements TesterGroupAccess, TesterGroupProvisi
         return catalog.findGroupById(groupId).map(TesterGroupEntity::getTenantId);
     }
 
+    /**
+     * The tester's group memberships across the organization's tenants
+     * (S10-04, issue #43): the live membership rows mapped to group
+     * ids — the ring-eligibility seam composes them with its own
+     * activity rules. A tester with no memberships answers empty, not
+     * a confirmed nobody.
+     */
+    @Override
+    @Transactional(readOnly = true)
+    public List<UUID> groupIdsOfTester(UUID testerId) {
+        return members.findByTesterId(testerId).stream()
+                .map(TesterGroupMemberEntity::getGroupId)
+                .distinct()
+                .toList();
+    }
+
     // -------------------------------------------------------------------------
     // Helpers
     // -------------------------------------------------------------------------

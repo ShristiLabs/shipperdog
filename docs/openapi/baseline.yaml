@@ -1122,11 +1122,57 @@ paths:
             '*/*':
               schema:
                 $ref: "#/components/schemas/BulkRevocationResult"
+  /api/v1/rings:
+    get:
+      tags:
+      - ring-controller
+      operationId: list_4
+      parameters:
+      - name: organizationId
+        in: query
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - name: limit
+        in: query
+        required: false
+        schema:
+          type: string
+      - name: cursor
+        in: query
+        required: false
+        schema:
+          type: string
+      responses:
+        "200":
+          description: OK
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/PageResponseRingView"
+    post:
+      tags:
+      - ring-controller
+      operationId: create_4
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateRequest"
+        required: true
+      responses:
+        "201":
+          description: Created
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/RingView"
   /api/v1/releases:
     get:
       tags:
       - release-controller
-      operationId: list_4
+      operationId: list_5
       parameters:
       - name: applicationId
         in: query
@@ -1171,7 +1217,7 @@ paths:
     post:
       tags:
       - release-controller
-      operationId: create_4
+      operationId: create_5
       requestBody:
         content:
           application/json:
@@ -1348,7 +1394,7 @@ paths:
     get:
       tags:
       - organization-controller
-      operationId: list_5
+      operationId: list_6
       parameters:
       - name: limit
         in: query
@@ -1370,7 +1416,7 @@ paths:
     post:
       tags:
       - organization-controller
-      operationId: create_5
+      operationId: create_6
       requestBody:
         content:
           application/json:
@@ -1388,7 +1434,7 @@ paths:
     get:
       tags:
       - gate-controller
-      operationId: list_6
+      operationId: list_7
       parameters:
       - name: organizationId
         in: query
@@ -1421,7 +1467,7 @@ paths:
     post:
       tags:
       - gate-controller
-      operationId: create_6
+      operationId: create_7
       requestBody:
         content:
           application/json:
@@ -1439,7 +1485,7 @@ paths:
     get:
       tags:
       - environment-controller
-      operationId: list_7
+      operationId: list_8
       parameters:
       - name: organizationId
         in: query
@@ -1467,7 +1513,7 @@ paths:
     post:
       tags:
       - environment-controller
-      operationId: create_7
+      operationId: create_8
       requestBody:
         content:
           application/json:
@@ -1816,7 +1862,7 @@ paths:
     get:
       tags:
       - workflow-controller
-      operationId: list_8
+      operationId: list_9
       parameters:
       - name: organizationId
         in: query
@@ -1844,7 +1890,7 @@ paths:
     post:
       tags:
       - workflow-controller
-      operationId: create_8
+      operationId: create_9
       requestBody:
         content:
           application/json:
@@ -1862,7 +1908,7 @@ paths:
     get:
       tags:
       - application-controller
-      operationId: list_9
+      operationId: list_10
       parameters:
       - name: organizationId
         in: query
@@ -1890,7 +1936,7 @@ paths:
     post:
       tags:
       - application-controller
-      operationId: create_9
+      operationId: create_10
       requestBody:
         content:
           application/json:
@@ -1963,7 +2009,7 @@ paths:
     get:
       tags:
       - version-controller
-      operationId: list_10
+      operationId: list_11
       parameters:
       - name: applicationId
         in: path
@@ -2001,7 +2047,7 @@ paths:
     post:
       tags:
       - version-controller
-      operationId: create_10
+      operationId: create_11
       parameters:
       - name: applicationId
         in: path
@@ -2078,11 +2124,86 @@ paths:
             '*/*':
               schema:
                 $ref: "#/components/schemas/VersionDetail"
+  /api/v1/rings/{ringId}:
+    get:
+      tags:
+      - ring-controller
+      operationId: get_5
+      parameters:
+      - name: ringId
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - name: organizationId
+        in: query
+        required: true
+        schema:
+          type: string
+          format: uuid
+      responses:
+        "200":
+          description: OK
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/RingView"
+    delete:
+      tags:
+      - ring-controller
+      operationId: delete_1
+      parameters:
+      - name: ringId
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - name: organizationId
+        in: query
+        required: true
+        schema:
+          type: string
+          format: uuid
+      responses:
+        "204":
+          description: No Content
+    patch:
+      tags:
+      - ring-controller
+      operationId: update_4
+      parameters:
+      - name: ringId
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - name: organizationId
+        in: query
+        required: true
+        schema:
+          type: string
+          format: uuid
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateRequest"
+        required: true
+      responses:
+        "200":
+          description: OK
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/RingView"
   /api/v1/environments/{environmentId}:
     get:
       tags:
       - environment-controller
-      operationId: get_5
+      operationId: get_6
       parameters:
       - name: environmentId
         in: path
@@ -2100,7 +2221,7 @@ paths:
     patch:
       tags:
       - environment-controller
-      operationId: update_4
+      operationId: update_5
       parameters:
       - name: environmentId
         in: path
@@ -2125,7 +2246,7 @@ paths:
     get:
       tags:
       - application-controller
-      operationId: get_6
+      operationId: get_7
       parameters:
       - name: id
         in: path
@@ -2143,7 +2264,7 @@ paths:
     patch:
       tags:
       - application-controller
-      operationId: update_5
+      operationId: update_6
       parameters:
       - name: id
         in: path
@@ -2168,7 +2289,7 @@ paths:
     get:
       tags:
       - tester-controller
-      operationId: get_7
+      operationId: get_8
       parameters:
       - name: id
         in: path
@@ -2261,7 +2382,7 @@ paths:
     get:
       tags:
       - authorization-grant-controller
-      operationId: get_8
+      operationId: get_9
       parameters:
       - name: id
         in: path
@@ -2383,7 +2504,7 @@ paths:
     get:
       tags:
       - tenant-applications-controller
-      operationId: list_11
+      operationId: list_12
       parameters:
       - name: id
         in: path
@@ -2412,7 +2533,7 @@ paths:
     get:
       tags:
       - release-controller
-      operationId: get_9
+      operationId: get_10
       parameters:
       - name: releaseId
         in: path
@@ -2544,6 +2665,37 @@ paths:
             '*/*':
               schema:
                 $ref: "#/components/schemas/GatesView"
+  /api/v1/releases/{releaseId}/eligibility:
+    get:
+      tags:
+      - ring-controller
+      operationId: eligibility
+      parameters:
+      - name: releaseId
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - name: applicationId
+        in: query
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - name: testerId
+        in: query
+        required: false
+        schema:
+          type: string
+          format: uuid
+      responses:
+        "200":
+          description: OK
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/EligibilityView"
   /api/v1/organizations/{id}/members:
     get:
       tags:
@@ -2625,7 +2777,7 @@ paths:
     get:
       tags:
       - authorization-decision-api-controller
-      operationId: eligibility
+      operationId: eligibility_1
       parameters:
       - name: tenantId
         in: query
@@ -2836,6 +2988,9 @@ paths:
           - GATE_DEFINITION_UPDATED
           - RELEASE_GATE_RESULT_RECORDED
           - RELEASE_GATE_OVERRIDDEN
+          - RING_CREATED
+          - RING_UPDATED
+          - RING_DELETED
       - name: applicationId
         in: query
         required: false
@@ -2887,7 +3042,7 @@ paths:
     get:
       tags:
       - artifact-controller
-      operationId: get_10
+      operationId: get_11
       parameters:
       - name: artifactId
         in: path
@@ -2937,7 +3092,7 @@ paths:
     get:
       tags:
       - application-tenant-authorization-controller
-      operationId: list_12
+      operationId: list_13
       parameters:
       - name: id
         in: path
@@ -2966,7 +3121,7 @@ paths:
     get:
       tags:
       - version-controller
-      operationId: get_11
+      operationId: get_12
       parameters:
       - name: applicationId
         in: path
@@ -3310,7 +3465,17 @@ components:
     JsonNode:
       type: object
       properties:
-        container:
+        string:
+          type: boolean
+        floatingPointNumber:
+          type: boolean
+        binary:
+          type: boolean
+        pojo:
+          type: boolean
+        valueNode:
+          type: boolean
+        missingNode:
           type: boolean
         nodeType:
           type: string
@@ -3324,17 +3489,7 @@ components:
           - OBJECT
           - POJO
           - STRING
-        string:
-          type: boolean
         integralNumber:
-          type: boolean
-        missingNode:
-          type: boolean
-        valueNode:
-          type: boolean
-        pojo:
-          type: boolean
-        number:
           type: boolean
         short:
           type: boolean
@@ -3353,9 +3508,9 @@ components:
           deprecated: true
         boolean:
           type: boolean
-        binary:
+        number:
           type: boolean
-        floatingPointNumber:
+        container:
           type: boolean
         empty:
           type: boolean
@@ -3686,6 +3841,41 @@ components:
         revokedCount:
           type: integer
           format: int32
+    GateSetEntry:
+      type: object
+      properties:
+        gateType:
+          type: string
+        required:
+          type: boolean
+    RingView:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        code:
+          type: string
+        name:
+          type: string
+        position:
+          type: integer
+          format: int32
+        organizationScoped:
+          type: boolean
+        eligibility:
+          type: object
+          additionalProperties: {}
+        approvalPolicy:
+          type: string
+        promotionPolicy:
+          type: string
+        distributionChannel:
+          type: string
+        gateSet:
+          type: array
+          items:
+            $ref: "#/components/schemas/GateSetEntry"
     ArtifactSlotView:
       type: object
       properties:
@@ -4637,6 +4827,15 @@ components:
             $ref: "#/components/schemas/ApplicationView"
         next_cursor:
           type: string
+    PageResponseRingView:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/RingView"
+        next_cursor:
+          type: string
     PageResponseReleaseView:
       type: object
       properties:
@@ -4827,6 +5026,55 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/GateView"
+    Admission:
+      type: object
+      properties:
+        releaseId:
+          type: string
+          format: uuid
+        releaseRef:
+          type: string
+        ring:
+          type: string
+        targets:
+          type: array
+          items:
+            $ref: "#/components/schemas/TargetAdmission"
+    EligibilityView:
+      type: object
+      properties:
+        releaseId:
+          type: string
+          format: uuid
+        releaseRef:
+          type: string
+        status:
+          type: string
+        admission:
+          $ref: "#/components/schemas/Admission"
+        admitsTester:
+          type: boolean
+    TargetAdmission:
+      type: object
+      properties:
+        tenantId:
+          type: string
+          format: uuid
+        ring:
+          type: string
+        admitted:
+          type: boolean
+        audienceGroups:
+          type: array
+          items:
+            type: string
+            format: uuid
+        tenantAtLarge:
+          type: boolean
+        reasons:
+          type: array
+          items:
+            type: string
     PageResponseOrganizationResponse:
       type: object
       properties:
@@ -4919,62 +5167,6 @@ components:
           type: string
         status:
           type: string
-    EligibilityView:
-      type: object
-      properties:
-        tenantId:
-          type: string
-          format: uuid
-        applicationId:
-          type: string
-          format: uuid
-        application:
-          $ref: "#/components/schemas/ApplicationCardView"
-        effectiveAccess:
-          type: boolean
-        resolvedAt:
-          type: string
-          format: date-time
-        entries:
-          type: array
-          items:
-            $ref: "#/components/schemas/Entry"
-        next_cursor:
-          type: string
-    Entry:
-      type: object
-      properties:
-        versionId:
-          type: string
-          format: uuid
-        versionName:
-          type: string
-        status:
-          type: string
-        expiresAt:
-          type: string
-          format: date-time
-        platforms:
-          type: array
-          items:
-            $ref: "#/components/schemas/SlotView"
-    SlotView:
-      type: object
-      properties:
-        platform:
-          type: string
-        artifactId:
-          type: string
-          format: uuid
-        buildNumber:
-          type: integer
-          format: int64
-        sizeBytes:
-          type: integer
-          format: int64
-        uploadedAt:
-          type: string
-          format: date-time
     DownloadDecisionView:
       type: object
       properties:
@@ -5176,6 +5368,9 @@ components:
           - GATE_DEFINITION_UPDATED
           - RELEASE_GATE_RESULT_RECORDED
           - RELEASE_GATE_OVERRIDDEN
+          - RING_CREATED
+          - RING_UPDATED
+          - RING_DELETED
         occurredAt:
           type: string
           format: date-time

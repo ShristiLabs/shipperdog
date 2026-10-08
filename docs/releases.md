@@ -536,6 +536,121 @@ release_gate_results the append-only submission history (PRD P5)
   every gate surface (the seam-served release resolution, the release
   surface's standing).
 
+## Release rings (S10-04)
+
+Distribution widens stage by stage (FR-017, issue #43, PRD 8.10/33):
+each release rolls out through an ordered ladder of rings, and each
+ring carries its own rules — who it admits (eligibility), which
+approval chain governs it (the policy reference), which gates it must
+pass (the gate set), how it promotes (manual or automatic), and where
+it ships (the channel reference). Ring-transition EXECUTION is S10-05;
+this landing is the model and the rules.
+
+### The model
+
+```text
+Ring "tenant-pilot"                        (organization-grain)
+Position:    2                             (the ladder; Production last, enforced)
+Eligibility: {"tenants": [...], "groups": [...]}   (absent axis = unconstrained)
+Approval policy:  final-signoff           (a workflow NAME — see precedence below)
+Promotion policy: MANUAL | AUTOMATIC      (AUTOMATIC acts with S10-06)
+Channel:          app-store-internal      (name-only; destinations land in E13)
+Gate set:         the S10-03 definitions attached to the ring + the org-wide standing
+```
+
+- **The seeded five** exist on organization creation (Engineering,
+  QA, Tenant Pilot, UAT, Production — the V32 migration materialized
+  them for existing organizations, the API's creation hook seeds new
+  ones; the EnvironmentProvisioning precedent). The V24 system rows
+  (fixed ids, `organization_id IS NULL`) stay read-only platform
+  vocabulary: an organization customizes a system CODE by defining
+  its own ring under it (the shadow — resolution prefers the
+  organization's ring, the V24 contract), and a deleted organization
+  ring falls back to the system default.
+- **The effective vocabulary** (`GET /api/v1/rings?organizationId=…`)
+  is the organization's rings plus every unshadowed system default,
+  in the TOTAL order `(position, then code)` — positions may tie (the
+  seeded five occupy 0-4 densely, a custom ring ties its lower
+  neighbor), and only the Production-last boundary is enforced on
+  writes: a non-production ring never takes a position at or past
+  the production ring's, and the production ring never leaves the
+  last position.
+- **CRUD** (AC1): `POST /api/v1/rings` (a new code, or a system code
+  — the shadow), `PATCH /api/v1/rings/{ringId}` (rename, reorder,
+  re-rule; absent fields keep their standing, an EMPTY `eligibility`
+  object clears the rules; the code never moves), `DELETE` (refuses
+  with `RING_IN_USE` while any release, target, gate definition, or
+  approval workflow references the ring — reference data that changes
+  who can receive what is never silently unlinked). System rings
+  refuse edits and deletes (`RING_SYSTEM_IMMUTABLE`). Every write
+  audits (AC5): `RING_CREATED` / `RING_UPDATED` (changed facts) /
+  `RING_DELETED`.
+- **The production governance pair** (AC3): WRITING the production
+  ring requires an approval-policy reference AND at least one
+  required gate definition applying to it (ring-attached or
+  organization-wide) — the widest audience is governed by default,
+  never open by omission. The seeded default stands permissive until
+  the organization first governs it (the M2 no-workflow posture of
+  S10-01).
+
+### Eligibility and visibility (AC2/AC4)
+
+At ring X, distribution targets = release targets INTERSECT ring
+eligibility:
+
+```text
+Target tenant admitted   iff  ring.tenants absent OR tenant in ring.tenants
+Target audience          =    target's groups INTERSECT ring.groups
+                              (a tenant-at-large target narrows to the
+                               rule's groups OF THAT TENANT)
+Tester admitted          iff  tenant admitted AND tester effectively
+                              active there (the two-switches rule) AND
+                              (audience is the tenant at large OR the
+                               tester is in one audience group)
+```
+
+A ring with no eligibility rule admits every release target (the
+seeded standing: rings widen by configuration, never by default).
+Every eligibility id is validated at write time — tenants must be the
+organization's, groups must belong to one of its tenants.
+
+`GET /api/v1/releases/{releaseId}/eligibility?applicationId=…` renders
+the admission rows (the console view); the optional `testerId` adds
+the ring-visibility decision for one tester. The `RingEligibility`
+port is the seam the promotion engine (S10-05) and the portal catalog
+compose with — the ring admits the RELEASE side, the E7 grants still
+admit the TESTER side at distribution time (S7-01's artifact-layer
+policy); both must pass.
+
+### Approval-policy precedence (reconciled with S10-01/02)
+
+The approval engine resolves a release's definition through a
+three-legged chain, most specific first — every named leg FAILS
+CLOSED (`APPROVAL_POLICY_UNRESOLVED`) when its name does not resolve:
+
+```text
+1. the RING's named policy  (FR-017: each ring carries its own; the
+                             stage being widened governs the crossing)
+2. the ENVIRONMENT's named policy  (V27's binding, the release's
+                             standing deployment context)
+3. the ring's ATTACHED chains (V28's volunteer binding)
+```
+
+The ring leg is first because the environment's standing policy would
+otherwise silently outrank a tightened production ring at exactly the
+crossing that matters — the fail-open shape the #40 review flagged,
+at ring granularity.
+
+### Ring-scoped gate results (the #42 follow-up decision)
+
+Gate results stay RING-AGNOSTIC: `release_gates` keeps one current
+row per release and gate type (latest wins) and the append-only
+history records every report. The promotion precheck (S10-05)
+evaluates the TARGET ring's required set live through
+`ReleaseGateEvaluation`; if per-ring evidence becomes a requirement,
+S10-05 stamps the ring onto new result rows — the history discipline
+is untouched either way.
+
 ## The frozen manifest (S9-03)
 
 Every release carries PRD 16's reproducibility artifact: a complete,
@@ -657,9 +772,15 @@ current/attempted), `RELEASE_TRANSITION_REASON_REQUIRED` (422), and
 `RELEASE_TRANSITION_BLOCKED` (422, the policy seam), and the manifest
 family (S9-03): `RELEASE_MANIFEST_NOT_FOUND` (404, the honest
 state-dependent miss), `RELEASE_MANIFEST_IMMUTABLE` (409), and
-`RELEASE_MANIFEST_CORRUPT` (500, the loud integrity failure), and the
+`RELEASE_MANIFEST_CORRUPT` (500, the loud integrity failure), the
 S9-04 environment values `ENVIRONMENT_NOT_FOUND` (404, the concealed
-environment miss of creation) and `ENVIRONMENT_DISABLED` (409).
+environment miss of creation) and `ENVIRONMENT_DISABLED` (409), and —
+since S10-04 — the ring family (see the Ring section of the registry):
+`RING_ALREADY_EXISTS` (409), `RING_SYSTEM_IMMUTABLE` (409),
+`RING_IN_USE` (409), `RING_ELIGIBILITY_INVALID` / `RING_POSITION_INVALID`
+/ `RING_PRODUCTION_POLICY_REQUIRED` / `RING_PRODUCTION_GATES_REQUIRED`
+(the 422 family, `errors` keyed), and `RING_NOT_FOUND` (404, the
+organization-grain ring miss).
 
 Since S10-03 the `RELEASE_TRANSITION_BLOCKED` refusals key a SECOND
 contributor beside the approval policy: `ReleaseGatePolicy` names the

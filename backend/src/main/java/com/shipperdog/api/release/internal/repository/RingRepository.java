@@ -34,4 +34,13 @@ public interface RingRepository extends JpaRepository<RingEntity, UUID> {
         List<RingEntity> matches = resolveByCode(code, organizationId);
         return matches.isEmpty() ? Optional.empty() : Optional.of(matches.get(0));
     }
+
+    /** The organization's own rings in progression order (position, then code): the writable set (S10-04). */
+    List<RingEntity> findByOrganizationIdOrderByPositionAscCodeAsc(UUID organizationId);
+
+    /** The system default rings in progression order (position, then code): the read-only vocabulary. */
+    List<RingEntity> findByOrganizationIdIsNullOrderByPositionAscCodeAsc();
+
+    /** The organization's ring by id: the writable-set membership check (a miss conceals like unknown). */
+    Optional<RingEntity> findByIdAndOrganizationId(UUID id, UUID organizationId);
 }

@@ -439,6 +439,11 @@ class RbacPermissionEvaluatorTest {
             public Optional<UUID> owningTenantOf(UUID id) {
                 return Optional.ofNullable(ownership.get(id));
             }
+
+            @Override
+            public java.util.List<UUID> groupIdsOfTester(UUID testerId) {
+                return java.util.List.of();
+            }
         };
     }
 

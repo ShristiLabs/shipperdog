@@ -19,6 +19,7 @@ import com.shipperdog.api.organization.internal.entity.OrganizationMemberEntity;
 import com.shipperdog.api.organization.internal.repository.OrganizationIdpConfigRepository;
 import com.shipperdog.api.organization.internal.repository.OrganizationMemberRepository;
 import com.shipperdog.api.organization.internal.repository.OrganizationRepository;
+import com.shipperdog.api.release.RingProvisioning;
 import java.time.Clock;
 import java.time.Instant;
 import java.util.LinkedHashMap;
@@ -79,6 +80,13 @@ public class OrganizationService implements OrganizationAccess {
      */
     private final ObjectProvider<EnvironmentProvisioning> environmentDefaults;
 
+    /**
+     * FR-017's five default rings, seeded the same way (S10-04, issue
+     * #43) — the release module's provisioning hook, lazy for the same
+     * cycle reason.
+     */
+    private final ObjectProvider<RingProvisioning> ringDefaults;
+
     private final UserDirectory directory;
     private final AuditEventPublisher audit;
     private final ObjectMapper mapper;
@@ -92,6 +100,7 @@ public class OrganizationService implements OrganizationAccess {
             PlatformAdmins platformAdmins,
             ObjectProvider<SessionRevocation> sessions,
             ObjectProvider<EnvironmentProvisioning> environmentDefaults,
+            ObjectProvider<RingProvisioning> ringDefaults,
             UserDirectory directory,
             AuditEventPublisher audit,
             ObjectMapper mapper,
@@ -103,6 +112,7 @@ public class OrganizationService implements OrganizationAccess {
         this.platformAdmins = platformAdmins;
         this.sessions = sessions;
         this.environmentDefaults = environmentDefaults;
+        this.ringDefaults = ringDefaults;
         this.directory = directory;
         this.audit = audit;
         this.mapper = mapper;
@@ -220,6 +230,10 @@ public class OrganizationService implements OrganizationAccess {
         // inside the creation transaction — a seeding failure fails the
         // whole creation (the S6-02 default-group precedent).
         environmentDefaults.getObject().seedDefaultEnvironments(organization.getId(), actorId);
+        // S10-04 (issue #43): seed FR-017's five default rings the same
+        // way — the rollout ladder exists from the organization's first
+        // day.
+        ringDefaults.getObject().seedDefaultRings(organization.getId(), actorId);
         // The created id is only known here, after the insert — creation
         // requests have no guarded target id for the evaluator to tag,
         // so the service stamps the trace itself (issue #7).
