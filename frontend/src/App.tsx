@@ -8,6 +8,7 @@ import ApplicationDetailPage from "./pages/ApplicationDetailPage";
 import ApplicationsPage from "./pages/ApplicationsPage";
 import DashboardPage from "./pages/DashboardPage";
 import LoginPage from "./pages/LoginPage";
+import NotificationsPage from "./pages/NotificationsPage";
 import ReleaseDetailPage from "./pages/ReleaseDetailPage";
 import ReleasePoliciesPage from "./pages/ReleasePoliciesPage";
 import RingsPage from "./pages/RingsPage";
@@ -41,6 +42,7 @@ export default function App() {
             <Route path="applications/:applicationId" element={<ApplicationDetailPage />} />
             <Route path="approval-workflows" element={<ApprovalWorkflowsPage />} />
             <Route path="rings" element={<RingsPage />} />
+            <Route path="notifications" element={<NotificationsPage />} />
             <Route path="release-policies" element={<ReleasePoliciesPage />} />
             <Route path="releases" element={<ReleasesPage />} />
             <Route path="releases/:applicationId" element={<ReleasesPage />} />

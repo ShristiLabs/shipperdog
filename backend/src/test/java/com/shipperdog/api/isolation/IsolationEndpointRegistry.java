@@ -286,6 +286,86 @@ final class IsolationEndpointRegistry {
                         200,
                         side -> "/api/v1/tenants/" + UUID.randomUUID() + "/dashboard"),
 
+                // Notifications (S12-01) --------------------------------------------
+                // The subscription listing: org:notifications:read is
+                // organization-grain (the RBAC matrix) — the org admin
+                // reads their side's (empty) page, the tenant admin of
+                // a target tenant holds nothing and receives the
+                // denial's concealed shape.
+                surface(
+                        "/api/v1/organizations/{organizationId}/notification-subscriptions",
+                        side -> "/api/v1/organizations/" + side.organizationId() + "/notification-subscriptions",
+                        200,
+                        404,
+                        side -> "/api/v1/organizations/" + UUID.randomUUID() + "/notification-subscriptions"),
+                // The subscription item route: the seeded world holds
+                // no subscription, so own and miss probes share the
+                // route's miss shape (the grant-item rationale);
+                // concealment of a REAL foreign subscription is pinned
+                // with live subscriptions by the S12-01 suite.
+                surface(
+                        "/api/v1/organizations/{organizationId}/notification-subscriptions/{subscriptionId}",
+                        side -> "/api/v1/organizations/"
+                                + side.organizationId()
+                                + "/notification-subscriptions/"
+                                + UUID.randomUUID(),
+                        404,
+                        404,
+                        side -> "/api/v1/organizations/"
+                                + UUID.randomUUID()
+                                + "/notification-subscriptions/"
+                                + UUID.randomUUID()),
+                // The delivery log (S12-01 AC5): organization-grain
+                // like the listing — an empty page on the org admin's
+                // own side, the concealed miss for the tenant persona.
+                surface(
+                        "/api/v1/organizations/{organizationId}/notification-deliveries",
+                        side -> "/api/v1/organizations/" + side.organizationId() + "/notification-deliveries",
+                        200,
+                        404,
+                        side -> "/api/v1/organizations/" + UUID.randomUUID() + "/notification-deliveries"),
+                // The inbox: param-less and self-scoped, so "foreign"
+                // and "miss" are both the caller's OWN inbox — the
+                // portal-catalog rationale: the body answers the
+                // caller and only the caller; a persona without an
+                // in-app delivery answers the honest empty 200.
+                new Entry() {
+                    @Override
+                    public String method() {
+                        return "GET";
+                    }
+
+                    @Override
+                    public String template() {
+                        return "/api/v1/notification-inbox";
+                    }
+
+                    @Override
+                    public String uri(IsolationScenarioHarness.IsolatedTenant side) {
+                        return "/api/v1/notification-inbox";
+                    }
+
+                    @Override
+                    public int ownOrgAdmin() {
+                        return 200;
+                    }
+
+                    @Override
+                    public int ownTenantAdmin() {
+                        return 200;
+                    }
+
+                    @Override
+                    public int concealStatus() {
+                        return 200;
+                    }
+
+                    @Override
+                    public String missUri(IsolationScenarioHarness.IsolatedTenant actorSide) {
+                        return "/api/v1/notification-inbox";
+                    }
+                },
+
                 // Testers (organization grain) -----------------------------------
                 surface(
                         "/api/v1/testers",

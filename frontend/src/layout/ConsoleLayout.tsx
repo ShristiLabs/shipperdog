@@ -10,6 +10,7 @@ import AppsIcon from "@mui/icons-material/Apps";
 import BusinessIcon from "@mui/icons-material/Business";
 import ChecklistIcon from "@mui/icons-material/Checklist";
 import DashboardIcon from "@mui/icons-material/Dashboard";
+import NotificationsActiveIcon from "@mui/icons-material/NotificationsActive";
 import PolicyIcon from "@mui/icons-material/Policy";
 import TollIcon from "@mui/icons-material/Toll";
 import LogoutIcon from "@mui/icons-material/Logout";
@@ -36,6 +37,7 @@ import { getOrgDashboard } from "../api/dashboards";
 import { listApplications } from "../api/applications";
 import { probePolicyRules } from "../api/policies";
 import { listRings } from "../api/rings";
+import { getSubscriptionProbe } from "../api/notifications";
 import { listApprovalWorkflows } from "../api/workflows";
 import { listTenants } from "../api/tenants";
 
@@ -91,6 +93,17 @@ export default function ConsoleLayout() {
   const policiesNav = usePermission(
     `release-policies:${orgId ?? "none"}`,
     () => probePolicyRules(orgId as string),
+    orgId !== null,
+  );
+
+  // The Notifications section (S12-01) probes the subscription listing
+  // its editor loads first: org:notifications:read holders (every
+  // functional console role) see the routing table; tenant-only actors
+  // are conceal-denied and the section hides. Writes stay
+  // server-enforced regardless.
+  const notificationsNav = usePermission(
+    `notifications:${orgId ?? "none"}`,
+    () => getSubscriptionProbe(orgId as string),
     orgId !== null,
   );
 
@@ -223,6 +236,21 @@ export default function ConsoleLayout() {
                   <TollIcon />
                 </ListItemIcon>
                 <ListItemText primary="Release rings" />
+              </ListItemButton>
+            </List>
+          ) : null}
+          {orgId !== null && notificationsNav.allowed ? (
+            <List>
+              <ListItemButton
+                component={NavLink}
+                to="/notifications"
+                data-testid="nav-notifications"
+                sx={{ "&.active": { backgroundColor: "action.selected" } }}
+              >
+                <ListItemIcon>
+                  <NotificationsActiveIcon />
+                </ListItemIcon>
+                <ListItemText primary="Notifications" />
               </ListItemButton>
             </List>
           ) : null}

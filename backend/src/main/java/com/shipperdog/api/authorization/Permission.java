@@ -80,6 +80,13 @@ public enum Permission {
     // construction; held by every functional console role (the
     // pending-actions panel personalizes by role server-side).
     ORG_DASHBOARD_READ("org:dashboard:read"), // issue #50 (S11-05)
+    // Issue #51 (S12-01): the notification subscriptions — the
+    // org-scoped routing table (FR-023's events x channels x
+    // recipients) and the delivery log. Reading is every functional
+    // console role's visibility (the rings character); managing is the
+    // governance personas that own the rollout surfaces it rides.
+    ORG_NOTIFICATIONS_READ("org:notifications:read"), // issue #51 (S12-01)
+    ORG_NOTIFICATIONS_MANAGE("org:notifications:manage"), // issue #51 (S12-01)
 
     // tenant scope
     TENANT_TENANTS_READ("tenant:tenants:read"),

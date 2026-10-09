@@ -12,6 +12,7 @@ import com.shipperdog.api.organization.OrganizationAccess;
 import com.shipperdog.api.tester.TesterAccess;
 import com.shipperdog.api.tester.TesterAccounts;
 import com.shipperdog.api.tester.TesterException;
+import com.shipperdog.api.tester.TesterInvitedEvent;
 import com.shipperdog.api.tester.TesterOnboarding;
 import com.shipperdog.api.tester.internal.config.TesterProperties;
 import com.shipperdog.api.tester.internal.entity.TesterEntity;
@@ -26,6 +27,7 @@ import java.util.Optional;
 import java.util.UUID;
 import java.util.stream.Collectors;
 import org.springframework.beans.factory.ObjectProvider;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
@@ -61,6 +63,7 @@ public class TesterService implements TesterOnboarding, TesterAccounts, TesterAc
     private final TesterProperties properties;
     private final Clock clock;
     private final AuditEventPublisher audit;
+    private final ApplicationEventPublisher events;
     private final TesterConflictResolver conflicts;
     private final TesterCreationAttempt creation;
     private final AuthorizationDecisionInvalidation decisionCache;
@@ -85,6 +88,7 @@ public class TesterService implements TesterOnboarding, TesterAccounts, TesterAc
             TesterProperties properties,
             Clock clock,
             AuditEventPublisher audit,
+            ApplicationEventPublisher events,
             TesterConflictResolver conflicts,
             TesterCreationAttempt creation,
             AuthorizationDecisionInvalidation decisionCache,
@@ -97,6 +101,7 @@ public class TesterService implements TesterOnboarding, TesterAccounts, TesterAc
         this.properties = properties;
         this.clock = clock;
         this.audit = audit;
+        this.events = events;
         this.conflicts = conflicts;
         this.creation = creation;
         this.decisionCache = decisionCache;
@@ -201,6 +206,11 @@ public class TesterService implements TesterOnboarding, TesterAccounts, TesterAc
                 tester.getId(),
                 true,
                 detail(tester, true));
+        // The domain fact of the same moment (S12-01, PRD 51's
+        // TESTER_INVITED): the re-invitation carries the event with
+        // its reinvite flag set.
+        events.publishEvent(new TesterInvitedEvent(
+                tester.getId(), tester.getOrganizationId(), invitedBy, true, Instant.now(clock)));
         return new InvitationView(
                 "PENDING", invitation.rawToken(), mailer.acceptUrl(invitation.rawToken()), invitation.expiresAt());
     }

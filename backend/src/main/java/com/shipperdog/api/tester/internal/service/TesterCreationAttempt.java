@@ -4,6 +4,7 @@ import com.shipperdog.api.audit.AuditEvent;
 import com.shipperdog.api.audit.AuditEventPublisher;
 import com.shipperdog.api.audit.AuditEventType;
 import com.shipperdog.api.identity.TesterInvitations;
+import com.shipperdog.api.tester.TesterInvitedEvent;
 import com.shipperdog.api.tester.internal.config.TesterProperties;
 import com.shipperdog.api.tester.internal.entity.TesterEntity;
 import com.shipperdog.api.tester.internal.repository.TesterRepository;
@@ -12,6 +13,7 @@ import java.time.Instant;
 import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.UUID;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -38,6 +40,7 @@ public class TesterCreationAttempt {
     private final TesterProperties properties;
     private final Clock clock;
     private final AuditEventPublisher audit;
+    private final ApplicationEventPublisher events;
 
     TesterCreationAttempt(
             TesterRepository testers,
@@ -45,13 +48,15 @@ public class TesterCreationAttempt {
             TesterInvitationMailer mailer,
             TesterProperties properties,
             Clock clock,
-            AuditEventPublisher audit) {
+            AuditEventPublisher audit,
+            ApplicationEventPublisher events) {
         this.testers = testers;
         this.invitations = invitations;
         this.mailer = mailer;
         this.properties = properties;
         this.clock = clock;
         this.audit = audit;
+        this.events = events;
     }
 
     /**
@@ -77,6 +82,11 @@ public class TesterCreationAttempt {
                 .success(true)
                 .detail(detail)
                 .build());
+        // The domain fact of the same moment (S12-01, PRD 51's
+        // TESTER_INVITED): the bus event the outbox recorder makes
+        // durable in this transaction.
+        events.publishEvent(
+                new TesterInvitedEvent(tester.getId(), organizationId, invitedBy, false, Instant.now(clock)));
         Map<String, Object> invitationBlock = Map.of(
                 "status",
                 "PENDING",

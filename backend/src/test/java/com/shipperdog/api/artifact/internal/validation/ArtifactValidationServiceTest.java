@@ -28,6 +28,7 @@ import java.util.concurrent.atomic.AtomicReference;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.mockito.Mockito;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.core.task.TaskRejectedException;
 import org.springframework.scheduling.concurrent.ThreadPoolTaskExecutor;
 import tools.jackson.databind.JsonNode;
@@ -97,11 +98,17 @@ class ArtifactValidationServiceTest {
                 versions,
                 scopeExecutor,
                 audit,
+                eventPublisher(),
                 CLOCK,
                 new TraceAttributes(ObservationRegistry.NOOP),
                 meters,
                 new ArtifactValidationProperties(2, 200, 2),
                 executor);
+    }
+
+    /** The bus publisher stub (S12-01): the recorder is tested in the notification suite; this seam is a no-op. */
+    private static ApplicationEventPublisher eventPublisher() {
+        return event -> {};
     }
 
     @Test

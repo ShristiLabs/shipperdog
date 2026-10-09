@@ -158,6 +158,26 @@ shipperdog:
       lookback: ${ANALYTICS_ROLLUP_LOOKBACK:PT24H}
     max-series-window: ${ANALYTICS_MAX_SERIES_WINDOW:P366D}
     max-hourly-span: ${ANALYTICS_MAX_HOURLY_SPAN:P31D}
+  # The domain-event bus and notification service (issue #51, S12-01,
+  # FR-023, PRD 51): the transactional-outbox relay's schedule and
+  # ceilings, and the delivery retry policy every channel shares
+  # (exponential backoff off the base; the webhook POST budget).
+  # Tests and CI drive the drain through the bean directly with the
+  # schedule disabled, the rollup-scheduler pattern.
+  notifications:
+    relay-enabled: ${NOTIFICATIONS_RELAY_ENABLED:true}
+    relay-fixed-delay: ${NOTIFICATIONS_RELAY_FIXED_DELAY:PT2S}
+    relay-batch-size: ${NOTIFICATIONS_RELAY_BATCH_SIZE:100}
+    relay-max-attempts: ${NOTIFICATIONS_RELAY_MAX_ATTEMPTS:5}
+    relay-backoff: ${NOTIFICATIONS_RELAY_BACKOFF:PT2S}
+    delivery-max-attempts: ${NOTIFICATIONS_DELIVERY_MAX_ATTEMPTS:5}
+    delivery-backoff: ${NOTIFICATIONS_DELIVERY_BACKOFF:PT2S}
+    webhook-timeout: ${NOTIFICATIONS_WEBHOOK_TIMEOUT:PT5S}
+    # The webhook target policy's test/dev escape hatch: skip the
+    # host and DNS checks (the SSRF posture) so local receivers and
+    # fixture hosts are acceptable. Production keeps the default
+    # (false -- publicly routable http(s) targets only).
+    webhook-allow-private-addresses: ${NOTIFICATIONS_WEBHOOK_ALLOW_PRIVATE_ADDRESSES:false}
   tester:
     # Tester onboarding (issue #26, S6-01): invitations reuse the
     # identity machinery but carry their own TTL (the issue's 7-day

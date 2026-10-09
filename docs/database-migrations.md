@@ -45,6 +45,8 @@ backend/src/main/resources/db/
     V35__feedback_submission.sql
     V36__feedback_triage.sql
     V37__device_management.sql
+    V38__release_analytics.sql
+    V39__event_bus_notifications.sql
   seed/                 dev fixture, applied only when the seed location is active
     R__dev_seed.sql
 ```
@@ -737,6 +739,22 @@ There are no down-migrations and no automated rollback.
   on every greenfield database; correct on any state), with ring
   attribution resolved from the promotions timeline. Expand-only,
   nothing dropped.
+- `V39__event_bus_notifications.sql` (S12-01, issue #51) adds the
+  domain-event bus and the notification service, all new tables (see
+  [notifications.md](notifications.md) and
+  [ADR-0007](adr/ADR-0007-event-bus-transport.md)): `notification_outbox`
+  (the transactional outbox — the frozen event name, PRD 51's entity
+  context columns with hard foreign keys, the correlation id, the jsonb
+  payload, and the relay bookkeeping), `notification_subscriptions`
+  (the org-scoped routing table: event names x channel x recipients,
+  with the channel-shape checks, the 2048-character webhook URL cap,
+  and the optimistic-lock `version` column behind the surface's 409),
+  and `notification_deliveries` (the delivery ledger: one row per
+  event/subscription/recipient — the at-least-once idempotency unique
+  key — with the retry backoff columns and the recipient key sized to
+  the URL cap). Three new enum types (`notification_channel`,
+  `notification_relay_state`, `notification_delivery_status`).
+  Expand-only, nothing dropped.
 
 ## Verifying migrations
 

@@ -3,6 +3,7 @@ package com.shipperdog.api.artifact.internal.service;
 import com.shipperdog.api.application.ApplicationAccess;
 import com.shipperdog.api.artifact.ArtifactException;
 import com.shipperdog.api.artifact.ArtifactStore;
+import com.shipperdog.api.artifact.ArtifactUploadedEvent;
 import com.shipperdog.api.artifact.internal.entity.ArtifactEntity;
 import com.shipperdog.api.artifact.internal.entity.ArtifactEntity.Platform;
 import com.shipperdog.api.artifact.internal.entity.ArtifactUploadSessionEntity;
@@ -49,6 +50,7 @@ import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
 import org.springframework.beans.factory.ObjectProvider;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.data.domain.Sort;
 import org.springframework.data.jpa.domain.Specification;
@@ -143,6 +145,7 @@ public class ArtifactService implements VersionArtifacts {
     private final ArtifactExtractionService extraction;
     private final ArtifactValidationService validation;
     private final AuditEventPublisher audit;
+    private final ApplicationEventPublisher events;
     /**
      * Lazy on purpose (issue #30): the layered authorization engine's
      * artifact layer resolves artifact state through this module's
@@ -170,6 +173,7 @@ public class ArtifactService implements VersionArtifacts {
             ArtifactExtractionService extraction,
             ArtifactValidationService validation,
             AuditEventPublisher audit,
+            ApplicationEventPublisher events,
             ObjectProvider<AuthorizationService> authorization,
             Clock clock,
             TraceAttributes trace,
@@ -186,6 +190,7 @@ public class ArtifactService implements VersionArtifacts {
         this.extraction = extraction;
         this.validation = validation;
         this.audit = audit;
+        this.events = events;
         this.authorization = authorization;
         this.clock = clock;
         this.trace = trace;
@@ -953,6 +958,20 @@ public class ArtifactService implements VersionArtifacts {
             }
         }
         audit(AuditEventType.ARTIFACT_UPLOADED, actorId, ownership, artifact.getId(), detail);
+        // The domain fact of the same moment (S12-01): the bus event
+        // the outbox recorder makes durable in this transaction.
+        events.publishEvent(new ArtifactUploadedEvent(
+                artifact.getId(),
+                ownership.versionId(),
+                ownership.applicationId(),
+                ownership.organizationId(),
+                ownership.tenantId(),
+                artifact.getPlatform().name(),
+                artifact.getFileName(),
+                artifact.getSize(),
+                artifact.getSha256(),
+                actorId,
+                Instant.now(clock)));
     }
 
     /** The version-slot rendering of the provenance block (issue #23). */

@@ -110,6 +110,13 @@ Current contents:
   actions) and the tenant dashboard, the two read APIs behind them,
   and the series-folding rule (counts sum, rates never do) every
   chart consumer of the analytics reads follows
+- [Notifications](notifications.md) — the domain-event bus and the
+  notification service (S12-01): the transactional outbox and the
+  at-least-once relay behind the DomainEventBus port (ADR-0007), the
+  frozen event-name vocabulary and its mapping table, the org-scoped
+  subscription CRUD (events x channels x recipients), the in-app
+  inbox, signed webhooks with the receiver's HMAC verification recipe,
+  and the delivery ledger with its retry policy
 - [Observability](observability.md) — tracing/metrics/logs baseline,
   correlation model, `shipperdog_*` metric namespace, Prometheus +
   Grafana local stack, and the management-port security posture
@@ -125,6 +132,7 @@ Current contents:
 - [ADR-0004: CLI implemented in Go with a contract-tested thin client](adr/ADR-0004-cli-toolchain.md)
 - [ADR-0005: M1 deploys to Cloud Run over a private VPC data tier](adr/ADR-0005-cloud-run-deployment.md)
 - [ADR-0006: Portal and console sessions stay in localStorage for M1, hardened by CSP](adr/ADR-0006-portal-session-token-storage.md)
+- [ADR-0007: The domain-event bus ships in-process over a transactional outbox; the broker is a swap behind one port](adr/ADR-0007-event-bus-transport.md)
 - [Deployment runbook (Cloud Run, M1)](deployment.md) — terraform stack,
   deploy workflow, smoke test, rollback, observability posture (S8-05).
 

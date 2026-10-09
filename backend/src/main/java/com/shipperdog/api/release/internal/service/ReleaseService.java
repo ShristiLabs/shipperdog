@@ -9,6 +9,7 @@ import com.shipperdog.api.config.CursorPageable;
 import com.shipperdog.api.config.TraceAttributes;
 import com.shipperdog.api.environment.EnvironmentAccess;
 import com.shipperdog.api.release.ReleaseAccess;
+import com.shipperdog.api.release.ReleaseCreatedEvent;
 import com.shipperdog.api.release.ReleaseException;
 import com.shipperdog.api.release.ReleaseTransitionPolicy;
 import com.shipperdog.api.release.ReleaseTransitionedEvent;
@@ -304,6 +305,19 @@ public class ReleaseService implements ReleaseAccess, VersionDistributionContrib
                 .success(true)
                 .detail(auditDetail)
                 .build());
+        // The domain fact of the same creation (S12-01, PRD 51's
+        // RELEASE_CREATED): the bus event the outbox recorder makes
+        // durable in this transaction.
+        events.publishEvent(new ReleaseCreatedEvent(
+                detail.id(),
+                detail.releaseRef(),
+                command.applicationId(),
+                command.versionId(),
+                application.organizationId(),
+                application.tenantId(),
+                ring.getCode(),
+                actorId,
+                Instant.now(clock)));
         return detail;
     }
 

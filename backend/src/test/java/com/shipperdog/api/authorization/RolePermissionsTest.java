@@ -92,7 +92,12 @@ class RolePermissionsTest {
                         // viewer sees the landing counts and health,
                         // never a pending-action queue — the server
                         // role-filters those away).
-                        Permission.ORG_DASHBOARD_READ);
+                        Permission.ORG_DASHBOARD_READ,
+                        // S12-01 (issue #51): notification-subscription
+                        // reads join the same surface (a viewer sees the
+                        // routing table and the delivery log, never
+                        // edits who hears about what).
+                        Permission.ORG_NOTIFICATIONS_READ);
     }
 
     @Test

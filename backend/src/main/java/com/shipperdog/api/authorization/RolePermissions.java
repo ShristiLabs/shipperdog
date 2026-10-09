@@ -184,7 +184,11 @@ public final class RolePermissions {
             // organization read directly, the tenant grain through the
             // owning-organization overlay (the tenant:analytics shape).
             Permission.ORG_DASHBOARD_READ,
-            Permission.TENANT_DASHBOARD_READ);
+            Permission.TENANT_DASHBOARD_READ,
+            // S12-01 (issue #51): the notification routing — the
+            // administrator owns who hears about what.
+            Permission.ORG_NOTIFICATIONS_READ,
+            Permission.ORG_NOTIFICATIONS_MANAGE);
 
     private static final Set<Permission> APP_OWNER = Set.of(
             Permission.APP_APPLICATIONS_READ,
@@ -236,7 +240,11 @@ public final class RolePermissions {
             // S11-05 (issue #50): the organization dashboard — the
             // owner's landing view of their applications' health and
             // the Product steps waiting on them.
-            Permission.ORG_DASHBOARD_READ);
+            Permission.ORG_DASHBOARD_READ,
+            // S12-01 (issue #51): the notification routing their
+            // releases' events ride (the same governance persona).
+            Permission.ORG_NOTIFICATIONS_READ,
+            Permission.ORG_NOTIFICATIONS_MANAGE);
 
     private static final Set<Permission> DEVELOPER = Set.of(
             Permission.APP_ARTIFACTS_READ,
@@ -253,7 +261,10 @@ public final class RolePermissions {
             Permission.ORG_RINGS_READ,
             // S10-06 (issue #45): the policy rules that ladder's
             // promotions answer to (read-only).
-            Permission.ORG_RELEASE_POLICIES_READ);
+            Permission.ORG_RELEASE_POLICIES_READ,
+            // S12-01 (issue #51): the notification routing (read-only;
+            // the delivery visibility their integrations answer to).
+            Permission.ORG_NOTIFICATIONS_READ);
 
     private static final Set<Permission> QA_ENGINEER = Set.of(
             Permission.APP_APPLICATIONS_READ,
@@ -281,7 +292,10 @@ public final class RolePermissions {
             Permission.APP_ANALYTICS_READ,
             // S11-05 (issue #50): the organization dashboard — the QA
             // persona's landing view of the queues they work.
-            Permission.ORG_DASHBOARD_READ);
+            Permission.ORG_DASHBOARD_READ,
+            // S12-01 (issue #51): the notification routing (read-only;
+            // the critical-report deliveries are their working mail).
+            Permission.ORG_NOTIFICATIONS_READ);
 
     private static final Set<Permission> RELEASE_MANAGER = Set.of(
             Permission.APP_APPLICATIONS_READ,
@@ -331,7 +345,11 @@ public final class RolePermissions {
             // S11-05 (issue #50): the organization dashboard — the
             // release manager's landing view of what needs them (their
             // approvals, the failed gates they may override).
-            Permission.ORG_DASHBOARD_READ);
+            Permission.ORG_DASHBOARD_READ,
+            // S12-01 (issue #51): the notification routing their
+            // releases' events ride (the same governance persona).
+            Permission.ORG_NOTIFICATIONS_READ,
+            Permission.ORG_NOTIFICATIONS_MANAGE);
 
     private static final Set<Permission> SECURITY_REVIEWER = Set.of(
             Permission.APP_APPLICATIONS_READ,
@@ -363,7 +381,10 @@ public final class RolePermissions {
             // S11-05 (issue #50): the organization dashboard — the
             // security persona's landing view of the Security steps
             // waiting on them.
-            Permission.ORG_DASHBOARD_READ);
+            Permission.ORG_DASHBOARD_READ,
+            // S12-01 (issue #51): the notification routing (read-only;
+            // the security-event deliveries are theirs to watch).
+            Permission.ORG_NOTIFICATIONS_READ);
 
     private static final Set<Permission> COMPLIANCE_REVIEWER = Set.of(
             Permission.APP_APPLICATIONS_READ,
@@ -384,7 +405,10 @@ public final class RolePermissions {
             // S11-05 (issue #50): the organization dashboard — the
             // compliance persona's landing view of the Compliance
             // steps waiting on them.
-            Permission.ORG_DASHBOARD_READ);
+            Permission.ORG_DASHBOARD_READ,
+            // S12-01 (issue #51): the notification routing and its
+            // delivery log (read-only; the audit persona's character).
+            Permission.ORG_NOTIFICATIONS_READ);
 
     private static final Set<Permission> VIEWER = Set.of(
             Permission.APP_APPLICATIONS_READ,
@@ -400,7 +424,10 @@ public final class RolePermissions {
             Permission.APP_ANALYTICS_READ,
             // S11-05 (issue #50): the organization dashboard's counts
             // and health view (read-only surface, the same character).
-            Permission.ORG_DASHBOARD_READ);
+            Permission.ORG_DASHBOARD_READ,
+            // S12-01 (issue #51): the notification routing (read-only,
+            // the same character).
+            Permission.ORG_NOTIFICATIONS_READ);
 
     /** ORG_MEMBER deliberately holds nothing (deny-by-default, PRD P3). */
     private static final Set<Permission> ORG_MEMBER = Set.of();
