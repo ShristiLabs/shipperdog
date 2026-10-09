@@ -18,11 +18,11 @@ import com.sun.net.httpserver.HttpExchange;
 import com.sun.net.httpserver.HttpHandler;
 import com.sun.net.httpserver.HttpServer;
 import java.io.ByteArrayOutputStream;
-import java.math.BigInteger;
 import java.net.InetSocketAddress;
 import java.nio.charset.StandardCharsets;
 import java.time.Instant;
 import java.util.Base64;
+import java.util.HexFormat;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -350,11 +350,15 @@ class NotificationDeliveryIntegrationTest {
         assertThat(hook.event()).isEqualTo("RELEASE_PROMOTED");
         // The receiver's verification recipe (docs/notifications.md):
         // HMAC-SHA256(secret, timestamp + "." + body), hex-encoded.
+        // The rendering is fixed-width (HexFormat, every digest byte
+        // two characters): a BigInteger formatter drops the leading
+        // zero nibble whenever the first byte is under 0x10 and the
+        // assertion flakes one run in sixteen.
         Mac mac = Mac.getInstance("HmacSHA256");
         mac.init(new SecretKeySpec(WEBHOOK_SECRET.getBytes(StandardCharsets.UTF_8), "HmacSHA256"));
         mac.update(hook.timestamp().getBytes(StandardCharsets.UTF_8));
         mac.update((byte) '.');
-        String expected = String.format("sha256=%032x", new BigInteger(1, mac.doFinal(hook.body())));
+        String expected = "sha256=" + HexFormat.of().formatHex(mac.doFinal(hook.body()));
         assertThat(hook.signature()).isEqualTo(expected);
 
         JsonNode body = wire.readTree(hook.body());
