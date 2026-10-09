@@ -106,7 +106,9 @@ public class ApplicationController {
     @PatchMapping("/{id}")
     @PreAuthorize("hasPermission(#id, 'application', 'app:applications:write')")
     ApplicationService.ApplicationView update(
-            @AuthenticationPrincipal Object principal, @PathVariable UUID id, @RequestBody UpdateRequest request) {
+            @AuthenticationPrincipal Object principal,
+            @PathVariable UUID id,
+            @RequestBody ApplicationUpdateRequest request) {
         return applications.update(
                 requireUserId(principal),
                 id,
@@ -158,7 +160,7 @@ public class ApplicationController {
      * a {@code tenantId} without a scope change is rejected
      * (re-owning between tenants is not a registry operation).
      */
-    public record UpdateRequest(
+    public record ApplicationUpdateRequest(
             String name,
             String description,
             List<String> platforms,

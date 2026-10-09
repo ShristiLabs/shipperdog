@@ -131,7 +131,7 @@ public class TenantTesterMembershipController {
             @AuthenticationPrincipal Object principal,
             @PathVariable UUID id,
             @PathVariable UUID testerId,
-            @RequestBody StatusChangeRequest request) {
+            @RequestBody TenantTesterMembershipStatusChangeRequest request) {
         return memberships.changeStatus(requireUserId(principal), id, testerId, parseStatus(request.status()));
     }
 
@@ -195,7 +195,7 @@ public class TenantTesterMembershipController {
     public record LinkRequest(UUID testerId) {}
 
     /** Membership status transition body: ACTIVE or SUSPENDED. */
-    public record StatusChangeRequest(String status) {}
+    public record TenantTesterMembershipStatusChangeRequest(String status) {}
 
     /** Link outcome; {@code linked} distinguishes create from idempotent replay or reactivation. */
     public record TesterAddedResponse(

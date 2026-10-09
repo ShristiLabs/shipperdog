@@ -80,7 +80,9 @@ public class OrganizationController {
     @PutMapping("/{id}")
     @PreAuthorize("hasPermission(#id, 'organization', 'org:organizations:update')")
     OrganizationResponse update(
-            @AuthenticationPrincipal Object principal, @PathVariable UUID id, @RequestBody UpdateRequest request) {
+            @AuthenticationPrincipal Object principal,
+            @PathVariable UUID id,
+            @RequestBody OrganizationUpdateRequest request) {
         return OrganizationResponse.from(organizations.update(
                 requireUserId(principal), id, request.name(), request.status(), request.externalId()));
     }
@@ -151,7 +153,7 @@ public class OrganizationController {
     private record CreateRequest(String name, String externalId) {}
 
     /** Partial update: null fields are left unchanged. */
-    private record UpdateRequest(String name, String status, String externalId) {}
+    private record OrganizationUpdateRequest(String name, String status, String externalId) {}
 
     private record IdpConfigRequest(String providerType, JsonNode config) {}
 

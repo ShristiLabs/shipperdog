@@ -128,7 +128,7 @@ public class RingController {
             @AuthenticationPrincipal Object principal,
             @PathVariable UUID ringId,
             @RequestParam UUID organizationId,
-            @RequestBody UpdateRequest request) {
+            @RequestBody RingUpdateRequest request) {
         return rings.update(
                 requireUserId(principal),
                 organizationId,
@@ -215,7 +215,7 @@ public class RingController {
     @Schema(
             description = "The ring edit body: name, position, eligibility (empty object clears), and the three "
                     + "references; the code never moves.")
-    public record UpdateRequest(
+    public record RingUpdateRequest(
             String name,
             Integer position,
             Map<String, Object> eligibility,

@@ -197,7 +197,14 @@ os_version; the identity columns never move and never appear);
 `DEVICE_STATUS_CHANGED` (the reversible park and release, from/to);
 and `DEVICES_EXPORTED` (the provisioning CSV's disclosure, carrying
 the slice and the row count — the audited act itself; an unchanged
-descriptive update writes nothing, nothing happened),
+descriptive update writes nothing, nothing happened);
+`ANALYTICS_EVENTS_INGESTED` and `METRIC_ROLLUPS_RECOMPUTED` — the
+release analytics pipeline, S11-04/issue #49 (FR-029): the first is one
+accepted SDK events batch (the release ref and the counts by type —
+device identifiers deliberately absent, the standing privacy posture);
+the second is one rollup recompute pass (the hourly job's lookback or
+the manual trigger's window, with the rows written — idempotent by
+construction, so a repeated pass is the same line, not a signal),
 and artifact (`ARTIFACT_UPLOAD_SESSION_CREATED` — issue #20/S5-01: the
 resumable direct-to-storage handoff is granted, carrying the
 pre-allocated `artifactId` entity reference with `platform`,

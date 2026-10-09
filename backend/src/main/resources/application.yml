@@ -144,6 +144,20 @@ shipperdog:
       max-video-bytes: ${FEEDBACK_MAX_VIDEO_BYTES:104857600}
       max-log-bytes: ${FEEDBACK_MAX_LOG_BYTES:5242880}
       max-attachments-per-report: ${FEEDBACK_MAX_ATTACHMENTS:5}
+  # Release analytics (issue #49, S11-04, FR-029): the hourly rollup
+  # job — the platform's first background schedule — recomputes the
+  # trailing lookback from source (the late-event healing bound; older
+  # history is repaired through the recompute trigger), and the query
+  # windows carry hard bounds (an unbounded scan is refused, never
+  # clamped). Tests and CI drive the computation through the trigger
+  # route, not the clock.
+  analytics:
+    rollup:
+      enabled: ${ANALYTICS_ROLLUP_ENABLED:true}
+      cron: ${ANALYTICS_ROLLUP_CRON:0 0 * * * *}
+      lookback: ${ANALYTICS_ROLLUP_LOOKBACK:PT24H}
+    max-series-window: ${ANALYTICS_MAX_SERIES_WINDOW:P366D}
+    max-hourly-span: ${ANALYTICS_MAX_HOURLY_SPAN:P31D}
   tester:
     # Tester onboarding (issue #26, S6-01): invitations reuse the
     # identity machinery but carry their own TTL (the issue's 7-day

@@ -142,7 +142,7 @@ public class WorkflowController {
             @AuthenticationPrincipal Object principal,
             @PathVariable UUID workflowId,
             @RequestParam UUID organizationId,
-            @RequestBody UpdateRequest request) {
+            @RequestBody WorkflowUpdateRequest request) {
         return workflows.update(
                 requireUserId(principal),
                 organizationId,
@@ -291,7 +291,7 @@ public class WorkflowController {
     @Schema(
             description = "The approval workflow edit body: the chain replaces and the ring attachment re-binds "
                     + "(absent ring detaches); the name is not editable.")
-    public record UpdateRequest(String ring, List<StepRequest> steps, List<GroupRequest> groups) {}
+    public record WorkflowUpdateRequest(String ring, List<StepRequest> steps, List<GroupRequest> groups) {}
 
     /**
      * One step of a definition: the required role, the optional tenant

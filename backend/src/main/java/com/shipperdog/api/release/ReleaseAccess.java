@@ -112,6 +112,19 @@ public interface ReleaseAccess {
     Optional<ReleaseFacts> submissionFactsOf(UUID applicationId, UUID versionId, UUID submitterTenantId);
 
     /**
+     * The release a device telemetry report evaluates (S11-04, issue
+     * #49, FR-029): the addressed release resolved ONLY when the
+     * reporting tenant is one of the release's targets — the SDK event
+     * contract's own standing (a device of a tenant the release does
+     * not serve has no business reporting against it, and the miss is
+     * indistinguishable from an unknown id, the concealment of every
+     * release-addressed resolution). Non-seam-served exactly like
+     * {@link #submissionFactsOf}: the reporter's tenant context is by
+     * construction not the release's owning scope.
+     */
+    Optional<ReleaseFacts> telemetryFactsOf(UUID releaseId, UUID reporterTenantId);
+
+    /**
      * The release facts the approval engine acts on: the owning
      * dimensions and creator beside the lifecycle and attachment
      * points. {@code ringId} is the resolved starting ring (its code

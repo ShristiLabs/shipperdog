@@ -308,3 +308,15 @@ construction; identifiers are semi-sensitive).
 | `DEVICE_IDENTIFIER_TAKEN` | 409 | The device identifier is taken. (the tenant-scoped duplicate guard — V1's `uq_devices_tenant_identifier`, the pre-check and the lost insert race answering identically) |
 | `DEVICE_REQUEST_REFUSED` | 422 | The device request is refused. (a registration naming a tester with no retained membership row in the tenant, a deactivated tenant taking no new registrations, or the no-op status crossing — the membership surface's 422 shape) |
 
+
+## Analytics — S11-04/issue #49
+
+The release analytics surface behind `app:analytics:*` and
+`tenant:analytics:*`.
+
+| Code | HTTP | Detail |
+|---|---|---|
+| `RELEASE_NOT_FOUND` | 404 | Resource not found. (the release the metrics address — unknown, foreign, or not of the addressed application; on the events ingest, a release the reporting tenant is not targeted by is byte-identical to this miss) |
+| `APPLICATION_NOT_FOUND` | 404 | Resource not found. (the application a series addresses) |
+| `INVALID_REQUEST` | 400 | The request is invalid. (an unknown metric token, a malformed instant, an events batch whose shape the type refuses — whole-batch, one `errors` entry per offending field) |
+| `ANALYTICS_REQUEST_REFUSED` | 422 | The analytics request is refused. (a window outside the bounds — inverted, wider than the maximum, hourly grain over too long a span, or ending in the future; refused, never clamped) |

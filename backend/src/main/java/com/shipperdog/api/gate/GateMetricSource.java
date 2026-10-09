@@ -36,7 +36,9 @@ public interface GateMetricSource {
     /**
      * The release's current value for the metric, or empty when
      * analytics holds no data for the release yet (the fail-closed
-     * NO_DATA case).
+     * NO_DATA case). Values are in the gate surface's own unit —
+     * percentages on the {@code NUMERIC_MIN} schema's validated 0..100
+     * threshold scale, plain counts for {@code COUNT_MAX}.
      */
     Optional<Double> metricOf(UUID releaseId, GateCatalog.Metric metric);
 }

@@ -722,6 +722,21 @@ There are no down-migrations and no automated rollback.
   by `idx_devices_tester_id`, and per-device feedback reads resolve
   by primary key (device-scoped analytics joins are S11-04's to
   index when they land). Expand-only, nothing dropped.
+- `V38__release_analytics.sql` (S11-04, issue #49) adds the release
+  analytics pipeline's store, all new tables: `analytics_events` (the
+  frozen S15-01 SDK event contract's append-only store — installs,
+  session summaries with their crash/ANR counts, uninstalls, tester
+  verdicts; release/application/tenant/device keyed, shape checks per
+  type), and the `metric_hourly` / `metric_daily` rollups (one row per
+  application, release, ring, metric, bucket; the nil-uuid sentinel is
+  the no-ring dimension — the rings table's own COALESCE discipline
+  inverted). The V37-deferred promise lands here:
+  `idx_analytics_events_device (device_id, occurred_at)` is the
+  device-scoped analytics join index. The migration also BACKFILLS the
+  rollups from the pre-existing `DOWNLOAD_ISSUED` audit trail (a no-op
+  on every greenfield database; correct on any state), with ring
+  attribution resolved from the promotions timeline. Expand-only,
+  nothing dropped.
 
 ## Verifying migrations
 

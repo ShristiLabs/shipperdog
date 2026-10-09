@@ -294,5 +294,22 @@ public enum AuditEventType {
      * disclosure is itself the audited act, recorded by count and never by
      * value (the identifier's privacy note).
      */
-    DEVICES_EXPORTED
+    DEVICES_EXPORTED,
+    /**
+     * One SDK events batch accepted (S11-04, issue #49, FR-029): the
+     * release it reports against (quotable ref) and the batch's shape —
+     * counts by type. Device identifiers are deliberately absent (the
+     * standing privacy posture: the identifier never leaves the device
+     * module); the events themselves are the analytics facts, not the
+     * audit's business.
+     */
+    ANALYTICS_EVENTS_INGESTED,
+    /**
+     * One rollup recompute pass (S11-04, issue #49) — the hourly job's
+     * lookback or the manual trigger's explicit window: the window and
+     * the rows written or refreshed. Idempotent by construction, so a
+     * repeated pass over the same window is the same line, not a
+     * signal.
+     */
+    METRIC_ROLLUPS_RECOMPUTED
 }
