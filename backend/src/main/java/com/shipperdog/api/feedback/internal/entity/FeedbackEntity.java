@@ -98,6 +98,7 @@ public class FeedbackEntity {
 
     private UUID testerId;
 
+    /** The REGISTERED device the report linked (S11-03): one of the tester's own ACTIVE devices in the submitting tenant, validated at submission; null for unregistered reports (the free text stands alone). */
     private UUID deviceId;
 
     private UUID organizationId;
@@ -144,16 +145,21 @@ public class FeedbackEntity {
     /**
      * A new report (S11-01): born OPEN under the server-attached
      * context — the release it evaluates, the artifact when the tester
-     * named their build, the owning organization, the denormalized
-     * application/version, the submitting tenant, and the reported
-     * device/OS free text. No constructor argument carries an
-     * identity the caller could have supplied: the tester and tenant
-     * are resolved from the session, the context from the release.
+     * named their build, the registered device when the caller linked
+     * one of their own (S11-03: ownership, tenancy, and ACTIVITY
+     * validated before this constructor runs), the owning
+     * organization, the denormalized application/version, the
+     * submitting tenant, and the reported device/OS free text. No
+     * constructor argument carries an identity the caller could have
+     * supplied: the tester and tenant are resolved from the session,
+     * the context from the release, the device from the validated
+     * ownership check.
      */
     public FeedbackEntity(
             UUID releaseId,
             UUID artifactId,
             UUID testerId,
+            UUID deviceId,
             UUID organizationId,
             UUID submitterTenantId,
             UUID applicationId,
@@ -165,6 +171,7 @@ public class FeedbackEntity {
         this.releaseId = releaseId;
         this.artifactId = artifactId;
         this.testerId = testerId;
+        this.deviceId = deviceId;
         this.organizationId = organizationId;
         this.submitterTenantId = submitterTenantId;
         this.applicationId = applicationId;

@@ -11,6 +11,7 @@ import ReleaseDetailPage from "./pages/ReleaseDetailPage";
 import ReleasePoliciesPage from "./pages/ReleasePoliciesPage";
 import RingsPage from "./pages/RingsPage";
 import ReleasesPage from "./pages/ReleasesPage";
+import TenantDevicesPage from "./pages/TenantDevicesPage";
 import TenantMembersPage from "./pages/TenantMembersPage";
 import TenantsPage from "./pages/TenantsPage";
 
@@ -31,6 +32,7 @@ export default function App() {
             <Route index element={<Navigate to="/tenants" replace />} />
             <Route path="tenants" element={<TenantsPage />} />
             <Route path="tenants/:tenantId/members" element={<TenantMembersPage />} />
+            <Route path="tenants/:tenantId/devices" element={<TenantDevicesPage />} />
             <Route path="applications" element={<ApplicationsPage />} />
             <Route path="applications/:applicationId" element={<ApplicationDetailPage />} />
             <Route path="approval-workflows" element={<ApprovalWorkflowsPage />} />

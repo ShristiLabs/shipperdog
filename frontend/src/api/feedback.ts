@@ -43,6 +43,16 @@ export interface FeedbackAttachment {
   sizeBytes: number;
 }
 
+/** The registered device the report linked (S11-03): the auto-context
+ * beside the reported free text. Carries no identifier — that is
+ * admin-only (the devices surface), not a feedback-reader fact. */
+export interface FeedbackDeviceContext {
+  id: string;
+  platform: "IOS" | "ANDROID";
+  model: string | null;
+  osVersion: string | null;
+}
+
 /** One report in full: the server-attached submission context beside
  * the triage state (severity, assignee, resolution note). */
 export interface FeedbackItem {
@@ -55,6 +65,7 @@ export interface FeedbackItem {
   organizationId: string;
   submitterTenantId: string;
   testerId: string;
+  device: FeedbackDeviceContext | null;
   deviceModel: string | null;
   os: string | null;
   type: FeedbackType;

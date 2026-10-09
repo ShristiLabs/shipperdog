@@ -226,6 +226,92 @@ paths:
             '*/*':
               schema:
                 $ref: "#/components/schemas/MemberView"
+  /api/v1/tenants/{id}/devices/{deviceId}:
+    get:
+      tags:
+      - device-controller
+      operationId: get_2
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - name: deviceId
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      responses:
+        "200":
+          description: OK
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/DeviceView"
+    put:
+      tags:
+      - device-controller
+      operationId: update_1
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - name: deviceId
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/DeviceUpdateRequest"
+        required: true
+      responses:
+        "200":
+          description: OK
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/DeviceView"
+  /api/v1/tenants/{id}/devices/{deviceId}/status:
+    put:
+      tags:
+      - device-controller
+      operationId: changeStatus_2
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - name: deviceId
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/DeviceStatusChangeRequest"
+        required: true
+      responses:
+        "200":
+          description: OK
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/DeviceView"
   /api/v1/tenants/{id}/authorization-grants/{grantId}/expiry:
     put:
       tags:
@@ -261,7 +347,7 @@ paths:
     get:
       tags:
       - release-policy-controller
-      operationId: get_2
+      operationId: get_3
       parameters:
       - name: ruleId
         in: path
@@ -285,7 +371,7 @@ paths:
     put:
       tags:
       - release-policy-controller
-      operationId: update_1
+      operationId: update_2
       parameters:
       - name: ruleId
         in: path
@@ -372,7 +458,7 @@ paths:
     get:
       tags:
       - organization-controller
-      operationId: get_3
+      operationId: get_4
       parameters:
       - name: id
         in: path
@@ -390,7 +476,7 @@ paths:
     put:
       tags:
       - organization-controller
-      operationId: update_2
+      operationId: update_3
       parameters:
       - name: id
         in: path
@@ -489,7 +575,7 @@ paths:
     get:
       tags:
       - gate-controller
-      operationId: get_4
+      operationId: get_5
       parameters:
       - name: definitionId
         in: path
@@ -513,7 +599,7 @@ paths:
     put:
       tags:
       - gate-controller
-      operationId: update_3
+      operationId: update_4
       parameters:
       - name: definitionId
         in: path
@@ -724,7 +810,7 @@ paths:
     get:
       tags:
       - workflow-controller
-      operationId: get_5
+      operationId: get_6
       parameters:
       - name: workflowId
         in: path
@@ -748,7 +834,7 @@ paths:
     put:
       tags:
       - workflow-controller
-      operationId: update_4
+      operationId: update_5
       parameters:
       - name: workflowId
         in: path
@@ -1143,11 +1229,80 @@ paths:
             '*/*':
               schema:
                 $ref: "#/components/schemas/MemberView"
+  /api/v1/tenants/{id}/devices:
+    get:
+      tags:
+      - device-controller
+      operationId: list_3
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - name: testerId
+        in: query
+        required: false
+        schema:
+          type: string
+          format: uuid
+      - name: platform
+        in: query
+        required: false
+        schema:
+          type: string
+      - name: status
+        in: query
+        required: false
+        schema:
+          type: string
+      - name: limit
+        in: query
+        required: false
+        schema:
+          type: string
+      - name: cursor
+        in: query
+        required: false
+        schema:
+          type: string
+      responses:
+        "200":
+          description: OK
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/PageResponseDeviceView"
+    post:
+      tags:
+      - device-controller
+      operationId: register
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/DeviceRegistrationRequest"
+        required: true
+      responses:
+        "201":
+          description: Created
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/DeviceView"
   /api/v1/tenants/{id}/authorization-grants:
     get:
       tags:
       - authorization-grant-controller
-      operationId: list_3
+      operationId: list_4
       parameters:
       - name: id
         in: path
@@ -1237,7 +1392,7 @@ paths:
     get:
       tags:
       - ring-controller
-      operationId: list_4
+      operationId: list_5
       parameters:
       - name: organizationId
         in: query
@@ -1283,7 +1438,7 @@ paths:
     get:
       tags:
       - release-controller
-      operationId: list_5
+      operationId: list_6
       parameters:
       - name: applicationId
         in: query
@@ -1672,7 +1827,7 @@ paths:
     get:
       tags:
       - release-policy-controller
-      operationId: list_6
+      operationId: list_7
       parameters:
       - name: organizationId
         in: query
@@ -1718,7 +1873,7 @@ paths:
     get:
       tags:
       - organization-controller
-      operationId: list_7
+      operationId: list_8
       parameters:
       - name: limit
         in: query
@@ -1758,7 +1913,7 @@ paths:
     get:
       tags:
       - gate-controller
-      operationId: list_8
+      operationId: list_9
       parameters:
       - name: organizationId
         in: query
@@ -1845,6 +2000,12 @@ paths:
         required: true
         schema:
           type: string
+      - name: device_id
+        in: query
+        required: false
+        schema:
+          type: string
+          format: uuid
       - name: device_model
         in: query
         required: false
@@ -1877,7 +2038,7 @@ paths:
     get:
       tags:
       - environment-controller
-      operationId: list_9
+      operationId: list_10
       parameters:
       - name: organizationId
         in: query
@@ -2006,7 +2167,7 @@ paths:
     post:
       tags:
       - auth-controller
-      operationId: register
+      operationId: register_1
       requestBody:
         content:
           application/json:
@@ -2254,7 +2415,7 @@ paths:
     get:
       tags:
       - workflow-controller
-      operationId: list_10
+      operationId: list_11
       parameters:
       - name: organizationId
         in: query
@@ -2300,7 +2461,7 @@ paths:
     get:
       tags:
       - application-controller
-      operationId: list_11
+      operationId: list_12
       parameters:
       - name: organizationId
         in: query
@@ -2401,7 +2562,7 @@ paths:
     get:
       tags:
       - version-controller
-      operationId: list_12
+      operationId: list_13
       parameters:
       - name: applicationId
         in: path
@@ -2520,7 +2681,7 @@ paths:
     get:
       tags:
       - ring-controller
-      operationId: get_6
+      operationId: get_7
       parameters:
       - name: ringId
         in: path
@@ -2564,7 +2725,7 @@ paths:
     patch:
       tags:
       - ring-controller
-      operationId: update_5
+      operationId: update_6
       parameters:
       - name: ringId
         in: path
@@ -2595,7 +2756,7 @@ paths:
     get:
       tags:
       - environment-controller
-      operationId: get_7
+      operationId: get_8
       parameters:
       - name: environmentId
         in: path
@@ -2613,7 +2774,7 @@ paths:
     patch:
       tags:
       - environment-controller
-      operationId: update_6
+      operationId: update_7
       parameters:
       - name: environmentId
         in: path
@@ -2638,7 +2799,7 @@ paths:
     get:
       tags:
       - application-controller
-      operationId: get_8
+      operationId: get_9
       parameters:
       - name: id
         in: path
@@ -2656,7 +2817,7 @@ paths:
     patch:
       tags:
       - application-controller
-      operationId: update_7
+      operationId: update_8
       parameters:
       - name: id
         in: path
@@ -2681,7 +2842,7 @@ paths:
     get:
       tags:
       - tester-controller
-      operationId: get_9
+      operationId: get_10
       parameters:
       - name: id
         in: path
@@ -2770,11 +2931,36 @@ paths:
       responses:
         "204":
           description: No Content
+  /api/v1/tenants/{id}/devices/export:
+    get:
+      tags:
+      - device-controller
+      operationId: export
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - name: status
+        in: query
+        required: false
+        schema:
+          type: string
+      responses:
+        "200":
+          description: OK
+          content:
+            '*/*':
+              schema:
+                type: string
+                format: byte
   /api/v1/tenants/{id}/authorization-grants/{grantId}:
     get:
       tags:
       - authorization-grant-controller
-      operationId: get_10
+      operationId: get_11
       parameters:
       - name: id
         in: path
@@ -2896,7 +3082,7 @@ paths:
     get:
       tags:
       - tenant-applications-controller
-      operationId: list_13
+      operationId: list_14
       parameters:
       - name: id
         in: path
@@ -2925,7 +3111,7 @@ paths:
     get:
       tags:
       - release-controller
-      operationId: get_11
+      operationId: get_12
       parameters:
       - name: releaseId
         in: path
@@ -3186,7 +3372,7 @@ paths:
     get:
       tags:
       - feedback-controller
-      operationId: list_14
+      operationId: list_15
       parameters:
       - name: releaseId
         in: path
@@ -3242,7 +3428,7 @@ paths:
     get:
       tags:
       - feedback-controller
-      operationId: get_12
+      operationId: get_13
       parameters:
       - name: releaseId
         in: path
@@ -3669,6 +3855,10 @@ paths:
           - FEEDBACK_SEVERITY_CHANGED
           - FEEDBACK_ASSIGNEE_CHANGED
           - FEEDBACK_STATUS_TRANSITIONED
+          - DEVICE_REGISTERED
+          - DEVICE_UPDATED
+          - DEVICE_STATUS_CHANGED
+          - DEVICES_EXPORTED
       - name: applicationId
         in: query
         required: false
@@ -3720,7 +3910,7 @@ paths:
     get:
       tags:
       - artifact-controller
-      operationId: get_13
+      operationId: get_14
       parameters:
       - name: artifactId
         in: path
@@ -3770,7 +3960,7 @@ paths:
     get:
       tags:
       - application-tenant-authorization-controller
-      operationId: list_15
+      operationId: list_16
       parameters:
       - name: id
         in: path
@@ -3799,7 +3989,7 @@ paths:
     get:
       tags:
       - version-controller
-      operationId: get_14
+      operationId: get_15
       parameters:
       - name: applicationId
         in: path
@@ -4061,6 +4251,47 @@ components:
       properties:
         role:
           type: string
+    DeviceUpdateRequest:
+      type: object
+      properties:
+        model:
+          type: string
+        osVersion:
+          type: string
+    DeviceView:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        testerId:
+          type: string
+          format: uuid
+        ownerEmail:
+          type: string
+        ownerName:
+          type: string
+        platform:
+          type: string
+        model:
+          type: string
+        osVersion:
+          type: string
+        identifier:
+          type: string
+        status:
+          type: string
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+    DeviceStatusChangeRequest:
+      type: object
+      properties:
+        status:
+          type: string
     ExpiryRequest:
       type: object
       properties:
@@ -4234,8 +4465,6 @@ components:
     JsonNode:
       type: object
       properties:
-        valueNode:
-          type: boolean
         nodeType:
           type: string
           enum:
@@ -4248,11 +4477,17 @@ components:
           - OBJECT
           - POJO
           - STRING
+        string:
+          type: boolean
+        integralNumber:
+          type: boolean
         missingNode:
+          type: boolean
+        valueNode:
           type: boolean
         pojo:
           type: boolean
-        integralNumber:
+        number:
           type: boolean
         short:
           type: boolean
@@ -4273,13 +4508,9 @@ components:
           type: boolean
         binary:
           type: boolean
-        string:
-          type: boolean
-        number:
+        floatingPointNumber:
           type: boolean
         container:
-          type: boolean
-        floatingPointNumber:
           type: boolean
         empty:
           type: boolean
@@ -4586,6 +4817,20 @@ components:
           type: string
         effectiveAccess:
           type: boolean
+    DeviceRegistrationRequest:
+      type: object
+      properties:
+        testerId:
+          type: string
+          format: uuid
+        platform:
+          type: string
+        model:
+          type: string
+        osVersion:
+          type: string
+        identifier:
+          type: string
     GrantCreatedResponse:
       type: object
       properties:
@@ -4922,6 +5167,18 @@ components:
         sizeBytes:
           type: integer
           format: int64
+    DeviceContext:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        platform:
+          type: string
+        model:
+          type: string
+        osVersion:
+          type: string
     FeedbackView:
       type: object
       properties:
@@ -4951,6 +5208,8 @@ components:
         testerId:
           type: string
           format: uuid
+        device:
+          $ref: "#/components/schemas/DeviceContext"
         deviceModel:
           type: string
         os:
@@ -5664,6 +5923,15 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/MembershipView"
+        next_cursor:
+          type: string
+    PageResponseDeviceView:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/DeviceView"
         next_cursor:
           type: string
     PageResponseGrantView:
@@ -6581,6 +6849,10 @@ components:
           - FEEDBACK_SEVERITY_CHANGED
           - FEEDBACK_ASSIGNEE_CHANGED
           - FEEDBACK_STATUS_TRANSITIONED
+          - DEVICE_REGISTERED
+          - DEVICE_UPDATED
+          - DEVICE_STATUS_CHANGED
+          - DEVICES_EXPORTED
         occurredAt:
           type: string
           format: date-time

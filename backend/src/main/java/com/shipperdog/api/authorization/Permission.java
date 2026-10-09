@@ -87,6 +87,15 @@ public enum Permission {
     TENANT_AUTHORIZATION_GRANTS_READ("tenant:authorization-grants:read"), // issue #31 (S7-02)
     TENANT_AUTHORIZATION_GRANTS_MANAGE("tenant:authorization-grants:manage"), // issue #31 (S7-02)
     TENANT_FEEDBACK_CREATE("tenant:feedback:create"),
+    // Issue #48 (S11-03): the device registry's three authorities —
+    // the read and the manage of the admin surface, and the export as
+    // its OWN download authority (AC3's download-restricted-to-admins:
+    // the identifier's mass disclosure is governable apart from
+    // routine management). Identifiers are semi-sensitive, so every
+    // device surface is admin-only by construction.
+    TENANT_DEVICES_READ("tenant:devices:read"), // issue #48 (S11-03)
+    TENANT_DEVICES_MANAGE("tenant:devices:manage"), // issue #48 (S11-03)
+    TENANT_DEVICES_EXPORT("tenant:devices:export"), // issue #48 (S11-03)
 
     // app scope (enforced from E3 / issue #13 onward)
     APP_APPLICATIONS_READ("app:applications:read"),

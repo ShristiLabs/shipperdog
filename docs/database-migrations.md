@@ -44,6 +44,7 @@ backend/src/main/resources/db/
     V34__release_policy_engine.sql
     V35__feedback_submission.sql
     V36__feedback_triage.sql
+    V37__device_management.sql
   seed/                 dev fixture, applied only when the seed location is active
     R__dev_seed.sql
 ```
@@ -700,6 +701,27 @@ There are no down-migrations and no automated rollback.
   serves the open-critical-bugs metric — the real-time count the
   `open-critical-bugs` gate and the PRD 33 policy rules read — and
   the dashboard rollup alike. Expand-only, nothing dropped.
+
+- `V37__device_management.sql` (S11-03, issue #48) EXPANDS V1's
+  `devices` table with the one attribute PRD 8.12 lists that the
+  baseline lacked: `status`, a new `device_status` enum
+  (`ACTIVE`/`DEACTIVATED`) with `DEFAULT 'ACTIVE'` — the V8
+  `tenant_member_status` precedent of a reversible park, because
+  device records are history (deactivating a tester keeps them, the
+  INV-007 posture; deactivating a device keeps its feedback links).
+  Nothing else moves: V1 already carries the full registration
+  vocabulary (`platform`/`model`/`os_version`/`identifier`) and the
+  tenant-scoped uniqueness `uq_devices_tenant_identifier` (the AC1
+  duplicate guard), and `feedback.device_id` — V1's own nullable FK —
+  becomes live data this story (a submission may attach one of the
+  tester's OWN ACTIVE devices; V35's reported `device_model`/`os`
+  free text stays beside it as history, and legacy nulls stay
+  valid; the FK keeps its V1 shape — renaming a baseline constraint
+  is a rebuild, not an expansion). No new index: the tenant grain is
+  served by the unique constraint's leading column, the tester grain
+  by `idx_devices_tester_id`, and per-device feedback reads resolve
+  by primary key (device-scoped analytics joins are S11-04's to
+  index when they land). Expand-only, nothing dropped.
 
 ## Verifying migrations
 

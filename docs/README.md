@@ -95,6 +95,11 @@ Current contents:
   suspend / history-preserving removal over the seam-joined composite
   key, the two-switches effective-access rule, both listings, and the
   group-membership precondition.
+- [Devices](devices.md) — the tester-device registry of one tenant
+  (S11-03): manual registration with the tenant-scoped identifier
+  uniqueness, the reversible park (rows are never deleted), the
+  admin-only provisioning CSV export, the feedback device link, and
+  the console surface.
 - [Observability](observability.md) — tracing/metrics/logs baseline,
   correlation model, `shipperdog_*` metric namespace, Prometheus +
   Grafana local stack, and the management-port security posture

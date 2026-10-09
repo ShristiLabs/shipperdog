@@ -18,11 +18,13 @@ import com.shipperdog.api.tester.internal.entity.TesterEntity;
 import com.shipperdog.api.tester.internal.repository.TesterRepository;
 import java.time.Clock;
 import java.time.Instant;
+import java.util.Collection;
 import java.util.LinkedHashMap;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
+import java.util.stream.Collectors;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.data.domain.Page;
@@ -350,6 +352,22 @@ public class TesterService implements TesterOnboarding, TesterAccounts, TesterAc
     @Transactional(readOnly = true)
     public Optional<UUID> testerIdOfUser(UUID userId) {
         return testers.findByUserId(userId).map(TesterEntity::getId);
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public Map<UUID, TesterAccess.TesterRecord> recordsOf(Collection<UUID> testerIds) {
+        if (testerIds.isEmpty()) {
+            return Map.of();
+        }
+        return testers.findAllById(testerIds).stream()
+                .collect(Collectors.toMap(
+                        TesterEntity::getId,
+                        tester -> new TesterAccess.TesterRecord(
+                                tester.getId(),
+                                tester.getEmail(),
+                                tester.getFullName(),
+                                tester.getStatus().name())));
     }
 
     private TesterEntity requireTester(UUID testerId) {

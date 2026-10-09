@@ -10,6 +10,8 @@ import com.shipperdog.api.config.CursorPageable;
 import com.shipperdog.api.config.ListQuery;
 import com.shipperdog.api.config.PageResponse;
 import com.shipperdog.api.config.TraceAttributes;
+import com.shipperdog.api.device.DeviceAccess;
+import com.shipperdog.api.device.DeviceAccess.DeviceFacts;
 import com.shipperdog.api.feedback.FeedbackAttachmentStore;
 import com.shipperdog.api.feedback.FeedbackException;
 import com.shipperdog.api.feedback.FeedbackMarkedCriticalEvent;
@@ -157,6 +159,8 @@ public class FeedbackService {
 
     private final ArtifactAccess artifacts;
 
+    private final DeviceAccess devices;
+
     private final TesterAccess testers;
 
     private final TenantTesterMembershipAccess memberships;
@@ -181,6 +185,7 @@ public class FeedbackService {
             ReleaseAccess releases,
             ApplicationAccess applications,
             ArtifactAccess artifacts,
+            DeviceAccess devices,
             TesterAccess testers,
             TenantTesterMembershipAccess memberships,
             OrganizationAccess organizations,
@@ -196,6 +201,7 @@ public class FeedbackService {
         this.releases = releases;
         this.applications = applications;
         this.artifacts = artifacts;
+        this.devices = devices;
         this.testers = testers;
         this.memberships = memberships;
         this.organizations = organizations;
@@ -270,11 +276,30 @@ public class FeedbackService {
         }
         final UUID artifactId = resolvedArtifactId;
 
+        // The optional registered-device link (S11-03, AC4): one of the
+        // caller's OWN ACTIVE devices in the submitting tenant — the
+        // artifact-link's own discipline (ownership and tenancy
+        // validated server-side; the reported free text stays beside it
+        // as the history of the moment).
+        DeviceFacts linkedDevice = null;
+        if (command.deviceId() != null) {
+            DeviceFacts candidate =
+                    devices.factsOf(command.deviceId()).orElseThrow(FeedbackService::deviceMissSupplier);
+            if (!testerId.equals(candidate.testerId())
+                    || !command.tenantId().equals(candidate.tenantId())
+                    || !"ACTIVE".equals(candidate.status())) {
+                throw deviceMissSupplier();
+            }
+            linkedDevice = candidate;
+        }
+        final DeviceFacts device = linkedDevice;
+
         FeedbackView view = scopeExecutor.inScope(command.tenantId(), actorId, () -> {
             FeedbackEntity saved = feedback.save(new FeedbackEntity(
                     facts.releaseId(),
                     artifactId,
                     testerId,
+                    device == null ? null : device.id(),
                     facts.organizationId(),
                     command.tenantId(),
                     facts.applicationId(),
@@ -303,7 +328,7 @@ public class FeedbackService {
                         stored.getCategory().name(),
                         stored.getSizeBytes()));
             }
-            return viewOf(saved, facts.releaseRef(), attachmentViews);
+            return viewOf(saved, facts.releaseRef(), attachmentViews, deviceContextOf(device));
         });
 
         trace.application(facts.applicationId());
@@ -313,6 +338,9 @@ public class FeedbackService {
         auditDetail.put("attachments", String.valueOf(validated.size()));
         if (artifactId != null) {
             auditDetail.put("artifactId", artifactId.toString());
+        }
+        if (device != null) {
+            auditDetail.put("deviceId", device.id().toString());
         }
         if (deviceModel != null) {
             auditDetail.put("deviceModel", deviceModel);
@@ -422,7 +450,7 @@ public class FeedbackService {
             List<AttachmentView> views = attachments.findByFeedbackIdOrderByFileNameAsc(row.getId()).stream()
                     .map(FeedbackService::attachmentViewOf)
                     .toList();
-            return viewOf(row, facts.releaseRef(), views);
+            return viewOf(row, facts.releaseRef(), views, deviceContextOf(row.getDeviceId()));
         });
     }
 
@@ -510,7 +538,7 @@ public class FeedbackService {
                         row.getType().name(),
                         Instant.now(clock)));
             }
-            return viewOf(row, facts.releaseRef(), attachmentViewsOf(row));
+            return viewOf(row, facts.releaseRef(), attachmentViewsOf(row), deviceContextOf(row.getDeviceId()));
         });
     }
 
@@ -552,7 +580,7 @@ public class FeedbackService {
                     .success(true)
                     .detail(detail)
                     .build());
-            return viewOf(row, facts.releaseRef(), attachmentViewsOf(row));
+            return viewOf(row, facts.releaseRef(), attachmentViewsOf(row), deviceContextOf(row.getDeviceId()));
         });
     }
 
@@ -614,7 +642,7 @@ public class FeedbackService {
                     .success(true)
                     .detail(detail)
                     .build());
-            return viewOf(row, facts.releaseRef(), attachmentViewsOf(row));
+            return viewOf(row, facts.releaseRef(), attachmentViewsOf(row), deviceContextOf(row.getDeviceId()));
         });
     }
 
@@ -702,12 +730,19 @@ public class FeedbackService {
     // Views and commands
     // -------------------------------------------------------------------------
 
-    /** The submission contract (AC1): the tester-typed fields only — every identity field is server-attached. */
+    /**
+     * The submission contract (AC1): the tester-typed fields only —
+     * every identity field is server-attached. The {@code deviceId}
+     * names one of the caller's own registered devices (S11-03) and is
+     * validated against ownership, tenancy, and ACTIVITY before any
+     * write — never trusted.
+     */
     public record SubmissionCommand(
             UUID applicationId,
             UUID versionId,
             UUID tenantId,
             UUID artifactId,
+            UUID deviceId,
             String type,
             String description,
             String deviceModel,
@@ -724,6 +759,7 @@ public class FeedbackService {
             UUID organizationId,
             UUID submitterTenantId,
             UUID testerId,
+            DeviceContext device,
             String deviceModel,
             String os,
             String type,
@@ -735,6 +771,16 @@ public class FeedbackService {
             Instant createdAt,
             Instant updatedAt,
             List<AttachmentView> attachments) {}
+
+    /**
+     * The registered device the report linked (S11-03, AC4): the
+     * auto-context of a stored report — the device's own facts
+     * (platform, model, OS version) beside the reported free text.
+     * Carries no identifier (semi-sensitive; feedback readers span
+     * beyond the tenant administrators the identifier is visible to).
+     * Null when the report was submitted without a registered device.
+     */
+    public record DeviceContext(UUID id, String platform, String model, String osVersion) {}
 
     /** The list item: the triage surface's scan row (the detail carries the description and attachments). */
     public record FeedbackSummaryView(
@@ -918,6 +964,12 @@ public class FeedbackService {
                 FeedbackException.Code.ARTIFACT_NOT_FOUND, "the artifact did not resolve for this release");
     }
 
+    /** The device-miss of submission (S11-03): unknown, foreign, not the caller's own, or deactivated — one miss. */
+    private static FeedbackException deviceMissSupplier() {
+        return new FeedbackException(
+                FeedbackException.Code.DEVICE_NOT_FOUND, "the device did not resolve for this submission");
+    }
+
     private static FeedbackException missSupplier() {
         return new FeedbackException(FeedbackException.Code.FEEDBACK_NOT_FOUND, "the report did not resolve");
     }
@@ -996,7 +1048,8 @@ public class FeedbackService {
                 attachment.getSizeBytes());
     }
 
-    private static FeedbackView viewOf(FeedbackEntity row, String releaseRef, List<AttachmentView> attachmentViews) {
+    private static FeedbackView viewOf(
+            FeedbackEntity row, String releaseRef, List<AttachmentView> attachmentViews, DeviceContext device) {
         return new FeedbackView(
                 row.getId(),
                 row.getReleaseId(),
@@ -1007,6 +1060,7 @@ public class FeedbackService {
                 row.getOrganizationId(),
                 row.getSubmitterTenantId(),
                 row.getTesterId(),
+                device,
                 row.getDeviceModel(),
                 row.getOs(),
                 row.getType().name(),
@@ -1018,6 +1072,20 @@ public class FeedbackService {
                 row.getCreatedAt(),
                 row.getUpdatedAt(),
                 attachmentViews);
+    }
+
+    /** The stored link's display context: the validated facts of submission, resolved again for the view (rows are never deleted, so a stored link always resolves). */
+    private DeviceContext deviceContextOf(UUID deviceId) {
+        if (deviceId == null) {
+            return null;
+        }
+        return devices.factsOf(deviceId)
+                .map(facts -> new DeviceContext(facts.id(), facts.platform(), facts.model(), facts.osVersion()))
+                .orElse(null);
+    }
+
+    private DeviceContext deviceContextOf(DeviceFacts facts) {
+        return facts == null ? null : new DeviceContext(facts.id(), facts.platform(), facts.model(), facts.osVersion());
     }
 
     // -------------------------------------------------------------------------

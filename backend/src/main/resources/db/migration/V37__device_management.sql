@@ -1,0 +1,41 @@
+-- V37__device_management.sql
+-- Tester device management (issue #48, S11-03, FR-028, PRD 8.12/13):
+-- the reversible status switch on the V1 devices table and the
+-- feedback.device_id linkage that registered rows now carry.
+--
+-- Conventions (see docs/database-migrations.md):
+--   * Expand-only, forward-only migration (ADR-0001): the V1 devices
+--     table is EXPANDED, never rebuilt. Its columns already carry the
+--     whole registration vocabulary (platform/model/os_version/
+--     identifier) and the tenant-scoped identifier uniqueness
+--     (uq_devices_tenant_identifier) this story's AC1 guard rides;
+--     nothing is dropped, renamed, or re-typed. The one attribute PRD
+--     8.12 lists that V1 lacks is Status -- it arrives here as the
+--     device_status enum plus a default-ACTIVE column, the V8
+--     tenant_member_status precedent: a reversible park, because
+--     device records are history (deactivating a tester keeps them,
+--     AC5; deactivating a device keeps its feedback links).
+--
+--   * feedback.device_id (V1 baseline) becomes live data: S11-03's
+--     submission contract may attach one of the tester's own
+--     registered devices. The FK itself predates the naming rule and
+--     is deliberately untouched (re-naming a V1 constraint is a
+--     rebuild, not an expansion); V35's reported device_model/os free
+--     text stays beside it as the history of unregistered submissions
+--     -- legacy nulls stay valid.
+--
+--   * No new index: the tenant grain of every devices query is served
+--     by uq_devices_tenant_identifier's leading column, the tester
+--     grain by V1's idx_devices_tester_id, and feedback's per-device
+--     reads resolve by primary key (device-scoped analytics joins are
+--     S11-04's to index when they land).
+
+-- ---------------------------------------------------------------------------
+-- device_status: the reversible park vocabulary (the V8 precedent)
+-- ---------------------------------------------------------------------------
+CREATE TYPE device_status AS ENUM ('ACTIVE', 'DEACTIVATED');
+
+-- ---------------------------------------------------------------------------
+-- devices: the status switch (default ACTIVE; existing rows are ACTIVE)
+-- ---------------------------------------------------------------------------
+ALTER TABLE devices ADD COLUMN status device_status NOT NULL DEFAULT 'ACTIVE';

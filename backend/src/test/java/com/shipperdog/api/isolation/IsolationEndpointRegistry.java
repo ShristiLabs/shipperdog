@@ -180,6 +180,40 @@ final class IsolationEndpointRegistry {
                         200,
                         side -> "/api/v1/tenants/" + UUID.randomUUID() + "/testers/" + UUID.randomUUID()),
 
+                // Devices (S11-03) --------------------------------------------------
+                // tenant:devices:read is tenant-grain with the
+                // owning-organization overlay (the tenant:testers
+                // shape): both personas list the tenant's registry —
+                // an EMPTY page in the seeded world, the honest own
+                // answer (no device exists), and the parity proof is
+                // the point; concealment of a REAL foreign tenant's
+                // devices is pinned with live devices by the S11-03
+                // device suite.
+                surface(
+                        "/api/v1/tenants/{id}/devices",
+                        side -> "/api/v1/tenants/" + side.tenantId() + "/devices",
+                        200,
+                        200,
+                        side -> "/api/v1/tenants/" + UUID.randomUUID() + "/devices"),
+                // The device item and export routes: the seeded world
+                // holds no device, so own-side probes address a random
+                // device id (the grant-item rationale — the route's
+                // miss shape IS the correct own answer), and
+                // concealment of a REAL foreign device (or export) is
+                // pinned with live devices by the S11-03 suite.
+                surface(
+                        "/api/v1/tenants/{id}/devices/{deviceId}",
+                        side -> "/api/v1/tenants/" + side.tenantId() + "/devices/" + UUID.randomUUID(),
+                        404,
+                        404,
+                        side -> "/api/v1/tenants/" + UUID.randomUUID() + "/devices/" + UUID.randomUUID()),
+                surface(
+                        "/api/v1/tenants/{id}/devices/export",
+                        side -> "/api/v1/tenants/" + side.tenantId() + "/devices/export",
+                        200,
+                        200,
+                        side -> "/api/v1/tenants/" + UUID.randomUUID() + "/devices/export"),
+
                 // Testers (organization grain) -----------------------------------
                 surface(
                         "/api/v1/testers",

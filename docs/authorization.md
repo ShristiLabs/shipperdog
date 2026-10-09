@@ -41,7 +41,7 @@ permission:
 | Role | Permissions |
 |---|---|
 | PLATFORM_ADMIN | `*` (wildcard; the `users.platform_admin` flag, PRD 7.1) |
-| ORG_ADMIN | `org:organizations:read` `org:organizations:update` `org:idp-configs:read` `org:idp-configs:write` `org:members:read` `org:members:invite` `org:members:manage` `org:testers:read` `org:testers:invite` `org:testers:manage` `org:tenants:create` `org:tenants:read` `org:environments:read` `org:environments:manage` (S9-04) `org:approval-workflows:read` `org:approval-workflows:manage` (S10-01) `org:gate-definitions:read` `org:gate-definitions:manage` (S10-03) `org:rings:read` `org:rings:manage` (S10-04) `org:release-policies:read` `org:release-policies:manage` `app:releases:policy-acknowledge` (S10-06) `app:releases:gate-override` (S10-03) `tenant:tenants:read` `tenant:tenants:update` `tenant:members:read` `tenant:members:manage` `tenant:testers:read` `tenant:testers:manage` `tenant:applications:read` `app:applications:read` `app:applications:write` `app:versions:read` `app:releases:read` `app:tester-groups:manage` `app:feedback:read` `app:feedback:triage` (S11-02) `tenant:authorization-grants:read` `tenant:authorization-grants:manage` (S7-02) |
+| ORG_ADMIN | `org:organizations:read` `org:organizations:update` `org:idp-configs:read` `org:idp-configs:write` `org:members:read` `org:members:invite` `org:members:manage` `org:testers:read` `org:testers:invite` `org:testers:manage` `org:tenants:create` `org:tenants:read` `org:environments:read` `org:environments:manage` (S9-04) `org:approval-workflows:read` `org:approval-workflows:manage` (S10-01) `org:gate-definitions:read` `org:gate-definitions:manage` (S10-03) `org:rings:read` `org:rings:manage` (S10-04) `org:release-policies:read` `org:release-policies:manage` `app:releases:policy-acknowledge` (S10-06) `app:releases:gate-override` (S10-03) `tenant:tenants:read` `tenant:tenants:update` `tenant:members:read` `tenant:members:manage` `tenant:testers:read` `tenant:testers:manage` `tenant:applications:read` `app:applications:read` `app:applications:write` `app:versions:read` `app:releases:read` `app:tester-groups:manage` `app:feedback:read` `app:feedback:triage` (S11-02) `tenant:authorization-grants:read` `tenant:authorization-grants:manage` (S7-02) `tenant:devices:read` `tenant:devices:manage` `tenant:devices:export` (S11-03, through the owning-organization overlay) |
 | APP_OWNER | `app:applications:read` `app:applications:write` `app:versions:read` `app:versions:write` `app:artifacts:read` `app:releases:read` `app:releases:manage` `app:releases:approve-product` (S10-01 — the Product step of FR-016's chain) `app:feedback:read` `app:feedback:triage` (S11-02) `org:environments:read` `org:environments:manage` (S9-04) `org:approval-workflows:read` `org:approval-workflows:manage` (S10-01) `org:gate-definitions:read` `org:gate-definitions:manage` (S10-03) `org:rings:read` `org:rings:manage` (S10-04) `org:release-policies:read` `org:release-policies:manage` (S10-06) `tenant:authorization-grants:read` `tenant:authorization-grants:manage` (S7-02, via the owning-organization overlay inside their organization's tenants) |
 | DEVELOPER | `app:artifacts:read` `app:artifacts:upload` `app:versions:read` `app:releases:read` `org:environments:read` (S9-04) `org:approval-workflows:read` (S10-01) `org:gate-definitions:read` (S10-03) `org:rings:read` (S10-04) `org:release-policies:read` (S10-06) |
 | QA_ENGINEER | `app:applications:read` `app:versions:read` `app:releases:read` `app:releases:approve-qa` `app:tester-groups:manage` `app:feedback:read` `app:feedback:triage` (S11-02 — the story's persona: the QA working surface) `org:environments:read` (S9-04) `org:approval-workflows:read` (S10-01) `org:gate-definitions:read` (S10-03) `org:rings:read` (S10-04) `org:release-policies:read` (S10-06) |
@@ -49,7 +49,7 @@ permission:
 | SECURITY_REVIEWER | `app:applications:read` `app:versions:read` `app:releases:read` `app:releases:approve-security` `app:feedback:read` `app:feedback:triage` (S11-01/S11-02 — with org admins, the only readers — and triagers — of SECURITY_ISSUE reports) `org:environments:read` (S9-04) `org:approval-workflows:read` (S10-01) `org:gate-definitions:read` (S10-03) `org:rings:read` (S10-04) `org:release-policies:read` (S10-06 — the story's own persona: reads every standing rule, authors none) |
 | COMPLIANCE_REVIEWER | `app:applications:read` `app:versions:read` `app:releases:read` `app:releases:approve-compliance` `org:environments:read` (S9-04) `org:approval-workflows:read` (S10-01) `org:gate-definitions:read` (S10-03) `org:rings:read` (S10-04) `org:release-policies:read` (S10-06) |
 | VIEWER | `app:applications:read` `app:versions:read` `app:releases:read` `org:environments:read` (S9-04) `org:approval-workflows:read` (S10-01) `org:gate-definitions:read` (S10-03) `org:rings:read` (S10-04) `org:release-policies:read` (S10-06) |
-| TENANT_ADMIN | `tenant:tenants:read` `tenant:members:read` `tenant:members:manage` `tenant:testers:read` `tenant:testers:manage` `tenant:applications:read` `tenant:authorization-grants:read` `tenant:authorization-grants:manage` (S7-02) |
+| TENANT_ADMIN | `tenant:tenants:read` `tenant:members:read` `tenant:members:manage` `tenant:testers:read` `tenant:testers:manage` `tenant:applications:read` `tenant:authorization-grants:read` `tenant:authorization-grants:manage` (S7-02) `tenant:devices:read` `tenant:devices:manage` `tenant:devices:export` (S11-03) |
 | TENANT_TESTER | `tenant:applications:read` `tenant:applications:download` `tenant:feedback:create` |
 | ORG_MEMBER | (none — membership only; deny-by-default) |
 
@@ -691,6 +691,24 @@ a tester holds no tenant role, and a console member is not a tester
 | PUT | `/api/v1/tenants/{id}/testers/{testerId}/status` | `tenant:testers:manage` | `200` membership view; `ACTIVE`/`SUSPENDED` transition (live-query effectiveness — excluded on the next request); `409 TESTER_INVALID_TRANSITION` on a REVOKED row (re-link instead) — the switch continues on a deactivated tenant |
 | DELETE | `/api/v1/tenants/{id}/testers/{testerId}` | `tenant:testers:manage` | `204`, idempotent; removal RETAINS the row REVOKED (history preserved), never deletes |
 | GET | `/api/v1/testers/{id}/tenants` | `org:testers:read` (`tester` target) | `200` the tester's tenants across their own organization, link-ordered, history included — one working set (the org-grain form, the groups-per-tester precedent) |
+
+### Device registry (S11-03, issue #48)
+
+The tester-device registry of one tenant — `tenant:devices:*`, a new
+vocabulary in the `tenant:testers` shape (held by TENANT_ADMIN and,
+through the owning-organization overlay, ORG_ADMIN; nobody else —
+identifiers are semi-sensitive device fingerprints, so every device
+surface is admin-only by construction). See
+[Devices](devices.md) for the full surface.
+
+| Method | Path | Permission | Result |
+|---|---|---|---|
+| POST | `/api/v1/tenants/{id}/devices` | `tenant:devices:manage` | `201` the registered view (born `ACTIVE`); `409 DEVICE_IDENTIFIER_TAKEN` (the tenant-scoped uniqueness); `422 DEVICE_REQUEST_REFUSED` (tester not linked to the tenant / tenant deactivated); `404 TESTER_NOT_FOUND` (a foreign-organization tester — the concealed miss); `400 INVALID_REQUEST` keyed by field |
+| GET | `/api/v1/tenants/{id}/devices` | `tenant:devices:read` | `200` the tenant's devices, conjunctive `testerId`/`platform`/`status` filters, cursor-paginated, each row joined with its owner's contact record |
+| GET | `/api/v1/tenants/{id}/devices/{deviceId}` | `tenant:devices:read` | `200` the device view; `404 DEVICE_NOT_FOUND` (unknown, foreign — the tenant seam — or invisible) |
+| PUT | `/api/v1/tenants/{id}/devices/{deviceId}` | `tenant:devices:manage` | `200` the updated view — model/OS only (null clears; the identifier and platform never move) |
+| PUT | `/api/v1/tenants/{id}/devices/{deviceId}/status` | `tenant:devices:manage` | `200` the reversible `ACTIVE`/`DEACTIVATED` switch (rows are never deleted — the INV-007 history posture); `422` the no-op crossing |
+| GET | `/api/v1/tenants/{id}/devices/export` | `tenant:devices:export` | `200 text/csv` the provisioning list (identifier, platform, model, os_version, owner_email); default slice `ACTIVE` — the fleet a store portal provisions; `status=DEACTIVATED`/`ALL` the other slices; the disclosure is audited (`DEVICES_EXPORTED`, count and slice, never a value) |
 
 Error responses use the platform's problem+json envelope with stable
 codes (see the [error code registry](error-codes.md)).

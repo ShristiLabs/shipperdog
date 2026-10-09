@@ -1576,6 +1576,74 @@ describe("ReleaseDetailPage", () => {
     expect(screen.getByTestId("feedback-headline")).toHaveTextContent("0 reports");
   });
 
+  it("surfaces the registered device as the report's auto-context (S11-03 AC4)", async () => {
+    const detailBody = {
+      id: FEEDBACK_ID,
+      releaseId: RELEASE_ID,
+      releaseRef: "rel-1",
+      applicationId: APPLICATION_ID,
+      versionId: "70000000-0000-4000-8000-000000000001",
+      artifactId: null,
+      organizationId: "10000000-0000-4000-8000-000000000001",
+      submitterTenantId: TENANT_ACME,
+      testerId: "90000000-0000-4000-8000-000000000001",
+      device: {
+        id: "40000000-0000-4000-8000-000000000001",
+        platform: "IOS",
+        model: "iPhone 15 Pro",
+        osVersion: "18.2.1",
+      },
+      deviceModel: "Reported Model",
+      os: "Reported OS",
+      type: "BUG",
+      status: "OPEN",
+      severity: null,
+      assigneeUserId: null,
+      resolutionNote: null,
+      description: "crashes in background",
+      createdAt: "2026-10-03T09:00:00Z",
+      updatedAt: "2026-10-03T09:00:00Z",
+      attachments: [],
+    };
+    const detailBodyLegacy = {
+      ...detailBody,
+      device: null,
+    };
+    renderDetail(
+      DETAIL_ACTIVE,
+      feedbackRoutes().concat([
+        {
+          method: "GET",
+          url: `/api/v1/releases/${RELEASE_ID}/feedback/${FEEDBACK_ID}`,
+          status: 200,
+          body: detailBody,
+        },
+        {
+          method: "GET",
+          url: `/api/v1/releases/${RELEASE_ID}/feedback/${FEEDBACK_ID_2}`,
+          status: 200,
+          body: detailBodyLegacy,
+        },
+      ]),
+    );
+
+    // The linked report: the registered device's facts lead and the
+    // caption names the source; the reported free text stays stored
+    // but is no longer the headline context.
+    await user.click(await screen.findByTestId(`feedback-detail-${FEEDBACK_ID}`));
+    expect(await screen.findByTestId(`feedback-detail-view-${FEEDBACK_ID}`)).toHaveTextContent(
+      "registered iOS device",
+    );
+    expect(screen.getByTestId(`feedback-detail-view-${FEEDBACK_ID}`)).toHaveTextContent("iPhone 15 Pro · 18.2.1");
+    expect(screen.getByTestId(`feedback-device-${FEEDBACK_ID}`)).toHaveTextContent("auto-context");
+
+    // The unlinked report: the reported free text stands alone.
+    await user.click(await screen.findByTestId(`feedback-detail-${FEEDBACK_ID_2}`));
+    expect(await screen.findByTestId(`feedback-detail-view-${FEEDBACK_ID_2}`)).toHaveTextContent(
+      "Reported Model · Reported OS",
+    );
+  });
+
   it("re-reads the gate block after a triage act - the metric linkage (S11-02 AC3/AC4)", async () => {
     renderDetail(
       DETAIL_ACTIVE,

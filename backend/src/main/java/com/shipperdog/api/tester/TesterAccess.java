@@ -1,5 +1,7 @@
 package com.shipperdog.api.tester;
 
+import java.util.Collection;
+import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
 
@@ -29,4 +31,16 @@ public interface TesterAccess {
      * organization hop.
      */
     Optional<UUID> testerIdOfUser(UUID userId);
+
+    /**
+     * The named testers' contact records (issue #48, S11-03): the
+     * device registry's owner joins — the console's device rows name
+     * their tester and the provisioning CSV carries the owner email
+     * (AC3). Unknown ids map to nothing; the map is complete for every
+     * tester that exists.
+     */
+    Map<UUID, TesterRecord> recordsOf(Collection<UUID> testerIds);
+
+    /** The contact facts {@link #recordsOf} answers: no identifiers beyond the email the surfaces display. */
+    record TesterRecord(UUID id, String email, String fullName, String status) {}
 }

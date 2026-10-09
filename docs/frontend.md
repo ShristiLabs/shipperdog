@@ -14,7 +14,11 @@ its blocks grown by the release engine (gates, approvals, distribution,
 the promotion timelines) and, since S11-02, the Feedback block: the
 rollup headline ("14 reports . 1 critical") with the drill-down list
 whose inline triage actions (severity, assignee, the lifecycle
-crossings) are what move the open-critical-bugs gate.
+crossings) are what move the open-critical-bugs gate. S11-03 adds
+the tenant device registry: the per-tenant devices screen
+(registration, management, the reversible park, the provisioning CSV
+export) and the linked registered device's auto-context in the
+feedback detail.
 
 ## Running locally
 
@@ -37,7 +41,8 @@ frontend/src/
                 bodies), problem.ts (RFC 7807 decoding), auth.ts,
                 tenants.ts, organizations.ts, applications.ts
                 (registry + shared-app authorization), releases.ts
-                + versions.ts (the S9-05 dashboard surfaces)
+                + versions.ts (the S9-05 dashboard surfaces),
+                devices.ts (the S11-03 registry surface)
   auth/         tokenStore.ts, AuthContext.tsx, RequireAuth.tsx
   components/   ToastContext.tsx (error toast convention)
   hooks/        usePermission.ts (role-aware navigation probes),
@@ -47,6 +52,7 @@ frontend/src/
                 per-application version walks)
   layout/       ConsoleLayout.tsx (app bar + nav drawer)
   pages/        LoginPage, TenantsPage, TenantMembersPage, tenantRules,
+                TenantDevicesPage (the S11-03 device registry),
                 ApplicationsPage, ApplicationDetailPage,
                 ApplicationDialog (create/edit form),
                 applicationRules (client mirrors of field rules),
@@ -131,6 +137,19 @@ allowed.
   dialog offering the organization roster for pickup plus a raw user-id
   entry for tenant testers outside the organization; the role picker is
   fixed to the M1 roles (Tenant Admin, Tenant Tester).
+- **Tenant devices** (`/tenants/:tenantId/devices`, S11-03, issue
+  #48): the tenant's tester-device registry — the data grid with
+  owner (email/name), platform, identifier, model/OS, and status
+  chips; the register dialog (owner picker over the tenant's linked
+  testers, platform, identifier, optional model/OS — the M2
+  manual-entry answer); the descriptive edit (model/OS only; null
+  clears); the reversible deactivate/reactivate park (devices are
+  never deleted); the provisioning CSV download (the ACTIVE fleet by
+  default, `ALL` the full registry — `apiFetchText`, the caller
+  frames the file from the returned CSV); and server-side platform
+  and status filters with the standard Load-more cursor list.
+  Reached from the tenants listing's Devices action; admin-only end
+  to end (identifiers are semi-sensitive).
 - **Applications** (`/applications`, S3-04): two views of one registry
   behind a scope toggle. "All applications" is the organization-wide
   administration listing (`GET /api/v1/applications?organizationId=`,

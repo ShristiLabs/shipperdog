@@ -266,5 +266,33 @@ public enum AuditEventType {
      * same event: the from/to pair says which direction the report
      * moved, and the metric flips with it.
      */
-    FEEDBACK_STATUS_TRANSITIONED
+    FEEDBACK_STATUS_TRANSITIONED,
+    /**
+     * A tester device registered (S11-03, issue #48, AC1, FR-028, PRD 8.12):
+     * the tenant scope, the owning tester, the platform, and the device id.
+     * The identifier is deliberately absent — it is the semi-sensitive
+     * fingerprint whose mass disclosure only the export event records, by
+     * count, never by value.
+     */
+    DEVICE_REGISTERED,
+    /**
+     * A device's descriptive fields updated (S11-03, AC2): the device, the
+     * owner, and the fields that moved (model, os_version) — the identity
+     * columns (identifier, platform) never move and never appear.
+     */
+    DEVICE_UPDATED,
+    /**
+     * The reversible status switch crossed (S11-03, AC2/AC5): ACTIVE to
+     * DEACTIVATED parks the device without deleting anything (its feedback
+     * links and the tenant's history stay, the INV-007 posture); the
+     * from/to pair records the direction.
+     */
+    DEVICE_STATUS_CHANGED,
+    /**
+     * The provisioning export performed (S11-03, AC3): the tenant scope,
+     * the status slice exported, and the row count — the identifier's mass
+     * disclosure is itself the audited act, recorded by count and never by
+     * value (the identifier's privacy note).
+     */
+    DEVICES_EXPORTED
 }

@@ -464,6 +464,11 @@ class RbacPermissionEvaluatorTest {
             public Optional<UUID> testerIdOfUser(UUID userId) {
                 return Optional.empty();
             }
+
+            @Override
+            public Map<UUID, TesterAccess.TesterRecord> recordsOf(Collection<UUID> testerIds) {
+                return Map.of();
+            }
         };
     }
 
