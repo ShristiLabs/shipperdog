@@ -86,7 +86,13 @@ class RolePermissionsTest {
                         // reads join the read-only surface (a viewer
                         // sees the dashboards' numbers, never repairs
                         // the rollups).
-                        Permission.APP_ANALYTICS_READ);
+                        Permission.APP_ANALYTICS_READ,
+                        // S11-05 (issue #50): the organization
+                        // dashboard joins the read-only surface (a
+                        // viewer sees the landing counts and health,
+                        // never a pending-action queue — the server
+                        // role-filters those away).
+                        Permission.ORG_DASHBOARD_READ);
     }
 
     @Test

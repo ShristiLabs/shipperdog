@@ -104,6 +104,12 @@ Current contents:
   the facts-to-rollups-to-reads pipeline, the frozen S15-01 SDK events
   contract, the rollup job and its backfill, and the gate/policy
   metric seams the pipeline registers on (S11-04)
+- [Dashboards](dashboards.md) — the console's landing surfaces (S11-05):
+  the organization dashboard (counts, per-application release health
+  with the BLOCKED/TESTING/HEALTHY derivation, role-filtered pending
+  actions) and the tenant dashboard, the two read APIs behind them,
+  and the series-folding rule (counts sum, rates never do) every
+  chart consumer of the analytics reads follows
 - [Observability](observability.md) — tracing/metrics/logs baseline,
   correlation model, `shipperdog_*` metric namespace, Prometheus +
   Grafana local stack, and the management-port security posture

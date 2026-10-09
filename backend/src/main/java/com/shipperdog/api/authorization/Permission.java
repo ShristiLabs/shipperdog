@@ -74,6 +74,12 @@ public enum Permission {
     // personas as the chains, gates, and rings it composes with).
     ORG_RELEASE_POLICIES_READ("org:release-policies:read"),
     ORG_RELEASE_POLICIES_MANAGE("org:release-policies:manage"),
+    // Issue #50 (S11-05): the organization dashboard — the console's
+    // landing read model (PRD 29: counts, per-application release
+    // health, role-filtered pending actions). Read-only by
+    // construction; held by every functional console role (the
+    // pending-actions panel personalizes by role server-side).
+    ORG_DASHBOARD_READ("org:dashboard:read"), // issue #50 (S11-05)
 
     // tenant scope
     TENANT_TENANTS_READ("tenant:tenants:read"),
@@ -103,6 +109,10 @@ public enum Permission {
     // evolves it).
     TENANT_ANALYTICS_READ("tenant:analytics:read"), // issue #49 (S11-04)
     TENANT_ANALYTICS_INGEST("tenant:analytics:ingest"), // issue #49 (S11-04)
+    // Issue #50 (S11-05): the tenant dashboard — the tenant-grain
+    // landing read model (PRD 29's tenant block), held by tenant
+    // administrators with the owning organization's overlay.
+    TENANT_DASHBOARD_READ("tenant:dashboard:read"), // issue #50 (S11-05)
 
     // app scope (enforced from E3 / issue #13 onward)
     APP_APPLICATIONS_READ("app:applications:read"),

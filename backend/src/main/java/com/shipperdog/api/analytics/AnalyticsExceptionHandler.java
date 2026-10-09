@@ -11,13 +11,14 @@ import org.springframework.web.bind.annotation.RestControllerAdvice;
  * Renders analytics-module failures in the platform's single error
  * envelope (issue #8): RFC 7807 problem+json with a stable public code
  * and the request's trace_id. Internal exception messages are logged,
- * never echoed. Serves the analytics surface of issue #49 (S11-04);
- * permission denials conceal as the authorization module's own
- * not-found family (the permission target of every route here is the
- * application or the tenant).
+ * never echoed. Serves the analytics surface of issue #49 (S11-04)
+ * and the dashboards of issue #50 (S11-05); permission denials conceal
+ * as the authorization module's own not-found family (the permission
+ * target of every route here is the application, the organization, or
+ * the tenant).
  */
 @Order(0)
-@RestControllerAdvice(assignableTypes = AnalyticsController.class)
+@RestControllerAdvice(assignableTypes = {AnalyticsController.class, DashboardController.class})
 public class AnalyticsExceptionHandler {
 
     @ExceptionHandler(AnalyticsException.class)

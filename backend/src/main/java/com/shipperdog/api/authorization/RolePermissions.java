@@ -179,7 +179,12 @@ public final class RolePermissions {
             Permission.APP_ANALYTICS_READ,
             Permission.APP_ANALYTICS_MANAGE,
             Permission.TENANT_ANALYTICS_READ,
-            Permission.TENANT_ANALYTICS_INGEST);
+            Permission.TENANT_ANALYTICS_INGEST,
+            // S11-05 (issue #50): the landing dashboards — the
+            // organization read directly, the tenant grain through the
+            // owning-organization overlay (the tenant:analytics shape).
+            Permission.ORG_DASHBOARD_READ,
+            Permission.TENANT_DASHBOARD_READ);
 
     private static final Set<Permission> APP_OWNER = Set.of(
             Permission.APP_APPLICATIONS_READ,
@@ -227,7 +232,11 @@ public final class RolePermissions {
             // applications they own — the reads and the rollup
             // recompute trigger.
             Permission.APP_ANALYTICS_READ,
-            Permission.APP_ANALYTICS_MANAGE);
+            Permission.APP_ANALYTICS_MANAGE,
+            // S11-05 (issue #50): the organization dashboard — the
+            // owner's landing view of their applications' health and
+            // the Product steps waiting on them.
+            Permission.ORG_DASHBOARD_READ);
 
     private static final Set<Permission> DEVELOPER = Set.of(
             Permission.APP_ARTIFACTS_READ,
@@ -269,7 +278,10 @@ public final class RolePermissions {
             Permission.ORG_RELEASE_POLICIES_READ,
             // S11-04 (issue #49): the release health numbers their
             // evidence feeds (read-only).
-            Permission.APP_ANALYTICS_READ);
+            Permission.APP_ANALYTICS_READ,
+            // S11-05 (issue #50): the organization dashboard — the QA
+            // persona's landing view of the queues they work.
+            Permission.ORG_DASHBOARD_READ);
 
     private static final Set<Permission> RELEASE_MANAGER = Set.of(
             Permission.APP_APPLICATIONS_READ,
@@ -315,7 +327,11 @@ public final class RolePermissions {
             // decisions answer to, and repairs their history through
             // the recompute trigger.
             Permission.APP_ANALYTICS_READ,
-            Permission.APP_ANALYTICS_MANAGE);
+            Permission.APP_ANALYTICS_MANAGE,
+            // S11-05 (issue #50): the organization dashboard — the
+            // release manager's landing view of what needs them (their
+            // approvals, the failed gates they may override).
+            Permission.ORG_DASHBOARD_READ);
 
     private static final Set<Permission> SECURITY_REVIEWER = Set.of(
             Permission.APP_APPLICATIONS_READ,
@@ -343,7 +359,11 @@ public final class RolePermissions {
             // Security Reviewer authors no rules here (a rule they
             // demand is a governance decision), but reads every
             // standing rule and its evaluation trail.
-            Permission.ORG_RELEASE_POLICIES_READ);
+            Permission.ORG_RELEASE_POLICIES_READ,
+            // S11-05 (issue #50): the organization dashboard — the
+            // security persona's landing view of the Security steps
+            // waiting on them.
+            Permission.ORG_DASHBOARD_READ);
 
     private static final Set<Permission> COMPLIANCE_REVIEWER = Set.of(
             Permission.APP_APPLICATIONS_READ,
@@ -360,7 +380,11 @@ public final class RolePermissions {
             Permission.ORG_RINGS_READ,
             // S10-06 (issue #45): the policy rules' evaluations are
             // theirs to audit the same way.
-            Permission.ORG_RELEASE_POLICIES_READ);
+            Permission.ORG_RELEASE_POLICIES_READ,
+            // S11-05 (issue #50): the organization dashboard — the
+            // compliance persona's landing view of the Compliance
+            // steps waiting on them.
+            Permission.ORG_DASHBOARD_READ);
 
     private static final Set<Permission> VIEWER = Set.of(
             Permission.APP_APPLICATIONS_READ,
@@ -373,7 +397,10 @@ public final class RolePermissions {
             Permission.ORG_RELEASE_POLICIES_READ,
             // S11-04 (issue #49): the dashboards' numbers are read-only
             // surface (S11-05 renders them for this persona too).
-            Permission.APP_ANALYTICS_READ);
+            Permission.APP_ANALYTICS_READ,
+            // S11-05 (issue #50): the organization dashboard's counts
+            // and health view (read-only surface, the same character).
+            Permission.ORG_DASHBOARD_READ);
 
     /** ORG_MEMBER deliberately holds nothing (deny-by-default, PRD P3). */
     private static final Set<Permission> ORG_MEMBER = Set.of();
@@ -417,7 +444,10 @@ public final class RolePermissions {
             // events API's write authority (CI and operations until
             // S15-01's device authentication evolves it).
             Permission.TENANT_ANALYTICS_READ,
-            Permission.TENANT_ANALYTICS_INGEST);
+            Permission.TENANT_ANALYTICS_INGEST,
+            // S11-05 (issue #50): the tenant dashboard — the tenant
+            // administrator's landing view (PRD 29's tenant block).
+            Permission.TENANT_DASHBOARD_READ);
 
     private static final Set<Permission> TENANT_TESTER = Set.of(
             Permission.TENANT_APPLICATIONS_READ,

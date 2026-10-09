@@ -2996,6 +2996,25 @@ paths:
             '*/*':
               schema:
                 $ref: "#/components/schemas/PageResponseMetricPointView"
+  /api/v1/tenants/{tenantId}/dashboard:
+    get:
+      tags:
+      - dashboard-controller
+      operationId: tenantDashboard
+      parameters:
+      - name: tenantId
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      responses:
+        "200":
+          description: OK
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/TenantDashboardView"
   /api/v1/tenants/{id}/testers/{testerId}:
     get:
       tags:
@@ -3658,6 +3677,25 @@ paths:
             '*/*':
               schema:
                 $ref: "#/components/schemas/EligibilityView"
+  /api/v1/organizations/{organizationId}/dashboard:
+    get:
+      tags:
+      - dashboard-controller
+      operationId: organizationDashboard
+      parameters:
+      - name: organizationId
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      responses:
+        "200":
+          description: OK
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/OrgDashboardView"
   /api/v1/organizations/{id}/members:
     get:
       tags:
@@ -4681,7 +4719,7 @@ components:
     JsonNode:
       type: object
       properties:
-        floatingPointNumber:
+        container:
           type: boolean
         nodeType:
           type: string
@@ -4726,7 +4764,7 @@ components:
           type: boolean
         binary:
           type: boolean
-        container:
+        floatingPointNumber:
           type: boolean
         empty:
           type: boolean
@@ -6328,6 +6366,52 @@ components:
             $ref: "#/components/schemas/MetricPointView"
         next_cursor:
           type: string
+    PendingReleaseView:
+      type: object
+      properties:
+        releaseId:
+          type: string
+          format: uuid
+        releaseRef:
+          type: string
+        applicationId:
+          type: string
+          format: uuid
+        applicationName:
+          type: string
+        status:
+          type: string
+        ring:
+          type: string
+    TenantCountsView:
+      type: object
+      properties:
+        applications:
+          type: integer
+          format: int32
+        availableVersions:
+          type: integer
+          format: int32
+        activeTesters:
+          type: integer
+          format: int32
+        pendingReleases:
+          type: integer
+          format: int32
+    TenantDashboardView:
+      type: object
+      properties:
+        tenantId:
+          type: string
+          format: uuid
+        generatedAt:
+          type: string
+        counts:
+          $ref: "#/components/schemas/TenantCountsView"
+        pendingReleases:
+          type: array
+          items:
+            $ref: "#/components/schemas/PendingReleaseView"
     PageResponseMembershipView:
       type: object
       properties:
@@ -6962,6 +7046,95 @@ components:
             $ref: "#/components/schemas/OrganizationResponse"
         next_cursor:
           type: string
+    ApplicationHealthView:
+      type: object
+      properties:
+        applicationId:
+          type: string
+          format: uuid
+        name:
+          type: string
+        health:
+          type: string
+        activeReleases:
+          type: integer
+          format: int32
+        testing:
+          type: integer
+          format: int32
+        production:
+          type: integer
+          format: int32
+        blockedFindings:
+          type: integer
+          format: int32
+    FailedGateView:
+      type: object
+      properties:
+        releaseId:
+          type: string
+          format: uuid
+        releaseRef:
+          type: string
+        applicationId:
+          type: string
+          format: uuid
+        applicationName:
+          type: string
+        gateType:
+          type: string
+    OrgCountsView:
+      type: object
+      properties:
+        applications:
+          type: integer
+          format: int32
+        tenants:
+          type: integer
+          format: int32
+        activeReleases:
+          type: integer
+          format: int32
+        pendingApprovals:
+          type: integer
+          format: int32
+        testing:
+          type: integer
+          format: int32
+        production:
+          type: integer
+          format: int32
+    OrgDashboardView:
+      type: object
+      properties:
+        organizationId:
+          type: string
+          format: uuid
+        generatedAt:
+          type: string
+        counts:
+          $ref: "#/components/schemas/OrgCountsView"
+        applications:
+          type: array
+          items:
+            $ref: "#/components/schemas/ApplicationHealthView"
+        pendingActions:
+          $ref: "#/components/schemas/PendingActionsView"
+    PendingActionsView:
+      type: object
+      properties:
+        approvals:
+          type: array
+          items:
+            $ref: "#/components/schemas/ApprovalStepView"
+        reviews:
+          type: array
+          items:
+            $ref: "#/components/schemas/ApprovalStepView"
+        failedGates:
+          type: array
+          items:
+            $ref: "#/components/schemas/FailedGateView"
     PageResponseDefinitionView:
       type: object
       properties:
