@@ -9,10 +9,13 @@
  * can be shared when reproducing an issue.
  */
 import HistoryIcon from "@mui/icons-material/History";
-import { Card, CardActionArea, CardActions, CardContent, Chip, Stack, Typography } from "@mui/material";
+import BugReportIcon from "@mui/icons-material/BugReport";
+import { Button, Card, CardActionArea, CardActions, CardContent, Chip, Stack, Typography } from "@mui/material";
+import { useState } from "react";
 import { Link as RouterLink } from "react-router-dom";
 import type { HistoryEntry } from "../api/history";
 import DownloadFlow from "./DownloadFlow";
+import FeedbackDialog from "./FeedbackDialog";
 
 export default function HistoryEntryCard({
   entry,
@@ -23,6 +26,8 @@ export default function HistoryEntryCard({
   tenantId: string;
   applicationId: string;
 }) {
+  const [reporting, setReporting] = useState(false);
+
   return (
     <Card data-testid={`history-entry-${entry.versionId}`}>
       <CardActionArea
@@ -70,18 +75,39 @@ export default function HistoryEntryCard({
           </Stack>
         </CardContent>
       </CardActionArea>
-      {entry.platforms.length > 0 ? (
-        <CardActions sx={{ pt: 0 }} data-testid={`history-downloads-${entry.versionId}`}>
-          {entry.platforms.map((slot) => (
-            <DownloadFlow
-              key={slot.platform}
-              artifactId={slot.artifactId}
-              versionId={entry.versionId}
-              platform={slot.platform}
-            />
-          ))}
-        </CardActions>
-      ) : null}
+      <CardActions sx={{ pt: 0 }} data-testid={`history-downloads-${entry.versionId}`}>
+        {entry.platforms.map((slot) => (
+          <DownloadFlow
+            key={slot.platform}
+            artifactId={slot.artifactId}
+            versionId={entry.versionId}
+            platform={slot.platform}
+          />
+        ))}
+        {/* S11-01 (issue #46): the app screen's report entry point —
+         * the dialog pins the submission to this version's context
+         * (and a build when the tester names one). Always present: a
+         * version with no builds yet can still be reported on. */}
+        <Button
+          size="small"
+          startIcon={<BugReportIcon />}
+          onClick={() => setReporting(true)}
+          sx={{ ml: "auto" }}
+          data-testid={`feedback-card-trigger-${entry.versionId}`}
+        >
+          Report issue
+        </Button>
+      </CardActions>
+      <FeedbackDialog
+        open={reporting}
+        onClose={() => setReporting(false)}
+        versionName={entry.versionName}
+        context={{ tenantId, applicationId, versionId: entry.versionId }}
+        builds={entry.platforms.map((slot) => ({
+          artifactId: slot.artifactId,
+          label: `${platformLabel(slot.platform)} build${slot.buildNumber !== null ? ` ${slot.buildNumber}` : ""}`,
+        }))}
+      />
     </Card>
   );
 }

@@ -133,6 +133,12 @@ public class AuthorizationExceptionHandler {
             // (ENVIRONMENT_NOT_FOUND), never a code that would leak
             // which grain of check failed.
             case "environment" -> "ENVIRONMENT_NOT_FOUND";
+            // Since S11-01 (issue #46) the feedback surface's own
+            // resolution failures (an unresolvable subject on the
+            // self-scoped submission route, an unknown application
+            // profile) conceal as the feedback module's miss codes,
+            // never a code that would leak which link failed.
+            case "feedback" -> "FEEDBACK_NOT_FOUND";
             default -> ApiError.NOT_FOUND.name();
         };
     }

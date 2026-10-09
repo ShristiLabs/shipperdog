@@ -31,6 +31,10 @@ export const SESSION_EXPIRED_EVENT = "sd:portal:session-expired";
 interface RequestOptions {
   method?: string;
   body?: unknown;
+  /** A multipart form body (S11-01 feedback submission): passed to
+   * fetch verbatim so the browser sets the boundary Content-Type —
+   * never JSON-encoded, never given a manual boundary. */
+  form?: FormData;
   /** Internal: set on the post-refresh retry to bound it to one attempt. */
   retrying?: boolean;
 }
@@ -92,7 +96,7 @@ async function rawFetch(path: string, options: RequestOptions): Promise<Response
   return fetch(`${BASE}${path}`, {
     method: options.method ?? "GET",
     headers,
-    body: options.body === undefined ? undefined : JSON.stringify(options.body),
+    body: options.form ?? (options.body === undefined ? undefined : JSON.stringify(options.body)),
   });
 }
 

@@ -41,20 +41,25 @@ error.
 
 ```
 portal/src/
-  api/          client.ts (fetch wrapper + single-flight refresh),
-                problem.ts (RFC 7807 decoding), auth.ts (raw auth
-                endpoints), catalog.ts (the S8-02 catalog contract:
-                card types + cursor paging), history.ts (the S8-03
-                history contract: entry/slot types, cursor paging,
-                the versionId deep-link probe)
+  api/          client.ts (fetch wrapper + single-flight refresh,
+                multipart form support since S11-01), problem.ts
+                (RFC 7807 decoding), auth.ts (raw auth endpoints),
+                catalog.ts (the S8-02 catalog contract: card types +
+                cursor paging), history.ts (the S8-03 history
+                contract: entry/slot types, cursor paging, the
+                versionId deep-link probe), feedback.ts (the S11-01
+                submission contract: six-type vocabulary, multipart
+                submit, UA-derived OS prefill)
   auth/         tokenStore.ts (session storage), AuthContext.tsx
                 (session lifecycle + silent refresh), RequireAuth.tsx
                 (route guard), tokenStore.test.ts,
                 AuthContext.test.tsx (silent-refresh timer)
   components/   ToastContext.tsx (error toast convention),
                 HistoryEntryCard.tsx (one authorized version: badge,
-                TTL, platform rows), NotFoundPage.tsx (the opaque
-                404 page)
+                TTL, platform rows, Report-issue trigger),
+                FeedbackDialog.tsx (the S11-01 submit surface),
+                DownloadFlow.tsx (the S8-04 install guidance),
+                NotFoundPage.tsx (the opaque 404 page)
   layout/       PortalLayout.tsx (app bar, tester identity, logout)
   pages/        LoginPage, AcceptInvitationPage, HomePage (the S8-02
                 My Applications catalog), ApplicationPage (the S8-03
@@ -207,6 +212,48 @@ its expiry, and the download facts — never the storage key.
   `apk-fixture.mjs` signed-APK minter) uploads a real fixture through
   the API, settles it READY, and proves the browser download is
   byte-identical (sha256) with the artifact's file name.
+
+## Feedback submission (S11-01)
+
+"Report issue" on the version screens (the deep-linked version page
+and every version card of the history list) opens the
+`FeedbackDialog`: the tester picks one of PRD 8.13's six types (Bug,
+Feedback, Crash, Feature request, UX issue, Security issue), types the
+required description, optionally pins the report to the build they
+were looking at (a platform slot's artifact), optionally reports
+device/OS (the OS prefilled from the user agent, always editable),
+and attaches up to five files — png/jpg/mp4/txt/log. The dialog is
+mobile-first: a phone viewport gets the full-screen sheet, tablets and
+up the centered card.
+
+- **Context is the screen's, identity is the server's (AC2).** The
+  form carries only what the tester typed or chose plus the
+  application/version/tenant link the page already addresses; the
+  tester record, submitting tenant, organization, and release resolve
+  server-side from the session and the release link — the client
+  contract has no identity field to spoof, and the recorded request
+  proves it in tests. The submission contract is deliberately the one
+  the S15-01 in-app SDK will POST from inside a shipped build: one
+  API, two clients.
+- **Validation.** Client-side gates (non-empty description,
+  extension/count fast-fails) refuse before any request; the server's
+  own bounds stay the authority — its field-level rejections render
+  inline under the offending field (the 400's `errors` member keyed
+  by field, the attachment 422's keyed by file name), with the fix in
+  the form, never a blind retry.
+- **Honest failures.** Every other failure renders the problem
+  envelope — stable code, trace id, Retry — including the submission
+  surface's single concealment (`FEEDBACK_RELEASE_NOT_FOUND`: every
+  broken release link answers the same miss). A transport failure
+  renders the unexpected-error retry. A 201 renders the confirmation
+  with the stored report's id.
+- **Tests.** `FeedbackDialog.test.tsx` covers the submit-flow states
+  (golden path form shape, build pinning, attachments, client gates,
+  server field rejections, concealment, transport failure) and
+  `api/feedback.test.ts` the UA-derived OS prefill; the e2e script
+  provisions a release targeting the tester's tenant and submits a
+  report with an attachment end to end, verifying the server-attached
+  context through the admin API.
 
 ## Hardening and deployment (S8-05)
 

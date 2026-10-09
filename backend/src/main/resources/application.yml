@@ -122,6 +122,28 @@ shipperdog:
       concurrency: ${ARTIFACT_VALIDATION_CONCURRENCY:2}
       queue-capacity: ${ARTIFACT_VALIDATION_QUEUE_CAPACITY:200}
       storage-retry-attempts: ${ARTIFACT_VALIDATION_STORAGE_RETRIES:3}
+  feedback:
+    # The feedback module's attachment tier (issue #46, S11-01,
+    # FR-027/PRD 8.13): bytes in object storage under the
+    # tenant-scoped prefix {organizationId}/{submitterTenantId}/
+    # feedback/..., metadata in PostgreSQL. The same two-target shape
+    # as the artifact store — emulator host set (local/CI) talks to
+    # the compose GCS emulator without credentials; blank uses
+    # application default credentials against real GCS — deliberately
+    # its own client and bucket namespace, one module one store.
+    # The limits are AC3's "up to configured limits": per-kind byte
+    # ceilings for PRD 8.13's three attachment classes and the
+    # per-report file-count bound (an abuse bound on a surface any
+    # linked tester may write).
+    storage:
+      bucket: ${FEEDBACK_STORAGE_BUCKET:shipperdog-feedback-local}
+      host: ${FEEDBACK_STORAGE_EMULATOR_HOST:}
+      project-id: ${FEEDBACK_STORAGE_PROJECT_ID:shipperdog-local}
+      create-bucket-if-absent: ${FEEDBACK_STORAGE_CREATE_BUCKET:true}
+      max-screenshot-bytes: ${FEEDBACK_MAX_SCREENSHOT_BYTES:10485760}
+      max-video-bytes: ${FEEDBACK_MAX_VIDEO_BYTES:104857600}
+      max-log-bytes: ${FEEDBACK_MAX_LOG_BYTES:5242880}
+      max-attachments-per-report: ${FEEDBACK_MAX_ATTACHMENTS:5}
   tester:
     # Tester onboarding (issue #26, S6-01): invitations reuse the
     # identity machinery but carry their own TTL (the issue's 7-day

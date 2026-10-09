@@ -34,6 +34,7 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.stereotype.Component;
 
 /**
@@ -82,7 +83,7 @@ public class GcsArtifactStore implements ArtifactStore {
     /** Cached application-default token source; null in emulator mode. */
     private final GoogleCredentials credentials;
 
-    public GcsArtifactStore(Storage storage, ArtifactStorageProperties properties) {
+    public GcsArtifactStore(@Qualifier("artifactStorage") Storage storage, ArtifactStorageProperties properties) {
         this.storage = storage;
         this.properties = properties;
         this.http =

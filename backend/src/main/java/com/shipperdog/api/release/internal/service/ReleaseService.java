@@ -19,6 +19,7 @@ import com.shipperdog.api.release.internal.entity.ReleaseTargetEntity;
 import com.shipperdog.api.release.internal.entity.ReleaseTargetGroupEntity;
 import com.shipperdog.api.release.internal.entity.RingEntity;
 import com.shipperdog.api.release.internal.repository.ReleaseArtifactRepository;
+import com.shipperdog.api.release.internal.repository.ReleaseRegistryRepository;
 import com.shipperdog.api.release.internal.repository.ReleaseScopedRepository;
 import com.shipperdog.api.release.internal.repository.ReleaseStatusHistoryRepository;
 import com.shipperdog.api.release.internal.repository.ReleaseTargetGroupRepository;
@@ -127,6 +128,7 @@ public class ReleaseService implements ReleaseAccess, VersionDistributionContrib
     private final ReleaseTargetGroupRepository targetGroups;
     private final ReleaseArtifactRepository releaseArtifacts;
     private final ReleaseStatusHistoryRepository statusHistory;
+    private final ReleaseRegistryRepository registry;
     private final RingRepository rings;
     private final ApplicationAccess applications;
     private final VersionAccess versions;
@@ -147,6 +149,7 @@ public class ReleaseService implements ReleaseAccess, VersionDistributionContrib
             ReleaseTargetGroupRepository targetGroups,
             ReleaseArtifactRepository releaseArtifacts,
             ReleaseStatusHistoryRepository statusHistory,
+            ReleaseRegistryRepository registry,
             RingRepository rings,
             ApplicationAccess applications,
             VersionAccess versions,
@@ -165,6 +168,7 @@ public class ReleaseService implements ReleaseAccess, VersionDistributionContrib
         this.targetGroups = targetGroups;
         this.releaseArtifacts = releaseArtifacts;
         this.statusHistory = statusHistory;
+        this.registry = registry;
         this.rings = rings;
         this.applications = applications;
         this.versions = versions;
@@ -559,6 +563,7 @@ public class ReleaseService implements ReleaseAccess, VersionDistributionContrib
                     release.getId(),
                     release.releaseRef(),
                     release.getApplicationId(),
+                    release.getVersionId(),
                     release.getOrganizationId(),
                     release.getTenantId(),
                     release.getCreatedBy(),
@@ -597,6 +602,43 @@ public class ReleaseService implements ReleaseAccess, VersionDistributionContrib
                                 .map(ReleaseTargetEntity::getTenantId)
                                 .toList()));
         return targeted;
+    }
+
+    /**
+     * The feedback submission's resolution (S11-01, issue #46): the one
+     * release of the application and version, answered only when the
+     * named submitter tenant is one of the release's targets — the
+     * release link IS the submission's standing. Deliberately NOT
+     * seam-served (the registry probe the download cutoff established):
+     * the submitting tester's bound scope is by construction not the
+     * release's owning scope, so the cross-scope probe resolves the row
+     * and the target-set check refuses the facts before they leave the
+     * module. An unknown application/version pair, a release that
+     * exists but does not serve the tenant, and a nonexistent release
+     * are the same empty answer (the caller conceals; PRD 12).
+     */
+    @Override
+    @Transactional(readOnly = true)
+    public Optional<ReleaseAccess.ReleaseFacts> submissionFactsOf(
+            UUID applicationId, UUID versionId, UUID submitterTenantId) {
+        return registry.findByApplicationIdAndVersionId(applicationId, versionId)
+                .filter(release -> targets.existsByReleaseIdAndTenantId(release.getId(), submitterTenantId))
+                .map(release -> {
+                    RingEntity ring =
+                            rings.findById(release.getStartingRingId()).orElse(null);
+                    return new ReleaseAccess.ReleaseFacts(
+                            release.getId(),
+                            release.releaseRef(),
+                            release.getApplicationId(),
+                            release.getVersionId(),
+                            release.getOrganizationId(),
+                            release.getTenantId(),
+                            release.getCreatedBy(),
+                            release.getStatus().name(),
+                            ring == null ? null : ring.getId(),
+                            ring == null ? null : ring.getCode(),
+                            release.getEnvironmentId());
+                });
     }
 
     /** The code of a ring id (S10-01's definition views render the attachment as the API's vocabulary). */

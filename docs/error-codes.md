@@ -275,3 +275,18 @@ The tester onboarding surface (S6-01, issue #26), tester groups
 | `POLICY_RULE_NAME_TAKEN` | 409 | A policy rule with this name already exists for the organization. (S10-06/issue #45; V34's `uq_release_policy_rules_org_name` is the authority — the pre-check and the lost-race translation answer it identically, the ring-code precedent) |
 | `POLICY_RULE_IN_USE` | 409 | The rule is referenced by recorded policy holds; disable it instead of deleting it. (S10-06; the hold ledger is audit evidence — the evaluation log's loose name snapshots survive deletion by design, the living ledger's foreign keys do not) |
 | `POLICY_HOLD_ALREADY_ACKNOWLEDGED` | 409 | The hold is already acknowledged; its decision stands. (S10-06/issue #45 AC2 — the acknowledge is a standing human decision for (release, rule, ring), not a one-shot token; a second actor's intent is a new hop's question) |
+
+## Feedback (`FeedbackException.Code`)
+
+The tester feedback surface (S11-01, issue #46, FR-027, PRD 8.13) —
+one self-scoped submission route and three release-addressed console
+reads.
+
+| Code | HTTP | Detail |
+|---|---|---|
+| `FEEDBACK_RELEASE_NOT_FOUND` | 404 | Resource not found. (the submission's single concealment: an unknown application/version/release, a release that does not target the named tenant, a caller without an effective ACTIVE membership there, and a console persona with no tester record all answer this SAME miss — the client learns nothing about which link failed, PRD 12) |
+| `FEEDBACK_NOT_FOUND` | 404 | Resource not found. (the console reads' miss: unknown, foreign, or mismatched-application report — and the SECURITY_ISSUE restricted-visibility concealment, which is byte-identical to the genuine miss for every reader below the owning org's admin/security bar) |
+| `ARTIFACT_NOT_FOUND` | 404 | Resource not found. (the submission's optional build link: an unknown artifact, or one that is not a READY build of the release's version — this surface's own value of the artifact read's public code, so a caller learns nothing about artifacts it cannot see) |
+| `INVALID_REQUEST` | 400 | The request is invalid. (a blank description, an unknown type token — the message echoes it — or over-long free-text fields; one `errors` entry per offending field, the whole form fixed in one pass) |
+| `ATTACHMENT_REJECTED` | 422 | One or more attachments are rejected. (a disallowed extension — png/jpg/mp4/txt/log only — an over-kind size, more files than the configured per-report bound, or a duplicate file name within one submission; keyed by file name in the `errors` member, refused before any write) |
+| `STORAGE_UNAVAILABLE` | 503 | Object storage is unavailable. (the attachment store refused the write or cannot serve the object; never a silent 201 — the artifact tier's code, this module's own value of it) |

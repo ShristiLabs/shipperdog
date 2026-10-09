@@ -31,6 +31,15 @@ public interface ReleaseTargetRepository extends JpaRepository<ReleaseTargetEnti
     List<ReleaseTargetEntity> findByReleaseIdOrderByTenantIdAsc(UUID releaseId);
 
     /**
+     * Whether the release targets the tenant (S11-01, issue #46): the
+     * feedback submission's release-link check — the target-set
+     * membership that must hold before a submission's facts resolve
+     * ({@code ReleaseAccess.submissionFactsOf}). The composite primary
+     * key serves the probe.
+     */
+    boolean existsByReleaseIdAndTenantId(UUID releaseId, UUID tenantId);
+
+    /**
      * The ring move's compare-and-set (issue #44, S10-05, the V14 CAS
      * discipline): moves the named tenants to {@code to} only while
      * their committed ring is still {@code from} AND the release still

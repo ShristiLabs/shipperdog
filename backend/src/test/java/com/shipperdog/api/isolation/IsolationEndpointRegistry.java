@@ -634,6 +634,46 @@ final class IsolationEndpointRegistry {
                         side -> "/api/v1/releases/" + UUID.randomUUID() + "/policy-evaluations?applicationId="
                                 + UUID.randomUUID()),
 
+                // Feedback (S11-01) -------------------------------------------------
+                // app:feedback:read is organization-grain (the RBAC
+                // matrix): the seeded world holds no release, so own and
+                // miss probes share the route's miss shape (the history
+                // route's rationale — the release resolution precedes
+                // everything), and concealment of a REAL foreign
+                // release's feedback is pinned with live releases by the
+                // S11-01 feedback suite.
+                surface(
+                        "/api/v1/releases/{releaseId}/feedback",
+                        side -> "/api/v1/releases/" + UUID.randomUUID() + "/feedback?applicationId="
+                                + side.applicationId(),
+                        404,
+                        404,
+                        side -> "/api/v1/releases/" + UUID.randomUUID() + "/feedback?applicationId="
+                                + UUID.randomUUID()),
+                // The report detail route (S11-01): the same miss-shape
+                // rationale; the live concealment (including the
+                // SECURITY_ISSUE restricted-visibility concealment, AC6)
+                // is pinned with live reports by the S11-01 suite.
+                surface(
+                        "/api/v1/releases/{releaseId}/feedback/{feedbackId}",
+                        side -> "/api/v1/releases/" + UUID.randomUUID() + "/feedback/" + UUID.randomUUID()
+                                + "?applicationId=" + side.applicationId(),
+                        404,
+                        404,
+                        side -> "/api/v1/releases/" + UUID.randomUUID() + "/feedback/" + UUID.randomUUID()
+                                + "?applicationId=" + UUID.randomUUID()),
+                // The attachment download route (S11-01, AC3): the same
+                // miss-shape rationale; the authorized-roles-only egress
+                // is pinned with live attachments by the S11-01 suite.
+                surface(
+                        "/api/v1/releases/{releaseId}/feedback/{feedbackId}/attachments/{attachmentId}",
+                        side -> "/api/v1/releases/" + UUID.randomUUID() + "/feedback/" + UUID.randomUUID()
+                                + "/attachments/" + UUID.randomUUID() + "?applicationId=" + side.applicationId(),
+                        404,
+                        404,
+                        side -> "/api/v1/releases/" + UUID.randomUUID() + "/feedback/" + UUID.randomUUID()
+                                + "/attachments/" + UUID.randomUUID() + "?applicationId=" + UUID.randomUUID()),
+
                 // Environments (S9-04) ---------------------------------------------
                 // org:environments:read is organization-grain (the RBAC
                 // matrix): the owning ORG_ADMIN lists the seeded defaults

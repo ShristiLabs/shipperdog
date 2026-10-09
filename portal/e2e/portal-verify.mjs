@@ -317,6 +317,71 @@ try {
   const suggested = download.suggestedFilename();
   record("download carries the artifact's file name", suggested === "banking.apk", suggested);
 
+  // 6d. S11-01 golden path: the release that evaluates the version
+  // goes live for the tenant (the submission's entire standing — the
+  // release link), then the tester reports an issue from the version
+  // screen: the form carries what they typed and chose alone, the
+  // server attaches the identity and context, and the landed report
+  // proves it through the admin API — the read the triage story
+  // (S11-02) will build on.
+  const release = await api("/api/v1/releases", {
+    method: "POST",
+    headers: { Authorization: `Bearer ${admin}` },
+    body: JSON.stringify({
+      applicationId: application.id,
+      versionId: v712.id,
+      ring: "qa",
+      artifacts: [{ platform: "ANDROID", artifactId: uploaded.id }],
+      targets: [{ tenantId: tenant.id, testerGroupIds: [] }],
+    }),
+  });
+  record("release created targeting the tester's tenant", true, `release ${release.id}`);
+
+  await page.goto(`${PORTAL}${historyRoute}/versions/${v712.id}`, { waitUntil: "networkidle" });
+  await page.getByTestId(`feedback-trigger-${v712.id}`).waitFor({ timeout: 10_000 });
+  await page.getByTestId(`feedback-trigger-${v712.id}`).click();
+  await page.getByTestId("feedback-dialog").waitFor({ timeout: 10_000 });
+  // Pin the report to the build the tester was looking at.
+  await page.getByTestId("feedback-build").click();
+  await page.getByTestId(`feedback-build-${uploaded.id}`).click();
+  await page.getByTestId("feedback-description").fill("The download button hangs after the consent dialog on cold start.");
+  await page
+    .getByTestId("feedback-file-input")
+    .setInputFiles({ name: "device-logs.txt", mimeType: "text/plain", buffer: Buffer.from("logcat: cold-start stall\n") });
+  await page.getByTestId("feedback-attachment-device-logs.txt").waitFor({ timeout: 10_000 });
+  await page.getByTestId("feedback-submit").click();
+  await page.getByTestId("feedback-success").waitFor({ timeout: 20_000 });
+  const reportedId = (await page.getByTestId("feedback-success-id").textContent())?.trim();
+  record("feedback submitted from the version screen with an attachment", Boolean(reportedId), reportedId ?? "");
+
+  // The landed report through the admin API: the server-attached
+  // context (tester, tenant, release, build) the form never carried,
+  // the OPEN status submissions are born with, and the attachment
+  // metadata beside it.
+  const landed = await api(
+    `/api/v1/releases/${release.id}/feedback/${reportedId}?applicationId=${application.id}`,
+    { headers: { Authorization: `Bearer ${admin}` } },
+  );
+  record(
+    "landed report carries the server-attached context",
+    landed.testerId === created.id &&
+      landed.submitterTenantId === tenant.id &&
+      landed.releaseId === release.id &&
+      landed.artifactId === uploaded.id &&
+      landed.status === "OPEN" &&
+      landed.attachments?.[0]?.fileName === "device-logs.txt",
+    `${landed.type} by tester ${landed.testerId}`,
+  );
+  const listed = await api(
+    `/api/v1/releases/${release.id}/feedback?applicationId=${application.id}&type=BUG`,
+    { headers: { Authorization: `Bearer ${admin}` } },
+  );
+  const listedRow = (listed.items ?? []).find((item) => item.id === reportedId);
+  record(
+    "report lists under the release with its server-attached facts",
+    Boolean(listedRow) && listedRow.type === "BUG" && listedRow.status === "OPEN",
+  );
+
   // 7. Missing token renders the honest card, not a crash.
   await page.goto(PORTAL + "/accept-invitation", { waitUntil: "networkidle" });
   await page.getByTestId("accept-missing-token").waitFor({ timeout: 10_000 });

@@ -1694,6 +1694,74 @@ paths:
             '*/*':
               schema:
                 $ref: "#/components/schemas/DefinitionView"
+  /api/v1/feedback:
+    post:
+      tags:
+      - feedback-controller
+      operationId: submit_1
+      parameters:
+      - name: application_id
+        in: query
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - name: version_id
+        in: query
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - name: tenant_id
+        in: query
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - name: artifact_id
+        in: query
+        required: false
+        schema:
+          type: string
+          format: uuid
+      - name: type
+        in: query
+        required: true
+        schema:
+          type: string
+      - name: description
+        in: query
+        required: true
+        schema:
+          type: string
+      - name: device_model
+        in: query
+        required: false
+        schema:
+          type: string
+      - name: os
+        in: query
+        required: false
+        schema:
+          type: string
+      requestBody:
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              properties:
+                attachments:
+                  type: array
+                  items:
+                    type: string
+                    format: binary
+      responses:
+        "201":
+          description: Created
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/FeedbackView"
   /api/v1/environments:
     get:
       tags:
@@ -3003,6 +3071,125 @@ paths:
             '*/*':
               schema:
                 $ref: "#/components/schemas/GatesView"
+  /api/v1/releases/{releaseId}/feedback:
+    get:
+      tags:
+      - feedback-controller
+      operationId: list_14
+      parameters:
+      - name: releaseId
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - name: applicationId
+        in: query
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - name: type
+        in: query
+        required: false
+        schema:
+          type: string
+      - name: status
+        in: query
+        required: false
+        schema:
+          type: string
+      - name: tenantId
+        in: query
+        required: false
+        schema:
+          type: string
+          format: uuid
+      - name: limit
+        in: query
+        required: false
+        schema:
+          type: string
+      - name: cursor
+        in: query
+        required: false
+        schema:
+          type: string
+      responses:
+        "200":
+          description: OK
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/PageResponseFeedbackSummaryView"
+  /api/v1/releases/{releaseId}/feedback/{feedbackId}:
+    get:
+      tags:
+      - feedback-controller
+      operationId: get_12
+      parameters:
+      - name: releaseId
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - name: feedbackId
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - name: applicationId
+        in: query
+        required: true
+        schema:
+          type: string
+          format: uuid
+      responses:
+        "200":
+          description: OK
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/FeedbackView"
+  /api/v1/releases/{releaseId}/feedback/{feedbackId}/attachments/{attachmentId}:
+    get:
+      tags:
+      - feedback-controller
+      operationId: download
+      parameters:
+      - name: releaseId
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - name: feedbackId
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - name: attachmentId
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - name: applicationId
+        in: query
+        required: true
+        schema:
+          type: string
+          format: uuid
+      responses:
+        "200":
+          description: OK
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/StreamingResponseBody"
   /api/v1/releases/{releaseId}/eligibility:
     get:
       tags:
@@ -3156,7 +3343,7 @@ paths:
     get:
       tags:
       - authorization-decision-api-controller
-      operationId: download
+      operationId: download_1
       parameters:
       - name: tenantId
         in: query
@@ -3337,6 +3524,7 @@ paths:
           - RELEASE_POLICY_SETTINGS_UPDATED
           - RELEASE_POLICY_EVALUATED
           - RELEASE_POLICY_HOLD_ACKNOWLEDGED
+          - FEEDBACK_RECEIVED
       - name: applicationId
         in: query
         required: false
@@ -3388,7 +3576,7 @@ paths:
     get:
       tags:
       - artifact-controller
-      operationId: get_12
+      operationId: get_13
       parameters:
       - name: artifactId
         in: path
@@ -3413,7 +3601,7 @@ paths:
     get:
       tags:
       - artifact-controller
-      operationId: download_1
+      operationId: download_2
       parameters:
       - name: artifactId
         in: path
@@ -3438,7 +3626,7 @@ paths:
     get:
       tags:
       - application-tenant-authorization-controller
-      operationId: list_14
+      operationId: list_15
       parameters:
       - name: id
         in: path
@@ -3467,7 +3655,7 @@ paths:
     get:
       tags:
       - version-controller
-      operationId: get_13
+      operationId: get_14
       parameters:
       - name: applicationId
         in: path
@@ -4674,6 +4862,65 @@ components:
           format: uuid
         reason:
           type: string
+    AttachmentView:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        fileName:
+          type: string
+        category:
+          type: string
+        sizeBytes:
+          type: integer
+          format: int64
+    FeedbackView:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        releaseId:
+          type: string
+          format: uuid
+        releaseRef:
+          type: string
+        applicationId:
+          type: string
+          format: uuid
+        versionId:
+          type: string
+          format: uuid
+        artifactId:
+          type: string
+          format: uuid
+        organizationId:
+          type: string
+          format: uuid
+        submitterTenantId:
+          type: string
+          format: uuid
+        testerId:
+          type: string
+          format: uuid
+        deviceModel:
+          type: string
+        os:
+          type: string
+        type:
+          type: string
+        status:
+          type: string
+        description:
+          type: string
+        createdAt:
+          type: string
+          format: date-time
+        attachments:
+          type: array
+          items:
+            $ref: "#/components/schemas/AttachmentView"
     VerifyView:
       type: object
       properties:
@@ -5765,6 +6012,38 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/GateView"
+    FeedbackSummaryView:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        releaseId:
+          type: string
+          format: uuid
+        submitterTenantId:
+          type: string
+          format: uuid
+        testerId:
+          type: string
+          format: uuid
+        type:
+          type: string
+        status:
+          type: string
+        createdAt:
+          type: string
+          format: date-time
+    PageResponseFeedbackSummaryView:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/FeedbackSummaryView"
+        next_cursor:
+          type: string
+    StreamingResponseBody: {}
     Admission:
       type: object
       properties:
@@ -6106,6 +6385,7 @@ components:
           - RELEASE_POLICY_SETTINGS_UPDATED
           - RELEASE_POLICY_EVALUATED
           - RELEASE_POLICY_HOLD_ACKNOWLEDGED
+          - FEEDBACK_RECEIVED
         occurredAt:
           type: string
           format: date-time

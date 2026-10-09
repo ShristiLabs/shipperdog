@@ -71,6 +71,10 @@ import java.util.Set;
  *                       org:gate-definitions:read/manage (S10-03)
  * SECURITY_REVIEWER     app:applications:read       app:versions:read
  *                       app:releases:read           app:releases:approve-security
+ *                       app:feedback:read (S11-01 — the restricted
+ *                       visibility's second reader: SECURITY_ISSUE
+ *                       reports are visible to this role and org
+ *                       admins alone)
  *                       org:environments:read       (S9-04)
  *                       org:approval-workflows:read (S10-01)
  *                       org:gate-definitions:read   (S10-03)
@@ -268,6 +272,11 @@ public final class RolePermissions {
             Permission.APP_VERSIONS_READ,
             Permission.APP_RELEASES_READ,
             Permission.APP_RELEASES_APPROVE_SECURITY,
+            // S11-01 (issue #46): the security-issue feedback's
+            // restricted visibility names this role (with org admins)
+            // as its reader set — the grant is the route access; the
+            // row-level restriction lives in the feedback module.
+            Permission.APP_FEEDBACK_READ,
             Permission.ORG_ENVIRONMENTS_READ,
             Permission.ORG_APPROVAL_WORKFLOWS_READ,
             // S10-03 (issue #42): the scan gates are theirs to read.

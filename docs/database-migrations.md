@@ -42,6 +42,7 @@ backend/src/main/resources/db/
     V32__release_rings.sql
     V33__release_promotion.sql
     V34__release_policy_engine.sql
+    V35__feedback_submission.sql
   seed/                 dev fixture, applied only when the seed location is active
     R__dev_seed.sql
 ```
@@ -654,6 +655,30 @@ There are no down-migrations and no automated rollback.
   `release_policy_settings` (the skip-relaxation knob, one row per
   organization created lazily — absence IS the empty set). Expand-only
   and forward-only: five new tables, nothing dropped or narrowed.
+
+- `V35__feedback_submission.sql` (S11-01, issue #46) EXPANDS the V1
+  `feedback` table — its six-value `feedback_type` enum and
+  OPEN/RESOLVED/DISMISSED status vocabulary are untouched (triage
+  transitions are S11-02; submissions are born OPEN and immutable) —
+  with the submission-time context the API attaches SERVER-side: the
+  owning `organization_id`, the denormalized
+  `application_id`/`version_id` beside V1's release/artifact/tester
+  references, the SUBMITTING `submitter_tenant_id` (the release
+  target the report came from — the release row's owning-application
+  snapshot is a different tenant's, so both dimensions coexist), and
+  the REPORTED `device_model`/`os` free text (registered device rows
+  link in with S11-03; the `device_id` FK stays null until then). The
+  table was empty in every environment, so the new columns arrive
+  nullable and tighten to NOT NULL in the same migration (the V24
+  add-then-tighten shape with a zero-row backfill). Plus
+  `feedback_attachments` (new): one metadata row per uploaded file —
+  the extension-resolved `category` (SCREENSHOT/VIDEO/LOG), byte
+  size, streamed SHA-256 `checksum`, and the server-derived
+  `storage_key` under the tenant-scoped prefix
+  `{organizationId}/{submitterTenantId}/feedback/{feedbackId}/
+  {attachmentId}` — the bytes live in object storage, never
+  PostgreSQL. UNIQUE (feedback, file_name); expand-only, nothing
+  dropped.
 
 ## Verifying migrations
 
