@@ -1483,6 +1483,117 @@ paths:
             '*/*':
               schema:
                 $ref: "#/components/schemas/GateView"
+  /api/v1/releases/{releaseId}/feedback/{feedbackId}/transition:
+    post:
+      tags:
+      - feedback-controller
+      operationId: transition_1
+      parameters:
+      - name: releaseId
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - name: feedbackId
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - name: applicationId
+        in: query
+        required: true
+        schema:
+          type: string
+          format: uuid
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/TransitionRequest"
+        required: true
+      responses:
+        "200":
+          description: OK
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/FeedbackView"
+  /api/v1/releases/{releaseId}/feedback/{feedbackId}/severity:
+    post:
+      tags:
+      - feedback-controller
+      operationId: setSeverity
+      parameters:
+      - name: releaseId
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - name: feedbackId
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - name: applicationId
+        in: query
+        required: true
+        schema:
+          type: string
+          format: uuid
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SeverityRequest"
+        required: true
+      responses:
+        "200":
+          description: OK
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/FeedbackView"
+  /api/v1/releases/{releaseId}/feedback/{feedbackId}/assignee:
+    post:
+      tags:
+      - feedback-controller
+      operationId: assign
+      parameters:
+      - name: releaseId
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - name: feedbackId
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - name: applicationId
+        in: query
+        required: true
+        schema:
+          type: string
+          format: uuid
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AssigneeRequest"
+        required: true
+      responses:
+        "200":
+          description: OK
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/FeedbackView"
   /api/v1/releases/{releaseId}/approvals:
     get:
       tags:
@@ -3099,6 +3210,11 @@ paths:
         required: false
         schema:
           type: string
+      - name: severity
+        in: query
+        required: false
+        schema:
+          type: string
       - name: tenantId
         in: query
         required: false
@@ -3190,6 +3306,31 @@ paths:
             '*/*':
               schema:
                 $ref: "#/components/schemas/StreamingResponseBody"
+  /api/v1/releases/{releaseId}/feedback/rollup:
+    get:
+      tags:
+      - feedback-controller
+      operationId: rollup
+      parameters:
+      - name: releaseId
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - name: applicationId
+        in: query
+        required: true
+        schema:
+          type: string
+          format: uuid
+      responses:
+        "200":
+          description: OK
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/FeedbackRollupView"
   /api/v1/releases/{releaseId}/eligibility:
     get:
       tags:
@@ -3525,6 +3666,9 @@ paths:
           - RELEASE_POLICY_EVALUATED
           - RELEASE_POLICY_HOLD_ACKNOWLEDGED
           - FEEDBACK_RECEIVED
+          - FEEDBACK_SEVERITY_CHANGED
+          - FEEDBACK_ASSIGNEE_CHANGED
+          - FEEDBACK_STATUS_TRANSITIONED
       - name: applicationId
         in: query
         required: false
@@ -4090,6 +4234,8 @@ components:
     JsonNode:
       type: object
       properties:
+        valueNode:
+          type: boolean
         nodeType:
           type: string
           enum:
@@ -4102,17 +4248,11 @@ components:
           - OBJECT
           - POJO
           - STRING
-        string:
-          type: boolean
-        integralNumber:
-          type: boolean
         missingNode:
-          type: boolean
-        valueNode:
           type: boolean
         pojo:
           type: boolean
-        number:
+        integralNumber:
           type: boolean
         short:
           type: boolean
@@ -4133,9 +4273,13 @@ components:
           type: boolean
         binary:
           type: boolean
-        floatingPointNumber:
+        string:
+          type: boolean
+        number:
           type: boolean
         container:
+          type: boolean
+        floatingPointNumber:
           type: boolean
         empty:
           type: boolean
@@ -4765,6 +4909,86 @@ components:
           format: uuid
         reason:
           type: string
+    AttachmentView:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        fileName:
+          type: string
+        category:
+          type: string
+        sizeBytes:
+          type: integer
+          format: int64
+    FeedbackView:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        releaseId:
+          type: string
+          format: uuid
+        releaseRef:
+          type: string
+        applicationId:
+          type: string
+          format: uuid
+        versionId:
+          type: string
+          format: uuid
+        artifactId:
+          type: string
+          format: uuid
+        organizationId:
+          type: string
+          format: uuid
+        submitterTenantId:
+          type: string
+          format: uuid
+        testerId:
+          type: string
+          format: uuid
+        deviceModel:
+          type: string
+        os:
+          type: string
+        type:
+          type: string
+        status:
+          type: string
+        severity:
+          type: string
+        assigneeUserId:
+          type: string
+          format: uuid
+        resolutionNote:
+          type: string
+        description:
+          type: string
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+        attachments:
+          type: array
+          items:
+            $ref: "#/components/schemas/AttachmentView"
+    SeverityRequest:
+      type: object
+      properties:
+        severity:
+          type: string
+    AssigneeRequest:
+      type: object
+      properties:
+        assigneeUserId:
+          type: string
+          format: uuid
     DecisionRequest:
       type: object
       description: "The approval decision body: the permission-target application\
@@ -4862,65 +5086,6 @@ components:
           format: uuid
         reason:
           type: string
-    AttachmentView:
-      type: object
-      properties:
-        id:
-          type: string
-          format: uuid
-        fileName:
-          type: string
-        category:
-          type: string
-        sizeBytes:
-          type: integer
-          format: int64
-    FeedbackView:
-      type: object
-      properties:
-        id:
-          type: string
-          format: uuid
-        releaseId:
-          type: string
-          format: uuid
-        releaseRef:
-          type: string
-        applicationId:
-          type: string
-          format: uuid
-        versionId:
-          type: string
-          format: uuid
-        artifactId:
-          type: string
-          format: uuid
-        organizationId:
-          type: string
-          format: uuid
-        submitterTenantId:
-          type: string
-          format: uuid
-        testerId:
-          type: string
-          format: uuid
-        deviceModel:
-          type: string
-        os:
-          type: string
-        type:
-          type: string
-        status:
-          type: string
-        description:
-          type: string
-        createdAt:
-          type: string
-          format: date-time
-        attachments:
-          type: array
-          items:
-            $ref: "#/components/schemas/AttachmentView"
     VerifyView:
       type: object
       properties:
@@ -6031,6 +6196,11 @@ components:
           type: string
         status:
           type: string
+        severity:
+          type: string
+        assigneeUserId:
+          type: string
+          format: uuid
         createdAt:
           type: string
           format: date-time
@@ -6044,6 +6214,28 @@ components:
         next_cursor:
           type: string
     StreamingResponseBody: {}
+    FeedbackRollupView:
+      type: object
+      properties:
+        releaseId:
+          type: string
+          format: uuid
+        total:
+          type: integer
+          format: int64
+        openCritical:
+          type: integer
+          format: int64
+        bySeverity:
+          type: object
+          additionalProperties:
+            type: integer
+            format: int64
+        byStatus:
+          type: object
+          additionalProperties:
+            type: integer
+            format: int64
     Admission:
       type: object
       properties:
@@ -6386,6 +6578,9 @@ components:
           - RELEASE_POLICY_EVALUATED
           - RELEASE_POLICY_HOLD_ACKNOWLEDGED
           - FEEDBACK_RECEIVED
+          - FEEDBACK_SEVERITY_CHANGED
+          - FEEDBACK_ASSIGNEE_CHANGED
+          - FEEDBACK_STATUS_TRANSITIONED
         occurredAt:
           type: string
           format: date-time

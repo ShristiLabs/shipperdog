@@ -650,6 +650,19 @@ final class IsolationEndpointRegistry {
                         404,
                         side -> "/api/v1/releases/" + UUID.randomUUID() + "/feedback?applicationId="
                                 + UUID.randomUUID()),
+                // The feedback rollup route (S11-02): the same miss-shape
+                // rationale; the live concealment (including the
+                // SECURITY_ISSUE exclusion from a restricted reader's
+                // counts) is pinned with live reports by the S11-02
+                // triage suite.
+                surface(
+                        "/api/v1/releases/{releaseId}/feedback/rollup",
+                        side -> "/api/v1/releases/" + UUID.randomUUID() + "/feedback/rollup?applicationId="
+                                + side.applicationId(),
+                        404,
+                        404,
+                        side -> "/api/v1/releases/" + UUID.randomUUID() + "/feedback/rollup?applicationId="
+                                + UUID.randomUUID()),
                 // The report detail route (S11-01): the same miss-shape
                 // rationale; the live concealment (including the
                 // SECURITY_ISSUE restricted-visibility concealment, AC6)

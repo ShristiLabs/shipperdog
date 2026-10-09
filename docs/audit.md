@@ -177,6 +177,16 @@ minimization: the audit trail records that a report landed and what it
 was about structurally, never the tester's prose; the in-process
 `FeedbackReceivedEvent` carries the same facts for S12-01's bus to
 relay),
+the feedback triage — S11-02/issue #47 (FR-027, the QA working
+surface): `FEEDBACK_SEVERITY_CHANGED` (one per classification, the
+severity replaced and the severity set — the CRITICAL crossing is the
+fact the open-critical-bugs metric counts); `FEEDBACK_ASSIGNEE_CHANGED`
+(the assignee set or cleared, with the actor — the working queue's own
+trail); and `FEEDBACK_STATUS_TRANSITIONED` (one per real lifecycle
+crossing, from/to with the mandatory note of the closing and
+re-opening edges — re-opens are the same event, the from/to pair says
+which direction the report moved and the gate metric flips with it;
+the RELEASE_TRANSITIONED discipline, never a repeat),
 and artifact (`ARTIFACT_UPLOAD_SESSION_CREATED` — issue #20/S5-01: the
 resumable direct-to-storage handoff is granted, carrying the
 pre-allocated `artifactId` entity reference with `platform`,

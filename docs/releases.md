@@ -478,16 +478,19 @@ release_gate_results the append-only submission history (PRD P5)
   the append-only `release_gate_results` history keeps every report.
   Metric-backed types (`crash-free-threshold`, `open-critical-bugs`)
   refuse submission outright — analytics owns their values.
-- **Metric gates fail closed** (AC4, the PRD 33 ethos):
-  metric-backed gates resolve their values from analytics AT
-  EVALUATION TIME through the `GateMetricSource` seam — the interface
-  ONLY in this story (S11-04's dependency-cycle break; that story will
-  register the single implementation). Until data exists the
-  evaluation records **NO_DATA** — a state DISTINCT from FAILED on the
-  dashboard (no data yet is not a bad result) that BLOCKS all the
-  same, until the data arrives or the gate is overridden. A value that
-  arrives is compared against the definition's threshold/ceiling and
-  the outcome recorded with source `METRIC`.
+- **Metric gates resolve at evaluation time** (AC4, the PRD 33
+  ethos): metric-backed gates read their values through the
+  `GateMetricSource` seam. Since S11-02 the seam's first live
+  registrant answers `OPEN_CRITICAL_BUGS` — a real-time count over the
+  feedback table (the definitive value for every release: zero is
+  data, never "unknown"). `CRASH_FREE_RATE` stays unowned until
+  S11-04's analytics feeds land, and until a metric has a registrant
+  that can speak to it the evaluation records **NO_DATA** — a state
+  DISTINCT from FAILED on the dashboard (no data yet is not a bad
+  result) that BLOCKS all the same, until the data arrives or the gate
+  is overridden. A value that arrives is compared against the
+  definition's threshold/ceiling and the outcome recorded with source
+  `METRIC`.
 - **Blocking** (AC3): the `ReleaseGatePolicy` contributor — the
   second registrant on the S9-02 `ReleaseTransitionPolicy` seam —
   refuses the VALIDATING to READY crossing while any required gate of
@@ -854,6 +857,71 @@ inside the message.
 | `release_policy_evaluations` | uuid PK, `release_id`/`organization_id` FKs, `ring`, `trigger` (`PROMOTE`), `verdict` (`ALLOWED`/`BLOCKED`/`HELD`), `winning_rule_id` (loose), `actor_id`, `occurred_at` — append-only |
 | `release_policy_evaluation_rules` | uuid PK, `evaluation_id` FK, `rule_id` (LOOSE — history survives deletion) + `rule_name` snapshot, `rule_position`, `action`, `outcome` (`NOT_MET`/`FIRED`/`NO_DATA`/`ACKNOWLEDGED`), `detail` |
 | `release_policy_settings` | `organization_id` PK, `skip_allowances` (jsonb, default `[]` — absence IS the empty set), `updated_at` |
+
+## Feedback linkage — triage, the rollup, and the open-critical-bugs metric (S11-02)
+
+FR-027's promotion integration, closed (issue #47): the QA triage
+workflow over the S11-01 submissions, the release dashboard's Feedback
+block (PRD 32), and the metric source the `open-critical-bugs` gate
+and the PRD 33 policy rules read.
+
+- **The triage lifecycle** (AC1): the enforced vocabulary is OPEN (the
+  born NEW state) to TRIAGED to RESOLVED or REJECTED, with every
+  closed state — including DISMISSED's historical rows — re-openable
+  to TRIAGED. The closing crossings carry a MANDATORY note (the
+  release-transition discipline: a report that died or was refused as
+  wont-fix explains itself). Triage mutates the working columns only —
+  `status`, `severity`, `assignee_user_id`, `resolution_note` — never
+  the description, type, or attachments (the S11-01 immutability
+  posture, kept). Every crossing is audited as
+  `FEEDBACK_STATUS_TRANSITIONED` (from/to with the note and the
+  actor); classifications as `FEEDBACK_SEVERITY_CHANGED`, assignments
+  as `FEEDBACK_ASSIGNEE_CHANGED`. Routes: `POST
+  /api/v1/releases/{releaseId}/feedback/{feedbackId}/severity`,
+  `.../assignee`, `.../transition` — `app:feedback:triage` at the
+  application target (QA engineers, org admins, app owners, release
+  managers, and security reviewers; the SECURITY_ISSUE concealment
+  governs the actions exactly as the reads — a caller below the bar
+  gets the genuine 404). Severity is the QA vocabulary
+  CRITICAL/MAJOR/MINOR, assigned at triage (the submitting tester does
+  not classify); a closed report's classification is history until
+  re-opened.
+- **The dashboard block** (AC2, PRD 32's "14 reports . 1 critical"):
+  `GET /api/v1/releases/{releaseId}/feedback/rollup` answers the
+  total, the open-critical count, and the per-axis folds — severity
+  (UNTRIAGED for the not-yet-classified) and status — over exactly
+  the rows the calling reader can see (the security-issue restriction
+  applies to COUNTS as it does to rows; a restricted reader's rollup
+  is the totals of their filtered listing, never a leak by number).
+  The drill-down listing (`GET .../feedback`) narrows conjunctively by
+  type, status, severity, and submitter tenant. The console's release
+  dashboard renders the block with the triage actions inline
+  (severity select, assignee, the lifecycle buttons of the row's legal
+  edges).
+- **The metric** (AC3/AC4): `open_critical_bugs` for a release = its
+  count of unresolved (OPEN or TRIAGED) CRITICAL reports — a
+  real-time query the feedback module registers on BOTH seams
+  (`GateMetricSource` for the gate, `ReleasePolicyMetricSource` for
+  the policy rules; the issue's technical note — volumes are low in
+  M2, and S11-04's pipeline can formalize the feed later without the
+  seams changing). The answer is definitive for every release: a
+  release with no critical feedback resolves PASSED at observed 0,
+  never NO_DATA. A promotion into a ring whose `open-critical-bugs`
+  gate is configured at ceiling 0 refuses with the complete blocker
+  list while any critical report is unresolved; resolving the report
+  flips the metric to 0 and the NEXT attempt re-evaluates and passes;
+  re-opening flips it back. Policy rules read the same number (PRD
+  33's `open critical bugs = 0` ALLOW example, or a standing BLOCK on
+  `> 0`).
+- **Critical notifications** (AC5): the crossing to CRITICAL severity
+  publishes the in-process `FeedbackMarkedCriticalEvent` (identifiers
+  only, no description — the `FeedbackReceivedEvent` discipline;
+  S12-01's bus relays it when it lands) beside the audit. The M2
+  consumer delivers through the `EmailSender` seam to the platform's
+  default role subscription: the owning org's admins and QA engineers
+  — except for SECURITY_ISSUE reports, which notify the restricted
+  visibility's reader set (admins and security reviewers) alone, so a
+  notification can never leak what the read surface conceals.
 
 ## The frozen manifest (S9-03)
 

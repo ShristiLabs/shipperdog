@@ -10,6 +10,7 @@ import jakarta.persistence.PrePersist;
 import jakarta.persistence.PreUpdate;
 import jakarta.persistence.Table;
 import java.time.Instant;
+import java.util.List;
 import java.util.UUID;
 import org.hibernate.annotations.JdbcTypeCode;
 import org.hibernate.type.SqlTypes;
@@ -31,11 +32,13 @@ import org.hibernate.type.SqlTypes;
  * scope with the release link ({@code ReleaseAccess.submissionFactsOf})
  * as its entire standing.
  *
- * <p>Rows are INSERT-only in this story: submissions are immutable,
- * born {@code OPEN} (the V1 status vocabulary; PRD 8.13's triage
- * transitions are S11-02), and no surface here updates one. The
- * {@code updated_at} column is V1's shape, maintained by the hooks
- * for the story that first needs it.
+ * <p>Submissions are immutable; triage (S11-02) mutates the WORKING
+ * columns only — status, severity, assignee, resolution note — never
+ * the description, type, or attachments. Rows are born {@code OPEN}
+ * (the NEW state of the triage vocabulary) and move
+ * OPEN to TRIAGED to RESOLVED or REJECTED, with every resolved state
+ * re-openable to TRIAGED; the hooks maintain {@code updated_at} as
+ * the triage trail's clock.
  */
 @Entity
 @Table(name = "feedback")
@@ -51,12 +54,39 @@ public class FeedbackEntity {
         SECURITY_ISSUE
     }
 
-    /** The V1 {@code feedback_status} vocabulary, untouched by this story (triage is S11-02). */
+    /**
+     * The {@code feedback_status} vocabulary: V1's three values plus
+     * the two the triage workflow appended (V36, expand-only — OPEN is
+     * the born NEW state, TRIAGED the under-review state, RESOLVED and
+     * REJECTED the two answers, DISMISSED the historical answer whose
+     * rows re-open through the same TRIAGED door).
+     */
     public enum Status {
         OPEN,
+        TRIAGED,
         RESOLVED,
+        REJECTED,
         DISMISSED
     }
+
+    /**
+     * The {@code feedback_severity} vocabulary (V36): the QA
+     * engineer's classification, assigned at triage — null until then,
+     * because the submitting tester does not classify (one vocabulary,
+     * one authority).
+     */
+    public enum Severity {
+        CRITICAL,
+        MAJOR,
+        MINOR
+    }
+
+    /**
+     * The statuses an unresolved report holds (the open-critical-bugs
+     * metric's predicate half beside severity CRITICAL — the count the
+     * gate and policy seams read, and the rollup's live answer).
+     */
+    public static final List<Status> UNRESOLVED = List.of(Status.OPEN, Status.TRIAGED);
 
     @Id
     @GeneratedValue(strategy = GenerationType.UUID)
@@ -94,6 +124,16 @@ public class FeedbackEntity {
     @Enumerated(EnumType.STRING)
     @JdbcTypeCode(SqlTypes.NAMED_ENUM)
     private Status status;
+
+    @Enumerated(EnumType.STRING)
+    @JdbcTypeCode(SqlTypes.NAMED_ENUM)
+    private Severity severity;
+
+    /** The organization member working the report (null until assigned). */
+    private UUID assigneeUserId;
+
+    /** The mandatory explanation a RESOLVED or REJECTED crossing records (null otherwise). */
+    private String resolutionNote;
 
     private Instant createdAt;
 
@@ -202,6 +242,61 @@ public class FeedbackEntity {
 
     public Status getStatus() {
         return status;
+    }
+
+    public Severity getSeverity() {
+        return severity;
+    }
+
+    public UUID getAssigneeUserId() {
+        return assigneeUserId;
+    }
+
+    public String getResolutionNote() {
+        return resolutionNote;
+    }
+
+    /**
+     * Records one triage classification (S11-02): the severity is QA
+     * authority over a report the triage workflow can still move — the
+     * service refuses the call on a resolved, rejected, or dismissed
+     * row (re-open first; a closed report's classification is history).
+     *
+     * @return the severity replaced, null when this is the first classification
+     */
+    public Severity applySeverity(Severity severity) {
+        Severity previous = this.severity;
+        this.severity = severity;
+        return previous;
+    }
+
+    /**
+     * Records one assignment (S11-02). A null assignee clears it.
+     *
+     * @return the assignee replaced, null when the report was unassigned
+     */
+    public UUID applyAssignee(UUID assigneeUserId) {
+        UUID previous = this.assigneeUserId;
+        this.assigneeUserId = assigneeUserId;
+        return previous;
+    }
+
+    /**
+     * Records one triage crossing (S11-02): the status alone — the
+     * submission's content never moves (the S11-01 immutability
+     * posture, kept). The service has already validated the edge and
+     * the mandatory note of the closing crossings; the resolution note
+     * rides the same write.
+     *
+     * @return the status replaced
+     */
+    public Status applyTransition(Status to, String resolutionNote) {
+        Status previous = this.status;
+        this.status = to;
+        if (resolutionNote != null) {
+            this.resolutionNote = resolutionNote;
+        }
+        return previous;
     }
 
     public Instant getCreatedAt() {

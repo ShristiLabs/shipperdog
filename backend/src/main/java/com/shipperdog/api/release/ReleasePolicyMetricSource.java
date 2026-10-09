@@ -14,13 +14,19 @@ import java.util.UUID;
  * feeds will register one implementation of each (the two seams share
  * the authority, never the vocabulary).
  *
- * <p><strong>No registrant ships in S10-06.</strong> Until S11-04
- * lands, every metric resolves empty and a condition that needs it
- * evaluates fail closed — the explicit {@code NO_DATA} outcome with
- * the missing metric named, exactly the AC4 posture (a rule whose
- * crash-free evidence cannot be produced does not admit a promotion
- * on the strength of missing data). An empty answer means "no data
- * for this release yet"; never a zero, never a pass.
+ * <p><strong>Registrants answer the metrics they own.</strong> The
+ * feedback module registers the first live source (S11-02, issue
+ * #47): {@code OPEN_CRITICAL_BUGS} resolves as a real-time count over
+ * the feedback table — a definitive value for every release, never
+ * "no data". S11-04's analytics feeds land the rest (the crash and
+ * engagement family) and may take the feedback metric over. Until a
+ * metric has a source that can speak to it, it resolves empty and a
+ * condition that needs it evaluates fail closed — the explicit
+ * {@code NO_DATA} outcome with the missing metric named, exactly the
+ * AC4 posture (a rule whose crash-free evidence cannot be produced
+ * does not admit a promotion on the strength of missing data). An
+ * empty answer means "no data for this release yet"; never a zero,
+ * never a pass.
  */
 public interface ReleasePolicyMetricSource {
 

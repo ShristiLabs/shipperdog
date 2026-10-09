@@ -11,15 +11,16 @@ import java.util.UUID;
  * never from manual submission — the PRD 26/27 model where feedback
  * and crash telemetry feed the release's quality state.
  *
- * <p><strong>No registrant ships in S10-03.</strong> The analytics
- * feeds land with S11-04, which will register exactly one
- * implementation of this interface (the {@code
- * ReleaseApprovalSource} single-registrant expectation: two metric
- * authorities would be a modeling error to surface at startup). Until
- * then evaluation resolves every metric-backed gate to {@code
- * NO_DATA} — <strong>fail-closed</strong>, the deliberate PRD 33
- * ethos this story documents: a release whose crash-free rate cannot
- * be evidenced does not cross into READY on the strength of missing
+ * <p><strong>One registrant answers the metrics it owns.</strong>
+ * The feedback module registers the first live source (S11-02, issue
+ * #47): {@code OPEN_CRITICAL_BUGS} resolves as a real-time count over
+ * the feedback table — a definitive value for every release, never
+ * "no data". {@code CRASH_FREE_RATE} stays unowned until S11-04's
+ * analytics feeds register on the seam, and evaluation resolves every
+ * unowned metric-backed gate to {@code NO_DATA} —
+ * <strong>fail-closed</strong>, the deliberate PRD 33 ethos this
+ * story documents: a release whose crash-free rate cannot be
+ * evidenced does not cross into READY on the strength of missing
  * data. The dashboard renders NO_DATA distinctly from FAILED (no
  * data yet is not a bad result — but it blocks all the same until the
  * data arrives or the gate is overridden).

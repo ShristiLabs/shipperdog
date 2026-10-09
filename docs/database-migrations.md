@@ -43,6 +43,7 @@ backend/src/main/resources/db/
     V33__release_promotion.sql
     V34__release_policy_engine.sql
     V35__feedback_submission.sql
+    V36__feedback_triage.sql
   seed/                 dev fixture, applied only when the seed location is active
     R__dev_seed.sql
 ```
@@ -679,6 +680,26 @@ There are no down-migrations and no automated rollback.
   {attachmentId}` — the bytes live in object storage, never
   PostgreSQL. UNIQUE (feedback, file_name); expand-only, nothing
   dropped.
+
+- `V36__feedback_triage.sql` (S11-02, issue #47) EXPANDS the V1
+  `feedback_status` enum with the triage vocabulary — `TRIAGED` (the
+  under-review state) and `REJECTED` (the wont-fix answer beside
+  RESOLVED); OPEN keeps its name as the born NEW state and DISMISSED
+  keeps its historical rows with no new incoming edge (every closed
+  state re-opens through TRIAGED; `ALTER TYPE ... ADD VALUE` is legal
+  inside the migration transaction because nothing here uses the new
+  values). Plus the working columns on `feedback`: `severity` (a new
+  `feedback_severity` enum, CRITICAL/MAJOR/MINOR — null until triage
+  assigns it; the SUBMITTING tester does not classify), the
+  `assignee_user_id` FK to `users` (named
+  `fk_feedback_assignee_user_id`), and `resolution_note`
+  (varchar(4000), the mandatory explanation a closing crossing
+  records). Submissions stay immutable: these columns mutate only
+  through the triage actions, never the description, type, or
+  attachments. The composite index `(release_id, severity, status)`
+  serves the open-critical-bugs metric — the real-time count the
+  `open-critical-bugs` gate and the PRD 33 policy rules read — and
+  the dashboard rollup alike. Expand-only, nothing dropped.
 
 ## Verifying migrations
 

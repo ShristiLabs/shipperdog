@@ -243,5 +243,28 @@ public enum AuditEventType {
      * attachment count. The description's content is deliberately absent (PII minimization); the
      * in-process FeedbackReceivedEvent carries the same facts for S12-01's bus to relay.
      */
-    FEEDBACK_RECEIVED
+    FEEDBACK_RECEIVED,
+    /**
+     * One triage classification recorded (S11-02, issue #47, AC1): the
+     * report, the severity replaced and the severity set — CRITICAL
+     * beside the crossing that made it critical, the fact the
+     * open-critical-bugs metric turns on. The description's content
+     * stays absent (the S11-01 PII minimization posture, kept).
+     */
+    FEEDBACK_SEVERITY_CHANGED,
+    /**
+     * One triage assignment recorded (S11-02, AC1): the report, the
+     * assignee set (or cleared), and the actor — the working queue's
+     * own trail.
+     */
+    FEEDBACK_ASSIGNEE_CHANGED,
+    /**
+     * One triage crossing recorded (S11-02, AC1): the report, the
+     * from/to statuses, and the mandatory note of the closing and
+     * re-opening crossings — one event per real transition, never a
+     * repeat (the RELEASE_TRANSITIONED discipline). Re-opens are the
+     * same event: the from/to pair says which direction the report
+     * moved, and the metric flips with it.
+     */
+    FEEDBACK_STATUS_TRANSITIONED
 }

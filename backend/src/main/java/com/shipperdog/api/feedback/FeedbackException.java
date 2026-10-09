@@ -54,6 +54,22 @@ public class FeedbackException extends RuntimeException {
          */
         ATTACHMENT_REJECTED(
                 HttpStatus.UNPROCESSABLE_ENTITY, "ATTACHMENT_REJECTED", "One or more attachments are rejected."),
+        /**
+         * A triage act the report's current state refuses (S11-02,
+         * AC1): an illegal status edge, a severity change on a closed
+         * report, or a closing crossing without its mandatory note —
+         * 422 naming the report's legal edges in the {@code errors}
+         * member, the release-transition refusal's shape.
+         */
+        FEEDBACK_TRANSITION_INVALID(
+                HttpStatus.UNPROCESSABLE_ENTITY, "FEEDBACK_TRANSITION_INVALID", "The triage action is refused."),
+        /**
+         * An assignee who cannot work this report (S11-02): not a
+         * member of the owning organization — the assignment surface
+         * resolves candidates there and no other.
+         */
+        ASSIGNEE_NOT_ELIGIBLE(
+                HttpStatus.UNPROCESSABLE_ENTITY, "ASSIGNEE_NOT_ELIGIBLE", "The assignee is not eligible."),
         /** The object store refused the write (the artifact module's STORAGE_UNAVAILABLE shape): never a silent 201. */
         STORAGE_UNAVAILABLE(HttpStatus.SERVICE_UNAVAILABLE, "STORAGE_UNAVAILABLE", "Object storage is unavailable.");
 

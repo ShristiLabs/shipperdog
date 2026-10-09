@@ -121,7 +121,15 @@ public enum Permission {
     // audit trail exists for, never a routine release-management act.
     APP_RELEASES_POLICY_ACKNOWLEDGE("app:releases:policy-acknowledge"),
     APP_TESTER_GROUPS_MANAGE("app:tester-groups:manage"),
-    APP_FEEDBACK_READ("app:feedback:read");
+    APP_FEEDBACK_READ("app:feedback:read"),
+    // Issue #47 (S11-02): the feedback triage authority — classifying
+    // severity, moving a report through its lifecycle, assigning the
+    // member who works it. Deliberately separate from the read: the
+    // QA working surface is a smaller circle than everyone who may
+    // see the reports, and the SECURITY_ISSUE restricted visibility
+    // keeps its own bar above both (the triage actions conceal those
+    // rows exactly as the reads do).
+    APP_FEEDBACK_TRIAGE("app:feedback:triage");
 
     private final String code;
 
