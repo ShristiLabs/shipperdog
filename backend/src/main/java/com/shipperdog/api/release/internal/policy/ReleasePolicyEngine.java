@@ -404,8 +404,18 @@ public class ReleasePolicyEngine implements ReleasePromotionPolicy {
 
     private Answer metricAnswer(MetricCondition metric, Evaluation evaluation) {
         Optional<Double> value = evaluation.metricCache.computeIfAbsent(metric.metric(), kind -> {
+            // First DEFINITIVE answer wins (S11-02): a source that
+            // owns a metric answers non-empty for every release it is
+            // asked about (the feedback-backed OPEN_CRITICAL_BUGS
+            // registrant), while the sources that merely hold no data
+            // yet answer empty and step aside — an empty answer means
+            // "this source cannot speak to it", never "the value is
+            // zero" (the seam's own contract).
             for (ReleasePolicyMetricSource source : ReleasePolicyEngine.this.metricSources) {
-                return source.metricOf(evaluation.releaseId, kind);
+                Optional<Double> answered = source.metricOf(evaluation.releaseId, kind);
+                if (answered.isPresent()) {
+                    return answered;
+                }
             }
             return Optional.empty();
         });

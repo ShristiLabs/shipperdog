@@ -23,6 +23,7 @@ import com.shipperdog.api.release.RingProvisioning;
 import java.time.Clock;
 import java.time.Instant;
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
@@ -172,6 +173,14 @@ public class OrganizationService implements OrganizationAccess {
     @Transactional(readOnly = true)
     public boolean organizationExists(UUID organizationId) {
         return organizations.existsById(organizationId);
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public List<UUID> memberUserIdsOfRole(UUID organizationId, OrgRole role) {
+        return members.findByOrganizationIdAndRole(organizationId, role).stream()
+                .map(OrganizationMemberEntity::getUserId)
+                .toList();
     }
 
     @Override

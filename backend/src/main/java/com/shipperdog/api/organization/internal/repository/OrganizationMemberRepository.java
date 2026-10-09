@@ -31,6 +31,9 @@ public interface OrganizationMemberRepository extends JpaRepository<Organization
 
     long countByOrganizationIdAndRole(UUID organizationId, OrgRole role);
 
+    /** The members holding a role in the organization (S11-02's subscribed-role resolution). */
+    List<OrganizationMemberEntity> findByOrganizationIdAndRole(UUID organizationId, OrgRole role);
+
     long countByUserId(UUID userId);
 
     /** Memberships of the user in organizations with the given status. */

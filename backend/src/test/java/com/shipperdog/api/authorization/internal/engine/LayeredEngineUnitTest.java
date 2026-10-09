@@ -148,6 +148,11 @@ class LayeredEngineUnitTest {
 
             @Override
             public void addMember(UUID organizationId, UUID userId, OrgRole role, UUID actingUserId) {}
+
+            @Override
+            public List<UUID> memberUserIdsOfRole(UUID organizationId, OrgRole role) {
+                return List.of();
+            }
         };
         final TenantAccess tenants = new TenantAccess() {
             @Override

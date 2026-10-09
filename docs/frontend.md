@@ -9,7 +9,12 @@ console story (E3 onward) reuses. S3-04 adds the application console on
 those conventions: the registry listing, create/edit, the shared-app
 authorization screen, and the reversible archive. S9-05 adds the
 release dashboard (PRD §32): the application-scoped release listing and
-the per-release screen a Release Manager judges release health from.
+the per-release screen a Release Manager judges release health from —
+its blocks grown by the release engine (gates, approvals, distribution,
+the promotion timelines) and, since S11-02, the Feedback block: the
+rollup headline ("14 reports . 1 critical") with the drill-down list
+whose inline triage actions (severity, assignee, the lifecycle
+crossings) are what move the open-critical-bugs gate.
 
 ## Running locally
 

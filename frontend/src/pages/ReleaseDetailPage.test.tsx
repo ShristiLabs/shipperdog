@@ -1386,4 +1386,215 @@ describe("ReleaseDetailPage", () => {
     expect(screen.getByTestId("promote-button")).toBeDisabled();
     expect(screen.getByTestId("precheck-button")).toBeDisabled();
   });
+
+  // ---------------------------------------------------------------------
+  // Feedback triage (S11-02): the rollup block, the drill-down, and
+  // the triage actions that move the open-critical-bugs metric
+  // ---------------------------------------------------------------------
+
+  const FEEDBACK_ID = "80000000-0000-4000-8000-000000000001";
+  const FEEDBACK_ID_2 = "80000000-0000-4000-8000-000000000002";
+
+  const FEEDBACK_ROLLUP = {
+    releaseId: RELEASE_ID,
+    total: 14,
+    openCritical: 1,
+    bySeverity: { CRITICAL: 2, MAJOR: 5, MINOR: 3, UNTRIAGED: 4 },
+    byStatus: { OPEN: 6, TRIAGED: 5, RESOLVED: 3 },
+  };
+
+  const FEEDBACK_PAGE = {
+    items: [
+      {
+        id: FEEDBACK_ID,
+        releaseId: RELEASE_ID,
+        submitterTenantId: TENANT_ACME,
+        testerId: "90000000-0000-4000-8000-000000000001",
+        type: "BUG",
+        status: "OPEN",
+        severity: null,
+        assigneeUserId: null,
+        createdAt: "2026-10-03T09:00:00Z",
+      },
+      {
+        id: FEEDBACK_ID_2,
+        releaseId: RELEASE_ID,
+        submitterTenantId: TENANT_ACME,
+        testerId: "90000000-0000-4000-8000-000000000001",
+        type: "CRASH",
+        status: "RESOLVED",
+        severity: "CRITICAL",
+        assigneeUserId: ACTOR_ID,
+        createdAt: "2026-10-02T09:00:00Z",
+      },
+    ],
+    next_cursor: null,
+  };
+
+  function feedbackRoutes(): Parameters<typeof installFetchRouter>[0] {
+    return [
+      {
+        method: "GET",
+        url: `/api/v1/releases/${RELEASE_ID}/feedback/rollup`,
+        status: 200,
+        body: FEEDBACK_ROLLUP,
+      },
+      {
+        method: "GET",
+        url: `/api/v1/releases/${RELEASE_ID}/feedback`,
+        status: 200,
+        body: FEEDBACK_PAGE,
+      },
+    ];
+  }
+
+  it("renders the feedback block: headline, per-axis counts, and the drill-down rows (S11-02 AC2)", async () => {
+    renderDetail(DETAIL_ACTIVE, feedbackRoutes());
+
+    // The PRD 32 headline: "14 reports . 1 critical".
+    expect(await screen.findByTestId("feedback-headline")).toHaveTextContent("14 reports");
+    expect(screen.getByTestId("feedback-headline")).toHaveTextContent("1 critical open");
+    expect(screen.getByTestId("feedback-count-CRITICAL")).toHaveTextContent("critical 2");
+
+    // The drill-down: the open row carries its legal edge (Triage),
+    // the resolved row its own (Re-open) and its recorded severity.
+    expect(screen.getByTestId(`feedback-row-${FEEDBACK_ID}`)).toHaveTextContent("bug");
+    expect(screen.getByTestId(`feedback-triage-${FEEDBACK_ID}`)).toBeInTheDocument();
+    expect(screen.getByTestId(`feedback-status-${FEEDBACK_ID_2}`)).toHaveTextContent("resolved");
+    expect(screen.getByTestId(`feedback-reopen-${FEEDBACK_ID_2}`)).toBeInTheDocument();
+  });
+
+  it("classifies severity and moves the lifecycle from the drill-down (S11-02 AC1)", async () => {
+    renderDetail(
+      DETAIL_ACTIVE,
+      feedbackRoutes().concat([
+        {
+          method: "POST",
+          url: `/api/v1/releases/${RELEASE_ID}/feedback/${FEEDBACK_ID}/severity`,
+          status: 200,
+          body: { ...FEEDBACK_PAGE.items[0], severity: "CRITICAL" },
+        },
+        {
+          method: "POST",
+          url: `/api/v1/releases/${RELEASE_ID}/feedback/${FEEDBACK_ID}/transition`,
+          status: 200,
+          body: { ...FEEDBACK_PAGE.items[0], status: "TRIAGED" },
+        },
+      ]),
+    );
+
+    // The severity select posts the classification; a critical
+    // classification is the fact the gate metric counts.
+    const severitySelect = (
+      await screen.findByTestId(`feedback-severity-${FEEDBACK_ID}`)
+    ).closest(".MuiTextField-root")!.querySelector('[role="combobox"]') as HTMLElement;
+    await user.click(severitySelect);
+    await user.click(await screen.findByRole("option", { name: "critical" }));
+    const severityCall = fetchCalls().find(
+      ([url]) => url.includes(`/feedback/${FEEDBACK_ID}/severity`),
+    );
+    expect(severityCall).toBeDefined();
+    expect(JSON.parse((severityCall![1] as RequestInit).body as string)).toEqual({
+      severity: "CRITICAL",
+    });
+
+    // The legal OPEN edge: Triage posts the crossing.
+    await user.click(screen.getByTestId(`feedback-triage-${FEEDBACK_ID}`));
+    const transitionCall = fetchCalls().find(
+      ([url]) => url.includes(`/feedback/${FEEDBACK_ID}/transition`),
+    );
+    expect(transitionCall).toBeDefined();
+    expect(JSON.parse((transitionCall![1] as RequestInit).body as string)).toEqual({
+      to: "TRIAGED",
+      note: null,
+    });
+  });
+
+  it("demands the mandatory note on the closing crossings (S11-02 AC1)", async () => {
+    renderDetail(
+      DETAIL_ACTIVE,
+      feedbackRoutes().map((route) =>
+        route.url.endsWith("/feedback")
+          ? {
+              ...route,
+              body: {
+                items: [
+                  { ...FEEDBACK_PAGE.items[0], status: "TRIAGED", severity: "CRITICAL" },
+                  FEEDBACK_PAGE.items[1],
+                ],
+                next_cursor: null,
+              },
+            }
+          : route,
+      ).concat([
+        {
+          method: "POST",
+          url: `/api/v1/releases/${RELEASE_ID}/feedback/${FEEDBACK_ID}/transition`,
+          status: 200,
+          body: { ...FEEDBACK_PAGE.items[0], status: "RESOLVED", resolutionNote: "fixed in 422" },
+        },
+      ]),
+    );
+
+    // A resolution explains itself: the submit stays disabled until a
+    // note is written (the server enforces the same rule).
+    await user.click(await screen.findByTestId(`feedback-resolve-${FEEDBACK_ID}`));
+    const submit = screen.getByTestId("feedback-note-submit");
+    expect(submit).toBeDisabled();
+    await user.type(screen.getByTestId("feedback-note"), "fixed in 422");
+    expect(submit).toBeEnabled();
+    await user.click(submit);
+    const resolveCall = fetchCalls().find(
+      ([url]) =>
+        url.includes(`/feedback/${FEEDBACK_ID}/transition`) &&
+        (url.match(/transition/g) ?? []).length === 1,
+    );
+    expect(resolveCall).toBeDefined();
+    expect(JSON.parse((resolveCall![1] as RequestInit).body as string)).toEqual({
+      to: "RESOLVED",
+      note: "fixed in 422",
+    });
+  });
+
+  it("shows the feedback block's honest empty state (S11-02)", async () => {
+    renderDetail(DETAIL_ACTIVE, [
+      {
+        method: "GET",
+        url: `/api/v1/releases/${RELEASE_ID}/feedback/rollup`,
+        status: 200,
+        body: { releaseId: RELEASE_ID, total: 0, openCritical: 0, bySeverity: {}, byStatus: {} },
+      },
+      {
+        method: "GET",
+        url: `/api/v1/releases/${RELEASE_ID}/feedback`,
+        status: 200,
+        body: { items: [], next_cursor: null },
+      },
+    ]);
+
+    expect(await screen.findByTestId("feedback-empty")).toHaveTextContent("No tester reports yet");
+    expect(screen.getByTestId("feedback-headline")).toHaveTextContent("0 reports");
+  });
+
+  it("re-reads the gate block after a triage act - the metric linkage (S11-02 AC3/AC4)", async () => {
+    renderDetail(
+      DETAIL_ACTIVE,
+      feedbackRoutes().concat([
+        {
+          method: "POST",
+          url: `/api/v1/releases/${RELEASE_ID}/feedback/${FEEDBACK_ID}/transition`,
+          status: 200,
+          body: { ...FEEDBACK_PAGE.items[0], status: "TRIAGED", severity: "CRITICAL" },
+        },
+      ]),
+    );
+
+    await screen.findByTestId(`feedback-row-${FEEDBACK_ID}`);
+    const gatesReadsBefore = fetchCalls().filter(([url]) => url.includes("/gates")).length;
+    await user.click(screen.getByTestId(`feedback-triage-${FEEDBACK_ID}`));
+    await waitFor(() => {
+      const gatesReadsAfter = fetchCalls().filter(([url]) => url.includes("/gates")).length;
+      expect(gatesReadsAfter).toBeGreaterThan(gatesReadsBefore);
+    });
+  });
 });

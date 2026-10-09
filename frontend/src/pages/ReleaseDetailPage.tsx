@@ -10,7 +10,11 @@
  * its reason, and the governed override action — approvals (S10-02:
  * the bound policy's rounds with their group modes, the waiting-on
  * list, recorded signatures and skip rationales, decisions, and the
- * rework restart), distribution (the starting ring, the per-target
+ * rework restart), the feedback block (S11-02: the rollup headline
+ * "14 reports . 1 critical" with the per-axis folds, and the
+ * drill-down list whose triage actions — severity, assignee, the
+ * enforced lifecycle crossings — are what move the open-critical-bugs
+ * gate), distribution (the starting ring, the per-target
  * rings S10-05's promotion engine moves, and the governed promote
  * action with its one-screen blocker answer — the precheck is the
  * same evaluation the promote act runs, the 409's errors member
@@ -41,6 +45,7 @@ import {
   DialogTitle,
   Divider,
   LinearProgress,
+  MenuItem,
   Paper,
   Stack,
   Step,
@@ -54,6 +59,18 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useMemo, useState, type ReactNode } from "react";
 import { Link, useParams } from "react-router-dom";
 import { ApiError } from "../api/problem";
+import {
+  assignFeedback,
+  feedbackAttachmentUrl,
+  getFeedbackItem,
+  getFeedbackRollup,
+  listReleaseFeedback,
+  setFeedbackSeverity,
+  transitionFeedback,
+  type FeedbackSeverity,
+  type FeedbackStatus,
+  type FeedbackSummary,
+} from "../api/feedback";
 import {
   acknowledgePolicyHold,
   listPolicyHolds,
@@ -489,6 +506,13 @@ export default function ReleaseDetailPage() {
           frozenRequired={manifest.data?.manifest.approval.required ?? null}
         />
       </Stack>
+
+      <FeedbackSection
+        applicationId={applicationIdSafe}
+        releaseId={releaseIdSafe}
+        tenantNameById={tenantNameById}
+        roster={roster.members}
+      />
 
       <Paper variant="outlined" sx={{ padding: 2 }} data-testid="distribution-section">
         <Stack direction="row" spacing={2} sx={{ alignItems: "center" }}>
@@ -1128,6 +1152,339 @@ interface ApprovalsSectionProps {
   restarting: boolean;
   onRestart: (reason?: string) => void;
   frozenRequired: string[] | null;
+}
+
+interface RosterMember {
+  userId: string;
+  fullName: string;
+}
+
+interface FeedbackSectionProps {
+  applicationId: string;
+  releaseId: string;
+  tenantNameById: Map<string, string>;
+  roster: RosterMember[];
+}
+
+const FEEDBACK_SEVERITY_COLORS: Record<string, "error" | "warning" | "info" | "default"> = {
+  CRITICAL: "error",
+  MAJOR: "warning",
+  MINOR: "info",
+  UNTRIAGED: "default",
+};
+
+const FEEDBACK_STATUS_COLORS: Record<string, "success" | "primary" | "default"> = {
+  OPEN: "primary",
+  TRIAGED: "primary",
+  RESOLVED: "success",
+  REJECTED: "default",
+  DISMISSED: "default",
+};
+
+/** The Feedback block of PRD 32 (S11-02, AC2): the rollup headline —
+ * "14 reports . 1 critical" with the per-axis folds beside it — and
+ * the drill-down list carrying the triage actions themselves
+ * (severity classification, assignment, the enforced lifecycle
+ * crossings). The open-critical count is the same number the
+ * open-critical-bugs gate resolves, so the block is the release's
+ * quality standing at a glance: a triage act here is what unblocks a
+ * promotion there. Errors stay quiet (the policy-holds pattern): a
+ * caller without the read renders no section. */
+function FeedbackSection({ applicationId, releaseId, tenantNameById, roster }: FeedbackSectionProps) {
+  const toast = useToast();
+  const queryClient = useQueryClient();
+  const rollup = useQuery({
+    queryKey: ["release-feedback-rollup", releaseId],
+    queryFn: () => getFeedbackRollup(applicationId, releaseId),
+    enabled: applicationId !== "" && releaseId !== "",
+    retry: false,
+    refetchInterval: REFRESH_MS,
+  });
+  const list = useQuery({
+    queryKey: ["release-feedback", releaseId],
+    queryFn: () => listReleaseFeedback(applicationId, releaseId, { limit: 20 }),
+    enabled: applicationId !== "" && releaseId !== "",
+    retry: false,
+    refetchInterval: REFRESH_MS,
+  });
+
+  function invalidateFeedback() {
+    void queryClient.invalidateQueries({ queryKey: ["release-feedback-rollup", releaseId] });
+    void queryClient.invalidateQueries({ queryKey: ["release-feedback", releaseId] });
+    // A triage act moves the open-critical-bugs metric: the gate
+    // block and the precheck re-read on their next render.
+    void queryClient.invalidateQueries({ queryKey: ["release-gates", releaseId] });
+    void queryClient.invalidateQueries({ queryKey: ["release-precheck", releaseId] });
+  }
+
+  const classify = useMutation({
+    mutationFn: (input: { feedbackId: string; severity: FeedbackSeverity }) =>
+      setFeedbackSeverity(applicationId, releaseId, input.feedbackId, input.severity),
+    onSuccess: (item) => {
+      invalidateFeedback();
+      toast.showSuccess(`Report classified ${item.severity}`);
+    },
+    onError: toast.showError,
+  });
+  const assign = useMutation({
+    mutationFn: (input: { feedbackId: string; assigneeUserId: string | null }) =>
+      assignFeedback(applicationId, releaseId, input.feedbackId, input.assigneeUserId),
+    onSuccess: () => {
+      invalidateFeedback();
+      toast.showSuccess("Assignment recorded");
+    },
+    onError: toast.showError,
+  });
+  const move = useMutation({
+    mutationFn: (input: { feedbackId: string; to: FeedbackStatus; note?: string }) =>
+      transitionFeedback(applicationId, releaseId, input.feedbackId, input.to, input.note),
+    onSuccess: (item) => {
+      invalidateFeedback();
+      toast.showSuccess(`Report ${item.status.toLowerCase()}`);
+    },
+    onError: toast.showError,
+  });
+
+  if (rollup.isError || list.isError) {
+    return null;
+  }
+  if (rollup.data === undefined || list.data === undefined) {
+    return null;
+  }
+  const counts = rollup.data;
+  return (
+    <Paper variant="outlined" sx={{ padding: 2 }} data-testid="feedback-section">
+      <Stack direction="row" spacing={2} sx={{ alignItems: "center", flexWrap: "wrap" }}>
+        <Typography variant="h6" sx={{ flexGrow: 1 }}>
+          Feedback
+        </Typography>
+        <Typography variant="body1" data-testid="feedback-headline">
+          {counts.total} report{counts.total === 1 ? "" : "s"} ·{" "}
+          <strong style={{ color: counts.openCritical > 0 ? "#d32f2f" : undefined }}>
+            {counts.openCritical} critical open
+          </strong>
+        </Typography>
+      </Stack>
+      {counts.total === 0 ? (
+        <Typography color="text.secondary" sx={{ marginTop: 1 }} data-testid="feedback-empty">
+          No tester reports yet — submissions from the portal land here and feed the quality gates.
+        </Typography>
+      ) : (
+        <>
+          <Stack direction="row" spacing={1} sx={{ marginTop: 1, flexWrap: "wrap" }} data-testid="feedback-counts">
+            {Object.entries(counts.bySeverity).map(([severity, count]) => (
+              <Chip
+                key={severity}
+                size="small"
+                variant="outlined"
+                color={FEEDBACK_SEVERITY_COLORS[severity] ?? "default"}
+                label={`${severity.toLowerCase()} ${count}`}
+                data-testid={`feedback-count-${severity}`}
+              />
+            ))}
+            {Object.entries(counts.byStatus).map(([status, count]) => (
+              <Chip
+                key={status}
+                size="small"
+                variant="outlined"
+                color={FEEDBACK_STATUS_COLORS[status] ?? "default"}
+                label={`${status.toLowerCase()} ${count}`}
+              />
+            ))}
+          </Stack>
+          <Stack spacing={1} sx={{ marginTop: 1 }} data-testid="feedback-rows">
+            {list.data.items.map((item) => (
+              <FeedbackRow
+                key={item.id}
+                applicationId={applicationId}
+                releaseId={releaseId}
+                item={item}
+                tenantNameById={tenantNameById}
+                roster={roster}
+                busy={classify.isPending || assign.isPending || move.isPending}
+                onClassify={(severity) => classify.mutate({ feedbackId: item.id, severity })}
+                onAssign={(assigneeUserId) => assign.mutate({ feedbackId: item.id, assigneeUserId })}
+                onMove={(to, note) => move.mutate({ feedbackId: item.id, to, note })}
+              />
+            ))}
+          </Stack>
+          <Typography variant="body2" color="text.secondary" sx={{ marginTop: 1 }}>
+            Open critical bugs gate promotions (the open-critical-bugs gate reads this count
+            live): resolve or re-open a report and the next promotion attempt re-evaluates.
+          </Typography>
+        </>
+      )}
+    </Paper>
+  );
+}
+
+/** One report of the drill-down: the scan facts (type, tenant, moment),
+ * the working controls (severity, assignee), the lifecycle actions of
+ * the report's current legal edges, and the detail behind a toggle
+ * (description, device context, attachments, the resolution note). */
+function FeedbackRow({
+  applicationId,
+  releaseId,
+  item,
+  tenantNameById,
+  roster,
+  busy,
+  onClassify,
+  onAssign,
+  onMove,
+}: {
+  applicationId: string;
+  releaseId: string;
+  item: FeedbackSummary;
+  tenantNameById: Map<string, string>;
+  roster: RosterMember[];
+  busy: boolean;
+  onClassify: (severity: FeedbackSeverity) => void;
+  onAssign: (assigneeUserId: string | null) => void;
+  onMove: (to: FeedbackStatus, note?: string) => void;
+}) {
+  const [detailOpen, setDetailOpen] = useState(false);
+  const [closing, setClosing] = useState<FeedbackStatus | null>(null);
+  const [note, setNote] = useState("");
+  const detail = useQuery({
+    queryKey: ["release-feedback-item", item.id],
+    queryFn: () => getFeedbackItem(applicationId, releaseId, item.id),
+    enabled: detailOpen,
+    retry: false,
+  });
+  const closed =
+    item.status === "RESOLVED" || item.status === "REJECTED" || item.status === "DISMISSED";
+
+  return (
+    <Stack spacing={0.5} data-testid={`feedback-row-${item.id}`} sx={{ padding: 1, backgroundColor: "action.hover", borderRadius: 1 }}>
+      <Stack direction="row" spacing={1} sx={{ alignItems: "center", flexWrap: "wrap" }}>
+        <Chip size="small" variant="outlined" label={item.type.toLowerCase().replace("_", " ")} />
+        <Chip
+          size="small"
+          variant="filled"
+          color={FEEDBACK_STATUS_COLORS[item.status] ?? "default"}
+          label={item.status.toLowerCase()}
+          data-testid={`feedback-status-${item.id}`}
+        />
+        <Typography variant="body2" color="text.secondary">
+          {tenantNameById.get(item.submitterTenantId) ?? item.submitterTenantId} ·{" "}
+          {new Date(item.createdAt).toLocaleString()}
+        </Typography>
+        <TextField
+          select
+          size="small"
+          label="Severity"
+          sx={{ minWidth: 130 }}
+          disabled={busy || closed}
+          value={item.severity ?? ""}
+          onChange={(event) => onClassify(event.target.value as FeedbackSeverity)}
+          slotProps={{ htmlInput: { "data-testid": `feedback-severity-${item.id}` } }}
+        >
+          {(["CRITICAL", "MAJOR", "MINOR"] as const).map((severity) => (
+            <MenuItem key={severity} value={severity}>
+              {severity.toLowerCase()}
+            </MenuItem>
+          ))}
+        </TextField>
+        <Autocomplete
+          size="small"
+          sx={{ minWidth: 200 }}
+          options={roster}
+          getOptionLabel={(member) => member.fullName}
+          isOptionEqualToValue={(option, value) => option.userId === value.userId}
+          value={roster.find((member) => member.userId === item.assigneeUserId) ?? null}
+          disabled={busy}
+          onChange={(_event, member) => onAssign(member?.userId ?? null)}
+          renderInput={(params) => <TextField {...params} label="Assignee" />}
+        />
+        {item.status === "OPEN" ? (
+          <Button size="small" variant="outlined" disabled={busy} onClick={() => onMove("TRIAGED")} data-testid={`feedback-triage-${item.id}`}>
+            Triage
+          </Button>
+        ) : null}
+        {item.status === "TRIAGED" ? (
+          <>
+            <Button size="small" variant="outlined" color="success" disabled={busy} onClick={() => setClosing("RESOLVED")} data-testid={`feedback-resolve-${item.id}`}>
+              Resolve
+            </Button>
+            <Button size="small" variant="outlined" color="error" disabled={busy} onClick={() => setClosing("REJECTED")} data-testid={`feedback-reject-${item.id}`}>
+              Reject
+            </Button>
+          </>
+        ) : null}
+        {closed ? (
+          <Button size="small" variant="outlined" disabled={busy} onClick={() => onMove("TRIAGED")} data-testid={`feedback-reopen-${item.id}`}>
+            Re-open
+          </Button>
+        ) : null}
+        <Button size="small" onClick={() => setDetailOpen(!detailOpen)} data-testid={`feedback-detail-${item.id}`}>
+          {detailOpen ? "Hide" : "Details"}
+        </Button>
+      </Stack>
+      {detailOpen ? (
+        detail.isPending ? (
+          <Typography variant="body2" aria-busy="true">
+            Loading report...
+          </Typography>
+        ) : detail.isError ? (
+          <Alert severity="error">Failed to load the report.</Alert>
+        ) : (
+          <Stack spacing={0.5} sx={{ marginLeft: 1 }} data-testid={`feedback-detail-view-${item.id}`}>
+            <Typography variant="body2">{detail.data?.description}</Typography>
+            <Typography variant="body2" color="text.secondary">
+              {detail.data?.deviceModel ? `${detail.data.deviceModel} · ` : ""}
+              {detail.data?.os ?? "device not reported"}
+              {detail.data?.resolutionNote ? ` · resolution: ${detail.data.resolutionNote}` : ""}
+            </Typography>
+            {detail.data?.attachments.map((attachment) => (
+              <a
+                key={attachment.id}
+                href={feedbackAttachmentUrl(applicationId, releaseId, item.id, attachment.id)}
+                data-testid={`feedback-attachment-${attachment.id}`}
+              >
+                {attachment.fileName} ({attachment.category.toLowerCase()})
+              </a>
+            ))}
+          </Stack>
+        )
+      ) : null}
+      <Dialog open={closing !== null} onClose={() => setClosing(null)} maxWidth="sm" fullWidth>
+        <DialogTitle>
+          {closing === "RESOLVED" ? "Resolve this report?" : "Reject this report?"}
+        </DialogTitle>
+        <DialogContent>
+          <TextField
+            autoFocus
+            fullWidth
+            multiline
+            minRows={2}
+            label={closing === "RESOLVED" ? "Resolution note (required)" : "Reason (required)"}
+            value={note}
+            onChange={(event) => setNote(event.target.value)}
+            sx={{ marginTop: 1 }}
+            slotProps={{ htmlInput: { "data-testid": "feedback-note" } }}
+          />
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setClosing(null)}>Cancel</Button>
+          <Button
+            variant="contained"
+            color={closing === "REJECTED" ? "error" : "primary"}
+            disabled={note.trim() === ""}
+            onClick={() => {
+              if (closing === null) return;
+              onMove(closing, note.trim());
+              setClosing(null);
+              setNote("");
+            }}
+            data-testid="feedback-note-submit"
+          >
+            {closing === "RESOLVED" ? "Resolve" : "Reject"}
+          </Button>
+        </DialogActions>
+      </Dialog>
+    </Stack>
+  );
 }
 
 const STEP_STATUS_COLORS: Record<ApprovalStep["status"], "success" | "error" | "default" | "warning"> = {

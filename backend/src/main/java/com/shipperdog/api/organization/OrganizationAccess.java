@@ -1,5 +1,6 @@
 package com.shipperdog.api.organization;
 
+import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
@@ -42,6 +43,16 @@ public interface OrganizationAccess {
 
     /** Whether the organization exists. */
     boolean organizationExists(UUID organizationId);
+
+    /**
+     * The user ids holding a role in the organization (S11-02, issue
+     * #47): the subscribed-role resolution the feedback module's
+     * critical-report notification walks (which members hold QA or
+     * security standing in the organization that owns the release).
+     * Membership data in the port's own character — the rows as
+     * recorded, exactly like the role reads above.
+     */
+    List<UUID> memberUserIdsOfRole(UUID organizationId, OrgRole role);
 
     /**
      * The organization's lifecycle status ({@code ACTIVE} or

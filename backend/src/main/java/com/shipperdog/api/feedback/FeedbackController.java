@@ -4,6 +4,7 @@ import com.shipperdog.api.config.ListQuery;
 import com.shipperdog.api.config.PageResponse;
 import com.shipperdog.api.feedback.internal.service.FeedbackService;
 import com.shipperdog.api.feedback.internal.service.FeedbackService.AttachmentContent;
+import com.shipperdog.api.feedback.internal.service.FeedbackService.FeedbackRollupView;
 import com.shipperdog.api.feedback.internal.service.FeedbackService.FeedbackSummaryView;
 import com.shipperdog.api.feedback.internal.service.FeedbackService.FeedbackView;
 import com.shipperdog.api.feedback.internal.service.FeedbackService.SubmissionCommand;
@@ -19,6 +20,7 @@ import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RequestPart;
 import org.springframework.web.bind.annotation.ResponseStatus;
@@ -26,9 +28,12 @@ import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.multipart.MultipartFile;
 
 /**
- * The feedback API (issue #46, S11-01, FR-027, PRD 8.13): one
- * self-scoped submission route and three release-addressed console
- * reads.
+ * The feedback API (issues #46/#47, S11-01/S11-02, FR-027, PRD
+ * 8.13): one self-scoped submission route, the release-addressed
+ * console reads (listing, detail, attachment stream, and the
+ * dashboard rollup), and — since S11-02 — the three triage actions
+ * (severity, assignee, lifecycle) behind {@code
+ * app:feedback:triage}.
  *
  * <p>Submission ({@code POST /api/v1/feedback}, multipart — the
  * artifact upload route's shape) is the portal persona's surface:
@@ -98,9 +103,9 @@ public class FeedbackController {
 
     /**
      * The release's feedback listing (AC4): conjunctive filters by
-     * type, status, and submitter tenant, newest first, standard
-     * limit/cursor pagination. SECURITY_ISSUE rows are absent for
-     * readers below the restricted bar (AC6).
+     * type, status, severity, and submitter tenant, newest first,
+     * standard limit/cursor pagination. SECURITY_ISSUE rows are
+     * absent for readers below the restricted bar (AC6).
      */
     @GetMapping("/api/v1/releases/{releaseId}/feedback")
     @PreAuthorize("hasPermission(#applicationId, 'application', 'app:feedback:read')")
@@ -110,11 +115,92 @@ public class FeedbackController {
             @RequestParam UUID applicationId,
             @RequestParam(required = false) String type,
             @RequestParam(required = false) String status,
+            @RequestParam(required = false) String severity,
             @RequestParam(required = false) UUID tenantId,
             @RequestParam(required = false) String limit,
             @RequestParam(required = false) String cursor) {
-        return feedback.list(principal, applicationId, releaseId, type, status, tenantId, ListQuery.of(limit, cursor));
+        return feedback.list(
+                principal, applicationId, releaseId, type, status, severity, tenantId, ListQuery.of(limit, cursor));
     }
+
+    /**
+     * The release-dashboard Feedback block's rollup (S11-02, AC2,
+     * PRD 32's "14 reports . 1 critical"): counts by severity and
+     * status beside the open-critical count the gate metric answers —
+     * folded over exactly the rows the calling reader can see (the
+     * security-issue restriction applies to counts as it does to
+     * rows).
+     */
+    @GetMapping("/api/v1/releases/{releaseId}/feedback/rollup")
+    @PreAuthorize("hasPermission(#applicationId, 'application', 'app:feedback:read')")
+    FeedbackRollupView rollup(
+            @AuthenticationPrincipal Object principal, @PathVariable UUID releaseId, @RequestParam UUID applicationId) {
+        return feedback.rollup(principal, applicationId, releaseId);
+    }
+
+    /**
+     * Classifies the report (S11-02, AC1): the severity vocabulary —
+     * a closed report refuses until re-opened, and the crossing to
+     * CRITICAL publishes the critical-feedback event (AC5) beside the
+     * audit.
+     */
+    @PostMapping("/api/v1/releases/{releaseId}/feedback/{feedbackId}/severity")
+    @PreAuthorize("hasPermission(#applicationId, 'application', 'app:feedback:triage')")
+    FeedbackView setSeverity(
+            @AuthenticationPrincipal Object principal,
+            @PathVariable UUID releaseId,
+            @PathVariable UUID feedbackId,
+            @RequestParam UUID applicationId,
+            @RequestBody SeverityRequest request) {
+        return feedback.setSeverity(principal, applicationId, releaseId, feedbackId, request.severity());
+    }
+
+    /**
+     * Assigns the member who works the report (S11-02, AC1) — a null
+     * {@code assigneeUserId} clears it; the candidate must belong to
+     * the owning organization.
+     */
+    @PostMapping("/api/v1/releases/{releaseId}/feedback/{feedbackId}/assignee")
+    @PreAuthorize("hasPermission(#applicationId, 'application', 'app:feedback:triage')")
+    FeedbackView assign(
+            @AuthenticationPrincipal Object principal,
+            @PathVariable UUID releaseId,
+            @PathVariable UUID feedbackId,
+            @RequestParam UUID applicationId,
+            @RequestBody AssigneeRequest request) {
+        return feedback.assign(principal, applicationId, releaseId, feedbackId, request.assigneeUserId());
+    }
+
+    /**
+     * Moves the report through its lifecycle (S11-02, AC1): the
+     * enforced edges OPEN to TRIAGED to RESOLVED or REJECTED, every
+     * closed state re-openable to TRIAGED, the closing note mandatory
+     * — each crossing audited with its actor.
+     */
+    @PostMapping("/api/v1/releases/{releaseId}/feedback/{feedbackId}/transition")
+    @PreAuthorize("hasPermission(#applicationId, 'application', 'app:feedback:triage')")
+    FeedbackView transition(
+            @AuthenticationPrincipal Object principal,
+            @PathVariable UUID releaseId,
+            @PathVariable UUID feedbackId,
+            @RequestParam UUID applicationId,
+            @RequestBody TransitionRequest request) {
+        return feedback.transition(
+                principal,
+                applicationId,
+                releaseId,
+                feedbackId,
+                new FeedbackService.TransitionCommand(request.to(), request.note()));
+    }
+
+    /** One triage classification (S11-02, AC1). */
+    record SeverityRequest(String severity) {}
+
+    /** One triage assignment (S11-02, AC1) — null clears. */
+    record AssigneeRequest(UUID assigneeUserId) {}
+
+    /** One triage lifecycle crossing (S11-02, AC1) — the note mandatory on the closing edges. */
+    record TransitionRequest(String to, String note) {}
 
     /**
      * The report's detail: the full record with its attachments. A

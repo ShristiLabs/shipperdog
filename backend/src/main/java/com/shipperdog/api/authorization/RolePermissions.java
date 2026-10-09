@@ -41,11 +41,11 @@ import java.util.Set;
  *                       app:applications:read/write app:versions:read
  *                       app:releases:read           app:tester-groups:manage
  *                       app:releases:gate-override  (S10-03)
- *                       app:feedback:read
+ *                       app:feedback:read           app:feedback:triage (S11-02)
  * APP_OWNER             app:applications:read/write app:versions:read/write
  *                       app:artifacts:read          app:releases:read/manage
  *                       app:releases:approve-product (S10-01)
- *                       app:feedback:read
+ *                       app:feedback:read           app:feedback:triage (S11-02)
  *                       org:environments:read/manage (S9-04)
  *                       org:approval-workflows:read/manage (S10-01)
  *                       org:gate-definitions:read/manage (S10-03)
@@ -59,6 +59,7 @@ import java.util.Set;
  * QA_ENGINEER           app:applications:read       app:versions:read
  *                       app:releases:read           app:releases:approve-qa
  *                       app:tester-groups:manage    app:feedback:read
+ *                       app:feedback:triage         (S11-02)
  *                       org:environments:read       (S9-04)
  *                       org:approval-workflows:read (S10-01)
  *                       org:gate-definitions:read   (S10-03)
@@ -66,6 +67,7 @@ import java.util.Set;
  *                       app:artifacts:read          app:releases:read/manage
  *                       app:releases:approve-release (S10-01)
  *                       app:releases:gate-override  (S10-03)
+ *                       app:feedback:triage         (S11-02)
  *                       org:environments:read/manage (S9-04)
  *                       org:approval-workflows:read/manage (S10-01)
  *                       org:gate-definitions:read/manage (S10-03)
@@ -75,6 +77,9 @@ import java.util.Set;
  *                       visibility's second reader: SECURITY_ISSUE
  *                       reports are visible to this role and org
  *                       admins alone)
+ *                       app:feedback:triage (S11-02 — the same
+ *                       restricted bar governs triaging what only
+ *                       this role and org admins can see)
  *                       org:environments:read       (S9-04)
  *                       org:approval-workflows:read (S10-01)
  *                       org:gate-definitions:read   (S10-03)
@@ -155,7 +160,10 @@ public final class RolePermissions {
             Permission.APP_VERSIONS_READ,
             Permission.APP_RELEASES_READ,
             Permission.APP_TESTER_GROUPS_MANAGE,
-            Permission.APP_FEEDBACK_READ);
+            Permission.APP_FEEDBACK_READ,
+            // S11-02 (issue #47): the triage authority — the
+            // administrator's standing over every working surface.
+            Permission.APP_FEEDBACK_TRIAGE);
 
     private static final Set<Permission> APP_OWNER = Set.of(
             Permission.APP_APPLICATIONS_READ,
@@ -169,6 +177,9 @@ public final class RolePermissions {
             // the application owner signs their own release.
             Permission.APP_RELEASES_APPROVE_PRODUCT,
             Permission.APP_FEEDBACK_READ,
+            // S11-02 (issue #47): the owner triages the reports their
+            // application's releases collect.
+            Permission.APP_FEEDBACK_TRIAGE,
             // S9-04 (issue #58): the application owner defines the
             // environments their releases flow through (the story's
             // persona).
@@ -221,6 +232,10 @@ public final class RolePermissions {
             Permission.APP_RELEASES_APPROVE_QA,
             Permission.APP_TESTER_GROUPS_MANAGE,
             Permission.APP_FEEDBACK_READ,
+            // S11-02 (issue #47): the story's own persona — the QA
+            // engineer works the triage queue (severity, lifecycle,
+            // assignment) whose critical findings gate promotions.
+            Permission.APP_FEEDBACK_TRIAGE,
             Permission.ORG_ENVIRONMENTS_READ,
             Permission.ORG_APPROVAL_WORKFLOWS_READ,
             // S10-03 (issue #42): the story's own persona — the QA
@@ -265,7 +280,12 @@ public final class RolePermissions {
             // HOLD acknowledge (the gate-override standing).
             Permission.ORG_RELEASE_POLICIES_READ,
             Permission.ORG_RELEASE_POLICIES_MANAGE,
-            Permission.APP_RELEASES_POLICY_ACKNOWLEDGE);
+            Permission.APP_RELEASES_POLICY_ACKNOWLEDGE,
+            // S11-02 (issue #47): the release manager triages the
+            // reports whose open critical bugs can block their
+            // promotions (the working surface of the metric they
+            // answer to).
+            Permission.APP_FEEDBACK_TRIAGE);
 
     private static final Set<Permission> SECURITY_REVIEWER = Set.of(
             Permission.APP_APPLICATIONS_READ,
@@ -277,6 +297,11 @@ public final class RolePermissions {
             // as its reader set — the grant is the route access; the
             // row-level restriction lives in the feedback module.
             Permission.APP_FEEDBACK_READ,
+            // S11-02 (issue #47): the security reviewer triages the
+            // restricted reports only they and the org admins can see
+            // (classifying a security issue's severity is theirs, not
+            // the general queue's).
+            Permission.APP_FEEDBACK_TRIAGE,
             Permission.ORG_ENVIRONMENTS_READ,
             Permission.ORG_APPROVAL_WORKFLOWS_READ,
             // S10-03 (issue #42): the scan gates are theirs to read.
