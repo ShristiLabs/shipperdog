@@ -157,6 +157,70 @@ class NotificationSubscriptionsIntegrationTest {
         assertThat(rotated.has("webhookSecret")).isFalse();
     }
 
+    /**
+     * The webhook target policy through the real API (the review's
+     * SSRF finding): the flag-agnostic rules -- scheme, embedded
+     * credentials, length -- refuse with the field-addressed 422 at
+     * create AND at edit, proving the policy bean sits in the write
+     * path. The address-range, reserved-name, and DNS rules are the
+     * same {@code WebhookTargetPolicy} code pinned per range by its
+     * unit test ({@code WebhookTargetPolicyTest}); this class runs
+     * with the suite's local-receiver relaxation ON, so only the
+     * unconditional rules are asserted here.
+     */
+    @Test
+    void webhookTargetPolicyRefusesUnacceptableUrlsAtCreateAndEdit() {
+        assertBodyRefuses(
+                Map.of(
+                        "eventTypes", List.of("RELEASE_PROMOTED"),
+                        "channel", "WEBHOOK",
+                        "webhookUrl", "ftp://hooks.example.test/hook",
+                        "webhookSecret", "a-signing-secret-of-32-chars"),
+                "webhookUrl");
+        assertBodyRefuses(
+                Map.of(
+                        "eventTypes", List.of("RELEASE_PROMOTED"),
+                        "channel", "WEBHOOK",
+                        "webhookUrl", "https://user:secret@hooks.example.test/hook",
+                        "webhookSecret", "a-signing-secret-of-32-chars"),
+                "webhookUrl");
+        assertBodyRefuses(
+                Map.of(
+                        "eventTypes",
+                        List.of("RELEASE_PROMOTED"),
+                        "channel",
+                        "WEBHOOK",
+                        "webhookUrl",
+                        "https://hooks.example.test/" + "a".repeat(2049),
+                        "webhookSecret",
+                        "a-signing-secret-of-32-chars"),
+                "webhookUrl");
+
+        // The edit path revalidates: a standing subscription pointed
+        // at an unacceptable target through PATCH refuses the same way.
+        JsonNode created = create(
+                Map.of(
+                        "eventTypes", List.of("RELEASE_PROMOTED"),
+                        "channel", "WEBHOOK",
+                        "webhookUrl", "https://hooks.example.test/standing",
+                        "webhookSecret", "a-signing-secret-of-32-chars"),
+                201);
+        try {
+            client.patch()
+                    .uri(subscriptionsPath() + "/" + created.get("id").asText())
+                    .headers(headers -> headers.setBearerAuth(adminToken))
+                    .body(Map.of("webhookUrl", "ftp://hooks.example.test/elsewhere"))
+                    .retrieve()
+                    .toBodilessEntity();
+            throw new AssertionError("expected the edited target to refuse");
+        } catch (RestClientResponseException e) {
+            assertThat(e.getStatusCode().value()).isEqualTo(422);
+            JsonNode problem = mapper.readTree(e.getResponseBodyAsByteArray());
+            assertThat(problem.get("code").asString()).isEqualTo("NOTIFICATION_SUBSCRIPTION_INVALID");
+            assertThat(problem.get("errors").hasNonNull("webhookUrl")).isTrue();
+        }
+    }
+
     // -----------------------------------------------------------------------
     // The validation rules
     // -----------------------------------------------------------------------
