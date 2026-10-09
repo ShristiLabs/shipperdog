@@ -18,7 +18,14 @@ crossings) are what move the open-critical-bugs gate. S11-03 adds
 the tenant device registry: the per-tenant devices screen
 (registration, management, the reversible park, the provisioning CSV
 export) and the linked registered device's auto-context in the
-feedback detail.
+feedback detail. S11-05 adds the dashboards (PRD §29): the
+organization landing screen (the six counts, per-application release
+health with stacked distribution bars, the caller's role-filtered
+pending actions — every item deep-linking to the release screen it
+acts on) and the tenant landing screen (the tenant block's counts,
+in-flight releases, and a downloads-per-day chart over the S11-04
+tenant series) — see [Dashboards](dashboards.md); both auto-refresh
+every 30 seconds.
 
 ## Running locally
 
@@ -42,7 +49,10 @@ frontend/src/
                 tenants.ts, organizations.ts, applications.ts
                 (registry + shared-app authorization), releases.ts
                 + versions.ts (the S9-05 dashboard surfaces),
-                devices.ts (the S11-03 registry surface)
+                devices.ts (the S11-03 registry surface),
+                dashboards.ts (the S11-05 landing reads),
+                analytics.ts (the S11-04 series + the
+                foldSeriesPoints rule: counts sum, rates never do)
   auth/         tokenStore.ts, AuthContext.tsx, RequireAuth.tsx
   components/   ToastContext.tsx (error toast convention)
   hooks/        usePermission.ts (role-aware navigation probes),
@@ -51,7 +61,9 @@ frontend/src/
                 since S9-05 also the application registry and
                 per-application version walks)
   layout/       ConsoleLayout.tsx (app bar + nav drawer)
-  pages/        LoginPage, TenantsPage, TenantMembersPage, tenantRules,
+  pages/        LoginPage, DashboardPage + TenantDashboardPage
+                (the S11-05 landing screens), TenantsPage,
+                TenantMembersPage, tenantRules,
                 TenantDevicesPage (the S11-03 device registry),
                 ApplicationsPage, ApplicationDetailPage,
                 ApplicationDialog (create/edit form),
@@ -126,6 +138,29 @@ allowed.
 - **Login** (`/login`): opaque failure message, post-login redirect to
   the intended route; deep links to console pages bounce here when
   anonymous (`RequireAuth`).
+- **Organization dashboard** (`/dashboard`, the console's index and
+  first nav section, S11-05; PRD §29): the six counts (applications,
+  tenants, active releases, pending approvals, testing, production —
+  one server read that reconciles with the list endpoints), the
+  per-application release-health table (the server-derived
+  BLOCKED/TESTING/HEALTHY/INACTIVE with stacked distribution bars; a
+  row click opens the application's releases), and the pending-actions
+  panel — the caller's decidable approval steps ("waiting on you"), the
+  security-review queue (restricted personas), and the failed-gate
+  queue (override/owner personas), every item deep-linking to its
+  release screen with the release ref and application in hand. The
+  nav section probes the landing read itself (org:dashboard:read); the
+  view auto-refreshes every 30 seconds; actors the probe denies get
+  the honest notice, org-less accounts the membership notice.
+- **Tenant dashboard** (`/tenants/:tenantId/dashboard`, reached from
+  the tenants listing's Dashboard action, S11-05): the tenant block's
+  four counts (visible applications by the catalog union, working-set
+  versions, effective testers, in-flight targeting releases), the
+  pending-release list with per-target ring chips, and the
+  downloads-per-day bar chart over the last seven days — rendered from
+  the S11-04 tenant series through the shared folding rule (counts sum
+  across the per-release/ring points; `@mui/x-charts`, pinned in the
+  data-grid's 9.14.0 line). Same 30-second refresh.
 - **Tenants** (`/tenants`): data grid with client-side search (name or
   external id), server-side status filter, create/edit dialogs whose
   field rules mirror the API (`tenantRules.ts`: name 1-200, externalId

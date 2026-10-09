@@ -8,6 +8,7 @@
  */
 import AddIcon from "@mui/icons-material/Add";
 import DevicesIcon from "@mui/icons-material/Devices";
+import SpaceDashboardIcon from "@mui/icons-material/SpaceDashboard";
 import GroupsIcon from "@mui/icons-material/Groups";
 import {
   Alert,
@@ -103,7 +104,7 @@ export default function TenantsPage() {
       headerName: "Actions",
       sortable: false,
       filterable: false,
-      width: 380,
+      width: 470,
       renderCell: (params) => {
         const tenant = params.row;
         return (
@@ -129,6 +130,16 @@ export default function TenantsPage() {
                 data-testid={`devices-${tenant.id}`}
               >
                 Devices
+              </Button>
+            </Tooltip>
+            <Tooltip title="Tenant dashboard">
+              <Button
+                size="small"
+                startIcon={<SpaceDashboardIcon />}
+                onClick={() => navigate(`/tenants/${tenant.id}/dashboard`)}
+                data-testid={`dashboard-${tenant.id}`}
+              >
+                Dashboard
               </Button>
             </Tooltip>
             {tenant.status === "ACTIVE" ? (

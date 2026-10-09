@@ -9,6 +9,7 @@
 import AppsIcon from "@mui/icons-material/Apps";
 import BusinessIcon from "@mui/icons-material/Business";
 import ChecklistIcon from "@mui/icons-material/Checklist";
+import DashboardIcon from "@mui/icons-material/Dashboard";
 import PolicyIcon from "@mui/icons-material/Policy";
 import TollIcon from "@mui/icons-material/Toll";
 import LogoutIcon from "@mui/icons-material/Logout";
@@ -31,6 +32,7 @@ import {
 import { NavLink, Outlet, useNavigate } from "react-router-dom";
 import { useAuth } from "../auth/AuthContext";
 import { usePermission } from "../hooks/usePermission";
+import { getOrgDashboard } from "../api/dashboards";
 import { listApplications } from "../api/applications";
 import { probePolicyRules } from "../api/policies";
 import { listRings } from "../api/rings";
@@ -47,6 +49,16 @@ export default function ConsoleLayout() {
   const tenantsNav = usePermission(
     `tenants:${orgId ?? "none"}`,
     () => listTenants({ organizationId: orgId as string, limit: 1 }),
+    orgId !== null,
+  );
+
+  // The Dashboard section (S11-05) probes the landing read it loads
+  // first: org:dashboard:read holders see the home screen; the
+  // developer persona (the CLI role without registry read) and
+  // tenant-only actors are conceal-denied and the section hides.
+  const dashboardNav = usePermission(
+    `dashboard:${orgId ?? "none"}`,
+    () => getOrgDashboard(orgId as string),
     orgId !== null,
   );
 
@@ -125,6 +137,21 @@ export default function ConsoleLayout() {
       >
         <Toolbar />
         <Box sx={{ overflow: "auto", flexGrow: 1 }}>
+          {orgId !== null && dashboardNav.allowed ? (
+            <List>
+              <ListItemButton
+                component={NavLink}
+                to="/dashboard"
+                data-testid="nav-dashboard"
+                sx={{ "&.active": { backgroundColor: "action.selected" } }}
+              >
+                <ListItemIcon>
+                  <DashboardIcon />
+                </ListItemIcon>
+                <ListItemText primary="Dashboard" />
+              </ListItemButton>
+            </List>
+          ) : null}
           {orgId === null ? (
             <Alert severity="info" sx={{ margin: 2 }}>
               Your account has no active organization membership, so administration

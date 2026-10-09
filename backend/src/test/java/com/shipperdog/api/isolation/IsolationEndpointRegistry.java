@@ -261,6 +261,31 @@ final class IsolationEndpointRegistry {
                         200,
                         side -> "/api/v1/tenants/" + UUID.randomUUID() + "/metrics" + seriesWindow()),
 
+                // Dashboards (S11-05) ------------------------------------------------
+                // The organization dashboard: org:dashboard:read is
+                // organization-grain — the org admin reads their side's
+                // landing view (counts over the seeded world, an empty
+                // pending-actions set); the tenant admin of a target
+                // tenant holds no organization role and receives the
+                // denial's concealed shape.
+                surface(
+                        "/api/v1/organizations/{organizationId}/dashboard",
+                        side -> "/api/v1/organizations/" + side.organizationId() + "/dashboard",
+                        200,
+                        404,
+                        side -> "/api/v1/organizations/" + UUID.randomUUID() + "/dashboard"),
+                // The tenant dashboard: tenant:dashboard:read is the
+                // tenant:testers shape — the tenant admin's own grain
+                // with the owning organization's overlay above it, so
+                // both personas read their side; a foreign tenant
+                // conceals as the genuine miss.
+                surface(
+                        "/api/v1/tenants/{tenantId}/dashboard",
+                        side -> "/api/v1/tenants/" + side.tenantId() + "/dashboard",
+                        200,
+                        200,
+                        side -> "/api/v1/tenants/" + UUID.randomUUID() + "/dashboard"),
+
                 // Testers (organization grain) -----------------------------------
                 surface(
                         "/api/v1/testers",

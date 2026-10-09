@@ -31,6 +31,16 @@ public class AnalyticsException extends RuntimeException {
         RELEASE_NOT_FOUND(HttpStatus.NOT_FOUND, "RELEASE_NOT_FOUND", "Resource not found."),
         /** The addressed application did not resolve under the caller's scope (concealed miss). */
         APPLICATION_NOT_FOUND(HttpStatus.NOT_FOUND, "APPLICATION_NOT_FOUND", "Resource not found."),
+        /**
+         * The addressed organization (S11-05's dashboard): unknown —
+         * byte-identical to the organization module's genuine miss.
+         */
+        ORGANIZATION_NOT_FOUND(HttpStatus.NOT_FOUND, "ORGANIZATION_NOT_FOUND", "Resource not found."),
+        /**
+         * The addressed tenant (S11-05's tenant dashboard): unknown or
+         * foreign — byte-identical to the tenant module's genuine miss.
+         */
+        TENANT_NOT_FOUND(HttpStatus.NOT_FOUND, "TENANT_NOT_FOUND", "Resource not found."),
         /** A syntactically invalid query or ingest body (unknown metric token, malformed window, bad batch). */
         INVALID_REQUEST(HttpStatus.BAD_REQUEST, "INVALID_REQUEST", "The request is invalid."),
         /**

@@ -12,6 +12,43 @@ afterEach(() => {
 });
 
 describe("ConsoleLayout role-aware navigation", () => {
+  it("shows the Dashboard section when the landing read probe answers 200 (S11-05)", async () => {
+    installFetchRouter([
+      {
+        method: "GET",
+        url: "/api/v1/organizations/10000000-0000-4000-8000-000000000001/dashboard",
+        status: 200,
+        body: {
+          organizationId: "10000000-0000-4000-8000-000000000001",
+          generatedAt: "2026-10-04T12:00:00Z",
+          counts: {
+            applications: 0,
+            tenants: 0,
+            activeReleases: 0,
+            pendingApprovals: 0,
+            testing: 0,
+            production: 0,
+          },
+          applications: [],
+          pendingActions: { approvals: [], reviews: [], failedGates: [] },
+        },
+      },
+    ]);
+    seedSession();
+    renderConsole(<ConsoleLayout />, { route: "/" });
+
+    expect(await screen.findByTestId("nav-dashboard")).toBeInTheDocument();
+  });
+
+  it("hides the Dashboard section when the probe is conceal-denied (the developer persona)", async () => {
+    installFetchRouter([]);
+    seedSession();
+    renderConsole(<ConsoleLayout />, { route: "/" });
+
+    await screen.findByTestId("nav-tenants").catch(() => {});
+    expect(screen.queryByTestId("nav-dashboard")).not.toBeInTheDocument();
+  });
+
   it("shows the Tenants section when the probe endpoint answers 200", async () => {
     installFetchRouter([
       {

@@ -4,7 +4,11 @@ The release analytics pipeline (S11-04, issue #49, FR-029, PRD 28/29/33/41):
 the metric dictionary, the facts-to-rollups-to-reads pipeline, the frozen
 SDK events contract, and the two evaluation seams the gates (S10-03) and
 policies (S10-06) resolve their metric-backed questions through. The
-dashboards of S11-05 render this surface; the computation lives here.
+dashboards of S11-05 render this surface (and their landing read APIs
+live in this module — see [Dashboards](dashboards.md), including the
+series-folding rule every chart consumer of these reads follows: counts
+sum across the per-(bucket, release, ring) points, rates never do); the
+computation lives here.
 
 ## The pipeline
 
