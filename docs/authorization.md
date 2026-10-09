@@ -46,7 +46,7 @@ permission:
 | DEVELOPER | `app:artifacts:read` `app:artifacts:upload` `app:versions:read` `app:releases:read` `org:environments:read` (S9-04) `org:approval-workflows:read` (S10-01) `org:gate-definitions:read` (S10-03) `org:rings:read` (S10-04) `org:release-policies:read` (S10-06) |
 | QA_ENGINEER | `app:applications:read` `app:versions:read` `app:releases:read` `app:releases:approve-qa` `app:tester-groups:manage` `app:feedback:read` `org:environments:read` (S9-04) `org:approval-workflows:read` (S10-01) `org:gate-definitions:read` (S10-03) `org:rings:read` (S10-04) `org:release-policies:read` (S10-06) |
 | RELEASE_MANAGER | `app:applications:read` `app:versions:read` `app:artifacts:read` `app:releases:read` `app:releases:manage` `app:releases:approve-release` (S10-01 — the final step of FR-016's chain) `app:releases:gate-override` (S10-03 — the governed gate exception) `app:releases:policy-acknowledge` (S10-06 — the governed hold exception) `org:environments:read` `org:environments:manage` (S9-04) `org:approval-workflows:read` `org:approval-workflows:manage` (S10-01) `org:gate-definitions:read` `org:gate-definitions:manage` (S10-03) `org:rings:read` `org:rings:manage` (S10-04) `org:release-policies:read` `org:release-policies:manage` (S10-06) |
-| SECURITY_REVIEWER | `app:applications:read` `app:versions:read` `app:releases:read` `app:releases:approve-security` `org:environments:read` (S9-04) `org:approval-workflows:read` (S10-01) `org:gate-definitions:read` (S10-03) `org:rings:read` (S10-04) `org:release-policies:read` (S10-06 — the story's own persona: reads every standing rule, authors none) |
+| SECURITY_REVIEWER | `app:applications:read` `app:versions:read` `app:releases:read` `app:releases:approve-security` `app:feedback:read` (S11-01 — with org admins, the only readers of SECURITY_ISSUE reports) `org:environments:read` (S9-04) `org:approval-workflows:read` (S10-01) `org:gate-definitions:read` (S10-03) `org:rings:read` (S10-04) `org:release-policies:read` (S10-06 — the story's own persona: reads every standing rule, authors none) |
 | COMPLIANCE_REVIEWER | `app:applications:read` `app:versions:read` `app:releases:read` `app:releases:approve-compliance` `org:environments:read` (S9-04) `org:approval-workflows:read` (S10-01) `org:gate-definitions:read` (S10-03) `org:rings:read` (S10-04) `org:release-policies:read` (S10-06) |
 | VIEWER | `app:applications:read` `app:versions:read` `app:releases:read` `org:environments:read` (S9-04) `org:approval-workflows:read` (S10-01) `org:gate-definitions:read` (S10-03) `org:rings:read` (S10-04) `org:release-policies:read` (S10-06) |
 | TENANT_ADMIN | `tenant:tenants:read` `tenant:members:read` `tenant:members:manage` `tenant:testers:read` `tenant:testers:manage` `tenant:applications:read` `tenant:authorization-grants:read` `tenant:authorization-grants:manage` (S7-02) |
@@ -418,6 +418,40 @@ decision-input cache below. The admin inspection API
 (`POST /api/v1/authorization/decisions`, above) is untouched: it
 decides for a SUPPLIED subject with reason codes and the evaluated
 chain — the self-scoped routes above never leak either.
+
+## Feedback authorization (S11-01)
+
+The feedback surface (issue #46, FR-027, PRD 8.13) splits along the
+same seam every portal surface does:
+
+- **Submission** (`POST /api/v1/feedback`, multipart) is self-scoped
+  (`isAuthenticated()`, the caller-addressed convention above): the
+  tester persona holds no RBAC role by S6-03 design, so a permission
+  gate would exclude exactly the persona the surface serves. The
+  route's ENTIRE authority is the release link, resolved server-side
+  through `ReleaseAccess.submissionFactsOf` — the one release of the
+  application and version, answered only when the named submitter
+  tenant is one of its targets — beside the caller's own validated
+  ACTIVE membership in that tenant (the two-switches rule, live).
+  Every identity field is server-attached (tester from the session,
+  tenant from the membership, context from the release): the client
+  contract carries none of them, so none can be spoofed. An unknown
+  application/version pair, a release that does not serve the tenant,
+  a caller without standing there, and a console persona with no
+  tester record all conceal as the same `404
+  FEEDBACK_RELEASE_NOT_FOUND` — byte-identical to the genuine miss.
+  The S15-01 in-app SDK POSTs the same contract: one API, two
+  clients.
+- **Console reads** (`GET /api/v1/releases/{releaseId}/feedback...`,
+  release-addressed like every gate surface) check
+  `app:feedback:read` through the application-to-owner hop; the
+  service resolves and scopes the parent release first (the V25 child
+  doctrine — isolation at the parent, never re-derived over the
+  children). SECURITY_ISSUE reports carry restricted visibility
+  beyond the permission: they are invisible — listing AND detail,
+  including attachment downloads — to every reader below the owning
+  org's `ORG_ADMIN`/`SECURITY_REVIEWER` bar (plus the platform
+  administrator's audited override), concealing as the genuine miss.
 
 ## The decision-input cache (S7-03)
 

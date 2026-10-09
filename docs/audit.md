@@ -166,6 +166,17 @@ verdict, every fired rule named — the summary beside the evaluation
 log's per-rule rows); and `RELEASE_POLICY_HOLD_ACKNOWLEDGED` (the
 explicit privileged decision to proceed past a fired HOLD rule — rule,
 ring, and the mandatory reason, with the actor),
+the feedback landing — S11-01/issue #46 (FR-027, PRD 8.13):
+`FEEDBACK_RECEIVED`, one event per committed submission, carrying the
+full server-attached context as entity references (`orgId`,
+`tenantId`, `applicationId`, `versionId`, `artifactId` when the tester
+named their build, the acting tester's `userId`) with `releaseRef`,
+`type`, the attachment count, and the REPORTED `deviceModel`/`os` in
+the detail map — the description's content deliberately absent (PII
+minimization: the audit trail records that a report landed and what it
+was about structurally, never the tester's prose; the in-process
+`FeedbackReceivedEvent` carries the same facts for S12-01's bus to
+relay),
 and artifact (`ARTIFACT_UPLOAD_SESSION_CREATED` — issue #20/S5-01: the
 resumable direct-to-storage handoff is granted, carrying the
 pre-allocated `artifactId` entity reference with `platform`,

@@ -88,16 +88,43 @@ public interface ReleaseAccess {
     Set<UUID> targetTenantIdsOf(UUID releaseId);
 
     /**
+     * The release a feedback submission evaluates (S11-01, issue #46,
+     * PRD 8.13): the one release of the application and version
+     * (V1's {@code uq_releases_application_version}), resolved ONLY
+     * when the named submitter tenant is one of the release's targets
+     * -- the release link is the submission's entire standing, so the
+     * target-set check rides the resolution and a release that does
+     * not serve the tenant answers empty (indistinguishable from an
+     * unknown application/version pair).
+     *
+     * <p>Deliberately NOT seam-served, exactly like the registry
+     * probe the download cutoff uses: the submitting tester's bound
+     * tenant context is by construction not the release's owning
+     * scope (a shared application's release rows serve the
+     * organization's scope while the tester sits in a target
+     * tenant's). Authorization data in the port's own character --
+     * the facts never leave the caller's own act (the tester's
+     * membership in the named tenant is validated beside this, by
+     * the feedback module through the tester module's port). The
+     * S15-01 in-app SDK rides this same resolution: one submission
+     * contract, two clients.
+     */
+    Optional<ReleaseFacts> submissionFactsOf(UUID applicationId, UUID versionId, UUID submitterTenantId);
+
+    /**
      * The release facts the approval engine acts on: the owning
      * dimensions and creator beside the lifecycle and attachment
      * points. {@code ringId} is the resolved starting ring (its code
      * carried beside it); {@code environmentId} is null when creation
-     * named none.
+     * named none. {@code versionId} (the release's version, PRD 8.13's
+     * feedback context since S11-01) rides beside the application: the
+     * feedback submission's context snapshot keys on it.
      */
     record ReleaseFacts(
             UUID releaseId,
             String releaseRef,
             UUID applicationId,
+            UUID versionId,
             UUID organizationId,
             UUID tenantId,
             UUID createdBy,

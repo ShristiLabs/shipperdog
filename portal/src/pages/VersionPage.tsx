@@ -10,15 +10,19 @@
  */
 import { useQuery } from "@tanstack/react-query";
 import ArrowBackIcon from "@mui/icons-material/ArrowBack";
+import BugReportIcon from "@mui/icons-material/BugReport";
 import { Box, Button, Card, CardContent, Chip, CircularProgress, Stack, Typography } from "@mui/material";
+import { useState } from "react";
 import { Link as RouterLink, useParams } from "react-router-dom";
 import { ApiError } from "../api/problem";
 import { fetchVersionEntry, HISTORY_STALE_TIME_MS } from "../api/history";
+import FeedbackDialog from "../components/FeedbackDialog";
 import HistoryEntryCard from "../components/HistoryEntryCard";
 import NotFoundPage from "../components/NotFoundPage";
 
 export default function VersionPage() {
   const { tenantId = "", applicationId = "", versionId = "" } = useParams();
+  const [reporting, setReporting] = useState(false);
 
   const probe = useQuery({
     queryKey: ["history-entry", tenantId, applicationId, versionId],
@@ -65,6 +69,22 @@ export default function VersionPage() {
         ) : null}
       </Stack>
 
+      {/* S11-01 (issue #46): the version screen's report entry point —
+       * the whole page IS the submission's context (this version, the
+       * builds its slots name), so the report needs nothing else. */}
+      {entry ? (
+        <Button
+          size="small"
+          variant="outlined"
+          startIcon={<BugReportIcon />}
+          onClick={() => setReporting(true)}
+          data-testid={`feedback-trigger-${versionId}`}
+          sx={{ alignSelf: "flex-start" }}
+        >
+          Report issue
+        </Button>
+      ) : null}
+
       {probe.isPending ? (
         <Box data-testid="version-loading" role="status" aria-label="Loading version">
           <CircularProgress size={28} sx={{ display: "block", mx: "auto", my: 4 }} />
@@ -91,6 +111,19 @@ export default function VersionPage() {
 
       {probe.isSuccess && entry ? (
         <HistoryEntryCard entry={entry} tenantId={tenantId} applicationId={applicationId} />
+      ) : null}
+
+      {entry ? (
+        <FeedbackDialog
+          open={reporting}
+          onClose={() => setReporting(false)}
+          versionName={entry.versionName}
+          context={{ tenantId, applicationId, versionId }}
+          builds={entry.platforms.map((slot) => ({
+            artifactId: slot.artifactId,
+            label: `${slot.platform === "IOS" ? "iOS" : "Android"} build${slot.buildNumber !== null ? ` ${slot.buildNumber}` : ""}`,
+          }))}
+        />
       ) : null}
     </Stack>
   );

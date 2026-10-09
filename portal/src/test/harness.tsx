@@ -197,12 +197,15 @@ export interface Route {
 let routeTable: Route[] = [];
 export const unmatchedRequests: string[] = [];
 
-/** Every request the router saw, in order: method, path, and the
- * Authorization header when present (absent for raw auth calls). */
+/** Every request the router saw, in order: method, path, the
+ * Authorization header when present (absent for raw auth calls), and
+ * — for multipart submissions (S11-01) — the FormData entries with
+ * file parts recorded by name. */
 export interface RecordedRequest {
   method: string;
   path: string;
   authorization?: string;
+  form?: Array<[string, string]>;
 }
 export const recordedRequests: RecordedRequest[] = [];
 
@@ -218,10 +221,18 @@ export function installFetchRouter(routes: Route[]): void {
       const path = url.split("?")[0] ?? url;
       const method = (init?.method ?? "GET").toUpperCase();
       const headers = new Headers(init?.headers);
+      let form: Array<[string, string]> | undefined;
+      if (init?.body instanceof FormData) {
+        form = Array.from(init.body.entries(), ([key, value]) => [
+          key,
+          typeof value === "string" ? value : value.name,
+        ]);
+      }
       recordedRequests.push({
         method,
         path,
         authorization: headers.get("Authorization") ?? undefined,
+        form,
       });
       for (const route of routeTable) {
         if (route.method === method && path === route.url) {

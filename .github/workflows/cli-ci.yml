@@ -21,10 +21,15 @@ jobs:
       - name: Check out repository
         uses: actions/checkout@v4
 
-      - name: Set up Go 1.26
+      # Pinned to the exact security patch (GO-2026-6603..6617, the
+      # October 2026 net/http batch, all fixed on the 1.26 line at
+      # 1.26.9): a floating '1.26' resolved to a toolchain the
+      # govulncheck gate rightly refused — exact pins keep the
+      # vulnerability gate's answer deterministic.
+      - name: Set up Go 1.26.9
         uses: actions/setup-go@v5
         with:
-          go-version: '1.26'
+          go-version: '1.26.9'
           cache: true
           cache-dependency-path: cli/go.sum
 
@@ -67,10 +72,10 @@ jobs:
       - name: Check out repository
         uses: actions/checkout@v4
 
-      - name: Set up Go 1.26
+      - name: Set up Go 1.26.9
         uses: actions/setup-go@v5
         with:
-          go-version: '1.26'
+          go-version: '1.26.9'
           cache: true
           cache-dependency-path: cli/go.sum
 

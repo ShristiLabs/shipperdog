@@ -235,5 +235,13 @@ public enum AuditEventType {
      * A policy hold acknowledged (S10-06 AC2): the explicit privileged decision to proceed past a
      * fired HOLD_FOR_REVIEW rule — rule, ring, and the mandatory reason — audited with the actor.
      */
-    RELEASE_POLICY_HOLD_ACKNOWLEDGED
+    RELEASE_POLICY_HOLD_ACKNOWLEDGED,
+    /**
+     * A tester's structured feedback landed (S11-01, issue #46, FR-027, PRD 8.13): the submission's
+     * complete server-attached context — the release it evaluates (quotable ref), application,
+     * version, artifact when named, the submitting tenant and tester, the report type, and the
+     * attachment count. The description's content is deliberately absent (PII minimization); the
+     * in-process FeedbackReceivedEvent carries the same facts for S12-01's bus to relay.
+     */
+    FEEDBACK_RECEIVED
 }
