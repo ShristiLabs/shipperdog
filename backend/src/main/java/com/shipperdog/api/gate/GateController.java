@@ -129,7 +129,7 @@ public class GateController {
             @AuthenticationPrincipal Object principal,
             @PathVariable UUID definitionId,
             @RequestParam UUID organizationId,
-            @RequestBody UpdateRequest request) {
+            @RequestBody GateUpdateRequest request) {
         return gates.update(
                 requireUserId(principal),
                 organizationId,
@@ -226,7 +226,7 @@ public class GateController {
 
     /** The definition edit body: the mutable facts only (the gate type is the identity). */
     @Schema(description = "The gate definition edit body: required flag, config, and ring attachment.")
-    public record UpdateRequest(Boolean required, Map<String, Object> config, String ring) {}
+    public record GateUpdateRequest(Boolean required, Map<String, Object> config, String ring) {}
 
     /**
      * The result submission body (AC2): the permission-target

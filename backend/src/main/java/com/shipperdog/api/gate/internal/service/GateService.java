@@ -65,10 +65,13 @@ import org.springframework.transaction.annotation.Transactional;
  * port for the target ring). Metric-backed gates
  * ({@code crash-free-threshold}, {@code open-critical-bugs}) refuse
  * manual submission — their values resolve from analytics at
- * evaluation time through the {@link GateMetricSource} seam, which no
- * story registers until S11-04; until then they evaluate NO_DATA,
- * which BLOCKS (fail-closed, the PRD 33 ethos) but renders distinctly
- * from FAILED (no data yet is not a bad result).
+ * evaluation time through the {@link GateMetricSource} seam, where
+ * S11-02 (issue #47) landed the feedback module's
+ * {@code open-critical-bugs} registrant and S11-04 (issue #49) the
+ * analytics pipeline's {@code crash-free-threshold} one; a metric no
+ * source can speak to evaluates NO_DATA, which BLOCKS (fail-closed,
+ * the PRD 33 ethos) but renders distinctly from FAILED (no data yet
+ * is not a bad result).
  *
  * <p>Every release-addressed route is body/query-addressed on the
  * application (the release surface's own permission-target shape), and
@@ -797,8 +800,21 @@ public class GateService implements ReleaseGateEvaluation, GateDefinitionAccess 
         if (metric == null) {
             return;
         }
-        GateMetricSource source = metricSources.getIfAvailable();
-        Optional<Double> value = source == null ? Optional.empty() : source.metricOf(facts.releaseId(), metric);
+        // S11-04 (issue #49): the analytics registrant joined the
+        // feedback module's on the seam — one registrant per metric,
+        // each answering ONLY what it owns and stepping aside with an
+        // empty answer for the rest (the seam's own contract). The
+        // first DEFINITIVE answer wins, the policy engine's rule: a
+        // source that holds no data for the release never blocks a
+        // later source's value, and nobody's empty answer means zero.
+        Optional<Double> value = Optional.empty();
+        for (GateMetricSource candidate : metricSources) {
+            Optional<Double> answered = candidate.metricOf(facts.releaseId(), metric);
+            if (answered.isPresent()) {
+                value = answered;
+                break;
+            }
+        }
         Instant occurredAt = Instant.now(clock);
         Status outcome;
         Double observed = null;

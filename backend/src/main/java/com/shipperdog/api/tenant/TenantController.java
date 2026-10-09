@@ -93,7 +93,9 @@ public class TenantController {
     @PutMapping("/{id}")
     @PreAuthorize("hasPermission(#id, 'tenant', 'tenant:tenants:update')")
     TenantResponse update(
-            @AuthenticationPrincipal Object principal, @PathVariable UUID id, @RequestBody UpdateRequest request) {
+            @AuthenticationPrincipal Object principal,
+            @PathVariable UUID id,
+            @RequestBody TenantUpdateRequest request) {
         return TenantResponse.from(
                 tenants.update(requireUserId(principal), id, request.name(), request.externalId(), request.status()));
     }
@@ -140,7 +142,7 @@ public class TenantController {
             @AuthenticationPrincipal Object principal,
             @PathVariable UUID id,
             @PathVariable UUID userId,
-            @RequestBody StatusChangeRequest request) {
+            @RequestBody TenantStatusChangeRequest request) {
         return members.changeMemberStatus(id, userId, parseMemberStatus(request.status()), requireUserId(principal));
     }
 
@@ -191,13 +193,13 @@ public class TenantController {
     public record RoleChangeRequest(String role) {}
 
     /** Membership status transition body (issue #11): ACTIVE or SUSPENDED. */
-    public record StatusChangeRequest(String status) {}
+    public record TenantStatusChangeRequest(String status) {}
 
     /** Tenant creation body (issue #9); the tenant is born ACTIVE. */
     public record CreateRequest(UUID organizationId, String name, String externalId) {}
 
     /** Partial update: null fields are left unchanged. */
-    public record UpdateRequest(String name, String externalId, String status) {}
+    public record TenantUpdateRequest(String name, String externalId, String status) {}
 
     /** Tenant view; externalId maps to the customer's system of record. */
     record TenantResponse(

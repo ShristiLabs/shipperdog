@@ -100,6 +100,10 @@ Current contents:
   uniqueness, the reversible park (rows are never deleted), the
   admin-only provisioning CSV export, the feedback device link, and
   the console surface.
+- [Release analytics](analytics.md) — the FR-029 metrics dictionary,
+  the facts-to-rollups-to-reads pipeline, the frozen S15-01 SDK events
+  contract, the rollup job and its backfill, and the gate/policy
+  metric seams the pipeline registers on (S11-04)
 - [Observability](observability.md) — tracing/metrics/logs baseline,
   correlation model, `shipperdog_*` metric namespace, Prometheus +
   Grafana local stack, and the management-port security posture

@@ -129,7 +129,7 @@ public class EnvironmentController {
     EnvironmentView update(
             @AuthenticationPrincipal Object principal,
             @PathVariable UUID environmentId,
-            @RequestBody UpdateRequest request) {
+            @RequestBody EnvironmentUpdateRequest request) {
         return environments.update(
                 requireUserId(principal),
                 environmentId,
@@ -147,7 +147,7 @@ public class EnvironmentController {
     EnvironmentView setStatus(
             @AuthenticationPrincipal Object principal,
             @PathVariable UUID environmentId,
-            @RequestBody StatusChangeRequest request) {
+            @RequestBody EnvironmentStatusChangeRequest request) {
         return environments.setStatus(requireUserId(principal), environmentId, request.status(), request.reason());
     }
 
@@ -316,11 +316,12 @@ public class EnvironmentController {
 
     /** The PATCH body: null fields stay unchanged; the code is immutable and never appears. */
     @Schema(description = "The environment PATCH body: null fields stay unchanged (the code never moves).")
-    public record UpdateRequest(String name, Integer position, String distributionChannel, String approvalPolicy) {}
+    public record EnvironmentUpdateRequest(
+            String name, Integer position, String distributionChannel, String approvalPolicy) {}
 
     /** The lifecycle body: ACTIVE or DISABLED, with an optional reason. */
     @Schema(description = "The environment status body: ACTIVE or DISABLED, with an optional reason.")
-    public record StatusChangeRequest(String status, String reason) {}
+    public record EnvironmentStatusChangeRequest(String status, String reason) {}
 
     /** The configuration body: the FULL desired key-value set (an empty object clears the configuration). */
     @Schema(description = "The environment configuration body: the full desired key-value set.")

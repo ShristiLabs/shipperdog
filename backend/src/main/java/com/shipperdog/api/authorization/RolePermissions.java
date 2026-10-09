@@ -171,7 +171,15 @@ public final class RolePermissions {
             Permission.APP_FEEDBACK_READ,
             // S11-02 (issue #47): the triage authority — the
             // administrator's standing over every working surface.
-            Permission.APP_FEEDBACK_TRIAGE);
+            Permission.APP_FEEDBACK_TRIAGE,
+            // S11-04 (issue #49): the release analytics — the app-scope
+            // reads and recompute, and the tenant-grain series and
+            // events ingest through the owning-organization overlay
+            // (the tenant:devices shape).
+            Permission.APP_ANALYTICS_READ,
+            Permission.APP_ANALYTICS_MANAGE,
+            Permission.TENANT_ANALYTICS_READ,
+            Permission.TENANT_ANALYTICS_INGEST);
 
     private static final Set<Permission> APP_OWNER = Set.of(
             Permission.APP_APPLICATIONS_READ,
@@ -214,7 +222,12 @@ public final class RolePermissions {
             // owning-organization overlay (PRD 26's tenant-admin /
             // app-owner grant authority).
             Permission.TENANT_AUTHORIZATION_GRANTS_READ,
-            Permission.TENANT_AUTHORIZATION_GRANTS_MANAGE);
+            Permission.TENANT_AUTHORIZATION_GRANTS_MANAGE,
+            // S11-04 (issue #49): the release analytics of the
+            // applications they own — the reads and the rollup
+            // recompute trigger.
+            Permission.APP_ANALYTICS_READ,
+            Permission.APP_ANALYTICS_MANAGE);
 
     private static final Set<Permission> DEVELOPER = Set.of(
             Permission.APP_ARTIFACTS_READ,
@@ -253,7 +266,10 @@ public final class RolePermissions {
             Permission.ORG_RINGS_READ,
             // S10-06 (issue #45): the rules that govern climbing
             // them (read-only).
-            Permission.ORG_RELEASE_POLICIES_READ);
+            Permission.ORG_RELEASE_POLICIES_READ,
+            // S11-04 (issue #49): the release health numbers their
+            // evidence feeds (read-only).
+            Permission.APP_ANALYTICS_READ);
 
     private static final Set<Permission> RELEASE_MANAGER = Set.of(
             Permission.APP_APPLICATIONS_READ,
@@ -293,7 +309,13 @@ public final class RolePermissions {
             // reports whose open critical bugs can block their
             // promotions (the working surface of the metric they
             // answer to).
-            Permission.APP_FEEDBACK_TRIAGE);
+            Permission.APP_FEEDBACK_TRIAGE,
+            // S11-04 (issue #49): the story's own persona — the
+            // Release Manager reads the FR-029 numbers their promotion
+            // decisions answer to, and repairs their history through
+            // the recompute trigger.
+            Permission.APP_ANALYTICS_READ,
+            Permission.APP_ANALYTICS_MANAGE);
 
     private static final Set<Permission> SECURITY_REVIEWER = Set.of(
             Permission.APP_APPLICATIONS_READ,
@@ -348,7 +370,10 @@ public final class RolePermissions {
             Permission.ORG_APPROVAL_WORKFLOWS_READ,
             Permission.ORG_GATE_DEFINITIONS_READ,
             Permission.ORG_RINGS_READ,
-            Permission.ORG_RELEASE_POLICIES_READ);
+            Permission.ORG_RELEASE_POLICIES_READ,
+            // S11-04 (issue #49): the dashboards' numbers are read-only
+            // surface (S11-05 renders them for this persona too).
+            Permission.APP_ANALYTICS_READ);
 
     /** ORG_MEMBER deliberately holds nothing (deny-by-default, PRD P3). */
     private static final Set<Permission> ORG_MEMBER = Set.of();
@@ -386,7 +411,13 @@ public final class RolePermissions {
             // and the export download (AC3's admin bar).
             Permission.TENANT_DEVICES_READ,
             Permission.TENANT_DEVICES_MANAGE,
-            Permission.TENANT_DEVICES_EXPORT);
+            Permission.TENANT_DEVICES_EXPORT,
+            // S11-04 (issue #49): the tenant-grain series (the tenant
+            // dashboard's numbers, S11-05 renders) and the frozen SDK
+            // events API's write authority (CI and operations until
+            // S15-01's device authentication evolves it).
+            Permission.TENANT_ANALYTICS_READ,
+            Permission.TENANT_ANALYTICS_INGEST);
 
     private static final Set<Permission> TENANT_TESTER = Set.of(
             Permission.TENANT_APPLICATIONS_READ,

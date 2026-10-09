@@ -70,6 +70,16 @@ final class IsolationEndpointRegistry {
         }
     }
 
+    /**
+     * The analytics series routes' shared query: one dictionary metric
+     * over a bounded recent window (this hour; the seeded world holds
+     * no rollup rows, so the own-side answer is the empty page).
+     */
+    private static String seriesWindow() {
+        java.time.Instant to = java.time.Instant.now();
+        return "?metric=DOWNLOADS&from=" + to.minusSeconds(3600) + "&to=" + to;
+    }
+
     /** Builds a GET surface from its builders and persona expectations. */
     private static Entry surface(
             String template,
@@ -213,6 +223,43 @@ final class IsolationEndpointRegistry {
                         200,
                         200,
                         side -> "/api/v1/tenants/" + UUID.randomUUID() + "/devices/export"),
+
+                // Analytics (S11-04) ------------------------------------------------
+                // The release-metrics route: the seeded world holds no
+                // release, so own and miss probes share the route's miss
+                // shape (the feedback route's rationale — the release
+                // resolution precedes everything); concealment of a REAL
+                // foreign release's metrics is pinned with live releases
+                // by the S11-04 analytics suite.
+                surface(
+                        "/api/v1/applications/{applicationId}/releases/{releaseId}/metrics",
+                        side -> "/api/v1/applications/" + side.applicationId() + "/releases/" + UUID.randomUUID()
+                                + "/metrics",
+                        404,
+                        404,
+                        side -> "/api/v1/applications/" + UUID.randomUUID() + "/releases/" + UUID.randomUUID()
+                                + "/metrics"),
+                // The application series: app:analytics:read is
+                // organization-grain (the RBAC matrix) — the org admin
+                // reads their side's (empty) page; the tenant admin of a
+                // target tenant holds nothing and receives the denial's
+                // concealed shape. The series window rides the harness's
+                // fixture window builder (bounded, this hour).
+                surface(
+                        "/api/v1/applications/{applicationId}/metrics",
+                        side -> "/api/v1/applications/" + side.applicationId() + "/metrics" + seriesWindow(),
+                        200,
+                        404,
+                        side -> "/api/v1/applications/" + UUID.randomUUID() + "/metrics" + seriesWindow()),
+                // The tenant series: tenant:analytics:read is the tenant
+                // admin's own grain — an empty page on their side, the
+                // concealed miss on a foreign tenant.
+                surface(
+                        "/api/v1/tenants/{tenantId}/metrics",
+                        side -> "/api/v1/tenants/" + side.tenantId() + "/metrics" + seriesWindow(),
+                        200,
+                        200,
+                        side -> "/api/v1/tenants/" + UUID.randomUUID() + "/metrics" + seriesWindow()),
 
                 // Testers (organization grain) -----------------------------------
                 surface(

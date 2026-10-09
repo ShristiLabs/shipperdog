@@ -96,6 +96,13 @@ public enum Permission {
     TENANT_DEVICES_READ("tenant:devices:read"), // issue #48 (S11-03)
     TENANT_DEVICES_MANAGE("tenant:devices:manage"), // issue #48 (S11-03)
     TENANT_DEVICES_EXPORT("tenant:devices:export"), // issue #48 (S11-03)
+    // Issue #49 (S11-04): the analytics reads and the events ingest —
+    // the tenant-grain series for the tenant dashboards (S11-05
+    // renders), and the frozen SDK events API's write authority (held
+    // by tenant administrators until S15-01's device authentication
+    // evolves it).
+    TENANT_ANALYTICS_READ("tenant:analytics:read"), // issue #49 (S11-04)
+    TENANT_ANALYTICS_INGEST("tenant:analytics:ingest"), // issue #49 (S11-04)
 
     // app scope (enforced from E3 / issue #13 onward)
     APP_APPLICATIONS_READ("app:applications:read"),
@@ -106,6 +113,12 @@ public enum Permission {
     APP_ARTIFACTS_UPLOAD("app:artifacts:upload"),
     APP_RELEASES_READ("app:releases:read"),
     APP_RELEASES_MANAGE("app:releases:manage"),
+    // Issue #49 (S11-04): the release analytics surface — the reads
+    // (per-release current values, series over the rollups) and the
+    // rollup recompute trigger (backfill and late-history repair, the
+    // release governance personas).
+    APP_ANALYTICS_READ("app:analytics:read"), // issue #49 (S11-04)
+    APP_ANALYTICS_MANAGE("app:analytics:manage"), // issue #49 (S11-04)
     APP_RELEASES_APPROVE_QA("app:releases:approve-qa"),
     APP_RELEASES_APPROVE_SECURITY("app:releases:approve-security"),
     APP_RELEASES_APPROVE_COMPLIANCE("app:releases:approve-compliance"),

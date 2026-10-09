@@ -94,7 +94,7 @@ public class TesterController {
     TesterResponse changeStatus(
             @AuthenticationPrincipal Object principal,
             @PathVariable UUID id,
-            @RequestBody StatusChangeRequest request) {
+            @RequestBody TesterStatusChangeRequest request) {
         return TesterResponse.from(
                 testers.changeStatus(requireUserId(principal), id, parseStatus(request.status()), request.reason()),
                 null);
@@ -130,7 +130,7 @@ public class TesterController {
      * deactivation audit trail — and optional (recorded when present)
      * elsewhere.
      */
-    public record StatusChangeRequest(String status, String reason) {}
+    public record TesterStatusChangeRequest(String status, String reason) {}
 
     /**
      * Tester view. On the created paths the response also carries the

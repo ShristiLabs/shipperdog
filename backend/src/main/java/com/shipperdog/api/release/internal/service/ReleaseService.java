@@ -641,6 +641,38 @@ public class ReleaseService implements ReleaseAccess, VersionDistributionContrib
                 });
     }
 
+    /**
+     * The device telemetry report's resolution (S11-04, issue #49): the
+     * addressed release answered only when the reporting tenant is one
+     * of its targets — the submissionFactsOf discipline on the id-keyed
+     * lookup (non-seam-served: the reporter's scope is by construction
+     * not the release's owning scope). An unknown id, a release the
+     * tenant cannot see, and a foreign release are the same empty
+     * answer (the caller conceals; PRD 12).
+     */
+    @Override
+    @Transactional(readOnly = true)
+    public Optional<ReleaseAccess.ReleaseFacts> telemetryFactsOf(UUID releaseId, UUID reporterTenantId) {
+        return registry.probeById(releaseId)
+                .filter(release -> targets.existsByReleaseIdAndTenantId(release.getId(), reporterTenantId))
+                .map(release -> {
+                    RingEntity ring =
+                            rings.findById(release.getStartingRingId()).orElse(null);
+                    return new ReleaseAccess.ReleaseFacts(
+                            release.getId(),
+                            release.releaseRef(),
+                            release.getApplicationId(),
+                            release.getVersionId(),
+                            release.getOrganizationId(),
+                            release.getTenantId(),
+                            release.getCreatedBy(),
+                            release.getStatus().name(),
+                            ring == null ? null : ring.getId(),
+                            ring == null ? null : ring.getCode(),
+                            release.getEnvironmentId());
+                });
+    }
+
     /** The code of a ring id (S10-01's definition views render the attachment as the API's vocabulary). */
     @Override
     @Transactional(readOnly = true)

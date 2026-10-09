@@ -24,7 +24,7 @@ paths:
         content:
           application/json:
             schema:
-              $ref: "#/components/schemas/StatusChangeRequest"
+              $ref: "#/components/schemas/TesterStatusChangeRequest"
         required: true
       responses:
         "200":
@@ -124,7 +124,7 @@ paths:
         content:
           application/json:
             schema:
-              $ref: "#/components/schemas/UpdateRequest"
+              $ref: "#/components/schemas/TenantUpdateRequest"
         required: true
       responses:
         "200":
@@ -155,7 +155,7 @@ paths:
         content:
           application/json:
             schema:
-              $ref: "#/components/schemas/StatusChangeRequest"
+              $ref: "#/components/schemas/TenantTesterMembershipStatusChangeRequest"
         required: true
       responses:
         "200":
@@ -186,7 +186,7 @@ paths:
         content:
           application/json:
             schema:
-              $ref: "#/components/schemas/StatusChangeRequest"
+              $ref: "#/components/schemas/TenantStatusChangeRequest"
         required: true
       responses:
         "200":
@@ -488,7 +488,7 @@ paths:
         content:
           application/json:
             schema:
-              $ref: "#/components/schemas/UpdateRequest"
+              $ref: "#/components/schemas/OrganizationUpdateRequest"
         required: true
       responses:
         "200":
@@ -617,7 +617,7 @@ paths:
         content:
           application/json:
             schema:
-              $ref: "#/components/schemas/UpdateRequest"
+              $ref: "#/components/schemas/GateUpdateRequest"
         required: true
       responses:
         "200":
@@ -695,7 +695,7 @@ paths:
         content:
           application/json:
             schema:
-              $ref: "#/components/schemas/StatusChangeRequest"
+              $ref: "#/components/schemas/EnvironmentStatusChangeRequest"
         required: true
       responses:
         "200":
@@ -852,7 +852,7 @@ paths:
         content:
           application/json:
             schema:
-              $ref: "#/components/schemas/UpdateRequest"
+              $ref: "#/components/schemas/WorkflowUpdateRequest"
         required: true
       responses:
         "200":
@@ -1118,6 +1118,31 @@ paths:
             '*/*':
               schema:
                 $ref: "#/components/schemas/TenantResponse"
+  /api/v1/tenants/{tenantId}/analytics/events:
+    post:
+      tags:
+      - analytics-controller
+      operationId: ingestEvents
+      parameters:
+      - name: tenantId
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AnalyticsEventBatchRequest"
+        required: true
+      responses:
+        "201":
+          description: Created
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/IngestReport"
   /api/v1/tenants/{id}/testers:
     get:
       tags:
@@ -2677,6 +2702,31 @@ paths:
             '*/*':
               schema:
                 $ref: "#/components/schemas/VersionDetail"
+  /api/v1/applications/{applicationId}/metrics/rollups:
+    post:
+      tags:
+      - analytics-controller
+      operationId: recomputed
+      parameters:
+      - name: applicationId
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RollupRecomputeRequest"
+        required: true
+      responses:
+        "200":
+          description: OK
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/RollupReport"
   /api/v1/rings/{ringId}:
     get:
       tags:
@@ -2743,7 +2793,7 @@ paths:
         content:
           application/json:
             schema:
-              $ref: "#/components/schemas/UpdateRequest"
+              $ref: "#/components/schemas/RingUpdateRequest"
         required: true
       responses:
         "200":
@@ -2786,7 +2836,7 @@ paths:
         content:
           application/json:
             schema:
-              $ref: "#/components/schemas/UpdateRequest"
+              $ref: "#/components/schemas/EnvironmentUpdateRequest"
         required: true
       responses:
         "200":
@@ -2829,7 +2879,7 @@ paths:
         content:
           application/json:
             schema:
-              $ref: "#/components/schemas/UpdateRequest"
+              $ref: "#/components/schemas/ApplicationUpdateRequest"
         required: true
       responses:
         "200":
@@ -2886,6 +2936,66 @@ paths:
             '*/*':
               schema:
                 $ref: "#/components/schemas/PageResponseTenantsOfTesterView"
+  /api/v1/tenants/{tenantId}/metrics:
+    get:
+      tags:
+      - analytics-controller
+      operationId: tenantSeries
+      parameters:
+      - name: tenantId
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - name: metric
+        in: query
+        required: true
+        schema:
+          type: string
+      - name: from
+        in: query
+        required: true
+        schema:
+          type: string
+      - name: to
+        in: query
+        required: true
+        schema:
+          type: string
+      - name: grain
+        in: query
+        required: false
+        schema:
+          type: string
+      - name: ring
+        in: query
+        required: false
+        schema:
+          type: string
+      - name: releaseId
+        in: query
+        required: false
+        schema:
+          type: string
+          format: uuid
+      - name: limit
+        in: query
+        required: false
+        schema:
+          type: string
+      - name: cursor
+        in: query
+        required: false
+        schema:
+          type: string
+      responses:
+        "200":
+          description: OK
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/PageResponseMetricPointView"
   /api/v1/tenants/{id}/testers/{testerId}:
     get:
       tags:
@@ -3859,6 +3969,8 @@ paths:
           - DEVICE_UPDATED
           - DEVICE_STATUS_CHANGED
           - DEVICES_EXPORTED
+          - ANALYTICS_EVENTS_INGESTED
+          - METRIC_ROLLUPS_RECOMPUTED
       - name: applicationId
         in: query
         required: false
@@ -4035,6 +4147,91 @@ paths:
             '*/*':
               schema:
                 $ref: "#/components/schemas/VersionHistoryView"
+  /api/v1/applications/{applicationId}/releases/{releaseId}/metrics:
+    get:
+      tags:
+      - analytics-controller
+      operationId: releaseMetrics
+      parameters:
+      - name: applicationId
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - name: releaseId
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      responses:
+        "200":
+          description: OK
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/ReleaseMetricsView"
+  /api/v1/applications/{applicationId}/metrics:
+    get:
+      tags:
+      - analytics-controller
+      operationId: applicationSeries
+      parameters:
+      - name: applicationId
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - name: metric
+        in: query
+        required: true
+        schema:
+          type: string
+      - name: from
+        in: query
+        required: true
+        schema:
+          type: string
+      - name: to
+        in: query
+        required: true
+        schema:
+          type: string
+      - name: grain
+        in: query
+        required: false
+        schema:
+          type: string
+      - name: ring
+        in: query
+        required: false
+        schema:
+          type: string
+      - name: releaseId
+        in: query
+        required: false
+        schema:
+          type: string
+          format: uuid
+      - name: limit
+        in: query
+        required: false
+        schema:
+          type: string
+      - name: cursor
+        in: query
+        required: false
+        schema:
+          type: string
+      responses:
+        "200":
+          description: OK
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/PageResponseMetricPointView"
   /api/v1/tester-groups/{id}/members/{testerId}:
     delete:
       tags:
@@ -4115,7 +4312,7 @@ paths:
           description: No Content
 components:
   schemas:
-    StatusChangeRequest:
+    TesterStatusChangeRequest:
       type: object
       properties:
         status:
@@ -4171,7 +4368,7 @@ components:
         updatedAt:
           type: string
           format: date-time
-    UpdateRequest:
+    TenantUpdateRequest:
       type: object
       properties:
         name:
@@ -4201,6 +4398,11 @@ components:
         updatedAt:
           type: string
           format: date-time
+    TenantTesterMembershipStatusChangeRequest:
+      type: object
+      properties:
+        status:
+          type: string
     MembershipView:
       type: object
       properties:
@@ -4223,6 +4425,11 @@ components:
         updatedAt:
           type: string
           format: date-time
+    TenantStatusChangeRequest:
+      type: object
+      properties:
+        status:
+          type: string
     MemberView:
       type: object
       properties:
@@ -4437,6 +4644,15 @@ components:
           type: array
           items:
             type: string
+    OrganizationUpdateRequest:
+      type: object
+      properties:
+        name:
+          type: string
+        status:
+          type: string
+        externalId:
+          type: string
     OrganizationResponse:
       type: object
       properties:
@@ -4465,6 +4681,8 @@ components:
     JsonNode:
       type: object
       properties:
+        floatingPointNumber:
+          type: boolean
         nodeType:
           type: string
           enum:
@@ -4508,8 +4726,6 @@ components:
           type: boolean
         binary:
           type: boolean
-        floatingPointNumber:
-          type: boolean
         container:
           type: boolean
         empty:
@@ -4534,6 +4750,18 @@ components:
         updatedAt:
           type: string
           format: date-time
+    GateUpdateRequest:
+      type: object
+      description: "The gate definition edit body: required flag, config, and ring\
+        \ attachment."
+      properties:
+        required:
+          type: boolean
+        config:
+          type: object
+          additionalProperties: {}
+        ring:
+          type: string
     DefinitionView:
       type: object
       properties:
@@ -4585,6 +4813,15 @@ components:
           items:
             type: string
             format: uuid
+    EnvironmentStatusChangeRequest:
+      type: object
+      description: "The environment status body: ACTIVE or DISABLED, with an optional\
+        \ reason."
+      properties:
+        status:
+          type: string
+        reason:
+          type: string
     EnvironmentView:
       type: object
       properties:
@@ -4683,6 +4920,49 @@ components:
         createdAt:
           type: string
           format: date-time
+    ConditionRequest:
+      type: object
+      properties:
+        type:
+          type: string
+        key:
+          type: string
+        value:
+          type: string
+    GroupRequest:
+      type: object
+      properties:
+        mode:
+          type: string
+        steps:
+          type: array
+          items:
+            $ref: "#/components/schemas/StepRequest"
+    StepRequest:
+      type: object
+      properties:
+        role:
+          type: string
+        tenantId:
+          type: string
+          format: uuid
+        condition:
+          $ref: "#/components/schemas/ConditionRequest"
+    WorkflowUpdateRequest:
+      type: object
+      description: "The approval workflow edit body: the chain replaces and the ring\
+        \ attachment re-binds (absent ring detaches); the name is not editable."
+      properties:
+        ring:
+          type: string
+        steps:
+          type: array
+          items:
+            $ref: "#/components/schemas/StepRequest"
+        groups:
+          type: array
+          items:
+            $ref: "#/components/schemas/GroupRequest"
     ConditionView:
       type: object
       properties:
@@ -4794,6 +5074,45 @@ components:
           format: uuid
         added:
           type: boolean
+    AnalyticsEventBatchRequest:
+      type: object
+      properties:
+        events:
+          type: array
+          items:
+            $ref: "#/components/schemas/AnalyticsEventRequest"
+    AnalyticsEventRequest:
+      type: object
+      properties:
+        type:
+          type: string
+        result:
+          type: string
+        releaseId:
+          type: string
+          format: uuid
+        deviceId:
+          type: string
+          format: uuid
+        occurredAt:
+          type: string
+        sessions:
+          type: integer
+          format: int32
+        crashSessions:
+          type: integer
+          format: int32
+        anrSessions:
+          type: integer
+          format: int32
+    IngestReport:
+      type: object
+      properties:
+        ingested:
+          type: integer
+          format: int32
+        releaseRef:
+          type: string
     LinkRequest:
       type: object
       properties:
@@ -5843,6 +6162,78 @@ components:
       properties:
         reason:
           type: string
+    RollupRecomputeRequest:
+      type: object
+      properties:
+        from:
+          type: string
+        to:
+          type: string
+    RollupReport:
+      type: object
+      properties:
+        rows:
+          type: integer
+          format: int32
+        from:
+          type: string
+        to:
+          type: string
+    RingUpdateRequest:
+      type: object
+      description: "The ring edit body: name, position, eligibility (empty object\
+        \ clears), and the three references; the code never moves."
+      properties:
+        name:
+          type: string
+        position:
+          type: integer
+          format: int32
+        eligibility:
+          type: object
+          additionalProperties: {}
+        approvalPolicy:
+          type: string
+        promotionPolicy:
+          type: string
+        distributionChannel:
+          type: string
+    EnvironmentUpdateRequest:
+      type: object
+      description: "The environment PATCH body: null fields stay unchanged (the code\
+        \ never moves)."
+      properties:
+        name:
+          type: string
+        position:
+          type: integer
+          format: int32
+        distributionChannel:
+          type: string
+        approvalPolicy:
+          type: string
+    ApplicationUpdateRequest:
+      type: object
+      properties:
+        name:
+          type: string
+        description:
+          type: string
+        platforms:
+          type: array
+          items:
+            type: string
+        bundleId:
+          type: string
+        packageName:
+          type: string
+        status:
+          type: string
+        ownershipScope:
+          type: string
+        tenantId:
+          type: string
+          format: uuid
     PageResponseTesterResponse:
       type: object
       properties:
@@ -5914,6 +6305,27 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/TenantResponse"
+        next_cursor:
+          type: string
+    MetricPointView:
+      type: object
+      properties:
+        bucketStart:
+          type: string
+        value:
+          type: number
+          format: double
+        releaseRef:
+          type: string
+        ringCode:
+          type: string
+    PageResponseMetricPointView:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/MetricPointView"
         next_cursor:
           type: string
     PageResponseMembershipView:
@@ -6853,6 +7265,8 @@ components:
           - DEVICE_UPDATED
           - DEVICE_STATUS_CHANGED
           - DEVICES_EXPORTED
+          - ANALYTICS_EVENTS_INGESTED
+          - METRIC_ROLLUPS_RECOMPUTED
         occurredAt:
           type: string
           format: date-time
@@ -7018,3 +7432,31 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/VersionArtifactSlot"
+    MetricValueView:
+      type: object
+      properties:
+        metric:
+          type: string
+        value:
+          type: number
+          format: double
+        unit:
+          type: string
+        source:
+          type: string
+    ReleaseMetricsView:
+      type: object
+      properties:
+        releaseId:
+          type: string
+          format: uuid
+        releaseRef:
+          type: string
+        currentRing:
+          type: string
+        releaseStatus:
+          type: string
+        metrics:
+          type: array
+          items:
+            $ref: "#/components/schemas/MetricValueView"

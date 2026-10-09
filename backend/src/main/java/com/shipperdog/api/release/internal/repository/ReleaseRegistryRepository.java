@@ -61,4 +61,18 @@ public interface ReleaseRegistryRepository extends JpaRepository<ReleaseEntity, 
      * facts do, after the target-set check).
      */
     Optional<ReleaseEntity> findByApplicationIdAndVersionId(UUID applicationId, UUID versionId);
+
+    /**
+     * The id-keyed telemetry resolution probe (S11-04, issue #49): a
+     * DECLARED query, exactly like the (application, version) probe —
+     * the inherited {@code findById} rides the seam's scoped CRUD
+     * surface and cannot answer for a reporter's bound tenant context
+     * (a shared application's release rows serve the organization's
+     * scope while the reporting device sits in a target tenant's).
+     * Consumed ONLY through {@code ReleaseAccess.telemetryFactsOf},
+     * which refuses the answer unless the reporting tenant is one of
+     * the release's targets.
+     */
+    @Query("select r from ReleaseEntity r where r.id = :releaseId")
+    Optional<ReleaseEntity> probeById(@Param("releaseId") UUID releaseId);
 }
