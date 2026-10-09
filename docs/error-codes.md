@@ -287,8 +287,24 @@ reads.
 | `FEEDBACK_RELEASE_NOT_FOUND` | 404 | Resource not found. (the submission's single concealment: an unknown application/version/release, a release that does not target the named tenant, a caller without an effective ACTIVE membership there, and a console persona with no tester record all answer this SAME miss — the client learns nothing about which link failed, PRD 12) |
 | `FEEDBACK_NOT_FOUND` | 404 | Resource not found. (the console reads' miss: unknown, foreign, or mismatched-application report — and the SECURITY_ISSUE restricted-visibility concealment, which is byte-identical to the genuine miss for every reader below the owning org's admin/security bar) |
 | `ARTIFACT_NOT_FOUND` | 404 | Resource not found. (the submission's optional build link: an unknown artifact, or one that is not a READY build of the release's version — this surface's own value of the artifact read's public code, so a caller learns nothing about artifacts it cannot see) |
+| `DEVICE_NOT_FOUND` | 404 | Resource not found. (the submission's optional registered-device link since S11-03: an unknown device, one belonging to another tester or tenant, or a DEACTIVATED device — all byte-identical, this surface's own value of the device module's code, the artifact-link pattern) |
 | `INVALID_REQUEST` | 400 | The request is invalid. (a blank description, an unknown type token — the message echoes it — or over-long free-text fields; one `errors` entry per offending field, the whole form fixed in one pass) |
 | `ATTACHMENT_REJECTED` | 422 | One or more attachments are rejected. (a disallowed extension — png/jpg/mp4/txt/log only — an over-kind size, more files than the configured per-report bound, or a duplicate file name within one submission; keyed by file name in the `errors` member, refused before any write) |
 | `STORAGE_UNAVAILABLE` | 503 | Object storage is unavailable. (the attachment store refused the write or cannot serve the object; never a silent 201 — the artifact tier's code, this module's own value of it) |
 | `FEEDBACK_TRANSITION_INVALID` | 422 | The triage action is refused. (an illegal lifecycle edge — the enforced vocabulary is OPEN to TRIAGED to RESOLVED or REJECTED, every closed state re-openable to TRIAGED — a severity change on a closed report, or a closing crossing without its mandatory note; the `errors` member names the report's legal edges, the release-transition refusal's shape) |
 | `ASSIGNEE_NOT_ELIGIBLE` | 422 | The assignee is not eligible. (the named user holds no membership in the owning organization — the assignment surface resolves candidates there and no other) |
+
+## Device (`DeviceException.Code`)
+
+The tester-device registry (S11-03, issue #48, FR-028, PRD 8.12) —
+one tenant's devices behind `tenant:devices:*` (admin-only by
+construction; identifiers are semi-sensitive).
+
+| Code | HTTP | Detail |
+|---|---|---|
+| `DEVICE_NOT_FOUND` | 404 | Resource not found. (also the concealed-denial shape on every item-addressed route — a foreign tenant's device is indistinguishable from a missing one, the tenant seam's filtered answer) |
+| `TESTER_NOT_FOUND` | 404 | Resource not found. (a registration naming a tester of another organization — the concealed miss, never a hint which id failed) |
+| `INVALID_REQUEST` | 400 | The request is invalid. (an unknown platform token, a blank or over-long identifier/model/os_version, a missing tester; one `errors` entry per offending field, the whole form fixed in one pass — also the answer for an unknown `status`/`platform` filter token, never a concealment) |
+| `DEVICE_IDENTIFIER_TAKEN` | 409 | The device identifier is taken. (the tenant-scoped duplicate guard — V1's `uq_devices_tenant_identifier`, the pre-check and the lost insert race answering identically) |
+| `DEVICE_REQUEST_REFUSED` | 422 | The device request is refused. (a registration naming a tester with no retained membership row in the tenant, a deactivated tenant taking no new registrations, or the no-op status crossing — the membership surface's 422 shape) |
+

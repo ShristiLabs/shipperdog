@@ -187,6 +187,17 @@ crossing, from/to with the mandatory note of the closing and
 re-opening edges — re-opens are the same event, the from/to pair says
 which direction the report moved and the gate metric flips with it;
 the RELEASE_TRANSITIONED discipline, never a repeat),
+the device registry — S11-03/issue #48 (FR-028, PRD 8.12):
+`DEVICE_REGISTERED` (one per registration, carrying the tenant scope,
+the owning tester, the platform, and the device id — the identifier
+deliberately absent: it is the semi-sensitive fingerprint whose mass
+disclosure only the export event records, by count, never by value);
+`DEVICE_UPDATED` (the descriptive fields that moved — model,
+os_version; the identity columns never move and never appear);
+`DEVICE_STATUS_CHANGED` (the reversible park and release, from/to);
+and `DEVICES_EXPORTED` (the provisioning CSV's disclosure, carrying
+the slice and the row count — the audited act itself; an unchanged
+descriptive update writes nothing, nothing happened),
 and artifact (`ARTIFACT_UPLOAD_SESSION_CREATED` — issue #20/S5-01: the
 resumable direct-to-storage handoff is granted, carrying the
 pre-allocated `artifactId` entity reference with `platform`,

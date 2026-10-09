@@ -7,6 +7,7 @@
  * an explicit confirmation naming the tenant.
  */
 import AddIcon from "@mui/icons-material/Add";
+import DevicesIcon from "@mui/icons-material/Devices";
 import GroupsIcon from "@mui/icons-material/Groups";
 import {
   Alert,
@@ -102,7 +103,7 @@ export default function TenantsPage() {
       headerName: "Actions",
       sortable: false,
       filterable: false,
-      width: 260,
+      width: 380,
       renderCell: (params) => {
         const tenant = params.row;
         return (
@@ -118,6 +119,16 @@ export default function TenantsPage() {
                 data-testid={`members-${tenant.id}`}
               >
                 Members
+              </Button>
+            </Tooltip>
+            <Tooltip title="Device registry">
+              <Button
+                size="small"
+                startIcon={<DevicesIcon />}
+                onClick={() => navigate(`/tenants/${tenant.id}/devices`)}
+                data-testid={`devices-${tenant.id}`}
+              >
+                Devices
               </Button>
             </Tooltip>
             {tenant.status === "ACTIVE" ? (

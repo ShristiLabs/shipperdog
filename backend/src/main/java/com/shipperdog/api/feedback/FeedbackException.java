@@ -40,6 +40,14 @@ public class FeedbackException extends RuntimeException {
         /** The artifact-miss of submission: unknown, or not a READY build of the release's version (this surface's own value of the artifact read's code). */
         ARTIFACT_NOT_FOUND(HttpStatus.NOT_FOUND, "ARTIFACT_NOT_FOUND", "Resource not found."),
         /**
+         * The device-miss of submission (S11-03, AC4): an unknown
+         * device, a device belonging to another tester or tenant, or a
+         * deactivated device — all byte-identical (this surface's own
+         * value of the device module's code, the artifact-miss
+         * pattern: the client learns nothing about which link failed).
+         */
+        DEVICE_NOT_FOUND(HttpStatus.NOT_FOUND, "DEVICE_NOT_FOUND", "Resource not found."),
+        /**
          * A syntactically invalid submission (AC1): an empty or
          * blank-trimmed description, an unknown type token, oversized
          * free-text fields — 400 with one {@code errors} entry per

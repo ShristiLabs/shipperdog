@@ -219,6 +219,11 @@ class LayeredEngineUnitTest {
                 testerIdCalls++;
                 return Optional.ofNullable(testerOfUser);
             }
+
+            @Override
+            public Map<UUID, TesterAccess.TesterRecord> recordsOf(Collection<UUID> testerIds) {
+                return Map.of();
+            }
         };
         final ApplicationAccess applications = new ApplicationAccess() {
             @Override
@@ -636,6 +641,11 @@ class LayeredEngineUnitTest {
 
             @Override
             public Optional<UUID> testerIdOfUser(UUID userId) {
+                throw new IllegalStateException("port unavailable");
+            }
+
+            @Override
+            public Map<UUID, TesterAccess.TesterRecord> recordsOf(Collection<UUID> testerIds) {
                 throw new IllegalStateException("port unavailable");
             }
         };

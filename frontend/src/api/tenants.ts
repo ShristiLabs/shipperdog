@@ -101,3 +101,26 @@ export function changeTenantMemberStatus(
 export function removeTenantMember(tenantId: string, userId: string): Promise<void> {
   return apiFetch<void>(`/tenants/${tenantId}/members/${userId}`, { method: "DELETE" });
 }
+
+/** One linked tester of the tenant (the S6-03 membership view): the
+ * device register dialog's owner picker (S11-03) and any surface that
+ * names the tenant's testers. */
+export interface TenantTesterMembership {
+  testerId: string;
+  email: string;
+  fullName: string;
+  testerStatus: string;
+  membershipStatus: string;
+  effectiveAccess: boolean;
+  linkedAt: string;
+  updatedAt: string;
+}
+
+/** The tenant's linked testers; {@code status=ALL} answers every
+ * retained membership row (the administrative view). */
+export function listTenantTesters(
+  tenantId: string,
+  params: { status?: string; limit?: number; cursor?: string } = {},
+): Promise<Page<TenantTesterMembership>> {
+  return pageFetch<TenantTesterMembership>(`/tenants/${tenantId}/testers`, params);
+}

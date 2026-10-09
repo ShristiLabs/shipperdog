@@ -1432,10 +1432,21 @@ function FeedbackRow({
           <Stack spacing={0.5} sx={{ marginLeft: 1 }} data-testid={`feedback-detail-view-${item.id}`}>
             <Typography variant="body2">{detail.data?.description}</Typography>
             <Typography variant="body2" color="text.secondary">
-              {detail.data?.deviceModel ? `${detail.data.deviceModel} · ` : ""}
-              {detail.data?.os ?? "device not reported"}
+              {detail.data?.device
+                ? `registered ${detail.data.device.platform === "IOS" ? "iOS" : "Android"} device · ${[
+                    detail.data.device.model,
+                    detail.data.device.osVersion,
+                  ]
+                    .filter(Boolean)
+                    .join(" · ")}`
+                : `${detail.data?.deviceModel ? `${detail.data.deviceModel} · ` : ""}${detail.data?.os ?? "device not reported"}`}
               {detail.data?.resolutionNote ? ` · resolution: ${detail.data.resolutionNote}` : ""}
             </Typography>
+            {detail.data?.device ? (
+              <Typography variant="caption" color="text.secondary" data-testid={`feedback-device-${item.id}`}>
+                auto-context from the linked registered device
+              </Typography>
+            ) : null}
             {detail.data?.attachments.map((attachment) => (
               <a
                 key={attachment.id}

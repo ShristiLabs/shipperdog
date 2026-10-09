@@ -75,8 +75,11 @@ public class FeedbackController {
      * Submits one report (AC1): the six-type vocabulary with a
      * non-empty description, the release link the caller's screen
      * addresses, the optional build (a READY artifact of the
-     * release's version) and reported device/OS free text, and the
-     * optional attachments. Returns 201 with the stored record — the
+     * release's version), the optional registered device (S11-03:
+     * one of the caller's OWN ACTIVE devices in the submitting tenant
+     * — the server validates ownership, never trusts the id) beside
+     * the reported device/OS free text, and the optional
+     * attachments. Returns 201 with the stored record — the
      * server-attached context included, proving the client never
      * supplied an identity field.
      */
@@ -91,13 +94,14 @@ public class FeedbackController {
             @RequestParam(value = "artifact_id", required = false) UUID artifactId,
             @RequestParam("type") String type,
             @RequestParam("description") String description,
+            @RequestParam(value = "device_id", required = false) UUID deviceId,
             @RequestParam(value = "device_model", required = false) String deviceModel,
             @RequestParam(value = "os", required = false) String os,
             @RequestPart(value = "attachments", required = false) List<MultipartFile> attachments) {
         return feedback.submit(
                 principal,
                 new SubmissionCommand(
-                        applicationId, versionId, tenantId, artifactId, type, description, deviceModel, os),
+                        applicationId, versionId, tenantId, artifactId, deviceId, type, description, deviceModel, os),
                 attachments);
     }
 

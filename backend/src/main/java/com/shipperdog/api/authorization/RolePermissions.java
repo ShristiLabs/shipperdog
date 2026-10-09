@@ -96,6 +96,7 @@ import java.util.Set;
  *                       tenant:members:manage       tenant:applications:read
  *                       tenant:testers:read/manage (S6-03)
  *                       tenant:authorization-grants:read/manage (S7-02)
+ *                       tenant:devices:read/manage/export (S11-03)
  * TENANT_TESTER         tenant:applications:read    tenant:applications:download
  *                       tenant:feedback:create
  * ORG_MEMBER            (none — membership only; deny-by-default, PRD P3)
@@ -155,6 +156,13 @@ public final class RolePermissions {
             Permission.TENANT_APPLICATIONS_READ,
             Permission.TENANT_AUTHORIZATION_GRANTS_READ,
             Permission.TENANT_AUTHORIZATION_GRANTS_MANAGE,
+            // S11-03 (issue #48): the device registry through the
+            // owning-organization overlay — the tenant administrators'
+            // authorities, held by the organization administrator over
+            // every tenant they own (the tenant:testers shape).
+            Permission.TENANT_DEVICES_READ,
+            Permission.TENANT_DEVICES_MANAGE,
+            Permission.TENANT_DEVICES_EXPORT,
             Permission.APP_APPLICATIONS_READ,
             Permission.APP_APPLICATIONS_WRITE,
             Permission.APP_VERSIONS_READ,
@@ -373,7 +381,12 @@ public final class RolePermissions {
             Permission.TENANT_TESTERS_MANAGE,
             Permission.TENANT_APPLICATIONS_READ,
             Permission.TENANT_AUTHORIZATION_GRANTS_READ,
-            Permission.TENANT_AUTHORIZATION_GRANTS_MANAGE);
+            Permission.TENANT_AUTHORIZATION_GRANTS_MANAGE,
+            // S11-03 (issue #48): the device registry — read, manage,
+            // and the export download (AC3's admin bar).
+            Permission.TENANT_DEVICES_READ,
+            Permission.TENANT_DEVICES_MANAGE,
+            Permission.TENANT_DEVICES_EXPORT);
 
     private static final Set<Permission> TENANT_TESTER = Set.of(
             Permission.TENANT_APPLICATIONS_READ,
