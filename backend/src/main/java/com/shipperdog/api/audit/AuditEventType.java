@@ -330,5 +330,26 @@ public enum AuditEventType {
      * configuration-verification trail. The webhook URL and signing
      * secret are deliberately absent (write-only material).
      */
-    NOTIFICATION_SUBSCRIPTION_TESTED
+    NOTIFICATION_SUBSCRIPTION_TESTED,
+    /**
+     * A verified inbound webhook delivery processed to ACCEPTED (S12-03,
+     * issue #53, FR-022): the provider, event type, delivery id, and what
+     * the receiver did with it. The signing secret is deliberately absent
+     * (credential material); the raw payload never rides the audit trail.
+     */
+    INBOUND_WEBHOOK_ACCEPTED,
+    /** A verified inbound webhook delivery the receiver does not process (S12-03): acknowledged and ignored, same posture as accepted. */
+    INBOUND_WEBHOOK_IGNORED,
+    /** An inbound webhook delivery rejected at the signature (S12-03): one uniform event for every authenticity failure -- never a hint of which leg refused. */
+    INBOUND_WEBHOOK_REJECTED,
+    /** A duplicate inbound webhook delivery answered from the ledger (S12-03): a redelivery of an id already processed, the idempotent no-op. */
+    INBOUND_WEBHOOK_DUPLICATE,
+    /**
+     * One verified-source provenance backfill (S12-03): the signature-
+     * verified CI event that caused it, the artifact ids enriched, and the
+     * values filled -- the audit trail of the deliberate, documented
+     * exception to S5-04's write-once provenance contract (backfill-only,
+     * never overwrite).
+     */
+    ARTIFACT_PROVENANCE_ENRICHED
 }

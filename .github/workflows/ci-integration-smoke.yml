@@ -1,0 +1,243 @@
+# ci-integration-smoke (issue #53, S12-03): the composite actions'
+# end-to-end self-test against a REAL stack -- the repo's own docker
+# compose services, a seeded PAT, and a synthetic fixture APK. Manual
+# only (workflow_dispatch): the per-PR gates stay backend/frontend/cli
+# CI; this run costs a full backend image build and is run when the
+# actions or the webhook receiver change.
+#
+# Legs, each asserting one acceptance criterion:
+#   1. upload-artifact action uploads the APK with GHA-context
+#      provenance and settles READY (AC1's happy leg);
+#   2. a second upload with a broken file fails the job with exit 4
+#      and the reason in the step summary (AC1's failure leg);
+#   3. promote-release action on a fresh DRAFT release is refused
+#      (exit 4) with the blocker list in the job summary (AC2);
+#   4. the inbound POST /webhooks/github receiver verifies the
+#      signature and backfills ci_run_url onto the commit-matched
+#      artifact (AC4's receiver contract, exercised over HTTP).
+name: ci-integration-smoke
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  smoke:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    env:
+      # A fixture value, not a credential: the local compose stack's
+      # webhook secret for this run only. Never reuse anything real.
+      WEBHOOKS_GITHUB_SECRETS: smoke-webhook-secret-fixture
+      SD_API: http://localhost:8080
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '25'
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: cli/go.mod
+
+      - name: Build the CLI from this checkout
+        run: |
+          cd cli && go build -o "$RUNNER_TEMP/sd-cli-bin/shipperdog" .
+          echo "$RUNNER_TEMP/sd-cli-bin" >> "$GITHUB_PATH"
+
+      - name: Compose the local stack
+        run: docker compose up -d --wait api
+
+      - name: Generate the fixture APK
+        run: |
+          cd backend
+          mvn -q -DskipTests test-compile dependency:build-classpath -Dmdep.outputFile=target/cp.txt
+          java -cp "target/classes:target/test-classes:$(cat target/cp.txt)" \
+            com.shipperdog.api.artifact.SmokeFixtureTool "$RUNNER_TEMP/smoke-release.apk"
+
+      - name: Seed a PAT and a fresh version
+        id: seed
+        run: |
+          set -euo pipefail
+          # Readiness: any HTTP answer (even the 401) means the API is
+          # up; compose --wait only proves the container is running.
+          for _ in $(seq 1 90); do
+            code=$(curl -s -o /dev/null -w '%{http_code}' "$SD_API/api/v1/auth/me" || true)
+            [ "$code" != "000" ] && break
+            sleep 5
+          done
+          test "$code" != "000"
+          login=$(curl -fsS -X POST "$SD_API/api/v1/auth/login" \
+            -H 'Content-Type: application/json' \
+            -d '{"email":"dev@shipperdog.local","password":"shipperdog-dev-admin"}')
+          access=$(printf '%s' "$login" | jq -r .accessToken)
+          pat=$(curl -fsS -X POST "$SD_API/api/v1/auth/tokens" \
+            -H "Authorization: Bearer $access" -H 'Content-Type: application/json' \
+            -d '{}')
+          token=$(printf '%s' "$pat" | jq -r .token)
+          test "$token" != "null" -a -n "$token"
+          version="1.0.${GITHUB_RUN_NUMBER}"
+          vid=$(curl -fsS -X POST "$SD_API/api/v1/applications/10000000-0000-4000-8000-000000000004/versions" \
+            -H "Authorization: Bearer $access" -H 'Content-Type: application/json' \
+            -d "{\"versionName\":\"$version\"}" | jq -r .id)
+          {
+            echo "token=$token"
+            echo "version=$version"
+            echo "version-id=$vid"
+            echo "tenant=10000000-0000-4000-8000-000000000002"
+          } >> "$GITHUB_OUTPUT"
+
+      # Leg 1: the upload action, provenance auto-attached from this
+      # run's GHA context, settled READY.
+      - name: Upload via the composite action
+        id: upload
+        uses: ./.github/actions/upload-artifact
+        with:
+          file: ${{ runner.temp }}/smoke-release.apk
+          app: Banking
+          version: ${{ steps.seed.outputs.version }}
+          platform: android
+          api-url: ${{ env.SD_API }}
+          timeout: 8m
+        env:
+          SHIPPERDOG_TOKEN: ${{ steps.seed.outputs.token }}
+
+      - name: Assert provenance auto-capture
+        run: |
+          set -euo pipefail
+          login=$(curl -fsS -X POST "$SD_API/api/v1/auth/login" \
+            -H 'Content-Type: application/json' \
+            -d '{"email":"dev@shipperdog.local","password":"shipperdog-dev-admin"}')
+          access=$(printf '%s' "$login" | jq -r .accessToken)
+          read=$(curl -fsS "$SD_API/api/v1/artifacts/${{ steps.upload.outputs.artifact-id }}?version_id=${{ steps.seed.outputs.version-id }}" \
+            -H "Authorization: Bearer $access")
+          echo "$read" | jq -e --arg sha "$GITHUB_SHA" '.provenance.gitCommit == $sha' >/dev/null
+          echo "$read" | jq -e '.provenance.ciRunUrl | test("/actions/runs/'"$GITHUB_RUN_ID"'$")' >/dev/null
+          echo "$read" | jq -e '.status == "READY"' >/dev/null
+          echo "provenance verified: commit $GITHUB_SHA, run URL captured, status READY"
+
+      # Leg 2: a broken binary must fail the job with exit 4. The
+      # bytes are a text file renamed .apk -- the right extension to
+      # pass the CLI's local checks, the wrong bytes to pass the
+      # server's validation pipeline (FORMAT stage, NOT_A_ZIP).
+      - name: Stage the broken binary
+        run: cp docker-compose.yml "$RUNNER_TEMP/broken.apk"
+
+      - name: Upload the broken binary (expected to fail 4)
+        id: broken
+        continue-on-error: true
+        uses: ./.github/actions/upload-artifact
+        with:
+          file: ${{ runner.temp }}/broken.apk
+          app: Banking
+          version: ${{ steps.seed.outputs.version }}
+          platform: android
+          api-url: ${{ env.SD_API }}
+          timeout: 8m
+        env:
+          SHIPPERDOG_TOKEN: ${{ steps.seed.outputs.token }}
+      - name: Assert the broken upload failed with exit 4
+        run: |
+          test "${{ steps.broken.outcome }}" = "failure"
+          grep -q "ShipperDog upload failed (exit 4)" "$GITHUB_STEP_SUMMARY"
+          echo "validation failure failed the job with the reason in the summary"
+
+      # Leg 4 (before promote needs it): a second artifact with ONLY
+      # --git-commit, enriched by a signed workflow_run delivery.
+      - name: Upload a commit-only artifact for the webhook leg
+        run: |
+          set -euo pipefail
+          export SHIPPERDOG_API="$SD_API" SHIPPERDOG_TOKEN="${{ steps.seed.outputs.token }}"
+          shipperdog artifact upload "$RUNNER_TEMP/smoke-release.apk" \
+            --app Banking --version "${{ steps.seed.outputs.version }}" \
+            --platform android --git-commit "$GITHUB_SHA" --json --timeout 8m \
+            > "$RUNNER_TEMP/commit-only.json"
+          jq -r '.id' "$RUNNER_TEMP/commit-only.json" > "$RUNNER_TEMP/commit-only-id.txt"
+
+      - name: Deliver a signed workflow_run webhook
+        run: |
+          set -euo pipefail
+          payload=$(jq -n --arg sha "$GITHUB_SHA" --arg run "$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID" \
+            '{action: "completed", workflow_run: {head_sha: $sha, html_url: $run, name: "ci-integration-smoke"}, workflow: {name: "ci-integration-smoke"}}')
+          sig=$(printf '%s' "$payload" | openssl dgst -sha256 -hmac "$WEBHOOKS_GITHUB_SECRETS" -hex | sed 's/^.* /sha256=/')
+          answer=$(curl -fsS -X POST "$SD_API/webhooks/github" \
+            -H 'Content-Type: application/json' \
+            -H "X-Hub-Signature-256: $sig" \
+            -H 'X-GitHub-Delivery: 11111111-2222-4333-8444-555555555555' \
+            -H 'X-GitHub-Event: workflow_run' \
+            -d "$payload")
+          echo "$answer" | jq -e '.status == "ACCEPTED"' >/dev/null
+          # An unauthenticated re-delivery of the same id: DUPLICATE no-op.
+          replay=$(curl -fsS -X POST "$SD_API/webhooks/github" \
+            -H 'Content-Type: application/json' \
+            -H "X-Hub-Signature-256: $sig" \
+            -H 'X-GitHub-Delivery: 11111111-2222-4333-8444-555555555555' \
+            -H 'X-GitHub-Event: workflow_run' \
+            -d "$payload")
+          echo "$replay" | jq -e '.status == "DUPLICATE"' >/dev/null
+          # A forged signature: the uniform 401.
+          code=$(curl -s -o /dev/null -w '%{http_code}' -X POST "$SD_API/webhooks/github" \
+            -H 'Content-Type: application/json' \
+            -H 'X-Hub-Signature-256: sha256=0000000000000000000000000000000000000000000000000000000000000000' \
+            -H 'X-GitHub-Delivery: 22222222-3333-4444-8555-666666666666' \
+            -H 'X-GitHub-Event: workflow_run' \
+            -d "$payload")
+          test "$code" = "401"
+
+      - name: Assert the webhook backfilled ci_run_url
+        run: |
+          set -euo pipefail
+          login=$(curl -fsS -X POST "$SD_API/api/v1/auth/login" \
+            -H 'Content-Type: application/json' \
+            -d '{"email":"dev@shipperdog.local","password":"shipperdog-dev-admin"}')
+          access=$(printf '%s' "$login" | jq -r .accessToken)
+          artifact=$(cat "$RUNNER_TEMP/commit-only-id.txt")
+          read=$(curl -fsS "$SD_API/api/v1/artifacts/$artifact?version_id=${{ steps.seed.outputs.version-id }}" \
+            -H "Authorization: Bearer $access")
+          echo "$read" | jq -e '.provenance.ciRunUrl | test("/actions/runs/'"$GITHUB_RUN_ID"'$")' >/dev/null
+          echo "$read" | jq -e '.provenance.pipeline == "ci-integration-smoke"' >/dev/null
+          echo "webhook enrichment verified"
+
+      # Leg 3: the promote action on a fresh DRAFT release -- the
+      # walk is refused with the complete blocker list (no approvals
+      # recorded), exit 4, blockers in the summary.
+      - name: Create the release
+        id: release
+        run: |
+          set -euo pipefail
+          export SHIPPERDOG_API="$SD_API" SHIPPERDOG_TOKEN="${{ steps.seed.outputs.token }}"
+          shipperdog release create Banking "${{ steps.seed.outputs.version }}" \
+            --tenants "${{ steps.seed.outputs.tenant }}" --ring engineering --json \
+            > "$RUNNER_TEMP/release.json"
+          ref=$(jq -r '.releaseRef' "$RUNNER_TEMP/release.json")
+          test -n "$ref" -a "$ref" != "null"
+          echo "release-ref=$ref" >> "$GITHUB_OUTPUT"
+          cat "$RUNNER_TEMP/release.json"
+
+      - name: Promote via the composite action (expected blocked 4)
+        id: promote
+        continue-on-error: true
+        uses: ./.github/actions/promote-release
+        with:
+          release: ${{ steps.release.outputs.release-ref }}
+          app: Banking
+          ring: engineering
+          api-url: ${{ env.SD_API }}
+        env:
+          SHIPPERDOG_TOKEN: ${{ steps.seed.outputs.token }}
+
+      - name: Assert the blocker path
+        run: |
+          set -euo pipefail
+          test "${{ steps.promote.outputs.promoted }}" = "false"
+          test -n "${{ steps.promote.outputs.blockers }}"
+          grep -q "ShipperDog promote blocked" "$GITHUB_STEP_SUMMARY"
+          echo "promote refused ${{ steps.release.outputs.release-ref }} with the blocker list in the summary"
+
+      - name: Tear down the stack
+        if: always()
+        run: docker compose down -v

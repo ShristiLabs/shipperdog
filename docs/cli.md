@@ -127,8 +127,10 @@ version-stamped tarballs as workflow-run artifacts.
 
 ## Deferred
 
-- Manifest diff and environment commands, CI action packaging
-  (S12-03), and browser-flow login (PATs are the M1 credential;
-  `SHIPPERDOG_TOKEN` already covers the scripted, no-disk case). The
-  gate-result submission S9-06 deferred (`shipperdog gate result`,
-  with `gate list` and `gate override`) LANDED with S10-03.
+- Manifest diff and environment commands, and browser-flow login
+  (PATs are the M1 credential; `SHIPPERDOG_TOKEN` already covers the
+  scripted, no-disk case). The gate-result submission S9-06 deferred
+  (`shipperdog gate result`, with `gate list` and `gate override`)
+  LANDED with S10-03; the CI action packaging S5-06 deferred LANDED
+  with S12-03 — the `upload-artifact` and `promote-release`
+  composite actions wrap this CLI ([ci.md](ci.md)).

@@ -1,6 +1,7 @@
 package com.shipperdog.api.artifact.internal.repository;
 
 import com.shipperdog.api.artifact.ArtifactAccess;
+import com.shipperdog.api.artifact.ArtifactProvenanceLink;
 import com.shipperdog.api.artifact.internal.entity.ArtifactEntity;
 import com.shipperdog.api.tenant.CrossTenantByDesign;
 import java.time.Instant;
@@ -17,6 +18,7 @@ import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
@@ -47,7 +49,8 @@ import org.springframework.data.repository.query.Param;
  * tenant-isolation seam.
  */
 @CrossTenantByDesign
-public interface ArtifactRegistryRepository extends JpaRepository<ArtifactEntity, UUID>, ArtifactAccess {
+public interface ArtifactRegistryRepository
+        extends JpaRepository<ArtifactEntity, UUID>, ArtifactAccess, ArtifactProvenanceLink {
 
     /**
      * Registry lookup by id for decision-input resolution — a declared
@@ -228,5 +231,89 @@ public interface ArtifactRegistryRepository extends JpaRepository<ArtifactEntity
                             slot.getCreatedAt()));
         }
         return slotsByVersion;
+    }
+
+    /**
+     * The second sanctioned cross-scope operation (issue #53, S12-03,
+     * FR-022): verified-source provenance BACKFILL. A signature-
+     * verified CI webhook is not request-scoped — the commit match
+     * spans every organization by design — so the enrichment reads and
+     * writes ride this guard, declared and review-critical exactly
+     * like the decision-input reads above. Backfill-only by
+     * construction: the update's predicate re-checks that every
+     * offered value fills an ABSENT field, so an asserted claim is
+     * never replaced and a replayed delivery is a no-op.
+     *
+     * <p>SETTLED artifacts only (READY/FAILED/DISTRIBUTED/ARCHIVED):
+     * while a binary is still UPLOADING or VALIDATING, the async
+     * extraction/validation pipeline owns the row and its entity
+     * merges would clobber a backfill racing them — an artifact still
+     * mid-pipeline answers this lookup empty, and the CI flows that
+     * trigger enrichment (the upload action and CLI) poll to
+     * settlement before their runs complete anyway. The residual
+     * window (a revalidation re-entering the pipeline exactly as a
+     * delivery lands) is the documented S12-04 hardening note.
+     */
+    @Query(
+            value = "select id from artifacts"
+                    + " where provenance ->> 'gitCommit' = :gitCommit"
+                    + " and status in ('READY', 'FAILED', 'DISTRIBUTED', 'ARCHIVED')"
+                    + " and ((provenance ->> 'ciRunUrl') is null or (provenance ->> 'pipeline') is null)"
+                    + " order by created_at asc, id asc",
+            nativeQuery = true)
+    List<UUID> findIdsWithBackfillableProvenanceByCommit(@Param("gitCommit") String gitCommit);
+
+    /**
+     * The ci_run_url backfill leg: fills the ONE field, only when the
+     * caller offers it non-null AND the document lacks it (the
+     * predicate re-check makes a concurrent enrichment a no-op, never
+     * an overwrite). Per-field, deliberately: a row with its pipeline
+     * already asserted still receives its missing run URL -- the
+     * backfill is of ABSENT fields, not of whole rows.
+     */
+    @Modifying
+    @Query(
+            value = "update artifacts"
+                    + " set provenance = provenance || jsonb_build_object('ciRunUrl', cast(:ciRunUrl as text))"
+                    + " where id = :id"
+                    + " and provenance ->> 'gitCommit' = :gitCommit"
+                    + " and cast(:ciRunUrl as text) is not null"
+                    + " and (provenance ->> 'ciRunUrl') is null",
+            nativeQuery = true)
+    int backfillCiRunUrlIfAbsent(
+            @Param("id") UUID id, @Param("gitCommit") String gitCommit, @Param("ciRunUrl") String ciRunUrl);
+
+    /**
+     * The pipeline backfill leg: the same contract, the workflow-name
+     * field. Unknown future keys in the document pass through
+     * untouched; an asserted pipeline is never replaced.
+     */
+    @Modifying
+    @Query(
+            value = "update artifacts"
+                    + " set provenance = provenance || jsonb_build_object('pipeline', cast(:pipeline as text))"
+                    + " where id = :id"
+                    + " and provenance ->> 'gitCommit' = :gitCommit"
+                    + " and cast(:pipeline as text) is not null"
+                    + " and (provenance ->> 'pipeline') is null",
+            nativeQuery = true)
+    int backfillPipelineIfAbsent(
+            @Param("id") UUID id, @Param("gitCommit") String gitCommit, @Param("pipeline") String pipeline);
+
+    /** {@link ArtifactProvenanceLink}'s contract: the ids actually enriched, honestly answered. */
+    @Override
+    default List<UUID> backfillProvenanceByCommit(String gitCommit, String ciRunUrl, String pipeline) {
+        List<UUID> enriched = new ArrayList<>();
+        for (UUID id : findIdsWithBackfillableProvenanceByCommit(gitCommit)) {
+            // Both legs always run: the first fill must not
+            // short-circuit the second (an absent field on either
+            // side of the row still gets its backfill).
+            boolean runUrlFilled = backfillCiRunUrlIfAbsent(id, gitCommit, ciRunUrl) == 1;
+            boolean pipelineFilled = backfillPipelineIfAbsent(id, gitCommit, pipeline) == 1;
+            if (runUrlFilled || pipelineFilled) {
+                enriched.add(id);
+            }
+        }
+        return enriched;
     }
 }

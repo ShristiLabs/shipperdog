@@ -1,0 +1,195 @@
+name: 'ShipperDog Upload Artifact'
+description: >-
+  Upload an IPA/APK/AAB build artifact to ShipperDog from a GitHub
+  Actions workflow, with build provenance (commit, branch, pipeline,
+  CI run URL, build timestamp) auto-captured from the GitHub Actions
+  context. Polls validation to READY and fails the job when the
+  artifact is rejected (exit 4) with the reason rendered into the job
+  summary.
+author: 'ShristiLabs'
+
+branding:
+  icon: 'upload-cloud'
+  color: 'blue'
+
+inputs:
+  file:
+    description: 'Path to the built binary (IPA, APK, or AAB)'
+    required: true
+  version:
+    description: 'Target ShipperDog version (name like 7.12.0, or uuid; names need app unless unambiguous)'
+    required: true
+  platform:
+    description: 'ios or android'
+    required: true
+  app:
+    description: 'Target application (name or uuid); needed when the version name is ambiguous'
+    required: false
+    default: ''
+  build-number:
+    description: 'CI-pinned build number'
+    required: false
+    default: ''
+  api-url:
+    description: 'ShipperDog API origin (e.g. https://shipperdog.example.com); falls back to SHIPPERDOG_API when empty'
+    required: false
+    default: ''
+  token:
+    description: 'ShipperDog PAT; prefer the runner env SHIPPERDOG_TOKEN from a repo secret instead of passing this input'
+    required: false
+    default: ''
+  cli-source:
+    description: >-
+      How the shipperdog CLI is acquired: "path" (already on PATH --
+      default), "source" (built from the pinned repo ref in
+      cli-version; needs Go on the runner), or "release" (downloaded
+      from the repo's cli-v* releases, when published)
+    required: false
+    default: 'path'
+  cli-version:
+    description: >-
+      The pinned CLI ref (source mode) or cli-v* release tag (release
+      mode). Pinned by default to the CLI revision this action was
+      tested against -- never a moving branch
+    required: false
+    default: '0124e103e7e4255ec5dd1e87ef00e1e118708008'
+  timeout:
+    description: 'Max wait for validation to settle (Go duration, e.g. 10m)'
+    required: false
+    default: '10m'
+  extra-args:
+    description: 'Extra flags appended verbatim to the shipperdog artifact upload command (overrides win)'
+    required: false
+    default: ''
+
+outputs:
+  artifact-id:
+    description: 'The uploaded artifact id (set on success only)'
+    value: ${{ steps.upload.outputs.artifact-id }}
+  status:
+    description: 'The artifact terminal status (READY on success, FAILED when validation rejected the binary)'
+    value: ${{ steps.upload.outputs.status }}
+
+runs:
+  using: 'composite'
+  steps:
+    - name: 'Acquire the ShipperDog CLI'
+      id: cli
+      shell: bash
+      env:
+        SD_CLI_SOURCE: ${{ inputs.cli-source }}
+        SD_CLI_VERSION: ${{ inputs.cli-version }}
+      run: |
+        set -euo pipefail
+        bindir="$RUNNER_TEMP/sd-cli-bin"
+        case "$SD_CLI_SOURCE" in
+          path)
+            command -v shipperdog >/dev/null 2>&1 || {
+              echo "::error::shipperdog is not on PATH. Build it from cli/ (go build), download a cli-ci artifact, or set cli-source=source|release." >&2
+              exit 2
+            }
+            echo "using shipperdog from PATH: $(command -v shipperdog)"
+            ;;
+          source)
+            test -n "$SD_CLI_VERSION" || { echo "::error::cli-source=source requires cli-version (a pinned commit or tag)" >&2; exit 2; }
+            command -v go >/dev/null 2>&1 || { echo "::error::cli-source=source needs Go on the runner (actions/setup-go)" >&2; exit 2; }
+            mkdir -p "$bindir" "$RUNNER_TEMP/sd-cli-src"
+            git clone --quiet --filter=blob:none --no-checkout https://github.com/ShristiLabs/shipperdog.git "$RUNNER_TEMP/sd-cli-src"
+            git -C "$RUNNER_TEMP/sd-cli-src" checkout --quiet --detach "$SD_CLI_VERSION"
+            (cd "$RUNNER_TEMP/sd-cli-src/cli" && go build -o "$bindir/shipperdog" .)
+            echo "$bindir" >> "$GITHUB_PATH"
+            echo "built shipperdog from $SD_CLI_VERSION into $bindir"
+            ;;
+          release)
+            test -n "$SD_CLI_VERSION" || { echo "::error::cli-source=release requires cli-version (a cli-v* tag)" >&2; exit 2; }
+            os="$(uname -s | tr '[:upper:]' '[:lower:]')"
+            arch="$(uname -m | sed 's/^x86_64$/amd64/; s/^aarch64$/arm64/')"
+            mkdir -p "$bindir"
+            url="https://github.com/ShristiLabs/shipperdog/releases/download/cli-${SD_CLI_VERSION#cli-}/shipperdog-${os}-${arch}.tar.gz"
+            curl --fail --silent --show-error --location "$url" | tar -xz -C "$bindir"
+            echo "$bindir" >> "$GITHUB_PATH"
+            echo "downloaded shipperdog from $url"
+            ;;
+          *)
+            echo "::error::cli-source must be path, source, or release (got: $SD_CLI_SOURCE)" >&2
+            exit 2
+            ;;
+        esac
+
+    - name: 'Upload with provenance'
+      id: upload
+      shell: bash
+      env:
+        SD_FILE: ${{ inputs.file }}
+        SD_APP: ${{ inputs.app }}
+        SD_VERSION: ${{ inputs.version }}
+        SD_PLATFORM: ${{ inputs.platform }}
+        SD_BUILD_NUMBER: ${{ inputs.build-number }}
+        SD_API_INPUT: ${{ inputs.api-url }}
+        SD_TOKEN_INPUT: ${{ inputs.token }}
+        SD_TIMEOUT: ${{ inputs.timeout }}
+        SD_EXTRA_ARGS: ${{ inputs.extra-args }}
+      run: |
+        set -uo pipefail
+        if [ -n "$SD_API_INPUT" ]; then export SHIPPERDOG_API="$SD_API_INPUT"; fi
+        if [ -n "$SD_TOKEN_INPUT" ]; then export SHIPPERDOG_TOKEN="$SD_TOKEN_INPUT"; fi
+        if [ -z "${SHIPPERDOG_TOKEN:-}" ]; then
+          echo "::error::no ShipperDog credential: pass token, or set SHIPPERDOG_TOKEN from a repo secret" >&2
+          exit 3
+        fi
+
+        args=(artifact upload "$SD_FILE"
+          --version "$SD_VERSION"
+          --platform "$SD_PLATFORM"
+          --timeout "$SD_TIMEOUT"
+          --json)
+        if [ -n "$SD_APP" ]; then args+=(--app "$SD_APP"); fi
+        if [ -n "$SD_BUILD_NUMBER" ]; then args+=(--build-number "$SD_BUILD_NUMBER"); fi
+        # Provenance auto-capture (the frozen S5-04 fields): every
+        # value from the GitHub Actions context, overridable via
+        # extra-args (the CLI takes the LAST occurrence of a flag).
+        if [ -n "${GITHUB_SHA:-}" ]; then args+=(--git-commit "$GITHUB_SHA"); fi
+        if [ -n "${GITHUB_REF_NAME:-}" ]; then args+=(--git-branch "$GITHUB_REF_NAME"); fi
+        if [ -n "${GITHUB_WORKFLOW:-}" ]; then args+=(--pipeline "$GITHUB_WORKFLOW"); fi
+        if [ -n "${GITHUB_SERVER_URL:-}" ] && [ -n "${GITHUB_REPOSITORY:-}" ] && [ -n "${GITHUB_RUN_ID:-}" ]; then
+          args+=(--ci-run-url "$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID")
+        fi
+        args+=(--build-timestamp "$(date -u +%Y-%m-%dT%H:%M:%SZ)")
+        if [ -n "$SD_EXTRA_ARGS" ]; then
+          # shellcheck disable=SC2206
+          args+=($SD_EXTRA_ARGS)
+        fi
+
+        capture="$RUNNER_TEMP/sd-upload-stdout.json"
+        errors="$RUNNER_TEMP/sd-upload-stderr.txt"
+        set +e
+        shipperdog "${args[@]}" >"$capture" 2>"$errors"
+        code=$?
+        set -e
+        cat "$errors"
+        cat "$capture"
+
+        if [ "$code" -eq 0 ]; then
+          artifact_id="$(jq -r '.id // empty' "$capture")"
+          status="$(jq -r '.status // "READY"' "$capture")"
+          {
+            echo "artifact-id=$artifact_id"
+            echo "status=$status"
+          } >> "$GITHUB_OUTPUT"
+          {
+            echo "## ShipperDog upload"
+            echo "Artifact \`$artifact_id\` is $status (provenance: $GITHUB_SHA @ \`${GITHUB_REF_NAME:-unknown}\`, run $GITHUB_RUN_ID)."
+          } >> "$GITHUB_STEP_SUMMARY"
+          exit 0
+        fi
+
+        {
+          echo "## ShipperDog upload failed (exit $code)"
+          echo
+          echo '```'
+          cat "$errors" "$capture" 2>/dev/null
+          echo '```'
+          echo
+          echo "Exit codes: 2 usage, 3 bad token, 4 validation rejected the binary, 5 network."
+        } >> "$GITHUB_STEP_SUMMARY"
+        exit "$code"

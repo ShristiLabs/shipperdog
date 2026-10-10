@@ -307,7 +307,18 @@ and audit nothing; `AUTHORIZATION_GRANT_DELETED` is historical-only
 flip, and the row itself is RETAINED with its revocation facts as
 the durable history),
 and
-platform (`ACCESS_DENIED`, S1-06).
+platform (`ACCESS_DENIED`, S1-06),
+the notification subscription family
+(`NOTIFICATION_SUBSCRIPTION_CREATED`/`UPDATED`/`DELETED`/`TESTED` —
+S12-01/S12-02, documented with its surface in
+[notifications](notifications.md)),
+and the CI-integration receiver family — S12-03/issue #53:
+`INBOUND_WEBHOOK_ACCEPTED`/`IGNORED`/`REJECTED`/`DUPLICATE`, one per
+acted-on, ignored, signature-rejected, or duplicate delivery
+(carrying provider, event type, and delivery id — the
+signing secret and raw payload never ride the trail), and
+`ARTIFACT_PROVENANCE_ENRICHED`, the audited record of the receiver's
+backfill-only provenance exception ([ci](ci.md)).
 
 ## Persistence and transactional semantics
 

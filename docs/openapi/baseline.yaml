@@ -892,6 +892,66 @@ paths:
             '*/*':
               schema:
                 $ref: "#/components/schemas/TagsView"
+  /webhooks/github:
+    post:
+      tags:
+      - integration-webhook-controller
+      summary: Receive a signed GitHub webhook delivery
+      description: "The delivery's HMAC-SHA256 signature (X-Hub-Signature-256, sha256=hex\
+        \ over the exact body bytes) is the authentication. Every authenticity failure\
+        \ answers the same 401; a verified sender's unreadable body answers 400; every\
+        \ processed delivery answers 200 with its receipt (ACCEPTED, IGNORED, or DUPLICATE\
+        \ -- GitHub's contract is 2xx-or-retry, and events this receiver does not\
+        \ consume are acknowledged, not failed)."
+      operationId: receiveGithubWebhook
+      parameters:
+      - name: X-Hub-Signature-256
+        in: header
+        required: false
+        schema:
+          type: string
+      - name: X-GitHub-Delivery
+        in: header
+        required: false
+        schema:
+          type: string
+      - name: X-GitHub-Event
+        in: header
+        required: false
+        schema:
+          type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: string
+              format: byte
+        required: true
+      responses:
+        "200":
+          description: The delivery's receipt
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/WebhookReceiptView"
+        "401":
+          description: Delivery not accepted (uniform for every signature failure)
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/WebhookReceiptView"
+        "400":
+          description: A verified delivery whose body is not readable JSON
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/WebhookReceiptView"
+        "413":
+          description: A delivery beyond the configured body ceiling
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/WebhookReceiptView"
   /api/v1/testers:
     get:
       tags:
@@ -4229,6 +4289,11 @@ paths:
           - NOTIFICATION_SUBSCRIPTION_UPDATED
           - NOTIFICATION_SUBSCRIPTION_DELETED
           - NOTIFICATION_SUBSCRIPTION_TESTED
+          - INBOUND_WEBHOOK_ACCEPTED
+          - INBOUND_WEBHOOK_IGNORED
+          - INBOUND_WEBHOOK_REJECTED
+          - INBOUND_WEBHOOK_DUPLICATE
+          - ARTIFACT_PROVENANCE_ENRICHED
       - name: applicationId
         in: query
         required: false
@@ -4941,13 +5006,15 @@ components:
       properties:
         string:
           type: boolean
-        container:
-          type: boolean
         number:
           type: boolean
-        floatingPointNumber:
+        binary:
+          type: boolean
+        pojo:
           type: boolean
         valueNode:
+          type: boolean
+        missingNode:
           type: boolean
         nodeType:
           type: string
@@ -4961,10 +5028,6 @@ components:
           - OBJECT
           - POJO
           - STRING
-        missingNode:
-          type: boolean
-        pojo:
-          type: boolean
         integralNumber:
           type: boolean
         short:
@@ -4984,7 +5047,9 @@ components:
           deprecated: true
         boolean:
           type: boolean
-        binary:
+        floatingPointNumber:
+          type: boolean
+        container:
           type: boolean
         empty:
           type: boolean
@@ -5293,6 +5358,18 @@ components:
           type: array
           items:
             type: string
+    WebhookReceiptView:
+      type: object
+      properties:
+        status:
+          type: string
+          description: "ACCEPTED (consumed and acted on), IGNORED (consumed, not acted\
+            \ on), or DUPLICATE (already processed)"
+          example: ACCEPTED
+        deliveryId:
+          type: string
+          description: The delivery id the receipt answers (the sender's X-GitHub-Delivery)
+          example: 72d3162e-cc78-11e3-81ab-4c9367dc0958
     CreateRequest:
       type: object
       properties:
@@ -7800,6 +7877,11 @@ components:
           - NOTIFICATION_SUBSCRIPTION_UPDATED
           - NOTIFICATION_SUBSCRIPTION_DELETED
           - NOTIFICATION_SUBSCRIPTION_TESTED
+          - INBOUND_WEBHOOK_ACCEPTED
+          - INBOUND_WEBHOOK_IGNORED
+          - INBOUND_WEBHOOK_REJECTED
+          - INBOUND_WEBHOOK_DUPLICATE
+          - ARTIFACT_PROVENANCE_ENRICHED
         occurredAt:
           type: string
           format: date-time
