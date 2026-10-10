@@ -67,6 +67,7 @@ authority to read.
 | `TESTER_INVITED` | Tester invited or re-invited (S6-01) | `TesterInvitedEvent` |
 | `FEEDBACK_RECEIVED` | One tester report landed (S11-01) | `FeedbackReceivedEvent` |
 | `FEEDBACK_MARKED_CRITICAL` | Report classified CRITICAL (S11-02) | `FeedbackMarkedCriticalEvent` |
+| `NOTIFICATION_TEST_SENT` | A subscription's test message (S12-02) | the test action itself — no domain transition publishes it |
 
 Two deliberate suppressions: a validation outcome of `BLOCKED` (the
 operational queue-refusal skip) publishes nothing, and the release
@@ -96,11 +97,11 @@ create or PATCH supply it; a PATCH with a new secret rotates it).
 ```
 POST /api/v1/organizations/{orgId}/notification-subscriptions
 { "eventTypes": ["RELEASE_PROMOTED", "FEEDBACK_MARKED_CRITICAL"],
-  "channel": "IN_APP" | "EMAIL" | "WEBHOOK",
+  "channel": "IN_APP" | "EMAIL" | "WEBHOOK" | "SLACK" | "TEAMS",
   "recipientRoles": ["QA_ENGINEER"],          // IN_APP, EMAIL
   "recipientUserIds": ["<uuid>"],             // IN_APP, EMAIL
-  "webhookUrl": "https://...",                // WEBHOOK
-  "webhookSecret": ">=16 chars" }             // WEBHOOK
+  "webhookUrl": "https://...",                // WEBHOOK, SLACK, TEAMS
+  "webhookSecret": ">=16 chars" }             // WEBHOOK, SLACK, TEAMS
 ```
 
 Validation is 422 `NOTIFICATION_SUBSCRIPTION_INVALID` with one
@@ -124,10 +125,12 @@ Channels:
   `GET /api/v1/notification-inbox` (the `/auth/me` shape: no
   resource id, the recipient filter is the permission).
 - **EMAIL** — through the `EmailSender` seam, today the WARN-log
-  stub; SMTP transport is S12-02.
-- **WEBHOOK** — one signed POST per attempt (below). Slack and Teams
-  formatters (FR-023's other channels) are S12-02 on top of this
-  machinery.
+  stub; SMTP transport is a standing follow-up.
+- **WEBHOOK** — one signed POST per attempt (below), body = the
+  canonical event JSON.
+- **SLACK / TEAMS** (S12-02, FR-023's chat channels) — the same
+  signed POST machinery, same URL + signing secret + target policy,
+  with a provider-rendered message body (the chat cards below).
 
 ## The delivery ledger and retries
 
@@ -208,6 +211,120 @@ next attempt — in-flight retries sign with the secret they re-read
 at send time, so a receiver mid-rotation may see one attempt under
 the old secret before the new one lands.
 
+## The chat channels: Slack and Teams (S12-02)
+
+The chat channels are subscription values, not a second model: a
+SLACK or TEAMS subscription carries exactly what a WEBHOOK one does —
+a `webhookUrl` (Slack incoming-webhook, Teams workflow, or connector
+URL) and the write-only signing `webhookSecret` — validated by the
+same rules (the target policy included: `hooks.slack.com`,
+`*.logic.azure.com` workflow hosts, and `outlook.office.com` are
+publicly routable and pass unmodified) and delivered by the same
+signed POST with the same retry/backoff ledger. The recipient keys
+are channel-prefixed (`slack:<url>`, `teams:<url>`) so the idempotency
+grain and the delivery log read cleanly per channel.
+
+Only the body is provider-shaped, rendered from the per-event
+templates below.
+
+### The message templates (data-driven)
+
+Both formatters render the same per-event partials — a heading, a
+semantic color, the entity-context facts the event's payload actually
+carries (release reference, platform, rings, approval, round,
+actor, feedback type — never invented blanks), and a deep link back
+to the console entity:
+
+- release-grain events link `/releases/{application}/{release}`;
+- artifact-grain events link the application page;
+- every card carries the event name and occurrence time.
+
+Failure events (`ARTIFACT_FAILED` with its `failureCode`,
+`FEEDBACK_MARKED_CRITICAL`, rejection reasons on
+`RELEASE_TRANSITIONED`) surface their blocker vocabulary first-class.
+A name without a template renders the default partial — reserved
+names arriving with their owning stories read correctly on day one.
+The template table is deliberately the contract (the story's own
+note): the S14-05 SIEM formatter and V3 AI summaries render the same
+partials through new formatters, not new templates.
+
+Deep links are built on `shipperdog.notifications.console-base-url`
+(`CONSOLE_BASE_URL` in the deployment env; the default is the local
+compose console — production sets its real origin).
+
+### The Slack body (Block Kit)
+
+```json
+{
+  "text": "Release promoted — Banking 7.12.0",
+  "blocks": [
+    { "type": "header", "text": { "type": "plain_text", "text": "Release promoted — Banking 7.12.0" } },
+    { "type": "section", "fields": [
+        { "type": "mrkdwn", "text": "*Release*\nBanking 7.12.0" },
+        { "type": "mrkdwn", "text": "*To ring*\nbeta" } ] },
+    { "type": "context", "elements": [
+        { "type": "mrkdwn", "text": "RELEASE_PROMOTED • 2026-10-04T12:00:00Z" } ] },
+    { "type": "actions", "elements": [
+        { "type": "button", "text": { "type": "plain_text", "text": "Open release" },
+          "url": "https://console.example/releases/<app>/<release>" } ] }
+  ]
+}
+```
+
+`text` is the fallback strip notification surfaces render; Slack
+ignores the signature headers (its URLs are themselves the bearer
+capability) — they cost nothing and fronting relays can still verify.
+
+### The Teams body (connector card)
+
+```json
+{
+  "@type": "MessageCard",
+  "@context": "http://schema.org/extensions",
+  "themeColor": "2EB67D",
+  "summary": "Release promoted — Banking 7.12.0",
+  "sections": [ {
+    "activityTitle": "Release promoted — Banking 7.12.0",
+    "facts": [ { "name": "Release", "value": "Banking 7.12.0" } ],
+    "text": "RELEASE_PROMOTED • 2026-10-04T12:00:00Z",
+    "markdown": false,
+    "potentialAction": [ {
+      "@type": "OpenUri", "name": "Open release",
+      "targets": [ { "os": "default", "url": "https://console.example/releases/<app>/<release>" } ] } ] } ]
+}
+```
+
+The card is the connector-card contract (the acceptance criterion's
+own shape). For Teams workflow URLs — the Power Automate mechanism
+that replaced retired Office 365 connector creation — create the
+workflow from the "Post to a channel when a webhook request is
+received" template; the posted facts carry through the same, and the
+card's facts and action map onto the adaptive card the workflow
+posts. Teams workflow URLs are long: they must fit the family's
+shared 2048-character ceiling (the policy enforces it for every
+channel alike).
+
+### The test message (the console's "Send test")
+
+```
+POST /api/v1/organizations/{orgId}/notification-subscriptions/{id}/test
+-> { "delivered": true|false, "channel": "SLACK", "error": null|"...", "sentAt": "..." }
+```
+
+One synthetic `NOTIFICATION_TEST_SENT` event through the REAL channel
+pipeline — the same card a chat client would render, the same signed
+POST a receiver would verify, the same ledger row the delivery log
+would show — so a passing test is end-to-end proof and a failing one
+names why, in the response AND in the delivery log (a refused test is
+a SCHEDULED row the retry drain keeps working, exactly like a real
+delivery; failures are never silent). The synthetic event is recorded
+in the outbox born RELAYED — the synchronous dispatch IS its
+publication; the relay never re-fans a test out. `IN_APP` tests land
+the row in the recipients' inbox; `EMAIL` tests ride the seam.
+Audited as `NOTIFICATION_SUBSCRIPTION_TESTED` (channel and outcome;
+never the URL or secret). Not gated by the subscription's event
+routing — the test verifies the configuration, whatever it routes.
+
 ## Configuration
 
 | Property | Default | Meaning |
@@ -221,6 +338,7 @@ the old secret before the new one lands.
 | `shipperdog.notifications.delivery-backoff` | PT2S | Exponential base between delivery retries |
 | `shipperdog.notifications.webhook-timeout` | PT5S | Webhook POST connect/read budget |
 | `shipperdog.notifications.webhook-allow-private-addresses` | false | Skip the webhook target policy's host/DNS checks (local test/dev receivers only) |
+| `shipperdog.notifications.console-base-url` | http://localhost:5173 | The console's externally reachable origin — the base of every deep link in Slack/Teams messages (S12-02) |
 
 See [ADR-0007](adr/ADR-0007-event-bus-transport.md) for the transport
 decision and the broker migration path, [authorization.md](authorization.md)

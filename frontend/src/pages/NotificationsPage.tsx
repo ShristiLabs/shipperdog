@@ -1,16 +1,18 @@
 /**
- * Notification subscriptions editor and delivery log (S12-01, AC4/AC5)
- * — the console surface of FR-023's routing table: the organization's
- * subscriptions (event names from the frozen vocabulary x channel x
- * recipients), each editable through the dialog (reroute events,
- * change recipients, rotate the webhook secret, park with the enabled
- * switch), and the delivery ledger beside them — every attempt with
- * its status and last error, the FAILED rows the integrator works.
- * Client-side validation refuses the obvious shapes (no events, no
- * recipients on in-app/email, no URL/secret on webhook); the server
- * re-validates everything (the frozen vocabulary is the catalog) and
- * refusals surface the problem+json code — the console is never the
- * gate.
+ * Notification subscriptions editor and delivery log (S12-01 AC4/AC5,
+ * S12-02 AC3) — the console surface of FR-023's routing table: the
+ * organization's subscriptions (event names from the frozen vocabulary
+ * x channel x recipients, the chat channels included), each editable
+ * through the dialog (reroute events, change recipients, rotate the
+ * webhook secret, park with the enabled switch), each verifiable with
+ * the test-message action (one synthetic event through the real
+ * channel pipeline), and the delivery ledger beside them — every
+ * attempt with its status and last error, the FAILED rows the
+ * integrator works. Client-side validation refuses the obvious shapes
+ * (no events, no recipients on in-app/email, no URL/secret on the
+ * webhook family); the server re-validates everything (the frozen
+ * vocabulary is the catalog) and refusals surface the problem+json
+ * code — the console is never the gate.
  */
 import AddIcon from "@mui/icons-material/Add";
 import DeleteIcon from "@mui/icons-material/Delete";
@@ -39,10 +41,12 @@ import {
   deleteSubscription,
   fetchDeliveries,
   fetchSubscriptions,
+  testSubscription,
   updateSubscription,
   type DeliveryRow,
   type NotificationChannel,
   type Subscription,
+  type TestMessageResult,
 } from "../api/notifications";
 import { useAuth } from "../auth/AuthContext";
 import { useToast } from "../components/ToastContext";
@@ -74,6 +78,18 @@ const ROLES = [
   "COMPLIANCE_REVIEWER",
 ];
 
+/** The webhook family: the channels whose shape is a URL + signing
+ * secret (the chat channels ride the webhook machinery, S12-02). */
+const isWebhookFamily = (channel: NotificationChannel): boolean =>
+  channel === "WEBHOOK" || channel === "SLACK" || channel === "TEAMS";
+
+/** The URL field's label per channel — the provider's own vocabulary. */
+const webhookUrlLabel = (channel: NotificationChannel): string => {
+  if (channel === "SLACK") return "Slack incoming-webhook URL (https://hooks.slack.com/services/...)";
+  if (channel === "TEAMS") return "Teams webhook URL (workflow or connector)";
+  return "Webhook URL (https://)";
+};
+
 /** The editor's draft: everything the dialog can write. */
 interface Draft {
   eventTypes: string[];
@@ -98,7 +114,7 @@ function draftOf(subscription: Subscription | null): Draft {
 }
 
 function recipientSummary(subscription: Subscription): string {
-  if (subscription.channel === "WEBHOOK") {
+  if (isWebhookFamily(subscription.channel)) {
     return subscription.webhookUrl ?? "";
   }
   const roles = subscription.recipientRoles;
@@ -123,6 +139,8 @@ export default function NotificationsPage() {
   const [editorOpen, setEditorOpen] = useState(false);
   const [editing, setEditing] = useState<Subscription | null>(null);
   const [draft, setDraft] = useState<Draft>(draftOf(null));
+  /** The last failed test's outcome, rendered inline until the next test. */
+  const [testResult, setTestResult] = useState<TestMessageResult | null>(null);
 
   const subscriptions = useQuery({
     queryKey: ["notification-subscriptions", orgId],
@@ -146,21 +164,22 @@ export default function NotificationsPage() {
       if (editing !== null) {
         return updateSubscription(orgId as string, editing.id, {
           eventTypes: draft.eventTypes,
-          recipientRoles:
-            draft.channel === "WEBHOOK"
-              ? undefined
-              : draft.recipientRoles
-                  .split(",")
-                  .map((role) => role.trim())
-                  .filter((role) => role !== ""),
-          recipientUserIds:
-            draft.channel === "WEBHOOK"
-              ? undefined
-              : draft.recipientUserIds
-                  .split(",")
-                  .map((id) => id.trim())
-                  .filter((id) => id !== ""),
-          webhookUrl: draft.channel === "WEBHOOK" && draft.webhookUrl.trim() !== "" ? draft.webhookUrl.trim() : undefined,
+          recipientRoles: isWebhookFamily(draft.channel)
+            ? undefined
+            : draft.recipientRoles
+                .split(",")
+                .map((role) => role.trim())
+                .filter((role) => role !== ""),
+          recipientUserIds: isWebhookFamily(draft.channel)
+            ? undefined
+            : draft.recipientUserIds
+                    .split(",")
+                    .map((id) => id.trim())
+                    .filter((id) => id !== ""),
+          webhookUrl:
+            isWebhookFamily(draft.channel) && draft.webhookUrl.trim() !== ""
+              ? draft.webhookUrl.trim()
+              : undefined,
           webhookSecret: draft.webhookSecret.trim() === "" ? undefined : draft.webhookSecret,
           enabled: draft.enabled,
         });
@@ -168,28 +187,44 @@ export default function NotificationsPage() {
       return createSubscription(orgId as string, {
         eventTypes: draft.eventTypes,
         channel: draft.channel,
-        recipientRoles:
-          draft.channel === "WEBHOOK"
-            ? undefined
-            : draft.recipientRoles
-                .split(",")
-                .map((role) => role.trim())
-                .filter((role) => role !== ""),
-        recipientUserIds:
-          draft.channel === "WEBHOOK"
-            ? undefined
-            : draft.recipientUserIds
-                .split(",")
-                .map((id) => id.trim())
-                .filter((id) => id !== ""),
-        webhookUrl: draft.channel === "WEBHOOK" ? draft.webhookUrl.trim() : undefined,
-        webhookSecret: draft.channel === "WEBHOOK" ? draft.webhookSecret : undefined,
+        recipientRoles: isWebhookFamily(draft.channel)
+          ? undefined
+          : draft.recipientRoles
+              .split(",")
+              .map((role) => role.trim())
+              .filter((role) => role !== ""),
+        recipientUserIds: isWebhookFamily(draft.channel)
+          ? undefined
+          : draft.recipientUserIds
+                  .split(",")
+                  .map((id) => id.trim())
+                  .filter((id) => id !== ""),
+        webhookUrl: isWebhookFamily(draft.channel) ? draft.webhookUrl.trim() : undefined,
+        webhookSecret: isWebhookFamily(draft.channel) ? draft.webhookSecret : undefined,
       });
     },
     onSuccess: async () => {
       toast.showSuccess("Subscription saved");
       setEditorOpen(false);
       await refresh();
+    },
+    onError: (error) => {
+      toast.showError(error);
+    },
+  });
+
+  /** The test-message action (S12-02, AC3): one synthetic event
+   * through the real channel pipeline; the honest outcome renders
+   * inline (the failed test's error is the integrator's diagnostic),
+   * and the deliveries refresh so a refused test's ledger row shows. */
+  const test = useMutation({
+    mutationFn: (subscription: Subscription) => testSubscription(orgId as string, subscription.id),
+    onSuccess: async (result) => {
+      setTestResult(result.delivered ? null : result);
+      if (result.delivered) {
+        toast.showSuccess(`Test message delivered (${result.channel.toLowerCase()})`);
+      }
+      await queryClient.invalidateQueries({ queryKey: ["notification-deliveries", orgId] });
     },
     onError: (error) => {
       toast.showError(error);
@@ -219,10 +254,9 @@ export default function NotificationsPage() {
     setEditorOpen(true);
   }
 
-  const recipientShapeValid =
-    draft.channel === "WEBHOOK"
-      ? draft.webhookUrl.trim() !== "" && (editing !== null || draft.webhookSecret.length >= 16)
-      : draft.recipientRoles.trim() !== "" || draft.recipientUserIds.trim() !== "";
+  const recipientShapeValid = isWebhookFamily(draft.channel)
+    ? draft.webhookUrl.trim() !== "" && (editing !== null || draft.webhookSecret.length >= 16)
+    : draft.recipientRoles.trim() !== "" || draft.recipientUserIds.trim() !== "";
 
   return (
     <Stack spacing={2}>
@@ -239,6 +273,13 @@ export default function NotificationsPage() {
         which channel and recipients — the in-app inbox, email, or a signed webhook. The delivery log below
         shows every attempt; failed deliveries retry with backoff and stay visible when exhausted.
       </Typography>
+
+      {testResult !== null ? (
+        <Alert severity="error" data-testid="test-result" onClose={() => setTestResult(null)}>
+          Test message failed ({testResult.channel.toLowerCase()}): {testResult.error ?? "unknown error"} — the
+          delivery log below carries the retry schedule.
+        </Alert>
+      ) : null}
 
       {subscriptions.isError ? (
         <Alert severity="error" data-testid="subscriptions-error">
@@ -279,6 +320,14 @@ export default function NotificationsPage() {
                   color={subscription.enabled ? "default" : "warning"}
                 />
                 <Box sx={{ flexGrow: 1 }} />
+                <Button
+                  size="small"
+                  disabled={test.isPending}
+                  onClick={() => test.mutate(subscription)}
+                  data-testid={`subscription-test-${subscription.id}`}
+                >
+                  Send test
+                </Button>
                 <Button
                   size="small"
                   onClick={() => openEdit(subscription)}
@@ -372,12 +421,14 @@ export default function NotificationsPage() {
                 <MenuItem value="IN_APP">In-app inbox</MenuItem>
                 <MenuItem value="EMAIL">Email</MenuItem>
                 <MenuItem value="WEBHOOK">Webhook (signed)</MenuItem>
+                <MenuItem value="SLACK">Slack</MenuItem>
+                <MenuItem value="TEAMS">Microsoft Teams</MenuItem>
               </TextField>
             ) : null}
-            {draft.channel === "WEBHOOK" ? (
+            {isWebhookFamily(draft.channel) ? (
               <>
                 <TextField
-                  label="Webhook URL (https://)"
+                  label={webhookUrlLabel(draft.channel)}
                   value={draft.webhookUrl}
                   onChange={(event) => setDraft({ ...draft, webhookUrl: event.target.value })}
                   data-testid="subscription-webhook-url"

@@ -82,7 +82,9 @@ function bodyOf(url: string, method: string): Record<string, unknown> {
   return JSON.parse((call![1] as RequestInit).body as string) as Record<string, unknown>;
 }
 
-function renderPage(): Parameters<typeof installFetchRouter>[0] {
+function renderPage(extra: Parameters<typeof installFetchRouter>[0] = []): Parameters<
+  typeof installFetchRouter
+>[0] {
   const routes: Parameters<typeof installFetchRouter>[0] = [
     {
       method: "GET",
@@ -96,6 +98,7 @@ function renderPage(): Parameters<typeof installFetchRouter>[0] {
       status: 200,
       body: { items: [DELIVERY_FAILED, DELIVERY_DELIVERED] },
     },
+    ...extra,
   ];
   installFetchRouter(routes);
   seedSession();
@@ -193,6 +196,85 @@ describe("NotificationsPage", () => {
         "PATCH",
       );
       expect(body["enabled"]).toBe(false);
+    });
+  });
+
+  it("creates a Slack subscription with the webhook family's URL and secret shape (S12-02)", async () => {
+    const routes = renderPage();
+    const slackSubscription = {
+      ...SUBSCRIPTION_FAILED_WEBHOOK,
+      id: "40000000-0000-4000-8000-000000000003",
+      channel: "SLACK",
+      enabled: true,
+      webhookUrl: "https://hooks.slack.com/services/T000/B000/XXXXXXXXXXXXXXXXXXXXXXXX",
+    };
+    routes.push({
+      method: "POST",
+      url: `/api/v1/organizations/${ORG_ID}/notification-subscriptions`,
+      status: 201,
+      body: slackSubscription,
+    });
+
+    await screen.findByTestId("subscription-list");
+    await user.click(screen.getByTestId("subscription-create"));
+    await user.click(within(screen.getByTestId("subscription-channel")).getByRole("combobox"));
+    await user.click(screen.getByRole("option", { name: "Slack" }));
+    await user.type(
+      screen.getByTestId("subscription-webhook-url").querySelector("input")!,
+      "https://hooks.slack.com/services/T000/B000/XXXXXXXXXXXXXXXXXXXXXXXX",
+    );
+    await user.type(
+      screen.getByTestId("subscription-webhook-secret").querySelector("input")!,
+      "a-signing-secret-16-chars",
+    );
+    await user.click(screen.getByTestId("subscription-save"));
+
+    await waitFor(() => {
+      const body = bodyOf(`/api/v1/organizations/${ORG_ID}/notification-subscriptions`, "POST");
+      expect(body["channel"]).toBe("SLACK");
+      expect(body["webhookUrl"]).toBe("https://hooks.slack.com/services/T000/B000/XXXXXXXXXXXXXXXXXXXXXXXX");
+      expect(body["webhookSecret"]).toBe("a-signing-secret-16-chars");
+      expect(body["recipientRoles"]).toBeUndefined();
+    });
+  });
+
+  it("sends the test message and renders the failed outcome inline (S12-02, AC3)", async () => {
+    renderPage([
+      {
+        method: "POST",
+        url: `/api/v1/organizations/${ORG_ID}/notification-subscriptions/${SUBSCRIPTION_FAILED_WEBHOOK.id}/test`,
+        status: 200,
+        body: {
+          delivered: false,
+          channel: "TEAMS",
+          error: "HttpClientException: 503 Service Unavailable",
+          sentAt: "2026-10-04T12:00:00Z",
+        },
+      },
+      // The failed test's ledger row shows after the deliveries refresh.
+      {
+        method: "GET",
+        url: `/api/v1/organizations/${ORG_ID}/notification-deliveries`,
+        status: 200,
+        body: { items: [DELIVERY_FAILED, DELIVERY_DELIVERED] },
+      },
+    ]);
+
+    await screen.findByTestId("subscription-list");
+    await user.click(screen.getByTestId(`subscription-test-${SUBSCRIPTION_FAILED_WEBHOOK.id}`));
+
+    const result = await screen.findByTestId("test-result");
+    expect(result).toHaveTextContent("teams");
+    expect(result).toHaveTextContent("503");
+    await waitFor(() => {
+      expect(
+        fetchCalls().some(
+          ([url, init]) =>
+            url ===
+              `/api/v1/organizations/${ORG_ID}/notification-subscriptions/${SUBSCRIPTION_FAILED_WEBHOOK.id}/test` &&
+            (init?.method ?? "GET") === "POST",
+        ),
+      ).toBe(true);
     });
   });
 });

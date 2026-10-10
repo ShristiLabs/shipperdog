@@ -5,6 +5,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.shipperdog.api.audit.AuditEventType;
 import com.shipperdog.api.feedback.FeedbackMarkedCriticalEvent;
 import com.shipperdog.api.feedback.FeedbackReceivedEvent;
 import com.shipperdog.api.identity.AuditCapture;
@@ -118,6 +119,9 @@ class NotificationDeliveryIntegrationTest {
     private CapturingEmailSender email;
 
     @Autowired
+    private AuditCapture audit;
+
+    @Autowired
     private NotificationSubscriptionService routing;
 
     /** The jackson 2 mapper the test side already uses for wire JSON (the fixtures' choice). */
@@ -156,6 +160,7 @@ class NotificationDeliveryIntegrationTest {
         client = RestClient.builder().baseUrl("http://localhost:" + port).build();
         inTransaction = new TransactionTemplate(transactions);
         email.reset();
+        audit.reset();
         received.clear();
         respondStatus.set(200);
         receiver = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
@@ -490,12 +495,284 @@ class NotificationDeliveryIntegrationTest {
         assertThat(String.valueOf(row.get("last_error"))).contains("503");
 
         // The failure is visible in the delivery log (AC5), through the API.
+        // The exact-count assertion is scoped to this subscription: the
+        // class's suites share one organization, and the SCHEDULED rows
+        // other tests legitimately leave standing must not capsize an
+        // exhaustion count (org-wide, the FAILED set includes this row).
         JsonNode failures = get(
-                world.adminToken, "/api/v1/organizations/" + world.org + "/notification-deliveries?status=FAILED", 200);
+                world.adminToken,
+                "/api/v1/organizations/" + world.org + "/notification-deliveries?subscriptionId=" + subscription
+                        + "&status=FAILED",
+                200);
         assertThat(failures.get("items").size()).isEqualTo(1);
         assertThat(failures.get("items").get(0).get("status").asText()).isEqualTo("FAILED");
         assertThat(failures.get("items").get(0).get("eventName").asText())
                 .isEqualTo(DomainEventName.FEEDBACK_RECEIVED.name());
+    }
+
+    // -----------------------------------------------------------------------
+    // S12-02: the chat channels -- Slack blocks, the Teams card, and
+    // the test action (issue #52, AC1/AC2/AC3/AC5)
+    // -----------------------------------------------------------------------
+
+    @Test
+    void slackChannelDeliversFormattedBlocksSigned() throws Exception {
+        UUID subscription = createSubscription(Map.of(
+                "eventTypes",
+                List.of("RELEASE_PROMOTED"),
+                "channel",
+                "SLACK",
+                "webhookUrl",
+                "http://127.0.0.1:" + receiver.getAddress().getPort() + "/hook",
+                "webhookSecret",
+                WEBHOOK_SECRET));
+        publish(new ReleasePromotedEvent(
+                world.releaseId,
+                world.releaseRef,
+                world.app,
+                world.version,
+                world.org,
+                null,
+                "qa",
+                "beta",
+                List.of(),
+                false,
+                UUID.randomUUID(),
+                Instant.now()));
+        relay.drainOnce();
+
+        assertThat(received).hasSize(1);
+        ReceivedWebhook hook = received.get(0);
+        assertThat(hook.event()).isEqualTo("RELEASE_PROMOTED");
+        // The chat channels ride the same signed wire: the signature
+        // verifies over the exact provider-shaped body bytes.
+        Mac mac = Mac.getInstance("HmacSHA256");
+        mac.init(new SecretKeySpec(WEBHOOK_SECRET.getBytes(StandardCharsets.UTF_8), "HmacSHA256"));
+        mac.update(hook.timestamp().getBytes(StandardCharsets.UTF_8));
+        mac.update((byte) '.');
+        assertThat(hook.signature()).isEqualTo("sha256=" + HexFormat.of().formatHex(mac.doFinal(hook.body())));
+
+        JsonNode body = wire.readTree(hook.body());
+        assertThat(body.get("text").asText()).isEqualTo("Release promoted — " + world.releaseRef);
+        JsonNode blocks = body.get("blocks");
+        assertThat(blocks.get(0).get("type").asText()).isEqualTo("header");
+        String fields = blocks.get(1).get("fields").toString();
+        assertThat(fields).contains(world.releaseRef);
+        assertThat(fields).contains("From ring").contains("To ring").contains("beta");
+        // The deep link (AC1): back to the console's release page.
+        String buttonUrl = blocks.get(3).get("elements").get(0).get("url").asText();
+        assertThat(buttonUrl).endsWith("/releases/" + world.app + "/" + world.releaseId);
+
+        Map<String, Object> row = deliveryRow(subscription);
+        assertThat(row.get("status")).isEqualTo("DELIVERED");
+        assertThat(String.valueOf(row.get("recipient_key"))).startsWith("slack:");
+    }
+
+    @Test
+    void teamsChannelDeliversTheConnectorCard() throws Exception {
+        UUID subscription = createSubscription(Map.of(
+                "eventTypes",
+                List.of("FEEDBACK_MARKED_CRITICAL"),
+                "channel",
+                "TEAMS",
+                "webhookUrl",
+                "http://127.0.0.1:" + receiver.getAddress().getPort() + "/hook",
+                "webhookSecret",
+                WEBHOOK_SECRET));
+        publish(new FeedbackMarkedCriticalEvent(
+                UUID.randomUUID(),
+                world.releaseId,
+                world.releaseRef,
+                world.app,
+                world.org,
+                world.tenant,
+                UUID.randomUUID(),
+                "BUG",
+                Instant.now()));
+        relay.drainOnce();
+
+        assertThat(received).hasSize(1);
+        JsonNode card = wire.readTree(received.get(0).body());
+        assertThat(card.get("@type").asText()).isEqualTo("MessageCard");
+        assertThat(card.get("themeColor").asText()).isEqualTo("CC0000");
+        assertThat(card.get("summary").asText()).isEqualTo("Feedback marked critical — " + world.releaseRef);
+        JsonNode section = card.get("sections").get(0);
+        assertThat(section.get("facts").toString()).contains("Type").contains("BUG");
+        assertThat(section.get("potentialAction")
+                        .get(0)
+                        .get("targets")
+                        .get(0)
+                        .get("url")
+                        .asText())
+                .endsWith("/releases/" + world.app + "/" + world.releaseId);
+
+        Map<String, Object> row = deliveryRow(subscription);
+        assertThat(row.get("status")).isEqualTo("DELIVERED");
+        assertThat(String.valueOf(row.get("recipient_key"))).startsWith("teams:");
+    }
+
+    @Test
+    void chatDeliveryFailuresRetryVisiblyThroughTheLog() throws Exception {
+        // AC5 for the chat channels: a refused Teams card is a
+        // scheduled ledger row the retry drain keeps working, visible
+        // through the delivery log API exactly like a webhook's.
+        UUID subscription = createSubscription(Map.of(
+                "eventTypes",
+                List.of("TESTER_INVITED"),
+                "channel",
+                "TEAMS",
+                "webhookUrl",
+                "http://127.0.0.1:" + receiver.getAddress().getPort() + "/hook",
+                "webhookSecret",
+                WEBHOOK_SECRET));
+        publish(new TesterInvitedEvent(UUID.randomUUID(), world.org, UUID.randomUUID(), false, Instant.now()));
+        respondStatus.set(500);
+        relay.drainOnce();
+
+        Map<String, Object> row = deliveryRow(subscription);
+        assertThat(row.get("status")).isEqualTo("SCHEDULED");
+        assertThat(String.valueOf(row.get("last_error"))).contains("500");
+        JsonNode scheduled = get(
+                world.adminToken,
+                "/api/v1/organizations/" + world.org + "/notification-deliveries?status=SCHEDULED",
+                200);
+        assertThat(scheduled.get("items").toString()).contains("teams:");
+
+        respondStatus.set(200);
+        Thread.sleep(50);
+        dispatcher.retryDue();
+        Map<String, Object> healed = deliveryRow(subscription);
+        assertThat(healed.get("status")).isEqualTo("DELIVERED");
+        assertThat(((Number) healed.get("attempts")).intValue()).isEqualTo(2);
+    }
+
+    @Test
+    void testMessageVerifiesSlackConfigurationEndToEnd() throws Exception {
+        UUID subscription = createSubscription(Map.of(
+                "eventTypes",
+                List.of("RELEASE_PROMOTED"),
+                "channel",
+                "SLACK",
+                "webhookUrl",
+                "http://127.0.0.1:" + receiver.getAddress().getPort() + "/hook",
+                "webhookSecret",
+                WEBHOOK_SECRET));
+        int receivedBefore = received.size();
+
+        JsonNode outcome = post(
+                world.adminToken,
+                "/api/v1/organizations/" + world.org + "/notification-subscriptions/" + subscription + "/test",
+                Map.of(),
+                200);
+
+        assertThat(outcome.get("delivered").asBoolean()).isTrue();
+        assertThat(outcome.get("channel").asText()).isEqualTo("SLACK");
+        assertThat(outcome.hasNonNull("error")).isFalse();
+        // The card the receiver got is the test template, rendered
+        // through the same formatter a real event uses.
+        assertThat(received).hasSize(receivedBefore + 1);
+        JsonNode card = wire.readTree(received.get(received.size() - 1).body());
+        assertThat(card.get("text").asText()).isEqualTo("ShipperDog test notification");
+        assertThat(card.get("blocks").toString()).contains("/notifications");
+        assertThat(received.get(received.size() - 1).event()).isEqualTo("NOTIFICATION_TEST_SENT");
+        // The verification is audited (without the URL or secret).
+        assertThat(audit.eventsOfType(AuditEventType.NOTIFICATION_SUBSCRIPTION_TESTED))
+                .hasSize(1);
+    }
+
+    @Test
+    void testMessageOfAFailingChannelReportsAndLedgers() throws Exception {
+        UUID subscription = createSubscription(Map.of(
+                "eventTypes",
+                List.of("RELEASE_PROMOTED"),
+                "channel",
+                "TEAMS",
+                "webhookUrl",
+                "http://127.0.0.1:" + receiver.getAddress().getPort() + "/hook",
+                "webhookSecret",
+                WEBHOOK_SECRET));
+        respondStatus.set(503);
+
+        JsonNode outcome = post(
+                world.adminToken,
+                "/api/v1/organizations/" + world.org + "/notification-subscriptions/" + subscription + "/test",
+                Map.of(),
+                200);
+
+        // Honest synchronous answer AND the same ledger posture a real
+        // delivery gets: scheduled for retry, visible in the log.
+        assertThat(outcome.get("delivered").asBoolean()).isFalse();
+        assertThat(outcome.get("error").asText()).contains("503");
+        Map<String, Object> row = deliveryRow(subscription);
+        assertThat(row.get("status")).isEqualTo("SCHEDULED");
+        assertThat(String.valueOf(row.get("recipient_key"))).startsWith("teams:");
+
+        // Heal before leaving: the class's suites share one
+        // organization, and a standing SCHEDULED row would exhaust
+        // under a later test's retry pass (the receiver here dies with
+        // the test) -- the ledger ends this test DELIVERED, not
+        // leaking exhaustion into another test's counts.
+        respondStatus.set(200);
+        Thread.sleep(50);
+        dispatcher.retryDue();
+        assertThat(deliveryRow(subscription).get("status")).isEqualTo("DELIVERED");
+    }
+
+    @Test
+    void testMessageOfAnInAppChannelLandsInTheRecipientsInbox() {
+        // A dedicated recipient (the pager pattern): the class's
+        // in-box count assertions stay owned by their tests.
+        String testerToken = loginOfOrgRoleIn(world.org, "chat-tester", "RELEASE_MANAGER");
+        UUID testerUserId = userIdOf(testerToken);
+        UUID subscription = createSubscription(Map.of(
+                "eventTypes", List.of("RELEASE_PROMOTED"),
+                "channel", "IN_APP",
+                "recipientUserIds", List.of(testerUserId.toString())));
+
+        JsonNode outcome = post(
+                world.adminToken,
+                "/api/v1/organizations/" + world.org + "/notification-subscriptions/" + subscription + "/test",
+                Map.of(),
+                200);
+
+        assertThat(outcome.get("delivered").asBoolean()).isTrue();
+        assertThat(outcome.get("channel").asText()).isEqualTo("IN_APP");
+        JsonNode inbox = get(testerToken, "/api/v1/notification-inbox?limit=10", 200);
+        assertThat(inbox.get("items").size()).isEqualTo(1);
+        assertThat(inbox.get("items").get(0).get("eventName").asText()).isEqualTo("NOTIFICATION_TEST_SENT");
+    }
+
+    @Test
+    void theTestActionConcealsAndGuardsLikeTheRestOfTheSurface() {
+        UUID subscription = createSubscription(Map.of(
+                "eventTypes",
+                List.of("RELEASE_PROMOTED"),
+                "channel",
+                "SLACK",
+                "webhookUrl",
+                "http://127.0.0.1:" + receiver.getAddress().getPort() + "/hook",
+                "webhookSecret",
+                WEBHOOK_SECRET));
+        // A foreign organization's id conceals as the miss.
+        client.post()
+                .uri("/api/v1/organizations/" + UUID.randomUUID() + "/notification-subscriptions/" + subscription
+                        + "/test")
+                .headers(headers -> headers.setBearerAuth(world.adminToken))
+                .exchange((request, response) -> {
+                    assertThat(response.getStatusCode().value()).isEqualTo(404);
+                    return null;
+                });
+        // The manage permission gates the action the surface's own
+        // way: a caller without org:notifications:manage (QA holds
+        // read only) is conceal-denied as the miss, exactly like the
+        // CRUD routes beside this one.
+        client.post()
+                .uri("/api/v1/organizations/" + world.org + "/notification-subscriptions/" + subscription + "/test")
+                .headers(headers -> headers.setBearerAuth(world.qaToken))
+                .exchange((request, response) -> {
+                    assertThat(response.getStatusCode().value()).isEqualTo(404);
+                    return null;
+                });
     }
 
     // -----------------------------------------------------------------------

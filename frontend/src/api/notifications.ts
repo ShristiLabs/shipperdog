@@ -1,4 +1,4 @@
-/** Notification-surface client (S12-01 backend, docs/notifications.md):
+/** Notification-surface client (S12-01/S12-02 backends, docs/notifications.md):
  * the org-scoped subscription routing table (events x channels x
  * recipients, the CRUD an Organization Admin manages) and the delivery
  * ledger (every attempt, failures first-class). The webhook signing
@@ -7,8 +7,9 @@
 import { apiFetch, pageFetch } from "./client";
 
 /** FR-023's V1.5 channels: the inbox write, the EmailSender seam, the
- * signed webhook POST. */
-export type NotificationChannel = "IN_APP" | "EMAIL" | "WEBHOOK";
+ * signed webhook POST, and the two chat channels riding it (S12-02) —
+ * Slack blocks and the Teams connector card. */
+export type NotificationChannel = "IN_APP" | "EMAIL" | "WEBHOOK" | "SLACK" | "TEAMS";
 
 /** One delivery-ledger row: the attempt trail the log renders. */
 export interface DeliveryRow {
@@ -112,6 +113,29 @@ export function updateSubscription(
 
 export function deleteSubscription(organizationId: string, subscriptionId: string): Promise<void> {
   return apiFetch<void>(`${BASE(organizationId)}/${subscriptionId}`, { method: "DELETE" });
+}
+
+/** The test action's outcome (S12-02, AC3): the synchronous attempt —
+ * delivered honestly, or the error the integrator works with the
+ * ledger row beside it. */
+export interface TestMessageResult {
+  delivered: boolean;
+  channel: NotificationChannel;
+  error: string | null;
+  sentAt: string;
+}
+
+/** Sends the subscription's test message: one synthetic event through
+ * the real channel pipeline — the same card a chat client would
+ * render, the same signed POST, the same delivery log. */
+export function testSubscription(
+  organizationId: string,
+  subscriptionId: string,
+): Promise<TestMessageResult> {
+  return apiFetch<TestMessageResult>(`${BASE(organizationId)}/${subscriptionId}/test`, {
+    method: "POST",
+    body: {},
+  });
 }
 
 /** The delivery ledger, newest first, optionally narrowed. */

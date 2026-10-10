@@ -116,7 +116,10 @@ Current contents:
   frozen event-name vocabulary and its mapping table, the org-scoped
   subscription CRUD (events x channels x recipients), the in-app
   inbox, signed webhooks with the receiver's HMAC verification recipe,
-  and the delivery ledger with its retry policy
+  and the delivery ledger with its retry policy — plus the Slack and
+  Teams chat channels riding that machinery (S12-02): the per-event
+  message templates, the Block Kit and connector-card bodies, deep
+  links into the console, and the subscription test message
 - [Observability](observability.md) — tracing/metrics/logs baseline,
   correlation model, `shipperdog_*` metric namespace, Prometheus +
   Grafana local stack, and the management-port security posture

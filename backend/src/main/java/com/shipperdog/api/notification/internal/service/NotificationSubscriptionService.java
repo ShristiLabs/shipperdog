@@ -4,10 +4,12 @@ import com.shipperdog.api.audit.AuditEvent;
 import com.shipperdog.api.audit.AuditEventPublisher;
 import com.shipperdog.api.audit.AuditEventType;
 import com.shipperdog.api.identity.UserDirectory;
+import com.shipperdog.api.notification.DomainEvent;
 import com.shipperdog.api.notification.DomainEventName;
 import com.shipperdog.api.notification.NotificationChannel;
 import com.shipperdog.api.notification.NotificationException;
 import com.shipperdog.api.notification.internal.entity.NotificationDeliveryEntity;
+import com.shipperdog.api.notification.internal.entity.NotificationOutboxEntity;
 import com.shipperdog.api.notification.internal.entity.NotificationSubscriptionEntity;
 import com.shipperdog.api.notification.internal.repository.NotificationDeliveryRepository;
 import com.shipperdog.api.notification.internal.repository.NotificationOutboxRepository;
@@ -52,6 +54,7 @@ public class NotificationSubscriptionService {
     private final UserDirectory directory;
     private final AuditEventPublisher audit;
     private final WebhookTargetPolicy webhookTargets;
+    private final NotificationDispatcher dispatcher;
     private final Clock clock;
 
     NotificationSubscriptionService(
@@ -62,6 +65,7 @@ public class NotificationSubscriptionService {
             UserDirectory directory,
             AuditEventPublisher audit,
             WebhookTargetPolicy webhookTargets,
+            NotificationDispatcher dispatcher,
             Clock clock) {
         this.subscriptions = subscriptions;
         this.deliveries = deliveries;
@@ -70,6 +74,7 @@ public class NotificationSubscriptionService {
         this.directory = directory;
         this.audit = audit;
         this.webhookTargets = webhookTargets;
+        this.dispatcher = dispatcher;
         this.clock = clock;
     }
 
@@ -238,7 +243,7 @@ public class NotificationSubscriptionService {
     public SubscriptionView create(UUID actorId, UUID organizationId, CreateCommand command) {
         requireOrganization(organizationId);
         if (command.channel() == null) {
-            throw invalid("the channel is required", Map.of("channel", "IN_APP, EMAIL, or WEBHOOK"));
+            throw invalid("the channel is required", Map.of("channel", "IN_APP, EMAIL, WEBHOOK, SLACK, or TEAMS"));
         }
         ValidatedRouting routing = validate(command.eventTypes(), command.channel(), new RoutingFacts(command));
         NotificationSubscriptionEntity saved = subscriptions.save(new NotificationSubscriptionEntity(
@@ -317,6 +322,75 @@ public class NotificationSubscriptionService {
                 .build());
     }
 
+    // The test message (S12-02, AC3) ------------------------------------------------
+
+    /** The test action's outcome as the API serves it: the synchronous attempt, honestly reported. */
+    public record TestMessageView(boolean delivered, String channel, String error, Instant sentAt) {}
+
+    /**
+     * Sends the subscription's test message (issue #52, S12-02, AC3):
+     * one synthetic {@code NOTIFICATION_TEST_SENT} event through the
+     * REAL per-channel pipeline -- the same validation the
+     * subscription already passed, the same formatters, the same
+     * signed POST, the same ledger -- so a passing test is end-to-end
+     * proof the channel works and a failing one names why, in the
+     * response AND in the delivery log (a refused test is a SCHEDULED
+     * row the retry drain keeps working, exactly like a real
+     * delivery).
+     *
+     * <p>The synthetic event is recorded in the outbox born RELAYED:
+     * this method's synchronous dispatch IS its publication -- the
+     * relay must never re-fan a test out, or every test would deliver
+     * twice. It stays in the outbox as honest history (the ledger's
+     * foreign key needs the row; the org's event timeline shows the
+     * test happened).
+     */
+    @Transactional
+    public TestMessageView test(UUID actorId, UUID organizationId, UUID subscriptionId) {
+        requireOrganization(organizationId);
+        NotificationSubscriptionEntity subscription = requireSubscription(organizationId, subscriptionId);
+        Instant now = Instant.now(clock);
+        Map<String, Object> payload = new LinkedHashMap<>();
+        payload.put("channel", subscription.getChannel().name());
+        payload.put("subscriptionId", subscriptionId.toString());
+        NotificationOutboxEntity row = outbox.save(new NotificationOutboxEntity(
+                DomainEventName.NOTIFICATION_TEST_SENT,
+                organizationId,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                payload,
+                now,
+                now));
+        // Born RELAYED (see the method javadoc): the synchronous
+        // dispatch below IS the publication, under the row's real
+        // generated id -- the ledger's foreign key and the event's
+        // idempotency key both bind to it.
+        row.markRelayed(now);
+        outbox.save(row);
+        DomainEvent event = row.toDomainEvent();
+        WebhookDeliveryClient.Attempt attempt = dispatcher.dispatchTest(event, subscription);
+        Map<String, String> detail = new LinkedHashMap<>();
+        detail.put("subscriptionId", subscriptionId.toString());
+        detail.put("channel", subscription.getChannel().name());
+        detail.put("delivered", Boolean.toString(attempt.delivered()));
+        detail.put("action", "tested");
+        // The URL and secret never ride an audit line (write-only
+        // material, the credential-reference posture).
+        audit.publish(AuditEvent.builder(AuditEventType.NOTIFICATION_SUBSCRIPTION_TESTED)
+                .userId(actorId)
+                .orgId(organizationId)
+                .occurredAt(now)
+                .success(true)
+                .detail(detail)
+                .build());
+        return new TestMessageView(
+                attempt.delivered(), subscription.getChannel().name(), attempt.error(), now);
+    }
+
     // Validation ---------------------------------------------------------------------
 
     /** The routing facts as the validator sees them: the request's own (create) or merged with the standing (update). */
@@ -346,8 +420,9 @@ public class NotificationSubscriptionService {
      * the frozen vocabulary (deduplicated, order-stable), roles the
      * RBAC knows, users the directory knows, and the channel's
      * recipient shape (recipients for IN_APP/EMAIL; URL and secret
-     * for WEBHOOK -- an edit omits them to keep the standing values).
-     * One 422 carries every offense.
+     * for the webhook family -- WEBHOOK and S12-02's SLACK and TEAMS,
+     * where an edit omits them to keep the standing values). One 422
+     * carries every offense.
      */
     private ValidatedRouting validate(List<String> eventTypes, NotificationChannel channel, RoutingFacts facts) {
         Map<String, String> errors = new LinkedHashMap<>();
@@ -358,7 +433,7 @@ public class NotificationSubscriptionService {
         }
         List<UUID> userIds = facts.recipientUserIds() == null ? List.of() : facts.recipientUserIds();
         switch (channel) {
-            case WEBHOOK -> {
+            case WEBHOOK, SLACK, TEAMS -> {
                 String url = facts.webhookUrl();
                 String secret = facts.webhookSecret();
                 boolean urlBlank = url == null || url.isBlank();

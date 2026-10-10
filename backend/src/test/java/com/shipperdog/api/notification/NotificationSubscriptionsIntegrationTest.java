@@ -225,6 +225,81 @@ class NotificationSubscriptionsIntegrationTest {
     // The validation rules
     // -----------------------------------------------------------------------
 
+    /**
+     * S12-02 (issue #52): the chat channels validate exactly like the
+     * webhook family they ride -- URL and signing secret required,
+     * recipients not part of the shape, the secret write-only, and
+     * the same URL rules (the target policy) enforced at create and
+     * edit. Realistic provider URL shapes pass; an over-long Teams
+     * workflow URL refuses at the family's shared 2048 ceiling.
+     */
+    @Test
+    void slackAndTeamsSubscriptionsValidateLikeTheWebhookFamily() {
+        JsonNode slack = create(
+                Map.of(
+                        "eventTypes", List.of("RELEASE_PROMOTED", "FEEDBACK_MARKED_CRITICAL"),
+                        "channel", "SLACK",
+                        "webhookUrl", "https://hooks.slack.com/services/T000/B000/XXXXXXXXXXXXXXXXXXXXXXXX",
+                        "webhookSecret", "a-signing-secret-of-32-chars"),
+                201);
+        assertThat(slack.get("channel").asString()).isEqualTo("SLACK");
+        assertThat(slack.get("webhookUrl").asString()).startsWith("https://hooks.slack.com/services/");
+        assertThat(slack.has("webhookSecret")).isFalse();
+
+        JsonNode teams = create(
+                Map.of(
+                        "eventTypes",
+                        List.of("APPROVAL_REQUESTED"),
+                        "channel",
+                        "TEAMS",
+                        "webhookUrl",
+                        "https://prod-27.india.logic.azure.com:443/workflows/d0a2c6e7f8b9/triggers/"
+                                + "manual/paths/invoke?api-version=2016-06-01&sig=opaque-token",
+                        "webhookSecret",
+                        "a-signing-secret-of-32-chars"),
+                201);
+        assertThat(teams.get("channel").asString()).isEqualTo("TEAMS");
+        assertThat(teams.has("webhookSecret")).isFalse();
+
+        // The URL is required and the recipients are not the shape.
+        assertBodyRefuses(
+                Map.of(
+                        "eventTypes", List.of("RELEASE_PROMOTED"),
+                        "channel", "SLACK",
+                        "webhookSecret", "a-signing-secret-of-32-chars"),
+                "webhookUrl");
+        assertBodyRefuses(
+                Map.of(
+                        "eventTypes", List.of("RELEASE_PROMOTED"),
+                        "channel", "TEAMS",
+                        "webhookUrl", "https://prod-27.india.logic.azure.com/wf"),
+                "webhookSecret");
+        // The family's shared URL ceiling: a Teams workflow URL over
+        // 2048 characters refuses exactly like a webhook's would.
+        assertBodyRefuses(
+                Map.of(
+                        "eventTypes",
+                        List.of("RELEASE_PROMOTED"),
+                        "channel",
+                        "TEAMS",
+                        "webhookUrl",
+                        "https://prod-27.india.logic.azure.com/wf?sig=" + "a".repeat(2049),
+                        "webhookSecret",
+                        "a-signing-secret-of-32-chars"),
+                "webhookUrl");
+
+        // The edit path revalidates the family's rules too.
+        JsonNode edited = patch(
+                adminToken,
+                subscriptionsPath() + "/" + slack.get("id").asText(),
+                Map.of(
+                        "webhookUrl", "https://hooks.slack.com/services/T000/B000/YYYYYYYYYYYYYYYYYYYYYYYY",
+                        "webhookSecret", "rotated-signing-secret-32-chars"),
+                200);
+        assertThat(edited.get("webhookUrl").asString()).contains("/YYYY");
+        assertThat(edited.has("webhookSecret")).isFalse();
+    }
+
     @Test
     void invalidRoutingFactsRefuseWithTheFieldAddressed422() {
         assertBodyRefuses(

@@ -34,6 +34,12 @@ import org.springframework.boot.context.properties.bind.DefaultValue;
  *                          non-resolving fixture hosts accepted) --
  *                          the test suites' local receivers; default
  *                          false and production keeps it there
+ * @param consoleBaseUrl    the console's externally reachable base
+ *                          URL (S12-02): the deep links in Slack and
+ *                          Teams messages are built on it -- a
+ *                          production deployment sets its real origin
+ *                          (CONSOLE_BASE_URL), the default serves the
+ *                          local compose stack
  */
 @ConfigurationProperties(prefix = "shipperdog.notifications")
 public record NotificationProperties(
@@ -45,7 +51,8 @@ public record NotificationProperties(
         @DefaultValue("5") int deliveryMaxAttempts,
         @DefaultValue("PT2S") Duration deliveryBackoff,
         @DefaultValue("PT5S") Duration webhookTimeout,
-        @DefaultValue("false") boolean webhookAllowPrivateAddresses) {
+        @DefaultValue("false") boolean webhookAllowPrivateAddresses,
+        @DefaultValue("http://localhost:5173") String consoleBaseUrl) {
 
     /** The next relay attempt's delay: base doubled per attempt already made. */
     public Duration relayBackoff(int attempts) {
