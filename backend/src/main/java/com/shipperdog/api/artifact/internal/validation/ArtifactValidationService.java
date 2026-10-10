@@ -4,6 +4,7 @@ import com.shipperdog.api.application.ApplicationAccess;
 import com.shipperdog.api.application.ApplicationAccess.ApplicationProfile;
 import com.shipperdog.api.artifact.ArtifactException;
 import com.shipperdog.api.artifact.ArtifactStore;
+import com.shipperdog.api.artifact.ArtifactValidatedEvent;
 import com.shipperdog.api.artifact.internal.entity.ArtifactEntity;
 import com.shipperdog.api.artifact.internal.entity.ArtifactEntity.Platform;
 import com.shipperdog.api.artifact.internal.repository.ArtifactScopedRepository;
@@ -29,6 +30,7 @@ import java.util.UUID;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Qualifier;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.scheduling.concurrent.ThreadPoolTaskExecutor;
 import org.springframework.stereotype.Service;
 import tools.jackson.databind.JsonNode;
@@ -108,6 +110,8 @@ public class ArtifactValidationService {
 
     private final AuditEventPublisher audit;
 
+    private final ApplicationEventPublisher events;
+
     private final Clock clock;
 
     private final TraceAttributes trace;
@@ -125,6 +129,7 @@ public class ArtifactValidationService {
             VersionAccess versions,
             TenantScopeExecutor scopeExecutor,
             AuditEventPublisher audit,
+            ApplicationEventPublisher events,
             Clock clock,
             TraceAttributes trace,
             MeterRegistry meters,
@@ -136,6 +141,7 @@ public class ArtifactValidationService {
         this.versions = versions;
         this.scopeExecutor = scopeExecutor;
         this.audit = audit;
+        this.events = events;
         this.clock = clock;
         this.trace = trace;
         this.meters = meters;
@@ -614,6 +620,25 @@ public class ArtifactValidationService {
                 .success(!attempt.blocked() && attempt.ready())
                 .detail(detail)
                 .build());
+        // The domain fact of the same terminal write (S12-01): PASSED
+        // and FAILED are bus events (ARTIFACT_VALIDATED /
+        // ARTIFACT_FAILED on the relay); BLOCKED is the operational
+        // skip and deliberately publishes nothing.
+        String busOutcome = attempt.blocked() ? "BLOCKED" : attempt.ready() ? "PASSED" : "FAILED";
+        if (!"BLOCKED".equals(busOutcome)) {
+            ValidationDocument.StageFailure firstFailure = attempt.document().firstFailure();
+            events.publishEvent(new ArtifactValidatedEvent(
+                    artifactId,
+                    ownership.versionId(),
+                    ownership.applicationId(),
+                    ownership.organizationId(),
+                    ownership.tenantId(),
+                    platform,
+                    busOutcome,
+                    firstFailure == null ? null : firstFailure.code().name(),
+                    uploaderId,
+                    Instant.now(clock)));
+        }
         timer(platform, outcome)
                 .record(java.time.Duration.ofMillis(
                         Math.max(0, attempt.document().durationMs())));

@@ -311,5 +311,17 @@ public enum AuditEventType {
      * repeated pass over the same window is the same line, not a
      * signal.
      */
-    METRIC_ROLLUPS_RECOMPUTED
+    METRIC_ROLLUPS_RECOMPUTED,
+    /**
+     * A notification subscription created (S12-01, issue #51, FR-023):
+     * the channel, the subscribed event names, and the recipient
+     * shape — the routing table's own trail. The webhook signing
+     * secret is deliberately absent (write-only material, the
+     * credential-reference posture).
+     */
+    NOTIFICATION_SUBSCRIPTION_CREATED,
+    /** One notification subscription edited (S12-01): the changed routing facts, same posture as creation. */
+    NOTIFICATION_SUBSCRIPTION_UPDATED,
+    /** One notification subscription deleted (S12-01): the deleted facts, the last record of a routing rule. */
+    NOTIFICATION_SUBSCRIPTION_DELETED
 }

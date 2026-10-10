@@ -1934,11 +1934,64 @@ paths:
             '*/*':
               schema:
                 $ref: "#/components/schemas/OrganizationResponse"
+  /api/v1/organizations/{organizationId}/notification-subscriptions:
+    get:
+      tags:
+      - notification-controller
+      operationId: list_9
+      parameters:
+      - name: organizationId
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - name: limit
+        in: query
+        required: false
+        schema:
+          type: string
+      - name: cursor
+        in: query
+        required: false
+        schema:
+          type: string
+      responses:
+        "200":
+          description: OK
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/PageResponseSubscriptionView"
+    post:
+      tags:
+      - notification-controller
+      operationId: create_8
+      parameters:
+      - name: organizationId
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateRequest"
+        required: true
+      responses:
+        "201":
+          description: Created
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/SubscriptionView"
   /api/v1/gate-definitions:
     get:
       tags:
       - gate-controller
-      operationId: list_9
+      operationId: list_10
       parameters:
       - name: organizationId
         in: query
@@ -1971,7 +2024,7 @@ paths:
     post:
       tags:
       - gate-controller
-      operationId: create_8
+      operationId: create_9
       requestBody:
         content:
           application/json:
@@ -2063,7 +2116,7 @@ paths:
     get:
       tags:
       - environment-controller
-      operationId: list_10
+      operationId: list_11
       parameters:
       - name: organizationId
         in: query
@@ -2091,7 +2144,7 @@ paths:
     post:
       tags:
       - environment-controller
-      operationId: create_9
+      operationId: create_10
       requestBody:
         content:
           application/json:
@@ -2440,7 +2493,7 @@ paths:
     get:
       tags:
       - workflow-controller
-      operationId: list_11
+      operationId: list_12
       parameters:
       - name: organizationId
         in: query
@@ -2468,7 +2521,7 @@ paths:
     post:
       tags:
       - workflow-controller
-      operationId: create_10
+      operationId: create_11
       requestBody:
         content:
           application/json:
@@ -2486,7 +2539,7 @@ paths:
     get:
       tags:
       - application-controller
-      operationId: list_12
+      operationId: list_13
       parameters:
       - name: organizationId
         in: query
@@ -2514,7 +2567,7 @@ paths:
     post:
       tags:
       - application-controller
-      operationId: create_11
+      operationId: create_12
       requestBody:
         content:
           application/json:
@@ -2587,7 +2640,7 @@ paths:
     get:
       tags:
       - version-controller
-      operationId: list_13
+      operationId: list_14
       parameters:
       - name: applicationId
         in: path
@@ -2625,7 +2678,7 @@ paths:
     post:
       tags:
       - version-controller
-      operationId: create_12
+      operationId: create_13
       parameters:
       - name: applicationId
         in: path
@@ -2802,11 +2855,86 @@ paths:
             '*/*':
               schema:
                 $ref: "#/components/schemas/RingView"
+  /api/v1/organizations/{organizationId}/notification-subscriptions/{subscriptionId}:
+    get:
+      tags:
+      - notification-controller
+      operationId: get_8
+      parameters:
+      - name: organizationId
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - name: subscriptionId
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      responses:
+        "200":
+          description: OK
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/SubscriptionView"
+    delete:
+      tags:
+      - notification-controller
+      operationId: delete_3
+      parameters:
+      - name: organizationId
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - name: subscriptionId
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      responses:
+        "204":
+          description: No Content
+    patch:
+      tags:
+      - notification-controller
+      operationId: update_7
+      parameters:
+      - name: organizationId
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - name: subscriptionId
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateRequest"
+        required: true
+      responses:
+        "200":
+          description: OK
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/SubscriptionView"
   /api/v1/environments/{environmentId}:
     get:
       tags:
       - environment-controller
-      operationId: get_8
+      operationId: get_9
       parameters:
       - name: environmentId
         in: path
@@ -2824,7 +2952,7 @@ paths:
     patch:
       tags:
       - environment-controller
-      operationId: update_7
+      operationId: update_8
       parameters:
       - name: environmentId
         in: path
@@ -2849,7 +2977,7 @@ paths:
     get:
       tags:
       - application-controller
-      operationId: get_9
+      operationId: get_10
       parameters:
       - name: id
         in: path
@@ -2867,7 +2995,7 @@ paths:
     patch:
       tags:
       - application-controller
-      operationId: update_8
+      operationId: update_9
       parameters:
       - name: id
         in: path
@@ -2892,7 +3020,7 @@ paths:
     get:
       tags:
       - tester-controller
-      operationId: get_10
+      operationId: get_11
       parameters:
       - name: id
         in: path
@@ -3089,7 +3217,7 @@ paths:
     get:
       tags:
       - authorization-grant-controller
-      operationId: get_11
+      operationId: get_12
       parameters:
       - name: id
         in: path
@@ -3211,7 +3339,7 @@ paths:
     get:
       tags:
       - tenant-applications-controller
-      operationId: list_14
+      operationId: list_15
       parameters:
       - name: id
         in: path
@@ -3240,7 +3368,7 @@ paths:
     get:
       tags:
       - release-controller
-      operationId: get_12
+      operationId: get_13
       parameters:
       - name: releaseId
         in: path
@@ -3501,7 +3629,7 @@ paths:
     get:
       tags:
       - feedback-controller
-      operationId: list_15
+      operationId: list_16
       parameters:
       - name: releaseId
         in: path
@@ -3557,7 +3685,7 @@ paths:
     get:
       tags:
       - feedback-controller
-      operationId: get_13
+      operationId: get_14
       parameters:
       - name: releaseId
         in: path
@@ -3677,6 +3805,46 @@ paths:
             '*/*':
               schema:
                 $ref: "#/components/schemas/EligibilityView"
+  /api/v1/organizations/{organizationId}/notification-deliveries:
+    get:
+      tags:
+      - notification-controller
+      operationId: deliveries
+      parameters:
+      - name: organizationId
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - name: subscriptionId
+        in: query
+        required: false
+        schema:
+          type: string
+          format: uuid
+      - name: status
+        in: query
+        required: false
+        schema:
+          type: string
+      - name: limit
+        in: query
+        required: false
+        schema:
+          type: string
+      - name: cursor
+        in: query
+        required: false
+        schema:
+          type: string
+      responses:
+        "200":
+          description: OK
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/PageResponseDeliveryView"
   /api/v1/organizations/{organizationId}/dashboard:
     get:
       tags:
@@ -3725,6 +3893,29 @@ paths:
             '*/*':
               schema:
                 $ref: "#/components/schemas/PageResponseMemberView"
+  /api/v1/notification-inbox:
+    get:
+      tags:
+      - notification-controller
+      operationId: inbox
+      parameters:
+      - name: limit
+        in: query
+        required: false
+        schema:
+          type: string
+      - name: cursor
+        in: query
+        required: false
+        schema:
+          type: string
+      responses:
+        "200":
+          description: OK
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/PageResponseDeliveryView"
   /api/v1/environments/{environmentId}/config/versions:
     get:
       tags:
@@ -4009,6 +4200,9 @@ paths:
           - DEVICES_EXPORTED
           - ANALYTICS_EVENTS_INGESTED
           - METRIC_ROLLUPS_RECOMPUTED
+          - NOTIFICATION_SUBSCRIPTION_CREATED
+          - NOTIFICATION_SUBSCRIPTION_UPDATED
+          - NOTIFICATION_SUBSCRIPTION_DELETED
       - name: applicationId
         in: query
         required: false
@@ -4060,7 +4254,7 @@ paths:
     get:
       tags:
       - artifact-controller
-      operationId: get_14
+      operationId: get_15
       parameters:
       - name: artifactId
         in: path
@@ -4110,7 +4304,7 @@ paths:
     get:
       tags:
       - application-tenant-authorization-controller
-      operationId: list_16
+      operationId: list_17
       parameters:
       - name: id
         in: path
@@ -4139,7 +4333,7 @@ paths:
     get:
       tags:
       - version-controller
-      operationId: get_15
+      operationId: get_16
       parameters:
       - name: applicationId
         in: path
@@ -4719,8 +4913,6 @@ components:
     JsonNode:
       type: object
       properties:
-        container:
-          type: boolean
         nodeType:
           type: string
           enum:
@@ -4763,6 +4955,8 @@ components:
         boolean:
           type: boolean
         binary:
+          type: boolean
+        container:
           type: boolean
         floatingPointNumber:
           type: boolean
@@ -5702,6 +5896,44 @@ components:
           format: uuid
         reason:
           type: string
+    SubscriptionView:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        organizationId:
+          type: string
+          format: uuid
+        eventTypes:
+          type: array
+          items:
+            type: string
+        channel:
+          type: string
+          enum:
+          - IN_APP
+          - EMAIL
+          - WEBHOOK
+        recipientRoles:
+          type: array
+          items:
+            type: string
+        recipientUserIds:
+          type: array
+          items:
+            type: string
+            format: uuid
+        webhookUrl:
+          type: string
+        enabled:
+          type: boolean
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
     VerifyView:
       type: object
       properties:
@@ -6236,6 +6468,31 @@ components:
           type: string
         distributionChannel:
           type: string
+    UpdateRequest:
+      type: object
+      description: "The notification subscription edit body: event types, recipients,\
+        \ the webhook pair (supplying the secret rotates it), and the enabled switch;\
+        \ the channel never moves."
+      properties:
+        eventTypes:
+          type: array
+          items:
+            type: string
+        recipientRoles:
+          type: array
+          items:
+            type: string
+        recipientUserIds:
+          type: array
+          items:
+            type: string
+            format: uuid
+        webhookUrl:
+          type: string
+        webhookSecret:
+          type: string
+        enabled:
+          type: boolean
     EnvironmentUpdateRequest:
       type: object
       description: "The environment PATCH body: null fields stay unchanged (the code\
@@ -7046,6 +7303,63 @@ components:
             $ref: "#/components/schemas/OrganizationResponse"
         next_cursor:
           type: string
+    PageResponseSubscriptionView:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/SubscriptionView"
+        next_cursor:
+          type: string
+    DeliveryView:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        eventId:
+          type: string
+          format: uuid
+        eventName:
+          type: string
+        subscriptionId:
+          type: string
+          format: uuid
+        channel:
+          type: string
+          enum:
+          - IN_APP
+          - EMAIL
+          - WEBHOOK
+        recipientKey:
+          type: string
+        status:
+          type: string
+          enum:
+          - SCHEDULED
+          - DELIVERED
+          - FAILED
+        attempts:
+          type: integer
+          format: int32
+        lastError:
+          type: string
+        deliveredAt:
+          type: string
+          format: date-time
+        createdAt:
+          type: string
+          format: date-time
+    PageResponseDeliveryView:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/DeliveryView"
+        next_cursor:
+          type: string
     ApplicationHealthView:
       type: object
       properties:
@@ -7440,6 +7754,9 @@ components:
           - DEVICES_EXPORTED
           - ANALYTICS_EVENTS_INGESTED
           - METRIC_ROLLUPS_RECOMPUTED
+          - NOTIFICATION_SUBSCRIPTION_CREATED
+          - NOTIFICATION_SUBSCRIPTION_UPDATED
+          - NOTIFICATION_SUBSCRIPTION_DELETED
         occurredAt:
           type: string
           format: date-time

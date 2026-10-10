@@ -1,5 +1,6 @@
 package com.shipperdog.api.artifact.internal.download;
 
+import com.shipperdog.api.artifact.ArtifactDownloadIssuedEvent;
 import com.shipperdog.api.artifact.ArtifactException;
 import com.shipperdog.api.artifact.ArtifactStore;
 import com.shipperdog.api.artifact.internal.download.DownloadChannelRouting.Channel;
@@ -31,6 +32,7 @@ import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.UUID;
 import org.springframework.beans.factory.ObjectProvider;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.core.env.Environment;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -96,6 +98,7 @@ public class ArtifactDownloadService {
     private final TenantScopeExecutor scopeExecutor;
     private final VersionAccess versions;
     private final AuditEventPublisher audit;
+    private final ApplicationEventPublisher events;
     private final Clock clock;
     private final TraceAttributes trace;
     private final MeterRegistry meters;
@@ -110,6 +113,7 @@ public class ArtifactDownloadService {
             TenantScopeExecutor scopeExecutor,
             VersionAccess versions,
             AuditEventPublisher audit,
+            ApplicationEventPublisher events,
             Clock clock,
             TraceAttributes trace,
             MeterRegistry meters,
@@ -123,6 +127,7 @@ public class ArtifactDownloadService {
         this.scopeExecutor = scopeExecutor;
         this.versions = versions;
         this.audit = audit;
+        this.events = events;
         this.clock = clock;
         this.trace = trace;
         this.meters = meters;
@@ -223,6 +228,18 @@ public class ArtifactDownloadService {
                             artifact.getPlatform().name())
                     .increment();
             auditIssued(actorId, ownership, artifact, route, ttl);
+            // The domain fact of the same moment (S12-01, PRD 51's
+            // TESTER_DOWNLOADED): the platform-side download event,
+            // durable through the outbox in this transaction.
+            events.publishEvent(new ArtifactDownloadIssuedEvent(
+                    artifact.getId(),
+                    ownership.versionId(),
+                    ownership.applicationId(),
+                    ownership.organizationId(),
+                    ownership.tenantId(),
+                    artifact.getPlatform().name(),
+                    actorId,
+                    Instant.now(clock)));
 
             return new DownloadIssuanceView(
                     artifactId,
