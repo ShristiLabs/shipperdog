@@ -1,0 +1,186 @@
+name: 'ShipperDog Promote Release'
+description: >-
+  Drive a ShipperDog release to PROMOTED from a GitHub Actions
+  workflow: walks the release state machine and the promotion rings
+  one governed step at a time and, when a gate, approval, or policy
+  refuses the walk, fails the job with the COMPLETE blocker list
+  rendered into the job summary.
+author: 'ShristiLabs'
+
+branding:
+  icon: 'trending-up'
+  color: 'green'
+
+inputs:
+  release:
+    description: 'The release to promote (R-1028, r1028, 1028, or uuid)'
+    required: true
+  app:
+    description: 'Owning application (name or uuid; skips the cross-application lookup)'
+    required: false
+    default: ''
+  ring:
+    description: 'Assert the release starting ring (mismatch refuses -- usually the wrong release)'
+    required: false
+    default: ''
+  tenant:
+    description: 'Promote only these target tenant uuids (one per line; absent moves every target)'
+    required: false
+    default: ''
+  api-url:
+    description: 'ShipperDog API origin (e.g. https://shipperdog.example.com); falls back to SHIPPERDOG_API when empty'
+    required: false
+    default: ''
+  token:
+    description: 'ShipperDog PAT; prefer the runner env SHIPPERDOG_TOKEN from a repo secret instead of passing this input'
+    required: false
+    default: ''
+  cli-source:
+    description: >-
+      How the shipperdog CLI is acquired: "path" (already on PATH --
+      default), "source" (built from the pinned repo ref in
+      cli-version; needs Go on the runner), or "release" (downloaded
+      from the repo's cli-v* releases, when published)
+    required: false
+    default: 'path'
+  cli-version:
+    description: >-
+      The pinned CLI ref (source mode) or cli-v* release tag (release
+      mode). Pinned by default to the CLI revision this action was
+      tested against -- never a moving branch
+    required: false
+    default: '0124e103e7e4255ec5dd1e87ef00e1e118708008'
+  extra-args:
+    description: 'Extra flags appended verbatim to the shipperdog release promote command (overrides win)'
+    required: false
+    default: ''
+
+outputs:
+  promoted:
+    description: 'true when the release reached PROMOTED (or already was), false when the walk was refused'
+    value: ${{ steps.promote.outputs.promoted }}
+  blockers:
+    description: 'The refusal reason list when the walk was blocked (empty on success)'
+    value: ${{ steps.promote.outputs.blockers }}
+  release-ref:
+    description: 'The release quotable id the walk stopped at (from the CLI detail)'
+    value: ${{ steps.promote.outputs.release-ref }}
+
+runs:
+  using: 'composite'
+  steps:
+    - name: 'Acquire the ShipperDog CLI'
+      id: cli
+      shell: bash
+      env:
+        SD_CLI_SOURCE: ${{ inputs.cli-source }}
+        SD_CLI_VERSION: ${{ inputs.cli-version }}
+      run: |
+        set -euo pipefail
+        bindir="$RUNNER_TEMP/sd-cli-bin"
+        case "$SD_CLI_SOURCE" in
+          path)
+            command -v shipperdog >/dev/null 2>&1 || {
+              echo "::error::shipperdog is not on PATH. Build it from cli/ (go build), download a cli-ci artifact, or set cli-source=source|release." >&2
+              exit 2
+            }
+            echo "using shipperdog from PATH: $(command -v shipperdog)"
+            ;;
+          source)
+            test -n "$SD_CLI_VERSION" || { echo "::error::cli-source=source requires cli-version (a pinned commit or tag)" >&2; exit 2; }
+            command -v go >/dev/null 2>&1 || { echo "::error::cli-source=source needs Go on the runner (actions/setup-go)" >&2; exit 2; }
+            mkdir -p "$bindir" "$RUNNER_TEMP/sd-cli-src"
+            git clone --quiet --filter=blob:none --no-checkout https://github.com/ShristiLabs/shipperdog.git "$RUNNER_TEMP/sd-cli-src"
+            git -C "$RUNNER_TEMP/sd-cli-src" checkout --quiet --detach "$SD_CLI_VERSION"
+            (cd "$RUNNER_TEMP/sd-cli-src/cli" && go build -o "$bindir/shipperdog" .)
+            echo "$bindir" >> "$GITHUB_PATH"
+            echo "built shipperdog from $SD_CLI_VERSION into $bindir"
+            ;;
+          release)
+            test -n "$SD_CLI_VERSION" || { echo "::error::cli-source=release requires cli-version (a cli-v* tag)" >&2; exit 2; }
+            os="$(uname -s | tr '[:upper:]' '[:lower:]')"
+            arch="$(uname -m | sed 's/^x86_64$/amd64/; s/^aarch64$/arm64/')"
+            mkdir -p "$bindir"
+            url="https://github.com/ShristiLabs/shipperdog/releases/download/cli-${SD_CLI_VERSION#cli-}/shipperdog-${os}-${arch}.tar.gz"
+            curl --fail --silent --show-error --location "$url" | tar -xz -C "$bindir"
+            echo "$bindir" >> "$GITHUB_PATH"
+            echo "downloaded shipperdog from $url"
+            ;;
+          *)
+            echo "::error::cli-source must be path, source, or release (got: $SD_CLI_SOURCE)" >&2
+            exit 2
+            ;;
+        esac
+
+    - name: 'Promote the release'
+      id: promote
+      shell: bash
+      env:
+        SD_RELEASE: ${{ inputs.release }}
+        SD_APP: ${{ inputs.app }}
+        SD_RING: ${{ inputs.ring }}
+        SD_TENANTS: ${{ inputs.tenant }}
+        SD_API_INPUT: ${{ inputs.api-url }}
+        SD_TOKEN_INPUT: ${{ inputs.token }}
+        SD_EXTRA_ARGS: ${{ inputs.extra-args }}
+      run: |
+        set -uo pipefail
+        if [ -n "$SD_API_INPUT" ]; then export SHIPPERDOG_API="$SD_API_INPUT"; fi
+        if [ -n "$SD_TOKEN_INPUT" ]; then export SHIPPERDOG_TOKEN="$SD_TOKEN_INPUT"; fi
+        if [ -z "${SHIPPERDOG_TOKEN:-}" ]; then
+          echo "::error::no ShipperDog credential: pass token, or set SHIPPERDOG_TOKEN from a repo secret" >&2
+          exit 3
+        fi
+
+        args=(release promote "$SD_RELEASE" --json)
+        if [ -n "$SD_APP" ]; then args+=(--app "$SD_APP"); fi
+        if [ -n "$SD_RING" ]; then args+=(--ring "$SD_RING"); fi
+        while IFS= read -r tenant; do
+          [ -n "$tenant" ] && args+=(--tenant "$tenant")
+        done <<< "$SD_TENANTS"
+        if [ -n "$SD_EXTRA_ARGS" ]; then
+          # shellcheck disable=SC2206
+          args+=($SD_EXTRA_ARGS)
+        fi
+
+        capture="$RUNNER_TEMP/sd-promote-stdout.json"
+        errors="$RUNNER_TEMP/sd-promote-stderr.txt"
+        set +e
+        shipperdog "${args[@]}" >"$capture" 2>"$errors"
+        code=$?
+        set -e
+        cat "$errors"
+
+        release_ref="$(jq -r '.releaseRef // empty' "$capture" 2>/dev/null)"
+        if [ "$code" -eq 0 ]; then
+          {
+            echo "promoted=true"
+            echo "blockers="
+            echo "release-ref=${release_ref:-$SD_RELEASE}"
+          } >> "$GITHUB_OUTPUT"
+          {
+            echo "## ShipperDog promote"
+            echo "Release \`${release_ref:-$SD_RELEASE}\` is PROMOTED."
+          } >> "$GITHUB_STEP_SUMMARY"
+          exit 0
+        fi
+
+        # The blocker list: the CLI renders the COMPLETE refusal
+        # reason list on stderr with exit 4 (blocked or rejected).
+        {
+          echo "promoted=false"
+          printf 'blockers<<SD_BLOCKERS_EOF\n'
+          cat "$errors" "$capture" 2>/dev/null
+          printf 'SD_BLOCKERS_EOF\n'
+          echo "release-ref=${release_ref:-$SD_RELEASE}"
+        } >> "$GITHUB_OUTPUT"
+        {
+          echo "## ShipperDog promote blocked (exit $code)"
+          echo
+          echo '```'
+          cat "$errors" "$capture" 2>/dev/null
+          echo '```'
+          echo
+          echo "Exit codes: 2 usage/wrong ring, 3 bad token, 4 a gate, approval, eligibility, or policy refused the walk, 5 network."
+        } >> "$GITHUB_STEP_SUMMARY"
+        exit "$code"

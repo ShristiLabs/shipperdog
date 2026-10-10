@@ -48,6 +48,7 @@ backend/src/main/resources/db/
     V38__release_analytics.sql
     V39__event_bus_notifications.sql
     V40__slack_teams_notifiers.sql
+    V41__inbound_webhook_deliveries.sql
   seed/                 dev fixture, applied only when the seed location is active
     R__dev_seed.sql
 ```
@@ -774,6 +775,22 @@ There are no down-migrations and no automated rollback.
   story's code), so the widened constraint validates trivially.
   Expand-only: enum values appended, one check constraint re-admitted
   wider, nothing dropped or re-typed.
+- `V41__inbound_webhook_deliveries.sql` (S12-03, issue #53) adds the
+  generic inbound webhook framework's processed-delivery ledger: one
+  row per VERIFIED, processed delivery, the idempotency grain
+  duplicate deliveries answer from (`uq_inbound_webhook_deliveries_
+  provider_delivery` on provider + delivery_id). Rows carry only
+  their terminal outcome (`inbound_webhook_outcome`: ACCEPTED or
+  IGNORED) and are written inside the processing transaction — a
+  crash leaves nothing, so a redelivery processes fresh, and two
+  concurrent copies of one delivery both process idempotently with
+  the second finisher answering DUPLICATE on the unique key.
+  `provider` is a plain varchar, deliberately not an enum: the
+  framework's provider set is an open vocabulary (S12-04's
+  Jenkins/GitLab/App Store/Google Play keys, then E13's connectors),
+  and open vocabularies are row values, not schema migrations. An
+  index on `received_at` serves the operator's consumed-events reads.
+  New types and tables only; nothing existing touched.
 
 ## Verifying migrations
 

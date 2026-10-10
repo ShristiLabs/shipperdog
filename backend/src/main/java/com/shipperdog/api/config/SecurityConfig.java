@@ -52,6 +52,20 @@ public class SecurityConfig {
                                 // /v3/api-docs/** prefix pattern.
                                 .requestMatchers("/v3/api-docs", "/v3/api-docs.yaml", "/v3/api-docs/**")
                                 .permitAll()
+                                // Inbound webhook receivers (S12-03, FR-022,
+                                // PRD 19): POST /webhooks/github and the
+                                // receivers S12-04/E13 add. These routes sit
+                                // outside /api/v1 by design -- the delivery's
+                                // own HMAC-SHA256 signature IS the
+                                // authentication (the shared secret only the
+                                // sender and this deployment hold), verified
+                                // by the integration module before any
+                                // processing; every authenticity failure
+                                // answers its uniform 401. Anonymous by
+                                // construction, like the download proxy's
+                                // HMAC-bearing route above them.
+                                .requestMatchers(org.springframework.http.HttpMethod.POST, "/webhooks/**")
+                                .permitAll()
                                 .anyRequest()
                                 .authenticated())
                 .formLogin(AbstractHttpConfigurer::disable)

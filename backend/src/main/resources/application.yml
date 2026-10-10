@@ -183,6 +183,22 @@ shipperdog:
     # production deployment sets its real origin; the default is the
     # local compose stack's console.
     console-base-url: ${CONSOLE_BASE_URL:http://localhost:5173}
+  # Inbound webhook receivers (issue #53, S12-03, FR-022): the
+  # generic framework's knobs -- per-provider signing secret LISTS
+  # (rotation is overlap: every entry stays accepted until removed),
+  # the timestamp-window replay seam for providers that stamp their
+  # deliveries (S12-04's store receivers; GitHub sends no timestamp,
+  # so the window never applies to it), and the body ceiling every
+  # inbound delivery passes before it is parsed. The secrets have no
+  # committed default -- an unset list rejects every delivery with
+  # the uniform 401 (the receiver is off until an operator configures
+  # it), and no secret ever lands in a committed file.
+  webhooks:
+    # Comma-separated HMAC-SHA256 secrets for POST /webhooks/github
+    # (the GitHub webhook's shared secret; see docs/ci.md).
+    github-secrets: ${WEBHOOKS_GITHUB_SECRETS:}
+    max-timestamp-skew: ${WEBHOOKS_MAX_TIMESTAMP_SKEW:PT5M}
+    max-body-bytes: ${WEBHOOKS_MAX_BODY_BYTES:26214400}
   tester:
     # Tester onboarding (issue #26, S6-01): invitations reuse the
     # identity machinery but carry their own TTL (the issue's 7-day

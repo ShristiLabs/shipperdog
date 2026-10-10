@@ -237,7 +237,7 @@ authority.
 Every upload surface accepts the five build-provenance claims of FR-005
 / PRD 8.5 — the answer to "what exactly is build 842" during an
 incident. The field names are FROZEN: they are the M2 CI-integration
-contract the S12-03/S12-04 integrations will send, so the multipart
+contract the S12-03/S12-04 integrations send, so the multipart
 form names, the JSON member names, and the jsonb document keys never
 rename.
 
@@ -258,7 +258,13 @@ that made them. Storage is a dedicated `provenance` jsonb column on
 `artifacts` (V17) — dedicated because the extraction document is
 written once by the async parser over a write-once guard, so an
 upload-time document cannot ride inside it — written with the
-registration insert and never updated (INV-003). The version views'
+registration insert and never updated (INV-003), with one deliberate,
+audited exception since S12-03: the signature-verified
+`workflow_run` receiver backfills ABSENT `ci_run_url`/`pipeline`
+values on settled artifacts whose `git_commit` matches the completed
+run ([ci.md](ci.md)) — backfill-only, asserted values are never
+overwritten, and every enrichment writes an
+`ARTIFACT_PROVENANCE_ENRICHED` audit event. The version views'
 artifact slots carry the same block.
 
 Semantics:

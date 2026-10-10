@@ -320,3 +320,14 @@ The release analytics surface behind `app:analytics:*` and
 | `APPLICATION_NOT_FOUND` | 404 | Resource not found. (the application a series addresses) |
 | `INVALID_REQUEST` | 400 | The request is invalid. (an unknown metric token, a malformed instant, an events batch whose shape the type refuses — whole-batch, one `errors` entry per offending field) |
 | `ANALYTICS_REQUEST_REFUSED` | 422 | The analytics request is refused. (a window outside the bounds — inverted, wider than the maximum, hourly grain over too long a span, or ending in the future; refused, never clamped) |
+
+## Integration — S12-03/issue #53
+
+The inbound webhook receiver (`POST /webhooks/github`, the generic
+framework S12-04/E13 receivers share).
+
+| Code | HTTP | Detail |
+|---|---|---|
+| `WEBHOOK_SIGNATURE_REJECTED` | 401 | Webhook delivery not accepted. (UNIFORM for every authenticity failure — absent header, malformed signature, wrong key, and no secret configured answer identically; the caller learns nothing about which leg refused or whether the receiver is on) |
+| `WEBHOOK_PAYLOAD_MALFORMED` | 400 | The webhook payload is not readable JSON. (a VERIFIED sender's diagnostic; includes a verified delivery without its delivery-id header) |
+| `WEBHOOK_PAYLOAD_TOO_LARGE` | 413 | The webhook payload exceeds the configured maximum. (the body ceiling, checked before the bytes are parsed — default 25 MB, GitHub's own payload cap) |

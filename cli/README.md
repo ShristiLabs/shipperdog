@@ -19,7 +19,10 @@ cd cli && go install .        # or: go build -o shipperdog .
 From CI: the `cli-ci` workflow publishes version-stamped tarballs
 (linux/darwin, amd64/arm64) as workflow-run artifacts on every run —
 download from the Actions tab, extract, put `shipperdog` on `PATH`.
-Homebrew distribution is future work (S12-03).
+The official composite actions ([docs/ci.md](../docs/ci.md), S12-03)
+wrap this CLI for GitHub Actions workflows and acquire it themselves
+(`path`, pinned `source` build, or `release` download).
+Homebrew distribution remains future work.
 
 `shipperdog --version` reports the injected build stamp (`dev` for
 source builds).
@@ -177,8 +180,10 @@ shipperdog gate override R-1028 coverage-threshold \
 
 ### GitHub Actions showcase
 
-The promote command is the M2 CI showcase (reused by S12-03's action
-packaging):
+The promote command is the M2 CI showcase — and what the official
+composite actions wrap (S12-03, [docs/ci.md](../docs/ci.md)); the
+raw-CLI shape below is what `uses: ShristiLabs/shipperdog/.github/actions/*`
+runs for you:
 
 ```yaml
 - name: Upload and release

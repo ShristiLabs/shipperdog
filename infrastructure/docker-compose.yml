@@ -101,6 +101,12 @@ services:
       # TTL and the 15-minute FR-014 ceiling.
       ARTIFACT_DOWNLOAD_URL_TTL: ${ARTIFACT_DOWNLOAD_URL_TTL:-PT15M}
       ARTIFACT_DOWNLOAD_PROXY_SIGNING_KEY: ${ARTIFACT_DOWNLOAD_PROXY_SIGNING_KEY:-shipperdog-local-download-key}
+      # Inbound webhook receivers (issue #53, S12-03): comma-separated
+      # GitHub webhook secrets. No local default -- empty keeps the
+      # receiver off (every delivery answered with the uniform 401);
+      # an operator (or the ci-integration-smoke workflow) who wants
+      # the receiver locally exports WEBHOOKS_GITHUB_SECRETS in .env.
+      WEBHOOKS_GITHUB_SECRETS: ${WEBHOOKS_GITHUB_SECRETS:-}
       # Local rate-limit posture (issue #39, S8-05): the production
       # defaults are per-client tight (10 logins, 30 downloads per
       # minute), but the compose stack serves ONE operator IP that

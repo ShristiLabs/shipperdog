@@ -129,6 +129,15 @@ Current contents:
   endpoint contract test pinning every URL to the OpenAPI baseline,
   exit-code contract for CI, and the cli-ci gate with its cross-compile
   matrix.
+- [CI integration](ci.md) — the GitHub Actions story (S12-03): the
+  `upload-artifact` and `promote-release` composite actions wrapping
+  the CLI (provenance auto-captured from the GHA context, blocker
+  lists in the job summary), the PAT-as-secret least-privilege
+  strategy with the OIDC/GitHub-App upgrade path, and the signed
+  `POST /webhooks/github` receiver — the generic inbound-webhook
+  framework (constant-time HMAC over a rotating secret list,
+  delivery-id idempotency, the S12-04 replay seam) and the
+  workflow_run provenance backfill.
 - [ADR-0001: Flyway with plain SQL migrations](adr/ADR-0001-flyway-schema-migrations.md)
 - [ADR-0002: Predicate-injection repository seam for tenant isolation](adr/ADR-0002-tenant-isolation-data-seam.md)
 - [ADR-0003: Artifact object storage behind the ArtifactStore port](adr/ADR-0003-artifact-object-storage.md)
