@@ -59,8 +59,35 @@ class GitHubWebhookBodyCeilingIntegrationTest {
         Recording answer =
                 deliver(oversized, "sha256=0000000000000000000000000000000000000000000000000000000000000000");
         assertThat(answer.status).isEqualTo(413);
-        assertThat(answer.contentType).isEqualTo(MediaType.APPLICATION_PROBLEM_JSON_VALUE);
+        // The bounded-read filter (S12-04) answers this leg now, with
+        // the same envelope the controller used (the limiter's charset
+        // suffix included) -- the ceiling's contract is unchanged.
+        assertThat(answer.contentType).startsWith(MediaType.APPLICATION_PROBLEM_JSON_VALUE);
         assertThat(answer.body.get("code").asText()).isEqualTo("WEBHOOK_PAYLOAD_TOO_LARGE");
+    }
+
+    @Test
+    void theCeilingIsFamilyWideNotGithubOnly() {
+        // The bounded-read filter and the controller ceiling are the
+        // shared framework's, so every receiver refuses the same leg
+        // (checked on the Jenkins and App Store routes; the gate
+        // fires before any credential is even consulted).
+        byte[] oversized = ("{\"padding\":\"" + "x".repeat(128) + "\"}").getBytes(StandardCharsets.UTF_8);
+        for (String route : java.util.List.of("/webhooks/jenkins", "/webhooks/appstore")) {
+            Recording answer = client.post()
+                    .uri(route)
+                    .contentType(org.springframework.http.MediaType.APPLICATION_JSON)
+                    .body(oversized)
+                    .exchange((request, response) -> {
+                        byte[] raw = response.getBody().readAllBytes();
+                        return new Recording(
+                                response.getStatusCode().value(),
+                                response.getHeaders().getFirst(HttpHeaders.CONTENT_TYPE),
+                                raw.length == 0 ? mapper.createObjectNode() : mapper.readTree(raw));
+                    });
+            assertThat(answer.status).as("route %s", route).isEqualTo(413);
+            assertThat(answer.body.get("code").asText()).isEqualTo("WEBHOOK_PAYLOAD_TOO_LARGE");
+        }
     }
 
     @Test
@@ -71,6 +98,50 @@ class GitHubWebhookBodyCeilingIntegrationTest {
         // signature's uniform 401 -- never the 413.
         assertThat(answer.status).isEqualTo(401);
         assertThat(answer.body.get("code").asText()).isEqualTo("WEBHOOK_SIGNATURE_REJECTED");
+    }
+
+    /**
+     * The bounded-read leg (issue #54, S12-04 -- the S12-03 review's
+     * deferred hardening): a POST whose DECLARED Content-Length is
+     * over the ceiling is refused before a single body byte is
+     * buffered -- a raw socket sends only the headers, and the 413
+     * problem+json envelope arrives while the body is still unsent.
+     * The response is read by its own Content-Length (the container
+     * waits to discard the unread request body before closing, so
+     * EOF never arrives to a caller that sent none of it).
+     */
+    @Test
+    void anOversizedDeclaredContentLengthIsRefusedBeforeItsBytesAreRead() throws Exception {
+        try (java.net.Socket socket = new java.net.Socket("localhost", port)) {
+            socket.setSoTimeout(10_000);
+            String request = "POST /webhooks/github HTTP/1.1\r\n"
+                    + "Host: localhost:" + port + "\r\n"
+                    + "Content-Type: application/json\r\n"
+                    + "Content-Length: 99999999\r\n"
+                    + "Connection: close\r\n"
+                    + "\r\n";
+            socket.getOutputStream().write(request.getBytes(StandardCharsets.UTF_8));
+            socket.getOutputStream().flush();
+            java.io.ByteArrayOutputStream received = new java.io.ByteArrayOutputStream();
+            byte[] buffer = new byte[1024];
+            int total = 0;
+            while (total < 4096) {
+                int read = socket.getInputStream().read(buffer);
+                if (read < 0) {
+                    break;
+                }
+                received.write(buffer, 0, read);
+                total += read;
+                String partial = received.toString(StandardCharsets.UTF_8);
+                if (partial.contains("\r\n\r\n") && partial.length() > partial.indexOf("\r\n\r\n") + 16) {
+                    break;
+                }
+            }
+            String response = received.toString(StandardCharsets.UTF_8);
+            assertThat(response).startsWith("HTTP/1.1 413");
+            assertThat(response).contains("WEBHOOK_PAYLOAD_TOO_LARGE");
+            assertThat(response).contains("application/problem+json");
+        }
     }
 
     private Recording deliver(byte[] body, String signatureHeader) {

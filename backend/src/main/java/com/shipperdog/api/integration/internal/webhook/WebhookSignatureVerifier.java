@@ -99,10 +99,52 @@ public class WebhookSignatureVerifier {
         } catch (NumberFormatException e) {
             return false;
         }
-        Instant stamp = Instant.ofEpochSecond(delivered);
-        Instant now = Instant.now(clock);
-        Duration drift = Duration.between(stamp, now).abs();
+        return withinWindow(Instant.ofEpochSecond(delivered), window);
+    }
+
+    /**
+     * The replay verdict over an already-parsed stamp (S12-04): the
+     * providers that timestamp their deliveries inside the PAYLOAD
+     * rather than a header -- Jenkins buildTimestamp, GitLab pipeline
+     * timestamps, Apple signedDate, Google publishTime -- hand the
+     * verifier the parsed {@link Instant} after their authenticity
+     * leg passed, and this is the same window arithmetic over it. A
+     * null stamp is not fresh: a consumed event shape whose timestamp
+     * is missing degrades to a no-op (IGNORED), never to a silent
+     * pass.
+     */
+    public boolean withinWindow(Instant stamped, Duration window) {
+        if (stamped == null) {
+            return false;
+        }
+        Duration drift = Duration.between(stamped, Instant.now(clock)).abs();
         return drift.compareTo(window) <= 0;
+    }
+
+    /**
+     * The GitLab family's authenticity verdict: does the delivered
+     * {@code X-Gitlab-Token} equal any configured secret? Compared
+     * constant-time per entry over the rotating list, the same
+     * rotation-is-overlap contract as the HMAC family -- but the
+     * token rides the header verbatim (GitLab's protocol signs
+     * nothing), so the transport must be TLS; an empty header or an
+     * empty list accepts nothing (the receiver is off until an
+     * operator configures it).
+     */
+    public boolean tokenMatches(String tokenHeader, Iterable<String> secrets) {
+        if (tokenHeader == null || tokenHeader.isBlank() || secrets == null) {
+            return false;
+        }
+        byte[] presented = tokenHeader.trim().getBytes(StandardCharsets.UTF_8);
+        for (String secret : secrets) {
+            if (secret == null || secret.isBlank()) {
+                continue;
+            }
+            if (MessageDigest.isEqual(presented, secret.trim().getBytes(StandardCharsets.UTF_8))) {
+                return true;
+            }
+        }
+        return false;
     }
 
     private static byte[] hmac(String secret, byte[] body) {

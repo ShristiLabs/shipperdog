@@ -351,5 +351,16 @@ public enum AuditEventType {
      * exception to S5-04's write-once provenance contract (backfill-only,
      * never overwrite).
      */
-    ARTIFACT_PROVENANCE_ENRICHED
+    ARTIFACT_PROVENANCE_ENRICHED,
+    /**
+     * One store notification mapped to a normalized internal event
+     * (S12-04, issue #54, FR-022, PRD 51): the provider (appstore /
+     * google-play), its own event id, the stable event-type vocabulary
+     * value, and the store-side identifiers persisted. The mapping is
+     * thin by design -- E13's connectors own what the event MEANS;
+     * this is the record that they mapped it. The raw payload and
+     * every provider credential are deliberately absent (the delivery
+     * id is the join key to the provider's own delivery log).
+     */
+    STORE_EVENT_MAPPED
 }

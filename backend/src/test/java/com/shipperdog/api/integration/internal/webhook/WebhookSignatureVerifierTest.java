@@ -94,6 +94,37 @@ class WebhookSignatureVerifierTest {
         assertThat(verifier.timestampWithinWindow("not-a-number", window)).isFalse();
     }
 
+    // -----------------------------------------------------------------------
+    // S12-04 (issue #54): the parsed-instant window (the providers that
+    // timestamp their payloads) and the GitLab token family
+    // -----------------------------------------------------------------------
+
+    @Test
+    void instantWindowAcceptsFreshAndRejectsStaleFutureAndNull() {
+        Duration window = Duration.ofMinutes(5);
+        assertThat(verifier.withinWindow(NOW, window)).isTrue();
+        assertThat(verifier.withinWindow(NOW.minusSeconds(60), window)).isTrue();
+        assertThat(verifier.withinWindow(NOW.minusSeconds(600), window)).isFalse();
+        assertThat(verifier.withinWindow(NOW.plusSeconds(600), window)).isFalse();
+        assertThat(verifier.withinWindow(null, window)).isFalse();
+    }
+
+    @Test
+    void tokenFamilyAcceptsAnyConfiguredSecretAndRefusesEverythingElse() {
+        assertThat(verifier.tokenMatches(SECRET, List.of(SECRET, OLD_SECRET))).isTrue();
+        // Rotation is overlap, and surrounding whitespace is tolerated
+        // on both sides (proxy-fed headers, operator-pasted config).
+        assertThat(verifier.tokenMatches("  " + OLD_SECRET + "  ", List.of(SECRET, " " + OLD_SECRET + " ")))
+                .isTrue();
+        assertThat(verifier.tokenMatches(OLD_SECRET, List.of(SECRET))).isFalse();
+        assertThat(verifier.tokenMatches(SECRET, List.of())).isFalse();
+        assertThat(verifier.tokenMatches(null, List.of(SECRET))).isFalse();
+        assertThat(verifier.tokenMatches("   ", List.of(SECRET))).isFalse();
+        assertThat(verifier.tokenMatches(SECRET, null)).isFalse();
+        // Blank secrets never match anything.
+        assertThat(verifier.tokenMatches(SECRET, List.of(" ", ""))).isFalse();
+    }
+
     /** GitHub's own derivation: sha256=hex(HMAC-SHA256(secret, body)). */
     private static String signature(String secret, byte[] body) {
         try {

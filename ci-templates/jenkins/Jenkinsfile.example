@@ -1,0 +1,110 @@
+// Jenkinsfile.example -- the Jenkins leg of ShipperDog's CI story
+// (S12-04, issue #54, FR-022), against the shared library in this
+// directory (vars/shipperdogUpload.groovy, vars/shipperdogPromote.groovy).
+//
+// Point your pipeline's library at this repository (Shared Libraries
+// -> fetch from SCM), pin the ref, and the steps below wrap the
+// shipperdog CLI exactly the way the GitHub Actions composite actions
+// do (docs/ci.md): upload with provenance auto-captured from the
+// Jenkins environment, poll to READY, then drive the release to
+// PROMOTED with the blocker list on refusal.
+//
+// Credentials (least privilege -- a dedicated bot user per duty):
+//   SHIPPERDOG_PAT_UPLOAD   DEVELOPER bot       app:artifacts:upload
+//   SHIPPERDOG_PAT_RELEASE  RELEASE_MANAGER bot app:releases:manage
+//
+// The receiver callback (POST /webhooks/jenkins) closes the loop for
+// pipelines that do not use the library; the notify stage shows the
+// contract -- a thin build-completed JSON body signed with the same
+// HMAC-SHA256 shape GitHub uses.
+
+pipeline {
+    agent any
+
+    environment {
+        SHIPPERDOG_API = 'https://shipperdog.example.com'
+        // The CLI must be on PATH (see docs/ci-jenkins.md for the
+        // acquisition contract -- pinned ref, never a moving branch).
+    }
+
+    stages {
+        stage('Build') {
+            steps {
+                sh './gradlew assembleRelease bundleRelease'
+            }
+        }
+
+        stage('Upload to ShipperDog') {
+            steps {
+                withCredentials([string(credentialsId: 'shipperdog-pat-upload', variable: 'SHIPPERDOG_TOKEN')]) {
+                    shipperdogUpload(
+                        file: 'app/build/outputs/apk/release/app-release.apk',
+                        app: 'banking',
+                        version: '7.12.0',
+                        platform: 'android'
+                    )
+                }
+            }
+        }
+
+        stage('Create + promote the release') {
+            steps {
+                withCredentials([string(credentialsId: 'shipperdog-pat-release', variable: 'SHIPPERDOG_TOKEN')]) {
+                    script {
+                        def releaseRef = sh(
+                            returnStdout: true,
+                            script: """
+                                set -eu
+                                shipperdog release create banking 7.12.0 \
+                                    --tenants \"\$TENANT_ID\" --ring engineering --json \
+                                    | jq -r '.releaseRef'
+                            """
+                        ).trim()
+                        shipperdogPromote(release: releaseRef, app: 'banking')
+                    }
+                }
+            }
+        }
+
+        // Optional: the receiver callback for pipelines that post
+        // their own build-completed notifications. The receiver's
+        // contract (docs/webhooks.md): the exact body bytes signed
+        // X-Shipperdog-Signature: sha256=hex(HMAC-SHA256(secret, body)).
+        stage('Notify ShipperDog (receiver contract)') {
+            when { expression { env.SHIPPERDOG_JENKINS_SECRET != null } }
+            steps {
+                script {
+                    def deliveryId = UUID.randomUUID().toString()
+                    def body = """{
+                      "deliveryId": "${deliveryId}",
+                      "result": "${currentBuild.currentResult}",
+                      "gitCommit": "${env.GIT_COMMIT ?: ''}",
+                      "gitBranch": "${env.BRANCH_NAME ?: ''}",
+                      "pipeline": "${env.JOB_NAME}",
+                      "buildUrl": "${env.BUILD_URL}",
+                      "buildTimestamp": "${(long) (currentBuild.startTimeInMillis / 1000)}"
+                    }"""
+                    writeFile file: 'shipperdog-build.json', text: body
+                    withCredentials([string(credentialsId: 'shipperdog-jenkins-webhook-secret', variable: 'SECRET')]) {
+                        sh '''
+                            set -eu
+                            SIGNATURE=$(openssl dgst -sha256 -hmac "$SECRET" \
+                                -hex shipperdog-build.json | sed 's/^.* //')
+                            curl -sS -o /dev/null -w '%{http_code}\\n' \
+                                -X POST "$SHIPPERDOG_API/webhooks/jenkins" \
+                                -H 'Content-Type: application/json' \
+                                -H "X-Shipperdog-Signature: sha256=$SIGNATURE" \
+                                --data-binary @shipperdog-build.json
+                        '''
+                    }
+                }
+            }
+        }
+    }
+
+    post {
+        always {
+            cleanWs()
+        }
+    }
+}

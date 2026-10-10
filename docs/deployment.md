@@ -113,7 +113,28 @@ created by operator SQL against the same schema the seed uses.
 | `FORWARD_HEADERS_STRATEGY` | `framework` | `framework` |
 | `RATE_LIMIT_LOGIN_CAPACITY` / `_REFILL` | set your posture | generous local values |
 | `RATE_LIMIT_DOWNLOADS_CAPACITY` / `_REFILL` | set your posture | generous local values |
+| `RATE_LIMIT_WEBHOOKS_CAPACITY` / `_REFILL` | set your posture (burst 60/min default) | same |
 | `RATE_LIMIT_TRUSTED_PROXY_COUNT` | `1` (Cloud Run's proxy) | `1` (nginx) |
+
+### Inbound webhook receivers (S12-03/S12-04)
+
+All five receivers ship OFF (each answers its uniform rejection until
+its credential is set); enable only what you use. Secrets belong in
+Secret Manager mirrored into Cloud Run env — never in the repository
+(it is public). Full contract: [webhooks.md](webhooks.md).
+
+| Variable | Used by | Notes |
+|---|---|---|
+| `WEBHOOKS_GITHUB_SECRETS` | `/webhooks/github` | comma-separated HMAC secrets; rotation is overlap (add new, remove old) |
+| `WEBHOOKS_JENKINS_SECRETS` | `/webhooks/jenkins` | same HMAC family; the Jenkinsfile snippet computes `X-Shipperdog-Signature` ([ci-jenkins.md](ci-jenkins.md)) |
+| `WEBHOOKS_GITLAB_SECRETS` | `/webhooks/gitlab` | the GitLab webhook token compared constant-time; TLS mandatory (GitLab signs nothing) |
+| `WEBHOOKS_APPSTORE_BUNDLE_IDS` | `/webhooks/appstore` | the bundle-id allowlist (Apple's JWS proves authenticity; this is authorization) |
+| `WEBHOOKS_APPSTORE_TRUSTED_ROOTS` | `/webhooks/appstore` | Apple root certs (default: the bundled public Apple Root CA G3) |
+| `WEBHOOKS_GOOGLE_PLAY_AUDIENCE` | `/webhooks/google-play` | the push subscription's OIDC audience — this endpoint's URL; empty keeps the receiver off |
+| `WEBHOOKS_GOOGLE_PLAY_TRUSTED_EMAILS` | `/webhooks/google-play` | optional service-account allowlist |
+| `WEBHOOKS_GOOGLE_PLAY_JWKS_URI` | `/webhooks/google-play` | Google's public JWKS by default; pin a mirror if your egress policy needs it |
+| `WEBHOOKS_MAX_TIMESTAMP_SKEW` | all S12-04 receivers | replay window (default PT5M) |
+| `WEBHOOKS_MAX_BODY_BYTES` | all receivers | body ceiling (default 25 MB; enforced on the declared length before reading) |
 
 Rate limiter semantics and the X-Forwarded-For trust arithmetic:
 [portal.md](portal.md#hardening-and-deployment-s8-05).

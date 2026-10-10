@@ -101,12 +101,20 @@ services:
       # TTL and the 15-minute FR-014 ceiling.
       ARTIFACT_DOWNLOAD_URL_TTL: ${ARTIFACT_DOWNLOAD_URL_TTL:-PT15M}
       ARTIFACT_DOWNLOAD_PROXY_SIGNING_KEY: ${ARTIFACT_DOWNLOAD_PROXY_SIGNING_KEY:-shipperdog-local-download-key}
-      # Inbound webhook receivers (issue #53, S12-03): comma-separated
-      # GitHub webhook secrets. No local default -- empty keeps the
-      # receiver off (every delivery answered with the uniform 401);
-      # an operator (or the ci-integration-smoke workflow) who wants
-      # the receiver locally exports WEBHOOKS_GITHUB_SECRETS in .env.
+      # Inbound webhook receivers (issues #53/#54, S12-03/S12-04):
+      # per-provider credentials, comma-separated lists (rotation is
+      # overlap). No local defaults -- empty keeps that receiver off
+      # (every delivery answered with the family's uniform rejection);
+      # an operator (or the ci-integration-smoke workflow) who wants a
+      # receiver locally exports its variable in .env. The store
+      # receivers additionally need their authorization facts
+      # (WEBHOOKS_APPSTORE_BUNDLE_IDS / WEBHOOKS_GOOGLE_PLAY_AUDIENCE)
+      # to act on anything. Full contract: docs/webhooks.md.
       WEBHOOKS_GITHUB_SECRETS: ${WEBHOOKS_GITHUB_SECRETS:-}
+      WEBHOOKS_JENKINS_SECRETS: ${WEBHOOKS_JENKINS_SECRETS:-}
+      WEBHOOKS_GITLAB_SECRETS: ${WEBHOOKS_GITLAB_SECRETS:-}
+      WEBHOOKS_APPSTORE_BUNDLE_IDS: ${WEBHOOKS_APPSTORE_BUNDLE_IDS:-}
+      WEBHOOKS_GOOGLE_PLAY_AUDIENCE: ${WEBHOOKS_GOOGLE_PLAY_AUDIENCE:-}
       # Local rate-limit posture (issue #39, S8-05): the production
       # defaults are per-client tight (10 logins, 30 downloads per
       # minute), but the compose stack serves ONE operator IP that
@@ -118,6 +126,10 @@ services:
       RATE_LIMIT_LOGIN_REFILL: ${RATE_LIMIT_LOGIN_REFILL:-PT1S}
       RATE_LIMIT_DOWNLOADS_CAPACITY: ${RATE_LIMIT_DOWNLOADS_CAPACITY:-120}
       RATE_LIMIT_DOWNLOADS_REFILL: ${RATE_LIMIT_DOWNLOADS_REFILL:-PT0.5S}
+      # The webhook receivers' rule (issue #54, S12-04): generous for
+      # the same one-operator-IP reason as the tiers above.
+      RATE_LIMIT_WEBHOOKS_CAPACITY: ${RATE_LIMIT_WEBHOOKS_CAPACITY:-120}
+      RATE_LIMIT_WEBHOOKS_REFILL: ${RATE_LIMIT_WEBHOOKS_REFILL:-PT0.5S}
       # Observability baseline (issue #7): all management endpoints move
       # to the internal management port, which is published to the host
       # loopback only — /actuator/health and /actuator/prometheus are

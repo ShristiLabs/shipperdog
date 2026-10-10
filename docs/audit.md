@@ -312,13 +312,19 @@ the notification subscription family
 (`NOTIFICATION_SUBSCRIPTION_CREATED`/`UPDATED`/`DELETED`/`TESTED` —
 S12-01/S12-02, documented with its surface in
 [notifications](notifications.md)),
-and the CI-integration receiver family — S12-03/issue #53:
+and the CI-integration receiver family — S12-03/issue #53 and
+S12-04/issue #54:
 `INBOUND_WEBHOOK_ACCEPTED`/`IGNORED`/`REJECTED`/`DUPLICATE`, one per
 acted-on, ignored, signature-rejected, or duplicate delivery
 (carrying provider, event type, and delivery id — the
-signing secret and raw payload never ride the trail), and
+signing secret and raw payload never ride the trail),
 `ARTIFACT_PROVENANCE_ENRICHED`, the audited record of the receiver's
-backfill-only provenance exception ([ci](ci.md)).
+backfill-only provenance exception ([ci](ci.md)), and
+`STORE_EVENT_MAPPED` (S12-04), the record that a verified store
+notification (App Store / Google Play) was mapped to a normalized
+internal event — provider, event, delivery id, and the store-side
+identifiers, thin by design because E13's connectors own the
+semantics ([webhooks](webhooks.md)).
 
 ## Persistence and transactional semantics
 

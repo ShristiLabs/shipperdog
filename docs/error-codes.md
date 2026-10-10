@@ -328,6 +328,7 @@ framework S12-04/E13 receivers share).
 
 | Code | HTTP | Detail |
 |---|---|---|
-| `WEBHOOK_SIGNATURE_REJECTED` | 401 | Webhook delivery not accepted. (UNIFORM for every authenticity failure — absent header, malformed signature, wrong key, and no secret configured answer identically; the caller learns nothing about which leg refused or whether the receiver is on) |
+| `WEBHOOK_SIGNATURE_REJECTED` | 401 | Webhook delivery not accepted. (UNIFORM for every authenticity failure — absent header, malformed signature, wrong key, stale-timestamp replay, and no secret configured answer identically; the caller learns nothing about which leg refused or whether the receiver is on. The shared-secret family: GitHub since S12-03; Jenkins and GitLab since S12-04) |
+| `WEBHOOK_DELIVERY_REJECTED` | 400 | Webhook delivery not accepted. (UNIFORM for every authenticity failure on the store receivers, per S12-04's acceptance criteria: an invalid or unverifiable provider signature, wrong audience, expired or stale token, and a stale provider timestamp answer identically; App Store, Google Play) |
 | `WEBHOOK_PAYLOAD_MALFORMED` | 400 | The webhook payload is not readable JSON. (a VERIFIED sender's diagnostic; includes a verified delivery without its delivery-id header) |
-| `WEBHOOK_PAYLOAD_TOO_LARGE` | 413 | The webhook payload exceeds the configured maximum. (the body ceiling, checked before the bytes are parsed — default 25 MB, GitHub's own payload cap) |
+| `WEBHOOK_PAYLOAD_TOO_LARGE` | 413 | The webhook payload exceeds the configured maximum. (the body ceiling — checked on the declared Content-Length before the bytes are read since S12-04, and on the actual bytes before they are parsed; default 25 MB, GitHub's own payload cap) |

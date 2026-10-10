@@ -892,6 +892,170 @@ paths:
             '*/*':
               schema:
                 $ref: "#/components/schemas/TagsView"
+  /webhooks/jenkins:
+    post:
+      tags:
+      - integration-webhook-controller
+      summary: Receive a signed Jenkins build-completed delivery
+      description: "The delivery's HMAC-SHA256 signature (X-Shipperdog-Signature,\
+        \ sha256=hex over the exact body bytes) is the authentication -- the Jenkinsfile\
+        \ snippet's openssl one-liner computes it. Every authenticity failure answers\
+        \ the same 401; a verified sender's unreadable body or missing deliveryId\
+        \ answers 400; a stale buildTimestamp answers 401 (a replay); every processed\
+        \ delivery answers 200 with its receipt (a SUCCESS build whose gitCommit matches\
+        \ artifacts backfills their provenance; everything else is acknowledged, not\
+        \ failed)."
+      operationId: receiveJenkinsWebhook
+      parameters:
+      - name: X-Shipperdog-Signature
+        in: header
+        required: false
+        schema:
+          type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: string
+              format: byte
+        required: true
+      responses:
+        "200":
+          description: The delivery's receipt
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/WebhookReceiptView"
+        "401":
+          description: Delivery not accepted (uniform for every signature/staleness
+            failure)
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/WebhookReceiptView"
+        "400":
+          description: A verified delivery whose body is not readable JSON or has
+            no deliveryId
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/WebhookReceiptView"
+        "413":
+          description: A delivery beyond the configured body ceiling
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/WebhookReceiptView"
+  /webhooks/google-play:
+    post:
+      tags:
+      - integration-webhook-controller
+      summary: Receive an OIDC-authenticated Google Play RTDN push
+      description: "The Authorization: Bearer OIDC token (Google-signed, RS256 against\
+        \ Google's public JWKS, audience pinned to this endpoint) is the authentication.\
+        \ Every authenticity failure -- missing or invalid token, wrong audience,\
+        \ expired, stale, untrusted sender -- answers the same 400 (WEBHOOK_DELIVERY_REJECTED);\
+        \ a verified sender's unreadable envelope answers 400 PAYLOAD_MALFORMED; stale\
+        \ publishTime answers the uniform 400; every processed delivery answers 200\
+        \ with its receipt (ACCEPTED -- mapped to a normalized internal event, IGNORED\
+        \ -- shape drift, or DUPLICATE -- Pub/Sub's redelivery of a messageId already\
+        \ processed)."
+      operationId: receiveGooglePlayWebhook
+      parameters:
+      - name: Authorization
+        in: header
+        required: false
+        schema:
+          type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: string
+              format: byte
+        required: true
+      responses:
+        "200":
+          description: The delivery's receipt
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/WebhookReceiptView"
+        "400":
+          description: "Delivery not accepted (authenticity/staleness uniform, or\
+            \ an unreadable verified envelope)"
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/WebhookReceiptView"
+        "413":
+          description: A delivery beyond the configured body ceiling
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/WebhookReceiptView"
+  /webhooks/gitlab:
+    post:
+      tags:
+      - integration-webhook-controller
+      summary: Receive a token-authenticated GitLab webhook delivery
+      description: "The X-Gitlab-Token header (compared constant-time against the\
+        \ rotating secret list) is the authentication; the transport must be TLS because\
+        \ GitLab signs nothing. Every authenticity failure answers the same 401; a\
+        \ verified sender's unreadable body or missing X-Gitlab-Webhook-UUID answers\
+        \ 400; stale pipeline timestamps answer 401 (a replay); every processed delivery\
+        \ answers 200 with its receipt (a successful pipeline whose sha matches artifacts\
+        \ backfills their provenance; every other event is acknowledged, not failed)."
+      operationId: receiveGitlabWebhook
+      parameters:
+      - name: X-Gitlab-Token
+        in: header
+        required: false
+        schema:
+          type: string
+      - name: X-Gitlab-Webhook-UUID
+        in: header
+        required: false
+        schema:
+          type: string
+      - name: X-Gitlab-Event
+        in: header
+        required: false
+        schema:
+          type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: string
+              format: byte
+        required: true
+      responses:
+        "200":
+          description: The delivery's receipt
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/WebhookReceiptView"
+        "401":
+          description: Delivery not accepted (uniform for every token/staleness failure)
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/WebhookReceiptView"
+        "400":
+          description: A verified delivery whose body is not readable JSON or has
+            no delivery id
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/WebhookReceiptView"
+        "413":
+          description: A delivery beyond the configured body ceiling
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/WebhookReceiptView"
   /webhooks/github:
     post:
       tags:
@@ -942,6 +1106,47 @@ paths:
                 $ref: "#/components/schemas/WebhookReceiptView"
         "400":
           description: A verified delivery whose body is not readable JSON
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/WebhookReceiptView"
+        "413":
+          description: A delivery beyond the configured body ceiling
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/WebhookReceiptView"
+  /webhooks/appstore:
+    post:
+      tags:
+      - integration-webhook-controller
+      summary: Receive a signed App Store Server Notification
+      description: "Apple's JWS signedPayload (ES256, x5c certificate chain to the\
+        \ pinned Apple Root CA) is the authentication. Every authenticity failure\
+        \ -- unreadable body, missing or invalid signedPayload, failed chain, failed\
+        \ signature, stale signedDate -- answers the same 400 (WEBHOOK_DELIVERY_REJECTED,\
+        \ per the store receivers' contract); every processed delivery answers 200\
+        \ with its receipt (ACCEPTED -- mapped to a normalized internal event, IGNORED\
+        \ -- a foreign bundle or shape drift, or DUPLICATE -- Apple's redelivery of\
+        \ a notificationUUID already processed)."
+      operationId: receiveAppStoreWebhook
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: string
+              format: byte
+        required: true
+      responses:
+        "200":
+          description: The delivery's receipt
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/WebhookReceiptView"
+        "400":
+          description: Delivery not accepted (uniform for every authenticity/staleness
+            failure)
           content:
             '*/*':
               schema:
@@ -4294,6 +4499,7 @@ paths:
           - INBOUND_WEBHOOK_REJECTED
           - INBOUND_WEBHOOK_DUPLICATE
           - ARTIFACT_PROVENANCE_ENRICHED
+          - STORE_EVENT_MAPPED
       - name: applicationId
         in: query
         required: false
@@ -5012,6 +5218,8 @@ components:
           type: boolean
         pojo:
           type: boolean
+        floatingPointNumber:
+          type: boolean
         valueNode:
           type: boolean
         missingNode:
@@ -5046,8 +5254,6 @@ components:
           type: boolean
           deprecated: true
         boolean:
-          type: boolean
-        floatingPointNumber:
           type: boolean
         container:
           type: boolean
@@ -5368,7 +5574,8 @@ components:
           example: ACCEPTED
         deliveryId:
           type: string
-          description: The delivery id the receipt answers (the sender's X-GitHub-Delivery)
+          description: The delivery id the receipt answers (the sender's own delivery
+            identifier)
           example: 72d3162e-cc78-11e3-81ab-4c9367dc0958
     CreateRequest:
       type: object
@@ -7882,6 +8089,7 @@ components:
           - INBOUND_WEBHOOK_REJECTED
           - INBOUND_WEBHOOK_DUPLICATE
           - ARTIFACT_PROVENANCE_ENRICHED
+          - STORE_EVENT_MAPPED
         occurredAt:
           type: string
           format: date-time

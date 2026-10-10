@@ -1,12 +1,14 @@
 # CI integration: GitHub Actions (S12-03)
 
-The first-class CI story (FR-022, PRD 20): two composite GitHub
-Actions that wrap the CLI so a workflow uploads its build with
-provenance attached and drives a release to PROMOTED without
+The GitHub Actions page of the CI story (FR-022, PRD 20): two
+composite actions that wrap the CLI so a workflow uploads its build
+with provenance attached and drives a release to PROMOTED without
 hand-rolled curl steps, and the inbound `POST /webhooks/github`
-receiver that closes the loop from build to release. Jenkins and
-GitLab arrive with S12-04 (issue #54), reusing the same CLI and the
-same receiver framework.
+receiver that closes the loop from build to release. Jenkins is
+[ci-jenkins.md](ci-jenkins.md) and GitLab is [ci-gitlab.md](ci-gitlab.md)
+(S12-04, issue #54), reusing the same CLI and the same receiver
+framework; the reference for all five inbound receivers is
+[webhooks.md](webhooks.md).
 
 ## The actions
 
@@ -169,8 +171,13 @@ default keeps the receiver OFF):
 | `shipperdog.webhooks.max-body-bytes` | `WEBHOOKS_MAX_BODY_BYTES` | 26214400 | Inbound payload ceiling (GitHub's own 25 MB cap) |
 
 The generic receiver framework underneath — constant-time
-verification over a rotating secret list, the timestamp-window seam,
-and the delivery-id ledger (`inbound_webhook_deliveries`, V41) — is
-the surface S12-04's Jenkins/GitLab/App Store/Google Play receivers
-and E13's store connectors reuse; rate limits and receiver metrics
-land with them (#54's hardening).
+verification over a rotating credential list, the timestamp-window
+replay defense, and the delivery-id ledger
+(`inbound_webhook_deliveries`, V41) — is the surface the S12-04
+receivers reuse: [Jenkins](ci-jenkins.md) (the receiver-defined HMAC
+contract), [GitLab](ci-gitlab.md) (the provider's token protocol),
+the [App Store and Google Play store receivers](webhooks.md), and
+E13's connectors after them. The S12-04 hardening applies here too:
+per-client rate limits on `POST /webhooks/**`, the bounded-read body
+filter, and the `shipperdog_webhooks_deliveries` metric — all
+documented in the [webhook reference](webhooks.md).

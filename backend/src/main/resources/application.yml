@@ -183,20 +183,49 @@ shipperdog:
     # production deployment sets its real origin; the default is the
     # local compose stack's console.
     console-base-url: ${CONSOLE_BASE_URL:http://localhost:5173}
-  # Inbound webhook receivers (issue #53, S12-03, FR-022): the
-  # generic framework's knobs -- per-provider signing secret LISTS
-  # (rotation is overlap: every entry stays accepted until removed),
-  # the timestamp-window replay seam for providers that stamp their
-  # deliveries (S12-04's store receivers; GitHub sends no timestamp,
-  # so the window never applies to it), and the body ceiling every
-  # inbound delivery passes before it is parsed. The secrets have no
-  # committed default -- an unset list rejects every delivery with
-  # the uniform 401 (the receiver is off until an operator configures
-  # it), and no secret ever lands in a committed file.
+  # Inbound webhook receivers (issue #53, S12-03, extended issue #54,
+  # S12-04, FR-022): the generic framework's knobs -- per-provider
+  # credential LISTS (rotation is overlap: every entry stays accepted
+  # until removed), the timestamp-window replay seam for providers
+  # that stamp their deliveries (the S12-04 receivers all do; GitHub
+  # sends none, so the window never applies to it), and the body
+  # ceiling every inbound delivery passes before it is parsed (and,
+  # since S12-04, before its bytes are even buffered -- the
+  # bounded-read filter checks the declared Content-Length). The
+  # credentials have no committed default -- an unset credential
+  # rejects every delivery with the family's uniform rejection (the
+  # receiver is off until an operator configures it), and no secret
+  # ever lands in a committed file.
   webhooks:
     # Comma-separated HMAC-SHA256 secrets for POST /webhooks/github
     # (the GitHub webhook's shared secret; see docs/ci.md).
     github-secrets: ${WEBHOOKS_GITHUB_SECRETS:}
+    # Comma-separated HMAC-SHA256 secrets for POST /webhooks/jenkins
+    # (the receiver-defined signature contract's shared secret; see
+    # docs/ci-jenkins.md for the Jenkinsfile one-liner).
+    jenkins-secrets: ${WEBHOOKS_JENKINS_SECRETS:}
+    # Comma-separated tokens for POST /webhooks/gitlab (the webhook
+    # token configured in GitLab; the transport must be TLS because
+    # GitLab signs nothing).
+    gitlab-secrets: ${WEBHOOKS_GITLAB_SECRETS:}
+    # Comma-separated bundle ids POST /webhooks/appstore maps (the
+    # authorization leg after Apple's JWS authenticity; a foreign
+    # bundle is acknowledged and ignored).
+    appstore-bundle-ids: ${WEBHOOKS_APPSTORE_BUNDLE_IDS:}
+    # The trusted root certificates for the App Store JWS x5c chain
+    # (public roots, not secrets; Apple Root CA G3 by default).
+    appstore-trusted-roots: ${WEBHOOKS_APPSTORE_TRUSTED_ROOTS:classpath:webhooks/apple-root-ca-g3.cer}
+    # The required OIDC audience for POST /webhooks/google-play (the
+    # push subscription's minted-token audience -- this endpoint's
+    # URL); empty keeps the receiver off.
+    google-play-audience: ${WEBHOOKS_GOOGLE_PLAY_AUDIENCE:}
+    # Optional comma-separated service-account emails the same token
+    # must carry (the push subscription's identity); empty accepts
+    # any Google-signed token with the right audience.
+    google-play-trusted-emails: ${WEBHOOKS_GOOGLE_PLAY_TRUSTED_EMAILS:}
+    # Where Google's public signing keys are fetched from (cached;
+    # overridable so deployments can pin a mirror).
+    google-play-jwks-uri: ${WEBHOOKS_GOOGLE_PLAY_JWKS_URI:https://www.googleapis.com/oauth2/v3/certs}
     max-timestamp-skew: ${WEBHOOKS_MAX_TIMESTAMP_SKEW:PT5M}
     max-body-bytes: ${WEBHOOKS_MAX_BODY_BYTES:26214400}
   tester:
@@ -236,6 +265,13 @@ shipperdog:
       downloads:
         capacity: ${RATE_LIMIT_DOWNLOADS_CAPACITY:30}
         refill: ${RATE_LIMIT_DOWNLOADS_REFILL:PT2S}
+      # The inbound webhook receivers (issue #54, S12-04): provider
+      # senders retry on failure, so the burst bound sits well above
+      # a healthy pipeline's delivery rate while still throttling an
+      # abusive or mis-wired producer per client IP.
+      webhooks:
+        capacity: ${RATE_LIMIT_WEBHOOKS_CAPACITY:60}
+        refill: ${RATE_LIMIT_WEBHOOKS_REFILL:PT1M}
   authorization-cache:
     # The decision-input cache (issue #32, S7-03): Redis-backed, above
     # the grant contributor and the effective-set resolution. Caches

@@ -27,7 +27,12 @@ public class RateLimitConfig {
         FilterRegistrationBean<RateLimitFilter> registration =
                 new FilterRegistrationBean<>(new RateLimitFilter(properties, meters, mapper));
         registration.setOrder(Ordered.HIGHEST_PRECEDENCE + 1);
-        registration.addUrlPatterns("/api/v1/*");
+        // The webhook receivers join the limiter's surface with
+        // S12-04 (issue #54): they are anonymous, provider-facing
+        // endpoints whose senders retry -- an abusive or mis-wired
+        // producer must be throttled before it costs signature or
+        // certificate-chain work (the same order rationale as /api/v1).
+        registration.addUrlPatterns("/api/v1/*", "/webhooks/*");
         return registration;
     }
 }

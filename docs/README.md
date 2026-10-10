@@ -138,6 +138,27 @@ Current contents:
   framework (constant-time HMAC over a rotating secret list,
   delivery-id idempotency, the S12-04 replay seam) and the
   workflow_run provenance backfill.
+- [CI integration: Jenkins](ci-jenkins.md) — the Jenkins story
+  (S12-04, issue #54): the `shipperdogUpload`/`shipperdogPromote`
+  shared-library steps wrapping the CLI with provenance from the
+  Jenkins environment (GIT_COMMIT/BRANCH_NAME/BUILD_URL), the
+  Jenkinsfile example, and the receiver-defined HMAC contract behind
+  `POST /webhooks/jenkins` (Jenkins has no standard webhook
+  signature — the snippet signs the exact body bytes with openssl).
+- [CI integration: GitLab](ci-gitlab.md) — the GitLab story (S12-04):
+  the include-able `.shipperdog-upload`/`.shipperdog-promote` job
+  templates with provenance from the GitLab CI env
+  (CI_COMMIT_SHA/CI_COMMIT_REF_NAME/CI_PIPELINE_URL), and the
+  token-authenticated `POST /webhooks/gitlab` receiver consuming
+  successful pipeline events (TLS mandatory — GitLab signs nothing).
+- [Webhook reference](webhooks.md) — all five inbound receivers
+  (S12-03/S12-04): the auth model per provider, the two
+  uniform-rejection families (401 shared-secret, 400 store), the
+  receipt vocabulary (ACCEPTED/IGNORED/DUPLICATE), the two-layer
+  replay defense (timestamp window + delivery ledger) plus the store
+  events' domain-grain key, the thin `store_status_events` mapping
+  E13 consumes, and the hardening posture — metrics, audit,
+  per-client rate limits, and the bounded-read body filter.
 - [ADR-0001: Flyway with plain SQL migrations](adr/ADR-0001-flyway-schema-migrations.md)
 - [ADR-0002: Predicate-injection repository seam for tenant isolation](adr/ADR-0002-tenant-isolation-data-seam.md)
 - [ADR-0003: Artifact object storage behind the ArtifactStore port](adr/ADR-0003-artifact-object-storage.md)
