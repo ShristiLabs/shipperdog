@@ -140,6 +140,25 @@ public class NotificationController {
         subscriptions.delete(requireUserId(principal), organizationId, subscriptionId);
     }
 
+    /**
+     * Sends the subscription's test message (S12-02, AC3): one
+     * synthetic {@code NOTIFICATION_TEST_SENT} event through the real
+     * channel pipeline -- the SLACK/TEAMS card a chat client would
+     * render, the signed POST a receiver would verify, the ledger row
+     * the delivery log would show -- and answers with the synchronous
+     * outcome. Audited (without the URL or secret). Honors
+     * {@code Idempotency-Key}.
+     */
+    @PostMapping("/api/v1/organizations/{organizationId}/notification-subscriptions/{subscriptionId}/test")
+    @Idempotent
+    @PreAuthorize("hasPermission(#organizationId, 'organization', 'org:notifications:manage')")
+    NotificationSubscriptionService.TestMessageView test(
+            @AuthenticationPrincipal Object principal,
+            @PathVariable UUID organizationId,
+            @PathVariable UUID subscriptionId) {
+        return subscriptions.test(requireUserId(principal), organizationId, subscriptionId);
+    }
+
     // -------------------------------------------------------------------------
     // The delivery log (AC5) and the inbox
     // -------------------------------------------------------------------------
@@ -194,7 +213,7 @@ public class NotificationController {
             throw new NotificationException(
                     NotificationException.Code.SUBSCRIPTION_INVALID,
                     "unknown channel",
-                    java.util.Map.of("channel", "IN_APP, EMAIL, or WEBHOOK"));
+                    java.util.Map.of("channel", "IN_APP, EMAIL, WEBHOOK, SLACK, or TEAMS"));
         }
     }
 
@@ -226,7 +245,7 @@ public class NotificationController {
      * The subscription creation body: the event names (frozen
      * vocabulary), the channel, and the channel-appropriate recipients
      * (roles and/or user ids for IN_APP and EMAIL; URL and signing
-     * secret for WEBHOOK).
+     * secret for the webhook family -- WEBHOOK, SLACK, TEAMS).
      */
     @Schema(
             description = "The notification subscription creation body: event types, channel, and the "

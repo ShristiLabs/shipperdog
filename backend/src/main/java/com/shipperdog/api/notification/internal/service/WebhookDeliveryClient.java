@@ -72,14 +72,19 @@ class WebhookDeliveryClient {
         }
     }
 
-    /** Posts the event to the URL, signed with the secret. Never throws. */
+    /** Posts the canonical event JSON to the URL, signed with the secret. Never throws. */
     Attempt deliver(String url, String secret, DomainEvent event) {
-        byte[] body;
-        try {
-            body = canonicalBody(event);
-        } catch (RuntimeException e) {
-            return Attempt.failure("body render failed: " + e.getClass().getSimpleName());
-        }
+        return deliver(url, secret, event.name().name(), canonicalBody(event));
+    }
+
+    /**
+     * Posts the given body bytes to the URL, signed with the secret:
+     * the WEBHOOK channel passes the canonical event JSON, the SLACK
+     * and TEAMS channels (S12-02) pass their provider-rendered message
+     * -- same wire discipline (signature over the exact bytes, no
+     * redirects, any 2xx is success) for every body shape.
+     */
+    Attempt deliver(String url, String secret, String eventName, byte[] body) {
         String timestamp = Long.toString(Instant.now(clock).getEpochSecond());
         String signature;
         try {
@@ -91,7 +96,7 @@ class WebhookDeliveryClient {
             http.post()
                     .uri(URI.create(url))
                     .header(HttpHeaders.CONTENT_TYPE, MediaType.APPLICATION_JSON_VALUE)
-                    .header(EVENT_HEADER, event.name().name())
+                    .header(EVENT_HEADER, eventName)
                     .header(TIMESTAMP_HEADER, timestamp)
                     .header(SIGNATURE_HEADER, signature)
                     .body(body)
@@ -108,7 +113,7 @@ class WebhookDeliveryClient {
      * order -- snake_case member names, the receiver-facing contract
      * frozen with the event vocabulary (docs/notifications.md).
      */
-    private static byte[] canonicalBody(DomainEvent event) {
+    static byte[] canonicalBody(DomainEvent event) {
         Map<String, Object> body = new LinkedHashMap<>();
         body.put("event_id", event.eventId().toString());
         body.put("name", event.name().name());

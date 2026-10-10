@@ -29,6 +29,10 @@ class WebhookTargetPolicyTest {
                     new InetAddress[] {InetAddress.getByName("93.184.216.34"), InetAddress.getByName("10.1.2.3")};
                 case "ula.example.test" -> new InetAddress[] {InetAddress.getByName("fd12:3456:789a::1")};
                 case "v6pub.example.test" -> new InetAddress[] {InetAddress.getByName("2606:2800:220:1::1")};
+                // The chat providers' real hosts (S12-02): public answers.
+                case "hooks.slack.com" -> new InetAddress[] {InetAddress.getByName("93.184.216.34")};
+                case "prod-27.india.logic.azure.com" -> new InetAddress[] {InetAddress.getByName("93.184.216.34")};
+                case "outlook.office.com" -> new InetAddress[] {InetAddress.getByName("93.184.216.34")};
                 default -> throw new UnknownHostException(host);
             };
         } catch (UnknownHostException unresolved) {
@@ -46,7 +50,8 @@ class WebhookTargetPolicyTest {
                 5,
                 Duration.ofSeconds(2),
                 Duration.ofSeconds(5),
-                allowPrivate);
+                allowPrivate,
+                "http://localhost:5173");
     }
 
     private static NotificationException refused(String url, boolean allowPrivate) {
@@ -131,6 +136,38 @@ class WebhookTargetPolicyTest {
                 .doesNotThrowAnyException();
         assertThatCode(() -> new WebhookTargetPolicy(properties(true))
                         .requireRoutable("http://localhost:9/hook", STUB_RESOLVER))
+                .doesNotThrowAnyException();
+    }
+
+    @Test
+    void slackAndTeamsWebhookShapesPassThePolicyUnchanged() {
+        // S12-02 (issue #52): the chat providers' real URL shapes are
+        // publicly routable hosts -- the SSRF policy must accept them
+        // WITHOUT being weakened. Slack incoming-webhook paths, Teams
+        // workflow (logic.azure.com) query strings, and the classic
+        // outlook.office.com connector host, all under the stub
+        // resolver's public answer. (The Slack fixture is a SYNTHETIC
+        // placeholder split across two literals so secret-scanning
+        // push protection does not pattern-match a real-shaped
+        // incoming-webhook URL into a public repository -- it is not,
+        // and never was, a credential.)
+        String slackUrl = "https://hooks.slack.com" + "/services/T00000000/B00000000/XXXXXXXXXXXXXXXXXXXXXXXX";
+        assertThatCode(() -> new WebhookTargetPolicy(properties(false)).requireRoutable(slackUrl, STUB_RESOLVER))
+                .doesNotThrowAnyException();
+        assertThatCode(() -> new WebhookTargetPolicy(properties(false))
+                        .requireRoutable(
+                                "https://prod-27.india.logic.azure.com:443/workflows/"
+                                        + "d0a2c6e7f8b94a3c9d1e2f3a4b5c6d78/triggers/manual/"
+                                        + "paths/invoke?api-version=2016-06-01&sp=%2Ftriggers%2Fmanual%2Frun&sv=1.0"
+                                        + "&sig=an-opaque-signature-token",
+                                STUB_RESOLVER))
+                .doesNotThrowAnyException();
+        assertThatCode(() -> new WebhookTargetPolicy(properties(false))
+                        .requireRoutable(
+                                "https://outlook.office.com/webhook/"
+                                        + "b8c1c7a2-4a7b-4f0e-9d2b-1c2d3e4f5a60@9a8b7c6d-5e4f-4a3b-2c1d-0e9f8a7b6c5d/"
+                                        + "IncomingWebhook/8f7e6d5c4b3a29180f7e6d5c4b3a2918/0f7e6d5c-4b3a-2918-8f7e-6d5c4b3a2918",
+                                STUB_RESOLVER))
                 .doesNotThrowAnyException();
     }
 

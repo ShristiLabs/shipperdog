@@ -1987,6 +1987,31 @@ paths:
             '*/*':
               schema:
                 $ref: "#/components/schemas/SubscriptionView"
+  /api/v1/organizations/{organizationId}/notification-subscriptions/{subscriptionId}/test:
+    post:
+      tags:
+      - notification-controller
+      operationId: test
+      parameters:
+      - name: organizationId
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - name: subscriptionId
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      responses:
+        "200":
+          description: OK
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/TestMessageView"
   /api/v1/gate-definitions:
     get:
       tags:
@@ -4203,6 +4228,7 @@ paths:
           - NOTIFICATION_SUBSCRIPTION_CREATED
           - NOTIFICATION_SUBSCRIPTION_UPDATED
           - NOTIFICATION_SUBSCRIPTION_DELETED
+          - NOTIFICATION_SUBSCRIPTION_TESTED
       - name: applicationId
         in: query
         required: false
@@ -4913,6 +4939,16 @@ components:
     JsonNode:
       type: object
       properties:
+        string:
+          type: boolean
+        container:
+          type: boolean
+        number:
+          type: boolean
+        floatingPointNumber:
+          type: boolean
+        valueNode:
+          type: boolean
         nodeType:
           type: string
           enum:
@@ -4925,17 +4961,11 @@ components:
           - OBJECT
           - POJO
           - STRING
-        string:
-          type: boolean
-        integralNumber:
-          type: boolean
         missingNode:
-          type: boolean
-        valueNode:
           type: boolean
         pojo:
           type: boolean
-        number:
+        integralNumber:
           type: boolean
         short:
           type: boolean
@@ -4955,10 +4985,6 @@ components:
         boolean:
           type: boolean
         binary:
-          type: boolean
-        container:
-          type: boolean
-        floatingPointNumber:
           type: boolean
         empty:
           type: boolean
@@ -5915,6 +5941,8 @@ components:
           - IN_APP
           - EMAIL
           - WEBHOOK
+          - SLACK
+          - TEAMS
         recipientRoles:
           type: array
           items:
@@ -5932,6 +5960,18 @@ components:
           type: string
           format: date-time
         updatedAt:
+          type: string
+          format: date-time
+    TestMessageView:
+      type: object
+      properties:
+        delivered:
+          type: boolean
+        channel:
+          type: string
+        error:
+          type: string
+        sentAt:
           type: string
           format: date-time
     VerifyView:
@@ -7332,6 +7372,8 @@ components:
           - IN_APP
           - EMAIL
           - WEBHOOK
+          - SLACK
+          - TEAMS
         recipientKey:
           type: string
         status:
@@ -7757,6 +7799,7 @@ components:
           - NOTIFICATION_SUBSCRIPTION_CREATED
           - NOTIFICATION_SUBSCRIPTION_UPDATED
           - NOTIFICATION_SUBSCRIPTION_DELETED
+          - NOTIFICATION_SUBSCRIPTION_TESTED
         occurredAt:
           type: string
           format: date-time

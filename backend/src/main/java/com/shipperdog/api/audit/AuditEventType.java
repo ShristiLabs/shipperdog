@@ -323,5 +323,12 @@ public enum AuditEventType {
     /** One notification subscription edited (S12-01): the changed routing facts, same posture as creation. */
     NOTIFICATION_SUBSCRIPTION_UPDATED,
     /** One notification subscription deleted (S12-01): the deleted facts, the last record of a routing rule. */
-    NOTIFICATION_SUBSCRIPTION_DELETED
+    NOTIFICATION_SUBSCRIPTION_DELETED,
+    /**
+     * A notification subscription's test message sent (S12-02, issue
+     * #52): the channel and the synchronous outcome — the
+     * configuration-verification trail. The webhook URL and signing
+     * secret are deliberately absent (write-only material).
+     */
+    NOTIFICATION_SUBSCRIPTION_TESTED
 }

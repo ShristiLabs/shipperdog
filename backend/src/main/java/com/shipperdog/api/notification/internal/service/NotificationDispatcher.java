@@ -61,6 +61,8 @@ class NotificationDispatcher {
     private final UserDirectory directory;
     private final EmailSender email;
     private final WebhookDeliveryClient webhooks;
+    private final SlackChatFormatter slack;
+    private final TeamsChatFormatter teams;
     private final NotificationProperties properties;
     private final Clock clock;
 
@@ -72,6 +74,8 @@ class NotificationDispatcher {
             UserDirectory directory,
             EmailSender email,
             WebhookDeliveryClient webhooks,
+            SlackChatFormatter slack,
+            TeamsChatFormatter teams,
             NotificationProperties properties,
             Clock clock) {
         this.subscriptions = subscriptions;
@@ -81,6 +85,8 @@ class NotificationDispatcher {
         this.directory = directory;
         this.email = email;
         this.webhooks = webhooks;
+        this.slack = slack;
+        this.teams = teams;
         this.properties = properties;
         this.clock = clock;
     }
@@ -154,7 +160,7 @@ class NotificationDispatcher {
         switch (subscription.getChannel()) {
             case IN_APP -> deliverInApp(subscription, event, alreadyDelivered);
             case EMAIL -> deliverEmail(subscription, event, alreadyDelivered);
-            case WEBHOOK -> deliverWebhook(subscription, event, alreadyDelivered);
+            case WEBHOOK, SLACK, TEAMS -> deliverWebhook(subscription, event, alreadyDelivered);
         }
     }
 
@@ -175,8 +181,10 @@ class NotificationDispatcher {
         }
     }
 
-    /** The email channel: the {@code EmailSender} seam (WARN-log stub; SMTP is S12-02). */
-    private void deliverEmail(NotificationSubscriptionEntity subscription, DomainEvent event, Set<String> skip) {
+    /** The email channel: the {@code EmailSender} seam (WARN-log stub; SMTP is a standing follow-up). */
+    private WebhookDeliveryClient.Attempt deliverEmail(
+            NotificationSubscriptionEntity subscription, DomainEvent event, Set<String> skip) {
+        WebhookDeliveryClient.Attempt worst = WebhookDeliveryClient.Attempt.success();
         for (UUID userId : resolveRecipients(subscription)) {
             UserDirectory.UserSummary member =
                     directory.byIds(List.of(userId)).stream().findFirst().orElse(null);
@@ -189,16 +197,26 @@ class NotificationDispatcher {
             if (skip.contains(recipientKey)) {
                 continue;
             }
-            attemptDelivery(event, subscription, recipientKey, NotificationChannel.EMAIL, () -> {
-                email.send(member.email(), subjectOf(event), bodyOf(event, member));
-                return WebhookDeliveryClient.Attempt.success();
-            });
+            WebhookDeliveryClient.Attempt attempt =
+                    attemptDelivery(event, subscription, recipientKey, NotificationChannel.EMAIL, () -> {
+                        email.send(member.email(), subjectOf(event), bodyOf(event, member));
+                        return WebhookDeliveryClient.Attempt.success();
+                    });
+            if (!attempt.delivered()) {
+                worst = attempt;
+            }
         }
+        return worst;
     }
 
-    /** The webhook channel: one signed POST per attempt. */
+    /**
+     * The webhook family's shared leg (WEBHOOK plus S12-02's SLACK and
+     * TEAMS): one signed POST per attempt -- the canonical event JSON
+     * for WEBHOOK, the provider-rendered chat message for SLACK/TEAMS
+     * -- all through the same wire discipline and the same ledger.
+     */
     private void deliverWebhook(NotificationSubscriptionEntity subscription, DomainEvent event, Set<String> skip) {
-        String recipientKey = "webhook:" + subscription.getWebhookUrl();
+        String recipientKey = recipientKeyOf(subscription);
         if (skip.contains(recipientKey)) {
             return;
         }
@@ -206,8 +224,69 @@ class NotificationDispatcher {
                 event,
                 subscription,
                 recipientKey,
-                NotificationChannel.WEBHOOK,
-                () -> webhooks.deliver(subscription.getWebhookUrl(), subscription.getWebhookSecret(), event));
+                subscription.getChannel(),
+                () -> webhooks.deliver(
+                        subscription.getWebhookUrl(),
+                        subscription.getWebhookSecret(),
+                        event.name().name(),
+                        webhookBodyOf(subscription, event)));
+    }
+
+    /** The channel-prefixed recipient key: the ledger's idempotency rendering for the webhook family. */
+    private static String recipientKeyOf(NotificationSubscriptionEntity subscription) {
+        return switch (subscription.getChannel()) {
+            case WEBHOOK -> "webhook:" + subscription.getWebhookUrl();
+            case SLACK -> "slack:" + subscription.getWebhookUrl();
+            case TEAMS -> "teams:" + subscription.getWebhookUrl();
+            default -> throw new IllegalStateException("channel " + subscription.getChannel() + " has no URL leg");
+        };
+    }
+
+    /** The body this subscription's channel posts: canonical event JSON, or the provider chat card. */
+    private byte[] webhookBodyOf(NotificationSubscriptionEntity subscription, DomainEvent event) {
+        return switch (subscription.getChannel()) {
+            case SLACK -> slack.render(event);
+            case TEAMS -> teams.render(event);
+            case WEBHOOK -> WebhookDeliveryClient.canonicalBody(event);
+            default -> throw new IllegalStateException("channel " + subscription.getChannel() + " has no URL leg");
+        };
+    }
+
+    /**
+     * The test action's synchronous fan-out (issue #52, S12-02, AC3):
+     * the REAL per-channel pipeline against a synthetic event the
+     * caller already recorded in the outbox. Deliberately not gated by
+     * {@code routes()} -- the test verifies the subscription's
+     * configuration, whatever it routes -- and deliberately recording
+     * in the ledger like any first attempt: a test the receiver
+     * refuses is a SCHEDULED row the retry drain keeps trying, visible
+     * in the delivery log exactly like a real delivery (AC5's posture:
+     * failures are never silent).
+     */
+    @Transactional
+    public WebhookDeliveryClient.Attempt dispatchTest(DomainEvent event, NotificationSubscriptionEntity subscription) {
+        switch (subscription.getChannel()) {
+            case IN_APP -> {
+                deliverInApp(subscription, event, Set.of());
+                return WebhookDeliveryClient.Attempt.success();
+            }
+            case EMAIL -> {
+                return deliverEmail(subscription, event, Set.of());
+            }
+            case WEBHOOK, SLACK, TEAMS -> {
+                return attemptDelivery(
+                        event,
+                        subscription,
+                        recipientKeyOf(subscription),
+                        subscription.getChannel(),
+                        () -> webhooks.deliver(
+                                subscription.getWebhookUrl(),
+                                subscription.getWebhookSecret(),
+                                event.name().name(),
+                                webhookBodyOf(subscription, event)));
+            }
+            default -> throw new IllegalStateException("unknown channel " + subscription.getChannel());
+        }
     }
 
     // The attempt ledger --------------------------------------------------------
@@ -220,9 +299,10 @@ class NotificationDispatcher {
     /**
      * One first attempt: success writes the terminal row, failure
      * writes the scheduled-for-retry row (or the terminal FAILED row
-     * at a one-attempt ceiling).
+     * at a one-attempt ceiling). Returns the attempt so the test
+     * action can answer with the synchronous outcome.
      */
-    private void attemptDelivery(
+    private WebhookDeliveryClient.Attempt attemptDelivery(
             DomainEvent event,
             NotificationSubscriptionEntity subscription,
             String recipientKey,
@@ -243,9 +323,10 @@ class NotificationDispatcher {
                     channel,
                     recipientKey,
                     now));
-            return;
+            return attempt;
         }
         recordFailure(event, subscription, channel, recipientKey, attempt.error(), now);
+        return attempt;
     }
 
     /** One retry attempt against an existing row. */
@@ -295,7 +376,12 @@ class NotificationDispatcher {
                 email.send(address, subjectOf(event), bodyOf(event, null));
                 yield WebhookDeliveryClient.Attempt.success();
             }
-            case WEBHOOK -> webhooks.deliver(subscription.getWebhookUrl(), subscription.getWebhookSecret(), event);
+            case WEBHOOK, SLACK, TEAMS ->
+                webhooks.deliver(
+                        subscription.getWebhookUrl(),
+                        subscription.getWebhookSecret(),
+                        event.name().name(),
+                        webhookBodyOf(subscription, event));
             case IN_APP ->
                 // In-app rows are terminal at birth; a scheduled in-app
                 // row is an artifact no path produces.

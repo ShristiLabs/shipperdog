@@ -47,6 +47,7 @@ backend/src/main/resources/db/
     V37__device_management.sql
     V38__release_analytics.sql
     V39__event_bus_notifications.sql
+    V40__slack_teams_notifiers.sql
   seed/                 dev fixture, applied only when the seed location is active
     R__dev_seed.sql
 ```
@@ -755,6 +756,24 @@ There are no down-migrations and no automated rollback.
   the URL cap). Three new enum types (`notification_channel`,
   `notification_relay_state`, `notification_delivery_status`).
   Expand-only, nothing dropped.
+- `V40__slack_teams_notifiers.sql` (S12-02, issue #52) appends the two
+  chat channel values to the existing `notification_channel` enum
+  (`SLACK`, `TEAMS` — FR-023's chat channels riding S12-01's webhook
+  machinery) and re-admits the subscription recipient-shape check
+  WIDER, not weaker: the URL-carrying branch becomes "every channel
+  that is not IN_APP or EMAIL", admitting the new values without
+  weakening any standing rule (URL + 16+-character secret + the 2048
+  cap hold for the whole family). The predicate deliberately names
+  only pre-existing enum values so `ALTER TYPE ... ADD VALUE` and the
+  constraint re-addition share one Flyway transaction (a new enum
+  value may not be USED by a later statement in its own adding
+  transaction). The delivery ledger is untouched — its channel column
+  is the same enum type and its 2056-character recipient key already
+  covers the shorter `slack:`/`teams:` prefixes. No rows exist with
+  the new channels at migration time (the values arrive with this
+  story's code), so the widened constraint validates trivially.
+  Expand-only: enum values appended, one check constraint re-admitted
+  wider, nothing dropped or re-typed.
 
 ## Verifying migrations
 

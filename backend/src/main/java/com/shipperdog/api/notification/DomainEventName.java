@@ -54,5 +54,15 @@ public enum DomainEventName {
     /** One structured tester feedback report landed (S11-01). */
     FEEDBACK_RECEIVED,
     /** One report classified CRITICAL by triage (S11-02, issue #47). */
-    FEEDBACK_MARKED_CRITICAL
+    FEEDBACK_MARKED_CRITICAL,
+    /**
+     * A subscription's test message (S12-02, issue #52, AC3): the
+     * synthetic event the test action records when an administrator
+     * verifies a channel's configuration end-to-end. Not published by
+     * any domain transition -- the test action is its only publisher,
+     * and the row is born RELAYED (the synchronous dispatch through
+     * the real delivery pipeline IS its publication; the relay never
+     * re-fans a test out).
+     */
+    NOTIFICATION_TEST_SENT
 }
