@@ -619,6 +619,23 @@ public class ReleaseService implements ReleaseAccess, VersionDistributionContrib
     }
 
     /**
+     * The release's frozen artifact selection, served through the seam
+     * (S13-01, issue #61): the distribution dispatcher's per-platform
+     * addressing set. Frozen at creation (INV-004), so the read is a
+     * stable fact of the release's whole life.
+     */
+    @Override
+    @Transactional(readOnly = true)
+    public List<ReleaseArtifactSlot> artifactSlotsOf(UUID releaseId) {
+        return releases.findScoped(releaseId)
+                .map(release ->
+                        releaseArtifacts.findByReleaseIdOrderByPlatformAscArtifactIdAsc(release.getId()).stream()
+                                .map(slot -> new ReleaseArtifactSlot(slot.getArtifactId(), slot.getPlatform()))
+                                .toList())
+                .orElse(List.of());
+    }
+
+    /**
      * The feedback submission's resolution (S11-01, issue #46): the one
      * release of the application and version, answered only when the
      * named submitter tenant is one of the release's targets — the

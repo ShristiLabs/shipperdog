@@ -2,20 +2,19 @@ package com.shipperdog.api.environment.internal.service;
 
 import com.shipperdog.api.environment.SecretReferenceResolver;
 import java.util.Optional;
-import org.springframework.stereotype.Component;
 
 /**
- * The default {@link SecretReferenceResolver} until the secrets story
- * wires GCP Secret Manager plus Cloud KMS (PRD 25; this story
- * deliberately stores references only). Honest by construction: every
- * reference resolves to nothing, so the credential verify probe answers
- * {@code resolved: false} for every binding on every environment — the
- * port is wired and demonstrably consulted (the probe is audited), and
- * no test or caller can mistake the stub for a store. Integration
- * tests register their own resolver to prove independent resolution
- * (AC5).
+ * The fallback {@link SecretReferenceResolver} for contexts that
+ * register no secret store. Since S13-01 (issue #61) the production
+ * backing is the distribution module's selected store (GCP Secret
+ * Manager per PRD 25, or the OSS envelope default, ADR-0008) and this
+ * stub answers only when no store-backed bean exists -- exactly the
+ * honesty it was born with: every reference resolves to nothing, so
+ * the credential verify probe answers {@code resolved: false} for
+ * every binding, the port is demonstrably consulted, and no caller
+ * mistakes the stub for a store. Registered through {@link
+ * SecretResolutionFallback} behind {@code @ConditionalOnMissingBean}.
  */
-@Component
 class UnbackedSecretReferenceResolver implements SecretReferenceResolver {
 
     @Override

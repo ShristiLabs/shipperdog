@@ -362,5 +362,35 @@ public enum AuditEventType {
      * every provider credential are deliberately absent (the delivery
      * id is the join key to the provider's own delivery log).
      */
-    STORE_EVENT_MAPPED
+    STORE_EVENT_MAPPED,
+    /**
+     * One store-account credential bound (or rotated) on the
+     * delegation chain (S13-01, issue #61, PRD 25): the provider, the
+     * level (organization, application, environment), and the opaque
+     * secret reference the binding keeps. Secret material is
+     * deliberately absent -- it exists only inside the secret store
+     * (the V27 doctrine), and the reference is the join key to it.
+     */
+    DISTRIBUTION_CREDENTIAL_BOUND,
+    /**
+     * One store-account credential deleted from the chain (S13-01):
+     * the provider and level of the removed row -- the scope falls
+     * back to the next level's binding (or none).
+     */
+    DISTRIBUTION_CREDENTIAL_DELETED,
+    /**
+     * One credential resolution probe (S13-01): the provider and
+     * whether the reference RESOLVED through the selected store --
+     * never what it resolves to (the #58 verify doctrine).
+     */
+    DISTRIBUTION_CREDENTIAL_VERIFIED,
+    /**
+     * One release dispatched through a channel adapter (S13-01, AC4):
+     * the release, the channel, and the per-artifact outcomes the
+     * adapter reported -- statuses, external ids for store
+     * reconciliation, and taxonomy failure codes. The command's
+     * credential material is deliberately absent (the reference-only
+     * doctrine of the whole chain).
+     */
+    DISTRIBUTION_DISPATCHED
 }

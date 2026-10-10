@@ -126,7 +126,9 @@ public final class RolePermissions {
             Permission.ORG_TENANTS_CREATE,
             Permission.ORG_TENANTS_READ,
             Permission.ORG_ENVIRONMENTS_READ,
+            Permission.ORG_DISTRIBUTION_READ,
             Permission.ORG_ENVIRONMENTS_MANAGE,
+            Permission.ORG_DISTRIBUTION_MANAGE,
             // S10-01 (issue #40): the approval-chain definitions.
             Permission.ORG_APPROVAL_WORKFLOWS_READ,
             Permission.ORG_APPROVAL_WORKFLOWS_MANAGE,
@@ -209,7 +211,9 @@ public final class RolePermissions {
             // environments their releases flow through (the story's
             // persona).
             Permission.ORG_ENVIRONMENTS_READ,
+            Permission.ORG_DISTRIBUTION_READ,
             Permission.ORG_ENVIRONMENTS_MANAGE,
+            Permission.ORG_DISTRIBUTION_MANAGE,
             // S10-01 (issue #40): the approval chains their releases
             // run (the same governance persona).
             Permission.ORG_APPROVAL_WORKFLOWS_READ,
@@ -252,6 +256,7 @@ public final class RolePermissions {
             Permission.APP_VERSIONS_READ,
             Permission.APP_RELEASES_READ,
             Permission.ORG_ENVIRONMENTS_READ,
+            Permission.ORG_DISTRIBUTION_READ,
             Permission.ORG_APPROVAL_WORKFLOWS_READ,
             // S10-03 (issue #42): the gate vocabulary their CI reports
             // into (the submission itself rides app:releases:manage).
@@ -278,6 +283,7 @@ public final class RolePermissions {
             // assignment) whose critical findings gate promotions.
             Permission.APP_FEEDBACK_TRIAGE,
             Permission.ORG_ENVIRONMENTS_READ,
+            Permission.ORG_DISTRIBUTION_READ,
             Permission.ORG_APPROVAL_WORKFLOWS_READ,
             // S10-03 (issue #42): the story's own persona — the QA
             // engineer reads the gates their evidence feeds.
@@ -312,7 +318,9 @@ public final class RolePermissions {
             // S9-04 (issue #58): the release manager binds environments
             // to the releases they govern.
             Permission.ORG_ENVIRONMENTS_READ,
+            Permission.ORG_DISTRIBUTION_READ,
             Permission.ORG_ENVIRONMENTS_MANAGE,
+            Permission.ORG_DISTRIBUTION_MANAGE,
             // S10-01 (issue #40): and configures the approval chains
             // those releases run (the story's persona).
             Permission.ORG_APPROVAL_WORKFLOWS_READ,
@@ -367,6 +375,7 @@ public final class RolePermissions {
             // the general queue's).
             Permission.APP_FEEDBACK_TRIAGE,
             Permission.ORG_ENVIRONMENTS_READ,
+            Permission.ORG_DISTRIBUTION_READ,
             Permission.ORG_APPROVAL_WORKFLOWS_READ,
             // S10-03 (issue #42): the scan gates are theirs to read.
             Permission.ORG_GATE_DEFINITIONS_READ,
@@ -392,6 +401,7 @@ public final class RolePermissions {
             Permission.APP_RELEASES_READ,
             Permission.APP_RELEASES_APPROVE_COMPLIANCE,
             Permission.ORG_ENVIRONMENTS_READ,
+            Permission.ORG_DISTRIBUTION_READ,
             Permission.ORG_APPROVAL_WORKFLOWS_READ,
             // S10-03 (issue #42): the override records are theirs to
             // audit.
@@ -415,6 +425,7 @@ public final class RolePermissions {
             Permission.APP_VERSIONS_READ,
             Permission.APP_RELEASES_READ,
             Permission.ORG_ENVIRONMENTS_READ,
+            Permission.ORG_DISTRIBUTION_READ,
             Permission.ORG_APPROVAL_WORKFLOWS_READ,
             Permission.ORG_GATE_DEFINITIONS_READ,
             Permission.ORG_RINGS_READ,

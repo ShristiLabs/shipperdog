@@ -806,6 +806,52 @@ paths:
             '*/*':
               schema:
                 $ref: "#/components/schemas/ConfigSnapshotView"
+  /api/v1/distribution/credentials:
+    get:
+      tags:
+      - distribution-controller
+      operationId: credentials_1
+      parameters:
+      - name: organizationId
+        in: query
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - name: limit
+        in: query
+        required: false
+        schema:
+          type: string
+      - name: cursor
+        in: query
+        required: false
+        schema:
+          type: string
+      responses:
+        "200":
+          description: OK
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/PageResponseStoreAccountView"
+    put:
+      tags:
+      - distribution-controller
+      operationId: putCredential
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CredentialBindingRequest"
+        required: true
+      responses:
+        "200":
+          description: OK
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/StoreAccountView"
   /api/v1/approval-workflows/{workflowId}:
     get:
       tags:
@@ -2462,6 +2508,31 @@ paths:
           format: uuid
       - name: credentialId
         in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      responses:
+        "200":
+          description: OK
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/VerifyView"
+  /api/v1/distribution/credentials/{credentialId}/verify:
+    post:
+      tags:
+      - distribution-controller
+      operationId: verifyCredential_1
+      parameters:
+      - name: credentialId
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - name: organizationId
+        in: query
         required: true
         schema:
           type: string
@@ -4254,6 +4325,91 @@ paths:
               schema:
                 type: string
                 format: binary
+  /api/v1/distribution/records:
+    get:
+      tags:
+      - distribution-controller
+      operationId: records
+      parameters:
+      - name: organizationId
+        in: query
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - name: releaseId
+        in: query
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - name: limit
+        in: query
+        required: false
+        schema:
+          type: string
+      - name: cursor
+        in: query
+        required: false
+        schema:
+          type: string
+      responses:
+        "200":
+          description: OK
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/PageResponseRecordView"
+  /api/v1/distribution/credentials/effective:
+    get:
+      tags:
+      - distribution-controller
+      operationId: effectiveCredentials
+      parameters:
+      - name: organizationId
+        in: query
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - name: applicationId
+        in: query
+        required: false
+        schema:
+          type: string
+          format: uuid
+      - name: environmentId
+        in: query
+        required: false
+        schema:
+          type: string
+          format: uuid
+      responses:
+        "200":
+          description: OK
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/EffectiveChainView"
+  /api/v1/distribution/channels:
+    get:
+      tags:
+      - distribution-controller
+      operationId: channels
+      parameters:
+      - name: organizationId
+        in: query
+        required: true
+        schema:
+          type: string
+          format: uuid
+      responses:
+        "200":
+          description: OK
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/ChannelCatalogView"
   /api/v1/authorization/decisions/eligibility:
     get:
       tags:
@@ -4500,6 +4656,10 @@ paths:
           - INBOUND_WEBHOOK_DUPLICATE
           - ARTIFACT_PROVENANCE_ENRICHED
           - STORE_EVENT_MAPPED
+          - DISTRIBUTION_CREDENTIAL_BOUND
+          - DISTRIBUTION_CREDENTIAL_DELETED
+          - DISTRIBUTION_CREDENTIAL_VERIFIED
+          - DISTRIBUTION_DISPATCHED
       - name: applicationId
         in: query
         required: false
@@ -4817,6 +4977,27 @@ paths:
           format: uuid
       - name: userId
         in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      responses:
+        "204":
+          description: No Content
+  /api/v1/distribution/credentials/{credentialId}:
+    delete:
+      tags:
+      - distribution-controller
+      operationId: deleteCredential
+      parameters:
+      - name: credentialId
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - name: organizationId
+        in: query
         required: true
         schema:
           type: string
@@ -5210,19 +5391,9 @@ components:
     JsonNode:
       type: object
       properties:
-        string:
-          type: boolean
-        number:
-          type: boolean
-        binary:
-          type: boolean
-        pojo:
+        container:
           type: boolean
         floatingPointNumber:
-          type: boolean
-        valueNode:
-          type: boolean
-        missingNode:
           type: boolean
         nodeType:
           type: string
@@ -5236,7 +5407,17 @@ components:
           - OBJECT
           - POJO
           - STRING
+        string:
+          type: boolean
         integralNumber:
+          type: boolean
+        missingNode:
+          type: boolean
+        valueNode:
+          type: boolean
+        pojo:
+          type: boolean
+        number:
           type: boolean
         short:
           type: boolean
@@ -5255,7 +5436,7 @@ components:
           deprecated: true
         boolean:
           type: boolean
-        container:
+        binary:
           type: boolean
         empty:
           type: boolean
@@ -5447,6 +5628,37 @@ components:
           type: string
           format: uuid
         createdAt:
+          type: string
+          format: date-time
+    StoreAccountView:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        level:
+          type: string
+        organizationId:
+          type: string
+          format: uuid
+        applicationId:
+          type: string
+          format: uuid
+        environmentId:
+          type: string
+          format: uuid
+        provider:
+          type: string
+        name:
+          type: string
+        metadata:
+          type: string
+        secretReference:
+          type: string
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
           type: string
           format: date-time
     ConditionRequest:
@@ -7848,6 +8060,97 @@ components:
             $ref: "#/components/schemas/ConfigVersionView"
         next_cursor:
           type: string
+    PageResponseRecordView:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/RecordView"
+        next_cursor:
+          type: string
+    RecordView:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        releaseId:
+          type: string
+          format: uuid
+        artifactId:
+          type: string
+          format: uuid
+        channel:
+          type: string
+        status:
+          type: string
+        externalId:
+          type: string
+        failureCode:
+          type: string
+        attempts:
+          type: integer
+          format: int32
+        lastAttemptAt:
+          type: string
+          format: date-time
+        distributedAt:
+          type: string
+          format: date-time
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+    PageResponseStoreAccountView:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/StoreAccountView"
+        next_cursor:
+          type: string
+    EffectiveBinding:
+      type: object
+      properties:
+        provider:
+          type: string
+        binding:
+          $ref: "#/components/schemas/StoreAccountView"
+    EffectiveChainView:
+      type: object
+      properties:
+        chain:
+          type: array
+          items:
+            $ref: "#/components/schemas/EffectiveBinding"
+    ChannelCatalogView:
+      type: object
+      properties:
+        channels:
+          type: array
+          items:
+            $ref: "#/components/schemas/ChannelView"
+    ChannelView:
+      type: object
+      properties:
+        channelId:
+          type: string
+        displayName:
+          type: string
+        description:
+          type: string
+        capabilities:
+          type: array
+          items:
+            type: string
+        credentialProviders:
+          type: array
+          items:
+            type: string
     ApplicationCardView:
       type: object
       properties:
@@ -8090,6 +8393,10 @@ components:
           - INBOUND_WEBHOOK_DUPLICATE
           - ARTIFACT_PROVENANCE_ENRICHED
           - STORE_EVENT_MAPPED
+          - DISTRIBUTION_CREDENTIAL_BOUND
+          - DISTRIBUTION_CREDENTIAL_DELETED
+          - DISTRIBUTION_CREDENTIAL_VERIFIED
+          - DISTRIBUTION_DISPATCHED
         occurredAt:
           type: string
           format: date-time

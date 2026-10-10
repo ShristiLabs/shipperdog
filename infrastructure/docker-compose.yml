@@ -115,6 +115,15 @@ services:
       WEBHOOKS_GITLAB_SECRETS: ${WEBHOOKS_GITLAB_SECRETS:-}
       WEBHOOKS_APPSTORE_BUNDLE_IDS: ${WEBHOOKS_APPSTORE_BUNDLE_IDS:-}
       WEBHOOKS_GOOGLE_PLAY_AUDIENCE: ${WEBHOOKS_GOOGLE_PLAY_AUDIENCE:-}
+      # The secret store behind store-account credentials (issue #61,
+      # S13-01, ADR-0008): the local stack runs the envelope default;
+      # an operator who wants LOCAL secrets to survive a restart
+      # exports SECRETS_ENVELOPE_KEK (Base64 of 32 bytes) in .env.
+      # Blank is the documented local-only posture (an ephemeral
+      # process-local KEK; re-bind after restart). Full contract:
+      # docs/distribution.md.
+      SECRETS_PROVIDER: ${SECRETS_PROVIDER:-envelope}
+      SECRETS_ENVELOPE_KEK: ${SECRETS_ENVELOPE_KEK:-}
       # Local rate-limit posture (issue #39, S8-05): the production
       # defaults are per-client tight (10 logins, 30 downloads per
       # minute), but the compose stack serves ONE operator IP that

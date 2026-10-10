@@ -332,3 +332,28 @@ framework S12-04/E13 receivers share).
 | `WEBHOOK_DELIVERY_REJECTED` | 400 | Webhook delivery not accepted. (UNIFORM for every authenticity failure on the store receivers, per S12-04's acceptance criteria: an invalid or unverifiable provider signature, wrong audience, expired or stale token, and a stale provider timestamp answer identically; App Store, Google Play) |
 | `WEBHOOK_PAYLOAD_MALFORMED` | 400 | The webhook payload is not readable JSON. (a VERIFIED sender's diagnostic; includes a verified delivery without its delivery-id header) |
 | `WEBHOOK_PAYLOAD_TOO_LARGE` | 413 | The webhook payload exceeds the configured maximum. (the body ceiling — checked on the declared Content-Length before the bytes are read since S12-04, and on the actual bytes before they are parsed; default 25 MB, GitHub's own payload cap) |
+
+## Distribution — S13-01/issue #61
+
+The adapter framework's configuration surface (channel catalog,
+credential-delegation bindings, distribution records) behind
+`org:distribution:*`, plus the adapter failure taxonomy. The taxonomy
+codes ride distribution records as `failure_code` (a store failure
+fails the record, never the release's ACTIVE crossing) and render as
+problem codes should a dispatch surface ever expose them over HTTP.
+
+| Code | HTTP | Detail |
+|---|---|---|
+| `DISTRIBUTION_CREDENTIAL_NOT_FOUND` | 404 | Resource not found. (the addressed credential binding — unknown or of another organization; concealed across organizations) |
+| `DISTRIBUTION_RECORD_NOT_FOUND` | 404 | Resource not found. (reserved; the records read answers the honest empty page for an unknown release inside the caller's organization — no existence signal) |
+| `DISTRIBUTION_CREDENTIAL_LEVEL_INVALID` | 400 | The credential level is invalid. (an environment-level binding must name its application — the chain's levels are organization, application, application+environment, PRD 25) |
+| `ADAPTER_FAILED` | 502 | The distribution channel failed. (the taxonomy's terminal answer for TRANSIENT/PERMANENT categories — the per-adapter retries are exhausted or the fault was final; any adapter throw outside the taxonomy lands here) |
+| `ADAPTER_RATE_LIMITED` | 503 | The distribution channel is rate limited. (the provider throttled every attempt) |
+| `ADAPTER_TIMEOUT` | 504 | The distribution channel timed out. (the per-adapter wall cut every attempt — `shipperdog.distribution.adapters.<channel>.timeout`) |
+| `ADAPTER_AUTHENTICATION_FAILED` | 502 | The channel credentials were rejected. (never retried — retrying a bad credential is a lockout generator; the detail never carries material) |
+| `CHANNEL_UNKNOWN` | 400 | The distribution channel is not registered. (an environment binds a channel id no adapter claims; the dispatch records it loudly as a FAILED record's `failure_code`) |
+
+Record-only failure codes (not HTTP): `CREDENTIAL_UNRESOLVED` (the
+adapter's declared provider has no binding anywhere on the chain) and
+`DIRECT_FORMAT_REFUSED` (the direct channel's format rule — AAB is
+Play-only, FR-006).

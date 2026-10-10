@@ -12,6 +12,7 @@ import NotificationsPage from "./pages/NotificationsPage";
 import ReleaseDetailPage from "./pages/ReleaseDetailPage";
 import ReleasePoliciesPage from "./pages/ReleasePoliciesPage";
 import RingsPage from "./pages/RingsPage";
+import ChannelsPage from "./pages/ChannelsPage";
 import ReleasesPage from "./pages/ReleasesPage";
 import TenantDashboardPage from "./pages/TenantDashboardPage";
 import TenantDevicesPage from "./pages/TenantDevicesPage";
@@ -42,6 +43,7 @@ export default function App() {
             <Route path="applications/:applicationId" element={<ApplicationDetailPage />} />
             <Route path="approval-workflows" element={<ApprovalWorkflowsPage />} />
             <Route path="rings" element={<RingsPage />} />
+          <Route path="channels" element={<ChannelsPage />} />
             <Route path="notifications" element={<NotificationsPage />} />
             <Route path="release-policies" element={<ReleasePoliciesPage />} />
             <Route path="releases" element={<ReleasesPage />} />

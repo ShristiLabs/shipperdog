@@ -1,9 +1,9 @@
-package com.shipperdog.api.artifact.internal.download;
+package com.shipperdog.api.artifact;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-import com.shipperdog.api.artifact.internal.download.DownloadChannelRouting.Behavior;
-import com.shipperdog.api.artifact.internal.download.DownloadChannelRouting.Channel;
+import com.shipperdog.api.artifact.DownloadChannelRouting.Behavior;
+import com.shipperdog.api.artifact.DownloadChannelRouting.Channel;
 import org.junit.jupiter.api.Test;
 
 /**

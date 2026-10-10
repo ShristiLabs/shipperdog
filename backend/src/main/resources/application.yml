@@ -183,6 +183,28 @@ shipperdog:
     # production deployment sets its real origin; the default is the
     # local compose stack's console.
     console-base-url: ${CONSOLE_BASE_URL:http://localhost:5173}
+  # The distribution adapter framework (issue #61, S13-01, FR-019,
+  # PRD 19/25, ADR-0008): the secret store behind every credential
+  # reference and the per-adapter sandbox. The store selection keeps
+  # the OSS envelope default a compose stack runs on unchanged; the
+  # KEK has no committed default -- blank mints an EPHEMERAL
+  # process-local key with a loud startup warning (local-only; a
+  # restart stops every reference resolving), and production sets
+  # SECRETS_ENVELOPE_KEK or switches to the GCP Secret Manager
+  # posture (PRD 25).
+  secrets:
+    provider: ${SECRETS_PROVIDER:envelope}
+    envelope:
+      kek: ${SECRETS_ENVELOPE_KEK:}
+    gcp:
+      project-id: ${SECRETS_GCP_PROJECT_ID:}
+      endpoint: ${SECRETS_GCP_ENDPOINT:}
+  # The adapter sandbox (S13-01 AC5): per-channel timeout, bounded
+  # retries with backoff keyed on the failure taxonomy, configured as
+  # shipperdog.distribution.adapters.<channel>.timeout / .retry-
+  # attempts / .retry-backoff (DISTRIBUTION_ADAPTERS_* in the env).
+  # A channel without an entry runs the defaults: a 30 s wall, two
+  # retries, one-second backoff.
   # Inbound webhook receivers (issue #53, S12-03, extended issue #54,
   # S12-04, FR-022): the generic framework's knobs -- per-provider
   # credential LISTS (rotation is overlap: every entry stays accepted

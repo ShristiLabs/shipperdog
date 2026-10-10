@@ -396,6 +396,11 @@ class RbacPermissionEvaluatorTest {
                     }
 
                     @Override
+                    public java.util.Optional<String> distributionChannelNameOf(UUID environmentId) {
+                        return java.util.Optional.empty();
+                    }
+
+                    @Override
                     public java.util.Optional<EnvironmentState> stateOf(UUID environmentId) {
                         return java.util.Optional.empty();
                     }

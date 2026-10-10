@@ -52,7 +52,10 @@ frontend/src/
                 devices.ts (the S11-03 registry surface),
                 dashboards.ts (the S11-05 landing reads),
                 analytics.ts (the S11-04 series + the
-                foldSeriesPoints rule: counts sum, rates never do)
+                foldSeriesPoints rule: counts sum, rates never do),
+                distribution.ts + environments.ts (the S13-01
+                channel catalog, credential chain, and records
+                surfaces; [distribution.md](distribution.md))
   auth/         tokenStore.ts, AuthContext.tsx, RequireAuth.tsx
   components/   ToastContext.tsx (error toast convention)
   hooks/        usePermission.ts (role-aware navigation probes),
@@ -69,7 +72,9 @@ frontend/src/
                 ApplicationDialog (create/edit form),
                 applicationRules (client mirrors of field rules),
                 ReleasesPage, ReleaseDetailPage, releaseRules
-                (PRD 17 state-vocabulary mirrors; S9-05)
+                (PRD 17 state-vocabulary mirrors; S9-05),
+                ChannelsPage (the S13-01 channel catalog +
+                credential-delegation console)
   test/         harness.tsx (providers + fetch router), setup.ts
 frontend/e2e/   console-verify.mjs, applications-verify.mjs,
                 releases-verify.mjs + apk-fixture.mjs (Playwright

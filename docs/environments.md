@@ -71,7 +71,7 @@ Config:       version 2          (the ledger's current snapshot)
 
 | Table | Shape | Notes |
 |---|---|---|
-| `environments` (V1 + V27) | + `code`, `position`, `distribution_channel`, `approval_policy` (all name-only bindings nullable) | org-grain; `ck_environments_code_shape` pins the kebab vocabulary |
+| `environments` (V1 + V27) | + `code`, `position`, `distribution_channel`, `approval_policy` (all name-only bindings nullable) | org-grain; `ck_environments_code_shape` pins the kebab vocabulary. Since S13-01 `distribution_channel` RESOLVES: the distribution module's adapter registry resolves the id at the ACTIVE crossing (`direct` the unbound default) — see [distribution.md](distribution.md) |
 | `environment_config_versions` | PK `(environment_id, version)`, `entries` jsonb (the full resolved map), `created_by`, `created_at` | append-only ledger; no `updated_at` (the audit_events exception); V1's unversioned `environment_config` junction stays untouched legacy scaffolding (no writer ever populated it — the `release_targets.ring_code` precedent) |
 | `environment_tenants` | PK `(environment_id, tenant_id)` | the release-target allow-list; deny-by-default |
 | `environment_credentials` | uuid PK, `uq (environment_id, name)`, `secret_reference` | references only; the shape check pins printable-no-whitespace |

@@ -1062,7 +1062,44 @@ final class IsolationEndpointRegistry {
                     public String missUri(IsolationScenarioHarness.IsolatedTenant actorSide) {
                         return "/api/v1/audit?tenant=" + UUID.randomUUID();
                     }
-                });
+                },
+
+                // Distribution (S13-01, org grain) ---------------------------------
+                // The adapter framework's reads are organization-addressed
+                // configuration surfaces (the environments standing): the owning
+                // ORG_ADMIN reads them, a tenant admin of the owning organization
+                // holds no org:distribution:read and conceals at 404, and a
+                // foreign attempt conceals identically. The channels catalog is
+                // the same org-addressed shape (it asks for the organization the
+                // console renders); the records read answers the honest EMPTY
+                // page for a release the seeded world never created -- the
+                // leak-proofing is the org guard itself.
+                surface(
+                        "/api/v1/distribution/channels",
+                        side -> "/api/v1/distribution/channels?organizationId=" + side.organizationId(),
+                        200,
+                        404,
+                        side -> "/api/v1/distribution/channels?organizationId=" + UUID.randomUUID()),
+                surface(
+                        "/api/v1/distribution/credentials",
+                        side -> "/api/v1/distribution/credentials?organizationId=" + side.organizationId(),
+                        200,
+                        404,
+                        side -> "/api/v1/distribution/credentials?organizationId=" + UUID.randomUUID()),
+                surface(
+                        "/api/v1/distribution/credentials/effective",
+                        side -> "/api/v1/distribution/credentials/effective?organizationId=" + side.organizationId(),
+                        200,
+                        404,
+                        side -> "/api/v1/distribution/credentials/effective?organizationId=" + UUID.randomUUID()),
+                surface(
+                        "/api/v1/distribution/records",
+                        side -> "/api/v1/distribution/records?organizationId=" + side.organizationId() + "&releaseId="
+                                + UUID.randomUUID(),
+                        200,
+                        404,
+                        side -> "/api/v1/distribution/records?organizationId=" + UUID.randomUUID() + "&releaseId="
+                                + UUID.randomUUID()));
     }
 
     /**
