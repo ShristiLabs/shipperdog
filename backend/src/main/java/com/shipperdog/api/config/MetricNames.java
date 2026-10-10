@@ -116,13 +116,29 @@ public final class MetricNames {
 
     /**
      * Counter of every request refused by the in-app rate limiter
-     * (issue #39, S8-05), tagged {@code rule=login|downloads}: the
+     * (issue #39, S8-05; the {@code webhooks} rule since issue #54,
+     * S12-04), tagged {@code rule=login|downloads|webhooks}: the
      * operator's signal that a client is being throttled — and, on the
      * login rule, the brute-force early-warning beside the identity
      * lockout. Refusals answer 429 {@code RATE_LIMITED} with a
      * {@code Retry-After} header; the meter is the aggregate view.
      */
     public static final String RATE_LIMIT_REJECTED = "shipperdog.ratelimit.rejected";
+
+    /**
+     * Counter of every inbound webhook delivery a receiver answered
+     * (issue #54, S12-04, FR-022), tagged {@code
+     * provider=github|jenkins|gitlab|appstore|google-play} and
+     * {@code outcome=accepted|ignored|duplicate|rejected|malformed|too_large}:
+     * one increment per terminal answer, so the per-provider
+     * accepted/rejected ratio, the duplicate rate (sender retry
+     * health), and the rejection fingerprint are all observable from
+     * one meter family. Rejections here are every authenticity failure
+     * (the uniform 401/400 legs) and stale-timestamp replays;
+     * rate-limited requests never reach a receiver and count under
+     * {@link #RATE_LIMIT_REJECTED} {@code rule=webhooks} instead.
+     */
+    public static final String WEBHOOK_DELIVERIES = "shipperdog.webhooks.deliveries";
 
     /**
      * Timer of every approval round's terminal crossing (issue #41,

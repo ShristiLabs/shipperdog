@@ -14,7 +14,13 @@
 #      (exit 4) with the blocker list in the job summary (AC2);
 #   4. the inbound POST /webhooks/github receiver verifies the
 #      signature and backfills ci_run_url onto the commit-matched
-#      artifact (AC4's receiver contract, exercised over HTTP).
+#      artifact (AC4's receiver contract, exercised over HTTP);
+#   5. the inbound POST /webhooks/jenkins receiver (S12-04): a signed
+#      build-completed delivery backfills ci_run_url, a forged
+#      signature is the uniform 401;
+#   6. the inbound POST /webhooks/gitlab receiver (S12-04): a
+#      token-authenticated pipeline-success delivery backfills
+#      ci_run_url, a wrong token is the uniform 401.
 name: ci-integration-smoke
 
 on:
@@ -31,6 +37,8 @@ jobs:
       # A fixture value, not a credential: the local compose stack's
       # webhook secret for this run only. Never reuse anything real.
       WEBHOOKS_GITHUB_SECRETS: smoke-webhook-secret-fixture
+      WEBHOOKS_JENKINS_SECRETS: smoke-jenkins-secret-fixture
+      WEBHOOKS_GITLAB_SECRETS: smoke-gitlab-token-fixture
       SD_API: http://localhost:8080
     steps:
       - uses: actions/checkout@v4
@@ -201,6 +209,111 @@ jobs:
           echo "$read" | jq -e '.provenance.ciRunUrl | test("/actions/runs/'"$GITHUB_RUN_ID"'$")' >/dev/null
           echo "$read" | jq -e '.provenance.pipeline == "ci-integration-smoke"' >/dev/null
           echo "webhook enrichment verified"
+
+      # Leg 5 (S12-04): the Jenkins receiver -- a signed
+      # build-completed delivery (the snippet contract, HMAC over the
+      # exact body bytes) backfills ci_run_url onto a commit-matched
+      # artifact; a forged signature is the uniform 401.
+      - name: Upload a commit-only artifact for the Jenkins leg
+        run: |
+          set -euo pipefail
+          export SHIPPERDOG_API="$SD_API" SHIPPERDOG_TOKEN="${{ steps.seed.outputs.token }}"
+          jcommit=$(printf '%040x' $((GITHUB_RUN_NUMBER % 10000000000)))
+          echo "$jcommit" > "$RUNNER_TEMP/jenkins-commit.txt"
+          shipperdog artifact upload "$RUNNER_TEMP/smoke-release.apk" \
+            --app Banking --version "${{ steps.seed.outputs.version }}" \
+            --platform android --git-commit "$jcommit" --json --timeout 8m \
+            > "$RUNNER_TEMP/jenkins-artifact.json"
+          jq -r '.id' "$RUNNER_TEMP/jenkins-artifact.json" > "$RUNNER_TEMP/jenkins-artifact-id.txt"
+
+      - name: Deliver the signed Jenkins build-completed webhook
+        run: |
+          set -euo pipefail
+          jcommit=$(cat "$RUNNER_TEMP/jenkins-commit.txt")
+          payload=$(jq -n --arg id "smoke-jenkins-$GITHUB_RUN_ID" --arg sha "$jcommit" \
+            --arg url "$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID" \
+            '{deliveryId: $id, result: "SUCCESS", gitCommit: $sha, gitBranch: "main",
+              pipeline: "ci-integration-smoke", buildUrl: $url, buildTimestamp: (now | floor | tostring)}')
+          sig=$(printf '%s' "$payload" | openssl dgst -sha256 -hmac "$WEBHOOKS_JENKINS_SECRETS" -hex | sed 's/^.* /sha256=/')
+          answer=$(curl -fsS -X POST "$SD_API/webhooks/jenkins" \
+            -H 'Content-Type: application/json' \
+            -H "X-Shipperdog-Signature: $sig" \
+            -d "$payload")
+          echo "$answer" | jq -e '.status == "ACCEPTED"' >/dev/null
+          # A forged signature: the uniform 401.
+          code=$(curl -s -o /dev/null -w '%{http_code}' -X POST "$SD_API/webhooks/jenkins" \
+            -H 'Content-Type: application/json' \
+            -H 'X-Shipperdog-Signature: sha256=0000000000000000000000000000000000000000000000000000000000000000' \
+            -d "$payload")
+          test "$code" = "401"
+
+      - name: Assert the Jenkins webhook backfilled ci_run_url
+        run: |
+          set -euo pipefail
+          login=$(curl -fsS -X POST "$SD_API/api/v1/auth/login" \
+            -H 'Content-Type: application/json' \
+            -d '{"email":"dev@shipperdog.local","password":"shipperdog-dev-admin"}')
+          access=$(printf '%s' "$login" | jq -r .accessToken)
+          artifact=$(cat "$RUNNER_TEMP/jenkins-artifact-id.txt")
+          read=$(curl -fsS "$SD_API/api/v1/artifacts/$artifact?version_id=${{ steps.seed.outputs.version-id }}" \
+            -H "Authorization: Bearer $access")
+          echo "$read" | jq -e '.provenance.ciRunUrl | test("/actions/runs/'"$GITHUB_RUN_ID"'$")' >/dev/null
+          echo "jenkins receiver enrichment verified"
+
+      # Leg 6 (S12-04): the GitLab receiver -- a token-authenticated
+      # pipeline-success delivery backfills ci_run_url by commit; a
+      # wrong token is the uniform 401.
+      - name: Upload a commit-only artifact for the GitLab leg
+        run: |
+          set -euo pipefail
+          export SHIPPERDOG_API="$SD_API" SHIPPERDOG_TOKEN="${{ steps.seed.outputs.token }}"
+          gcommit=$(printf '%040x' $(((GITHUB_RUN_NUMBER + 1000000000) % 10000000000)))
+          echo "$gcommit" > "$RUNNER_TEMP/gitlab-commit.txt"
+          shipperdog artifact upload "$RUNNER_TEMP/smoke-release.apk" \
+            --app Banking --version "${{ steps.seed.outputs.version }}" \
+            --platform android --git-commit "$gcommit" --json --timeout 8m \
+            > "$RUNNER_TEMP/gitlab-artifact.json"
+          jq -r '.id' "$RUNNER_TEMP/gitlab-artifact.json" > "$RUNNER_TEMP/gitlab-artifact-id.txt"
+
+      - name: Deliver the token-authenticated GitLab pipeline webhook
+        run: |
+          set -euo pipefail
+          gcommit=$(cat "$RUNNER_TEMP/gitlab-commit.txt")
+          payload=$(jq -n --arg sha "$gcommit" \
+            --arg url "https://gitlab.example.com/acme/mobile/-/pipelines/$GITHUB_RUN_ID" \
+            --arg finished "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+            '{object_kind: "pipeline",
+              object_attributes: {status: "success", sha: $sha, ref: "main",
+                pipeline_url: $url, finished_at: $finished, created_at: $finished},
+              project: {path_with_namespace: "acme/mobile"}}')
+          answer=$(curl -fsS -X POST "$SD_API/webhooks/gitlab" \
+            -H 'Content-Type: application/json' \
+            -H "X-Gitlab-Token: $WEBHOOKS_GITLAB_SECRETS" \
+            -H "X-Gitlab-Webhook-UUID: smoke-gitlab-$GITHUB_RUN_ID" \
+            -H 'X-Gitlab-Event: Pipeline Hook' \
+            -d "$payload")
+          echo "$answer" | jq -e '.status == "ACCEPTED"' >/dev/null
+          # A wrong token: the uniform 401.
+          code=$(curl -s -o /dev/null -w '%{http_code}' -X POST "$SD_API/webhooks/gitlab" \
+            -H 'Content-Type: application/json' \
+            -H 'X-Gitlab-Token: a-token-the-sender-never-had' \
+            -H 'X-Gitlab-Webhook-UUID: smoke-gitlab-forge' \
+            -H 'X-Gitlab-Event: Pipeline Hook' \
+            -d "$payload")
+          test "$code" = "401"
+
+      - name: Assert the GitLab webhook backfilled ci_run_url
+        run: |
+          set -euo pipefail
+          login=$(curl -fsS -X POST "$SD_API/api/v1/auth/login" \
+            -H 'Content-Type: application/json' \
+            -d '{"email":"dev@shipperdog.local","password":"shipperdog-dev-admin"}')
+          access=$(printf '%s' "$login" | jq -r .accessToken)
+          artifact=$(cat "$RUNNER_TEMP/gitlab-artifact-id.txt")
+          read=$(curl -fsS "$SD_API/api/v1/artifacts/$artifact?version_id=${{ steps.seed.outputs.version-id }}" \
+            -H "Authorization: Bearer $access")
+          echo "$read" | jq -e '.provenance.ciRunUrl | test("pipelines/'"$GITHUB_RUN_ID"'$")' >/dev/null
+          echo "gitlab receiver enrichment verified"
 
       # Leg 3: the promote action on a fresh DRAFT release -- the
       # walk is refused with the complete blocker list (no approvals

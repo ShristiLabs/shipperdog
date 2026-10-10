@@ -49,6 +49,7 @@ backend/src/main/resources/db/
     V39__event_bus_notifications.sql
     V40__slack_teams_notifiers.sql
     V41__inbound_webhook_deliveries.sql
+    V42__store_status_events.sql
   seed/                 dev fixture, applied only when the seed location is active
     R__dev_seed.sql
 ```
@@ -791,6 +792,24 @@ There are no down-migrations and no automated rollback.
   and open vocabularies are row values, not schema migrations. An
   index on `received_at` serves the operator's consumed-events reads.
   New types and tables only; nothing existing touched.
+- `V42__store_status_events.sql` (S12-04, issue #54) adds the store
+  receivers' normalized internal events: one row per VERIFIED store
+  notification mapped (`appstore` / `google-play`), the thin
+  state-sync foundation E13's connectors consume — the provider, its
+  own event id, the stable event-type vocabulary, and the store-side
+  identifiers (bundle id, purchase token, subscription/sku reference;
+  each NULLable because the two providers carry different facts —
+  Google RTDN envelopes carry no package name). The mapping's
+  idempotency grain is its OWN unique key
+  (`uq_store_status_events_provider_event`), independent of the V41
+  transport ledger's: a redelivery under a fresh transport id
+  converges on the one row. The migration also serves the provenance
+  backfill's commit-matched lookup with a partial expression index
+  (`idx_artifacts_provenance_git_commit` on
+  `(provenance ->> 'gitCommit')`) — the #53 review's deferred
+  at-scale finding, folded here because V42 was already touching the
+  receiver family's storage. New tables and indexes only; nothing
+  existing touched.
 
 ## Verifying migrations
 

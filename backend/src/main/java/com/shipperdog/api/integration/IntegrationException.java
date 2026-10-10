@@ -28,9 +28,19 @@ public class IntegrationException extends RuntimeException {
         /**
          * The delivery is not accepted: no signature header, a
          * malformed signature, a wrong key, or no secret configured.
-         * Uniform for every leg -- never a hint.
+         * Uniform for every leg -- never a hint. The shared-secret
+         * family (GitHub, Jenkins, GitLab) answers this 401.
          */
         SIGNATURE_REJECTED(HttpStatus.UNAUTHORIZED, "WEBHOOK_SIGNATURE_REJECTED", "Webhook delivery not accepted."),
+        /**
+         * The delivery is not accepted, on a provider whose own
+         * contract is the 400 family (S12-04's store receivers, per
+         * their acceptance criteria): an invalid or unverifiable
+         * provider signature, a stale-timestamp replay, or an absent
+         * provider credential. Uniform for every leg -- never a hint
+         * which refused.
+         */
+        DELIVERY_REJECTED(HttpStatus.BAD_REQUEST, "WEBHOOK_DELIVERY_REJECTED", "Webhook delivery not accepted."),
         /** A signature-verified delivery whose body is not readable JSON. */
         PAYLOAD_MALFORMED(
                 HttpStatus.BAD_REQUEST, "WEBHOOK_PAYLOAD_MALFORMED", "The webhook payload is not readable JSON."),

@@ -5,7 +5,6 @@ import com.shipperdog.api.audit.AuditEventType;
 import com.shipperdog.api.audit.AuditLogger;
 import com.shipperdog.api.integration.internal.entity.InboundWebhookDeliveryEntity;
 import com.shipperdog.api.integration.internal.repository.InboundWebhookDeliveryRepository;
-import java.net.URI;
 import java.time.Clock;
 import java.time.Instant;
 import java.util.ArrayList;
@@ -62,8 +61,6 @@ public class GitHubWebhookService {
 
     private static final int EVENT_MAX = 64;
     private static final int DELIVERY_MAX = 255;
-    private static final int PIPELINE_MAX = 255;
-    private static final int URL_MAX = 2048;
 
     private final InboundWebhookDeliveryRepository deliveries;
     private final ArtifactProvenanceLink provenance;
@@ -165,51 +162,22 @@ public class GitHubWebhookService {
     // The S5-04 shape checks the backfill inputs must pass (the same
     // shapes the provenance contract validates at upload; a mismatch
     // degrades to a no-op rather than poisoning the frozen document)
+    // -- shared with the S12-04 CI receivers through ProvenanceShapes
     // -----------------------------------------------------------------------
 
-    /** Hex SHA-1/SHA-256, case-insensitive, answered lowercase. */
+    /** @see ProvenanceShapes#commitOf */
     private static String commitOf(String raw) {
-        if (raw == null) {
-            return null;
-        }
-        String value = raw.trim().toLowerCase(java.util.Locale.ROOT);
-        return value.matches("[0-9a-f]{40}") || value.matches("[0-9a-f]{64}") ? value : null;
+        return ProvenanceShapes.commitOf(raw);
     }
 
-    /** An absolute http(s) URL within the provenance ceiling. */
+    /** @see ProvenanceShapes#urlOf */
     private static String urlOf(String raw) {
-        if (raw == null) {
-            return null;
-        }
-        String value = raw.trim();
-        if (value.length() > URL_MAX || value.length() == 0) {
-            return null;
-        }
-        try {
-            URI parsed = URI.create(value);
-            String scheme = parsed.getScheme();
-            if (scheme == null || parsed.getHost() == null) {
-                return null;
-            }
-            if (!scheme.equalsIgnoreCase("http") && !scheme.equalsIgnoreCase("https")) {
-                return null;
-            }
-            return value;
-        } catch (RuntimeException e) {
-            return null;
-        }
+        return ProvenanceShapes.urlOf(raw);
     }
 
-    /** A 1-255 printable label, or null (a null pipeline simply does not backfill). */
+    /** @see ProvenanceShapes#printable */
     private static String printable(String raw) {
-        if (raw == null) {
-            return null;
-        }
-        String value = raw.trim();
-        if (value.isEmpty() || value.length() > PIPELINE_MAX || value.chars().anyMatch(c -> c < 0x20 || c == 0x7f)) {
-            return null;
-        }
-        return value;
+        return ProvenanceShapes.printable(raw);
     }
 
     private static String firstNonBlank(String first, String second) {

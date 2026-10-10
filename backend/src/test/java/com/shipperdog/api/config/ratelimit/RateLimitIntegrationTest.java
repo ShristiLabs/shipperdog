@@ -41,7 +41,10 @@ import tools.jackson.databind.ObjectMapper;
             "shipperdog.ratelimit.rules.login.capacity=3",
             "shipperdog.ratelimit.rules.login.refill=PT1H",
             "shipperdog.ratelimit.rules.downloads.capacity=2",
-            "shipperdog.ratelimit.rules.downloads.refill=PT1H"
+            "shipperdog.ratelimit.rules.downloads.refill=PT1H",
+            "shipperdog.ratelimit.rules.webhooks.capacity=2",
+            "shipperdog.ratelimit.rules.webhooks.refill=PT1H",
+            "shipperdog.webhooks.jenkins-secrets=fixture-jenkins-secret"
         })
 @Testcontainers
 class RateLimitIntegrationTest {
@@ -128,6 +131,34 @@ class RateLimitIntegrationTest {
         for (int i = 0; i < 10; i++) {
             assertThat(me().getStatusCode().value()).isEqualTo(401);
         }
+    }
+
+    /**
+     * The inbound webhook receivers' rule (issue #54, S12-04): an
+     * anonymous, provider-facing POST surface throttled per client --
+     * a flood of bogus deliveries is refused with the same 429
+     * envelope before it costs signature or chain work, and the
+     * limiter's meter counts the rule.
+     */
+    @Test
+    void webhookFloodAnswers429BeforeSignatureWork() {
+        for (int i = 0; i < 2; i++) {
+            assertThat(webhook().getStatusCode().value())
+                    .as("attempt %d inside the burst", i + 1)
+                    .isEqualTo(401);
+        }
+        ResponseEntity<String> refused = webhook();
+        assertThat(refused.getStatusCode().value()).isEqualTo(429);
+        assertThat(refused.getHeaders().getFirst("Retry-After")).isNotNull();
+        JsonNode problem = mapper.readTree(refused.getBody());
+        assertThat(problem.path("code").asString()).isEqualTo("RATE_LIMITED");
+    }
+
+    private ResponseEntity<String> webhook() {
+        return neverThrow(client.post()
+                .uri("/webhooks/jenkins")
+                .contentType(MediaType.APPLICATION_JSON)
+                .body(Map.of("result", "FLOOD")));
     }
 
     /**

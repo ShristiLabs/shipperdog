@@ -1,0 +1,72 @@
+# shipperdog.gitlab-ci.yml -- the GitLab leg of ShipperDog's CI story
+# (S12-04, issue #54, FR-022). Include-able job templates that wrap
+# the shipperdog CLI, with provenance auto-captured from the GitLab
+# CI environment (CI_COMMIT_SHA, CI_COMMIT_REF_NAME,
+# CI_PIPELINE_URL, CI_JOB_URL) -- the S5-04 frozen contract, so the
+# inbound POST /webhooks/gitlab receiver can match a finished
+# pipeline back to the artifacts its commit built.
+#
+# Include it from your .gitlab-ci.yml (pin the ref -- never a moving
+# branch):
+#
+#   include:
+#     - project: 'ShristiLabs/shipperdog'
+#       ref: <pinned-ref>
+#       file: 'ci-templates/gitlab/shipperdog.gitlab-ci.yml'
+#
+# Then extend the hidden templates with your app's facts:
+#
+#   shipperdog:upload:
+#     extends: .shipperdog-upload
+#     variables:
+#       SHIPPERDOG_APP: 'banking'
+#       SHIPPERDOG_VERSION: '7.12.0'
+#       SHIPPERDOG_PLATFORM: 'android'
+#       SHIPPERDOG_FILE: 'app/build/outputs/apk/release/app-release.apk'
+#
+# Credentials: expose the PAT as SHIPPERDOG_TOKEN (CI/CD variables,
+# masked; a dedicated DEVELOPER bot for upload, RELEASE_MANAGER for
+# promote -- docs/ci-gitlab.md). SHIPPERDOG_API is your deployment's
+# base URL.
+
+.shipperdog-upload:
+  stage: build
+  image: eclipse-temurin:25-jdk  # any image with the CLI on PATH; see the acquisition contract in docs/ci-gitlab.md
+  variables:
+    SHIPPERDOG_API: ''
+    SHIPPERDOG_TOKEN: ''
+    SHIPPERDOG_APP: ''
+    SHIPPERDOG_VERSION: ''
+    SHIPPERDOG_PLATFORM: ''
+    SHIPPERDOG_FILE: ''
+    SHIPPERDOG_TIMEOUT: '10m'
+  script:
+    - |
+      set -eu
+      shipperdog artifact upload "$SHIPPERDOG_FILE" \
+        --app "$SHIPPERDOG_APP" \
+        --version "$SHIPPERDOG_VERSION" \
+        --platform "$SHIPPERDOG_PLATFORM" \
+        --git-commit "$CI_COMMIT_SHA" \
+        --git-branch "$CI_COMMIT_REF_NAME" \
+        --pipeline "gitlab:$CI_PROJECT_PATH" \
+        --ci-run-url "$CI_PIPELINE_URL" \
+        --build-timestamp "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+        --wait --timeout "$SHIPPERDOG_TIMEOUT" --json
+
+.shipperdog-promote:
+  stage: deploy
+  image: eclipse-temurin:25-jdk
+  variables:
+    SHIPPERDOG_API: ''
+    SHIPPERDOG_TOKEN: ''
+    SHIPPERDOG_APP: ''
+    SHIPPERDOG_VERSION: ''
+    SHIPPERDOG_TENANTS: ''
+  script:
+    - |
+      set -eu
+      RELEASE_REF=$(shipperdog release create "$SHIPPERDOG_APP" "$SHIPPERDOG_VERSION" \
+        --tenants "$SHIPPERDOG_TENANTS" --ring engineering --json \
+        | sed -n 's/.*"releaseRef":"\([^"]*\)".*/\1/p')
+      shipperdog release promote "$RELEASE_REF" --app "$SHIPPERDOG_APP" --json
