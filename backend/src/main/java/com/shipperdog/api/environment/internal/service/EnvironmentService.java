@@ -673,6 +673,18 @@ public class EnvironmentService implements EnvironmentAccess, EnvironmentProvisi
         return environments.findById(environmentId).map(EnvironmentEntity::getApprovalPolicy);
     }
 
+    /**
+     * The environment's distribution-channel binding (S13-01, issue
+     * #61): the name-only reference the distribution module's adapter
+     * registry resolves (this module never learns channel semantics --
+     * the V27 reservation, kept).
+     */
+    @Override
+    @Transactional(readOnly = true)
+    public Optional<String> distributionChannelNameOf(UUID environmentId) {
+        return environments.findById(environmentId).map(EnvironmentEntity::getDistributionChannel);
+    }
+
     // -------------------------------------------------------------------------
     // Views
     // -------------------------------------------------------------------------

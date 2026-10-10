@@ -97,7 +97,12 @@ class RolePermissionsTest {
                         // reads join the same surface (a viewer sees the
                         // routing table and the delivery log, never
                         // edits who hears about what).
-                        Permission.ORG_NOTIFICATIONS_READ);
+                        Permission.ORG_NOTIFICATIONS_READ,
+                        // S13-01 (issue #61): distribution reads join the
+                        // same surface (a viewer sees the channel catalog
+                        // and the credential chain's bindings — references
+                        // only — never rotates or deletes one).
+                        Permission.ORG_DISTRIBUTION_READ);
     }
 
     @Test

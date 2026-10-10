@@ -126,6 +126,16 @@ public final class MetricNames {
     public static final String RATE_LIMIT_REJECTED = "shipperdog.ratelimit.rejected";
 
     /**
+     * Timer of every channel-adapter call the dispatch sandbox made
+     * (issue #61, S13-01, PRD 28 — store latency is a top debugging
+     * question), tagged {@code channel}, {@code attempt}, and
+     * {@code outcome} (ok, or the failure taxonomy's public code).
+     * Served by the observation the sandbox opens per attempt, so the
+     * timer and the trace span are the same artifact.
+     */
+    public static final String ADAPTER_CALL = "shipperdog.adapter.call.duration";
+
+    /**
      * Counter of every inbound webhook delivery a receiver answered
      * (issue #54, S12-04, FR-022), tagged {@code
      * provider=github|jenkins|gitlab|appstore|google-play} and

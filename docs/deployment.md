@@ -139,6 +139,20 @@ Secret Manager mirrored into Cloud Run env — never in the repository
 Rate limiter semantics and the X-Forwarded-For trust arithmetic:
 [portal.md](portal.md#hardening-and-deployment-s8-05).
 
+### Secret store and adapter sandbox (S13-01)
+
+Credential material for store accounts (Apple, Google Play) lives
+behind the secret-store port (ADR-0008); the platform holds only
+references. Wiring ([distribution.md](distribution.md)):
+
+| Variable | Surface | Notes |
+|---|---|---|
+| `SECRETS_PROVIDER` | all credential surfaces | `envelope` (default) or `gcp-secret-manager` |
+| `SECRETS_ENVELOPE_KEK` | the envelope store | Base64 of 32 bytes. MUST be set in production when running the envelope store: blank mints an EPHEMERAL process-local key (a restart stops every reference resolving). Never commit it |
+| `SECRETS_GCP_PROJECT_ID` | the GCP store | the project owning the secrets (with ADC configured) |
+| `SECRETS_GCP_ENDPOINT` | the GCP store | override (tests/mirrors); default secretmanager.googleapis.com |
+| `DISTRIBUTION_ADAPTERS__<CHANNEL>__TIMEOUT` / `__RETRY_ATTEMPTS` / `__RETRY_BACKOFF` | the adapter sandbox | per-channel wall and retry posture (defaults 30 s / 2 / 1 s); e.g. `DISTRIBUTION_ADAPTERS__TESTFLIGHT__TIMEOUT` |
+
 ## Rollback
 
 Cloud Run revisions keep the last images: `gcloud run services

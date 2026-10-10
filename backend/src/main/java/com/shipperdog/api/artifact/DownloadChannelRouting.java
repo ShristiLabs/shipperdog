@@ -1,4 +1,4 @@
-package com.shipperdog.api.artifact.internal.download;
+package com.shipperdog.api.artifact;
 
 import java.util.Map;
 import java.util.Optional;
@@ -9,6 +9,14 @@ import java.util.Optional;
  * one place that decides what a download tap DOES per platform and
  * channel, so the portal renders guidance from a server-resolved fact
  * instead of re-deriving platform rules client-side.
+ *
+ * <p>Promoted from the download package's internals to the artifact
+ * module's public surface by S13-01 (issue #61): the distribution
+ * module's Direct adapter routes through this exact table (the
+ * class's own V1 javadoc pinned that arrival -- "the M2 TestFlight
+ * adapter routes through this exact row instead of introducing a
+ * second table"), and the module boundary forbids the internal
+ * import. One table, two consumers, zero duplication.
  *
  * <p>V1 ships exactly the two rows the story names (the channels
  * themselves arrive with the M2/M3 distribution model — the table

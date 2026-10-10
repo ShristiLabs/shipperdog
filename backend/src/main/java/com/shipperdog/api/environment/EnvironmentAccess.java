@@ -61,6 +61,18 @@ public interface EnvironmentAccess {
      */
     Optional<String> approvalPolicyNameOf(UUID environmentId);
 
+    /**
+     * The environment's distribution-channel binding (S13-01, issue
+     * #61): the NAME-ONLY reference V27 reserved beside the approval
+     * policy -- the channel id this environment's releases dispatch
+     * through, resolved against the distribution module's adapter
+     * registry (whose reference-name vocabulary it shares; the
+     * platform's {@code direct} channel is the default when no
+     * binding exists). Empty when the environment is unknown or binds
+     * none -- the caller's default decision, never this port's.
+     */
+    Optional<String> distributionChannelNameOf(UUID environmentId);
+
     /** The environment's identity and lifecycle as the release surface reads it. */
     record EnvironmentState(UUID id, UUID organizationId, String code, String name, int position, String status) {}
 

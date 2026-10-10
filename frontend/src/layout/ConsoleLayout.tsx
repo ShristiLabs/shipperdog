@@ -15,6 +15,7 @@ import PolicyIcon from "@mui/icons-material/Policy";
 import TollIcon from "@mui/icons-material/Toll";
 import LogoutIcon from "@mui/icons-material/Logout";
 import RocketLaunchIcon from "@mui/icons-material/RocketLaunch";
+import AltRouteIcon from "@mui/icons-material/AltRoute";
 import {
   Alert,
   AppBar,
@@ -37,6 +38,7 @@ import { getOrgDashboard } from "../api/dashboards";
 import { listApplications } from "../api/applications";
 import { probePolicyRules } from "../api/policies";
 import { listRings } from "../api/rings";
+import { listChannels } from "../api/distribution";
 import { getSubscriptionProbe } from "../api/notifications";
 import { listApprovalWorkflows } from "../api/workflows";
 import { listTenants } from "../api/tenants";
@@ -93,6 +95,17 @@ export default function ConsoleLayout() {
   const policiesNav = usePermission(
     `release-policies:${orgId ?? "none"}`,
     () => probePolicyRules(orgId as string),
+    orgId !== null,
+  );
+
+  // The Distribution channels section (S13-01) probes the channel
+  // catalog its editor loads first: org:distribution:read holders (the
+  // environments governance personas) see the catalog and the
+  // credential-delegation bindings; everyone else is conceal-denied
+  // and the section hides. Writes stay server-enforced regardless.
+  const channelsNav = usePermission(
+    `distribution-channels:${orgId ?? "none"}`,
+    () => listChannels(orgId as string),
     orgId !== null,
   );
 
@@ -236,6 +249,21 @@ export default function ConsoleLayout() {
                   <TollIcon />
                 </ListItemIcon>
                 <ListItemText primary="Release rings" />
+              </ListItemButton>
+            </List>
+          ) : null}
+          {orgId !== null && channelsNav.allowed ? (
+            <List>
+              <ListItemButton
+                component={NavLink}
+                to="/channels"
+                data-testid="nav-channels"
+                sx={{ "&.active": { backgroundColor: "action.selected" } }}
+              >
+                <ListItemIcon>
+                  <AltRouteIcon />
+                </ListItemIcon>
+                <ListItemText primary="Distribution channels" />
               </ListItemButton>
             </List>
           ) : null}

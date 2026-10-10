@@ -166,6 +166,18 @@ Current contents:
 - [ADR-0005: M1 deploys to Cloud Run over a private VPC data tier](adr/ADR-0005-cloud-run-deployment.md)
 - [ADR-0006: Portal and console sessions stay in localStorage for M1, hardened by CSP](adr/ADR-0006-portal-session-token-storage.md)
 - [ADR-0007: The domain-event bus ships in-process over a transactional outbox; the broker is a swap behind one port](adr/ADR-0007-event-bus-transport.md)
+- [ADR-0008: Credential material lives behind a secret-store port — GCP Secret Manager in production, an AES-256-GCM envelope store as the self-hostable default](adr/ADR-0008-credential-secret-storage.md)
+- [Distribution: channel adapters and credential delegation](distribution.md) —
+  the adapter SPI (S13-01): the one interface every delivery channel
+  implements as a bean (capabilities, `distribute`/`status`, the
+  failure taxonomy), the credential-delegation chain (org -> app ->
+  app+environment, first-defined-wins per provider, PRD 25), the two
+  secret stores behind one port (ADR-0008), the ACTIVE-crossing
+  dispatch and its distribution records (external ids for store
+  reconciliation), the per-adapter sandbox (timeout, bounded
+  category-keyed retries, `shipperdog.adapter.call.duration` trace
+  and timer), and the add-an-adapter guide — a new store plugs in
+  with zero core changes.
 - [Deployment runbook (Cloud Run, M1)](deployment.md) — terraform stack,
   deploy workflow, smoke test, rollback, observability posture (S8-05).
 

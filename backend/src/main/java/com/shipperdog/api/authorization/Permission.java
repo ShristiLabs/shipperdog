@@ -53,6 +53,13 @@ public enum Permission {
     ORG_TENANTS_READ("org:tenants:read"),
     ORG_ENVIRONMENTS_READ("org:environments:read"), // issue #58 (S9-04)
     ORG_ENVIRONMENTS_MANAGE("org:environments:manage"), // issue #58 (S9-04)
+    // Issue #61 (S13-01): the distribution adapter framework -- channel
+    // catalog, credential-delegation bindings, and distribution
+    // records. The same governance personas as environments (the
+    // channel an environment binds and the accounts its dispatches
+    // resolve through are one configuration surface).
+    ORG_DISTRIBUTION_READ("org:distribution:read"), // issue #61 (S13-01)
+    ORG_DISTRIBUTION_MANAGE("org:distribution:manage"), // issue #61 (S13-01)
     // Issue #40 (S10-01): the approval-chain definitions — release
     // governance configuration (the environments-manage personas).
     ORG_APPROVAL_WORKFLOWS_READ("org:approval-workflows:read"),

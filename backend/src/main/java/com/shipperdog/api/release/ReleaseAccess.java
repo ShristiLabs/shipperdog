@@ -1,5 +1,6 @@
 package com.shipperdog.api.release;
 
+import java.util.List;
 import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
@@ -88,6 +89,16 @@ public interface ReleaseAccess {
     Set<UUID> targetTenantIdsOf(UUID releaseId);
 
     /**
+     * The release's frozen artifact selection (S13-01, issue #61): one
+     * slot per platform, the id and platform the distribution
+     * dispatcher addresses its records by. Empty for an unknown
+     * release, like every read here; the slots are frozen at creation
+     * (INV-004's artifact-set freeze), so the answer is stable for a
+     * release's whole life.
+     */
+    List<ReleaseArtifactSlot> artifactSlotsOf(UUID releaseId);
+
+    /**
      * The release a feedback submission evaluates (S11-01, issue #46,
      * PRD 8.13): the one release of the application and version
      * (V1's {@code uq_releases_application_version}), resolved ONLY
@@ -145,4 +156,7 @@ public interface ReleaseAccess {
             UUID ringId,
             String ringCode,
             UUID environmentId) {}
+
+    /** One frozen artifact slot as the distribution dispatcher addresses it (S13-01). */
+    record ReleaseArtifactSlot(UUID artifactId, String platform) {}
 }
