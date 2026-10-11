@@ -119,4 +119,42 @@ public interface DistributionChannelAdapter {
      */
     AdapterOutcome status(
             UUID artifactId, String channel, String externalId, DistributionCommand.ResolvedCredential credential);
+
+    /**
+     * Whether this channel's dispatch follows the release's ring walk
+     * onto its PROMOTED crossing (S13-05, #65, PRD 8.10/17): the
+     * framework dispatches every adapter at the ACTIVE crossing; an
+     * adapter whose provider surface is RING-GRADED — the Play
+     * channel, whose ring-to-track map re-targets the same release to
+     * a wider track as the walk advances — answers {@code true} and
+     * is dispatched again at the ACTIVE to PROMOTED crossing the
+     * final ring's landing fires (every target on the final ring —
+     * Production-last, the #43 order). Every other adapter keeps the
+     * default: one dispatch at ACTIVE, the PROMOTED crossing is
+     * nobody else's business (a re-dispatch would duplicate a
+     * TestFlight upload or re-run an App Store submission — never
+     * accidental).
+     */
+    default boolean followsPromotionCrossings() {
+        return false;
+    }
+
+    /**
+     * Whether a dispatch at this ring is SUBMISSION-GRADE — the
+     * deliverable of THIS dispatch is the store's acceptance, so its
+     * permanent refusal vetoes the crossing it rode on (the #63
+     * doctrine split, ring-graded by S13-05): the App Store
+     * submission channel answers {@code true} for every ring (its
+     * one dispatch IS the submission); the Play channel answers
+     * {@code true} only for the production ring (a testing-track
+     * dispatch keeps the never-fail-the-crossing doctrine — the
+     * platform's own availability stands alone on the testing tracks,
+     * while the production track release is the store's call).
+     * Consulted only beside the {@link AdapterCapability#SUBMISSION}
+     * capability; the default {@code false} keeps every ring
+     * un-vetoed.
+     */
+    default boolean submitsAtRing(String ringCode) {
+        return false;
+    }
 }

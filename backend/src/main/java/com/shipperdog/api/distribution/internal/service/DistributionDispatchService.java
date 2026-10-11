@@ -107,6 +107,7 @@ public class DistributionDispatchService {
     private final AdapterCallSandbox sandbox;
     private final SubmissionFailureRecorder submissionFailures;
     private final AuditLogger audit;
+    private final org.springframework.context.ApplicationEventPublisher events;
     private final Tracer tracer;
     private final Clock clock;
 
@@ -124,6 +125,7 @@ public class DistributionDispatchService {
             AdapterCallSandbox sandbox,
             SubmissionFailureRecorder submissionFailures,
             AuditLogger audit,
+            org.springframework.context.ApplicationEventPublisher events,
             Tracer tracer,
             Clock clock) {
         this.registry = registry;
@@ -139,18 +141,40 @@ public class DistributionDispatchService {
         this.sandbox = sandbox;
         this.submissionFailures = submissionFailures;
         this.audit = audit;
+        this.events = events;
         this.tracer = tracer;
         this.clock = clock;
     }
 
-    /** The ACTIVE crossing's dispatch: channels take over exactly where the state machine's distribution begins. */
+    /**
+     * The ACTIVE crossing's dispatch: channels take over exactly
+     * where the state machine's distribution begins. The PROMOTED
+     * crossing (the promotion engine's final-ring landing — every
+     * target on the final ring, Production-last) dispatches the
+     * RING-GRADED channels again (S13-05, #65): an adapter that
+     * {@link DistributionChannelAdapter#followsPromotionCrossings()
+     * follows the walk} re-targets the same release onto the wider
+     * surface its current ring maps to — the Play channel's
+     * production track. Every other adapter crosses untouched (one
+     * dispatch at ACTIVE stands; a re-run would duplicate an upload
+     * or a submission).
+     */
     @EventListener
     @Transactional
     void onReleaseTransitioned(ReleaseTransitionedEvent event) {
-        if (!"ACTIVE".equals(event.toStatus())) {
+        if ("ACTIVE".equals(event.toStatus())) {
+            dispatch(event);
             return;
         }
-        dispatch(event);
+        if ("PROMOTED".equals(event.toStatus())) {
+            UUID environmentId = releases.factsOf(event.releaseId())
+                    .map(ReleaseAccess.ReleaseFacts::environmentId)
+                    .orElse(null);
+            String channel = channelOf(environmentId);
+            registry.byChannelId(channel)
+                    .filter(DistributionChannelAdapter::followsPromotionCrossings)
+                    .ifPresent(adapter -> dispatch(event));
+        }
     }
 
     /** One release's dispatch through its resolved channel; the crossing's own transaction commits the records. */
@@ -191,22 +215,31 @@ public class DistributionDispatchService {
         AdapterCallSandbox.Result<List<AdapterOutcome>> dispatchRun =
                 sandbox.run(channel, "distribute", attempt -> adapter.get().distribute(withAttempt(command, attempt)));
         if (dispatchRun.failure() != null) {
-            // The S13-03 doctrine split (issue #63, AC4): a PERMANENT
-            // refusal of a SUBMISSION channel vetoes the crossing —
-            // the release's deliverable IS the store's acceptance, so
-            // the veto registers the post-rollback failure recorder
-            // (FAILED records, the DEPLOYING to FAILED edge, and the
-            // audits in a fresh transaction) and throws to roll this
-            // transaction back. Every other exhaustion keeps the
-            // never-fail-the-crossing doctrine: FAILED records with
-            // the taxonomy code, the crossing commits, S13-06 owns
-            // rollback.
+            // The S13-03 doctrine split (issue #63, AC4, ring-graded
+            // by S13-05): a PERMANENT refusal of a SUBMISSION-GRADE
+            // dispatch — the adapter declares SUBMISSION AND grades
+            // the dispatch's ring submission-grade ({@code
+            // submitsAtRing}: the App Store's every ring, the Play
+            // channel's production ring alone) — vetoes the crossing
+            // it rode on: the deliverable of THAT dispatch is the
+            // store's acceptance, so the veto registers the
+            // post-rollback failure recorder (FAILED records, the
+            // DEPLOYING to FAILED edge where the release sits on it,
+            // and the audits in a fresh transaction) and throws to
+            // roll this transaction back — at the PROMOTED crossing
+            // the hop itself rolls back (the promotion refuses with
+            // the store's words; the release stays ACTIVE on its
+            // ring, the failure records still land). Every other
+            // exhaustion keeps the never-fail-the-crossing doctrine:
+            // FAILED records with the taxonomy code, the crossing
+            // commits, S13-06 owns rollback.
             if (dispatchRun.failure().category() == AdapterException.Category.PERMANENT
-                    && adapter.get().capabilities().contains(AdapterCapability.SUBMISSION)) {
+                    && adapter.get().capabilities().contains(AdapterCapability.SUBMISSION)
+                    && adapter.get().submitsAtRing(command.ringCode())) {
                 registerSubmissionVeto(event, channel, slots, dispatchRun.failure());
                 throw new DistributionException(
                         AdapterCallSandbox.taxonomyCodeOf(dispatchRun.failure()),
-                        "the store refused the submission and the release cannot go ACTIVE: "
+                        "the store refused the submission and the release cannot go " + event.toStatus() + ": "
                                 + dispatchRun.failure().getMessage());
             }
             Instant now = Instant.now(clock);
@@ -251,6 +284,19 @@ public class DistributionDispatchService {
         }
         records.saveAll(rows);
         auditDispatch(event, channel, allDistributed ? "distributed" : "failed", true);
+        // The framework-generic completion fact (S13-05, #65): channel
+        // services that key off a landed dispatch — the Play rollout
+        // state's first write — listen here, with no channel knowledge
+        // in this service. Published inside the crossing's
+        // transaction: the state the listener writes commits or rolls
+        // back with the dispatch it belongs to.
+        events.publishEvent(new ChannelDistributionReported(
+                event.releaseId(),
+                event.organizationId(),
+                event.applicationId(),
+                channel,
+                command.ringCode(),
+                List.copyOf(outcomes)));
     }
 
     /**
@@ -432,9 +478,13 @@ public class DistributionDispatchService {
                                         locale.releaseNotes()))
                                 .toList()))
                 .orElse(null);
-        String ringCode = releases.factsOf(event.releaseId())
-                .map(ReleaseAccess.ReleaseFacts::ringCode)
-                .orElse(null);
+        // The release's CURRENT effective ring (S13-05, #65): the
+        // earliest effective-order position still holding a target —
+        // the starting ring at the ACTIVE crossing, the final ring at
+        // the PROMOTED crossing the walk's landing fires. The
+        // ring-graded adapters (the Play map) target their surface by
+        // where the walk actually stands, never where it was born.
+        String ringCode = releases.effectiveRingCodeOf(event.releaseId()).orElse(null);
         return new DistributionCommand(
                 event.releaseId(),
                 event.releaseRef(),

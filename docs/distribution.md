@@ -22,8 +22,9 @@ material.
   connector](#the-testflight-connector)
 - The production store connector — Apple App Store (#63): [The App
   Store connector](#the-app-store-connector)
-- The Android testing-track connector — Google Play (#64): [The
-  Google Play connector](#the-google-play-connector)
+- The Android connector — Google Play (#64, production and staged
+  rollout since #65): [The Google Play
+  connector](#the-google-play-connector)
 - How to add a channel: [Adding an adapter](#adding-an-adapter)
 
 ## The SPI
@@ -441,19 +442,21 @@ sandbox as the store conversations.
 
 ## The Google Play connector
 
-The Android testing-track connector on the SPI (issue #64, S13-04,
-FR-021, PRD 19/25): the `play` channel — an Android release promoted
-to ACTIVE on an environment bound to `play` uploads its AAB through
-Play's two-phase edit model (upload the bundle into an edit, write
-the mapped track's release, commit), the track chosen by the
+The Android connector on the SPI (issue #64, S13-04, FR-021, PRD
+19/25; production promotion and the staged rollout since #65,
+S13-05): the `play` channel — an Android release promoted to ACTIVE
+on an environment bound to `play` uploads its AAB through Play's
+two-phase edit model (upload the bundle into an edit, write the
+mapped track's release, commit), the track chosen by the
 ring-to-track mapping, the release notes THE FROZEN MANIFEST BLOCK
 carries. Capabilities: `BUILD_UPLOAD`, `BUILD_STATUS`,
-`TESTER_GROUP_SYNC` — deliberately NOT `SUBMISSION` or
-`ROLLOUT_CONTROL`: production promotion and staged-rollout
-percentages are S13-05's (#65) surface, a mapping that resolves to
-the production track is refused loudly (the detail names S13-05),
-and the never-fail-the-crossing doctrine holds — a Play failure
-fails the record, never the release's ACTIVE crossing.
+`TESTER_GROUP_SYNC`, and since S13-05 `SUBMISSION` and
+`ROLLOUT_CONTROL` — the walk carries onto the production track at
+the PROMOTED crossing, a staged rollout starts at the configured
+percentage, and the curve is controlled through the rollout surface
+below. The never-fail-the-crossing doctrine holds for the testing
+tracks — a Play failure fails the record, never the release's
+crossing; the PRODUCTION dispatch is submission-grade (below).
 
 ### The service account (AC1)
 
@@ -498,7 +501,9 @@ conversation:
    never reads platform tables, and a sandbox retry re-streams from
    the start); write the track's release (the provider-assigned
    version code, the FROZEN release notes, released to the full
-   tester list — rollout fractions are #65's); commit. The record
+   tester list — the testing-track shape; a staged production
+   release writes `inProgress` with a `userFraction` instead, the
+   curve below); commit. The record
    lands DISTRIBUTING with `external_id` = `track#versionCode#
    packageName` — the refresh's complete addressing — and Google's
    own track-release status word (`completed` for the internal
@@ -588,6 +593,114 @@ The track model itself surfaces for the listing console:
 | Route | Purpose |
 |---|---|
 | `GET /api/v1/distribution/play/tracks?organizationId=&applicationId=` | The app's Play tracks with their releases — Google's own status words verbatim. |
+
+### Production promotion and the staged rollout (S13-05)
+
+Since #65 the walk carries to production. The adapter follows the
+release's ring walk onto its PROMOTED crossing: the hop that lands
+every target on the final ring dispatches again, the production ring
+maps to the PRODUCTION track, and a release born on the production
+ring addresses it at the ACTIVE crossing itself (the same mapping,
+either face of the walk). The explicit `play-track` override still
+names TESTING tracks only — an override naming production answers
+`PLAY_PRODUCTION_OVERRIDDEN` (the production track is the production
+ring's OWN mapping), and the tester-group guard does not apply to
+the production track (its audience is the store's own users).
+
+**The production dispatch is submission-grade.** A PERMANENT refusal
+of the production track release vetoes the crossing it rode on —
+the #63 doctrine: the store's acceptance is the production
+deliverable, so the veto rolls the hop back, records the failure,
+and the release stands ACTIVE at its previous ring (a retry
+re-attempts the hop). The testing tracks keep the
+never-fail-the-crossing doctrine: their dispatches remain
+record-grade, byte-identical to #64.
+
+A production release configured for a staged rollout — the
+environment's `play-rollout-percent` channel-config key, an integer
+1..100 — is written `inProgress` with Play's `userFraction` at that
+percentage (absent or 100 submits the full availability list, no
+curve). The dispatch's landing then writes the INTENT MODEL (V47),
+the story's technical note: ShipperDog owns the INTENDED curve
+(`channel_rollouts` — intended vs observed percentage, ROLLING /
+HALTED / COMPLETE control state, the ring, an optimistic `version`
+stamp; one row per release x channel), the provider owns the
+mechanics, and `channel_rollout_steps` is the append-only timeline
+AC3 demands — every action with its actor, from/to percentages, and
+its moment, the START step at the configured percentage first.
+
+The curve's release actions (`org:distribution:read` for the view,
+`org:distribution:manage` for control):
+
+| Route | Purpose |
+|---|---|
+| `GET /api/v1/distribution/play/releases/{releaseId}/rollout?organizationId=` | The curve's state: intent, the OBSERVED percentage read from the live track (the rollout's own track release, matched by version code), the drift flag, Google's own status word, and the timeline. |
+| `POST /api/v1/distribution/play/releases/{releaseId}/rollout?organizationId=` | `{action: ADVANCE \| HALT \| RESUME \| REAPPLY, percent?}` — `percent` is required by ADVANCE alone. |
+
+- **ADVANCE** widens the curve to a strictly greater percentage
+  (1..100, must exceed the current intent), the policy gate
+  consulted FIRST.
+- **HALT** stops distribution at the current percentage — always
+  allowed, never gated: stopping distribution is never a policy
+  question.
+- **RESUME** continues a halted curve from its percentage.
+- **REAPPLY** explicitly re-writes the intent at the current
+  percentage — the drift recovery below.
+
+**The HALT write shape.** HALT rewrites the production track release
+with `status=halted` AND the current `userFraction` BESIDE it — the
+fraction rides the halted release (deliberate, mock-faithful to the
+Play API's shape), so the store remembers where the curve stopped
+and RESUME continues from the same point. RESUME in turn rewrites
+`inProgress` with the same fraction.
+
+**The policy gate (AC4).** An ADVANCE is a promotion-grade act: the
+production ring's BLOCK/HOLD rules — S10-06's engine, the same
+evaluation the promotion precheck runs — refuse the increase while
+the release's metrics fail their thresholds (409
+`DISTRIBUTION_ROLLOUT_BLOCKED`, the rule's reference and evidence in
+the answer). The evaluation log commits in the consult's OWN
+transaction, so the refusal's evidence survives the 409's rollback
+exactly a refused promotion's does (the #45 discipline). HALT never
+consults the gate.
+
+**The control answers from the write's own echo.** Every action
+applies through the Play edit model (the release's own version
+codes and frozen notes carried verbatim — a control never
+re-uploads) and the action's answer is the provider's echo of the
+track release just written, persisted as the curve's observation —
+never a closing re-read of the live track inside the control's
+transaction: a transient-exhausted read after a successful write
+must not roll back platform state for an act Google already
+applied. The view's own read (a separate transaction) refreshes the
+observed standing.
+
+**Concurrent controls refuse, never last-write-win.** The intent
+row's optimistic `version` stamp (the #51 subscription precedent)
+makes a control that lost the race answer the precise 409
+`DISTRIBUTION_ROLLOUT_CONFLICT` — two concurrent ADVANCEs can never
+lower the curve or double-apply a step.
+
+**The loser's landed write (a drift residual, by design).** The
+provider write and the version-stamped flush are two steps: a
+concurrent ADVANCE that loses the version race may have ALREADY
+committed its fraction at Google before the local refusal — the
+platform never silently unwinds a store-side write. The residual
+surfaces exactly as AC5 drift: the view's next observation reports
+intended ≠ observed, and the operator's explicit REAPPLY re-writes
+the intended curve. Drift report + REAPPLY is the designed recovery
+for every store-side divergence — manual Play Console edits and
+version-race losers alike.
+
+**Drift is reported, never silently corrected (AC5).** The view
+observes the live track and persists the observed percentage; the
+first observation of a standing (or a moved one) audits
+`DISTRIBUTION_ROLLOUT_DRIFT` — steady-state drift is the dashboard
+standing, never a new audit line per read. Every control action
+audits `DISTRIBUTION_ROLLOUT_CONTROLLED` carrying the channel,
+release, action, from/to percentages, and the actor (AC3 — the same
+facts as the timeline row). A rollout whose store side reports
+`completed` moves to COMPLETE on the next observation.
 
 ### Rate limits (AC6)
 

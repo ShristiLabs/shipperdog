@@ -57,6 +57,25 @@ public class ChannelSubmissionSnapshots implements ChannelSubmissionAccess {
         if (!registered) {
             return Optional.empty();
         }
+        if ("play".equals(channel)) {
+            // The #64 contract (unchanged by S13-05's SUBMISSION
+            // capability — the play channel's authoring surface stays
+            // its release notes, and its freeze stays the
+            // channel-generic notes shape): the release-notes rows
+            // freeze when some exist; a play release with no authored
+            // notes freezes no block (the dispatch then submits no
+            // notes — legitimate).
+            List<ChannelReleaseNotesEntity> rows =
+                    releaseNotes.findByApplicationIdAndChannelOrderByLocaleAsc(applicationId, channel);
+            if (rows.isEmpty()) {
+                return Optional.empty();
+            }
+            List<SubmissionLocale> locales = new ArrayList<>();
+            for (ChannelReleaseNotesEntity row : rows) {
+                locales.add(new SubmissionLocale(row.getLocale(), null, null, List.of(), row.getNotes()));
+            }
+            return Optional.of(new SubmissionSnapshot(List.copyOf(locales)));
+        }
         if (registry.byChannelId(channel)
                 .map(adapter -> adapter.capabilities().contains(AdapterCapability.SUBMISSION))
                 .orElse(false)) {
@@ -71,21 +90,6 @@ public class ChannelSubmissionSnapshots implements ChannelSubmissionAccess {
                         row.getKeywords(),
                         row.getScreenshotRefs(),
                         row.getReleaseNotes()));
-            }
-            return Optional.of(new SubmissionSnapshot(List.copyOf(locales)));
-        }
-        if ("play".equals(channel)) {
-            // The #64 contract: the release-notes rows freeze when some
-            // exist; a play release with no authored notes freezes no
-            // block (the dispatch then submits no notes — legitimate).
-            List<ChannelReleaseNotesEntity> rows =
-                    releaseNotes.findByApplicationIdAndChannelOrderByLocaleAsc(applicationId, channel);
-            if (rows.isEmpty()) {
-                return Optional.empty();
-            }
-            List<SubmissionLocale> locales = new ArrayList<>();
-            for (ChannelReleaseNotesEntity row : rows) {
-                locales.add(new SubmissionLocale(row.getLocale(), null, null, List.of(), row.getNotes()));
             }
             return Optional.of(new SubmissionSnapshot(List.copyOf(locales)));
         }

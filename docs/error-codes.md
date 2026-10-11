@@ -352,6 +352,10 @@ problem codes should a dispatch surface ever expose them over HTTP.
 | `DISTRIBUTION_METADATA_NOT_FOUND` | 404 | Resource not found. (the addressed store-submission metadata row of the authoring surface — concealed across organizations, S13-03) |
 | `DISTRIBUTION_PHASED_RELEASE_NOT_FOUND` | 404 | Resource not found. (the addressed release carries no phased release on the store side — its channel never enabled one; the curve surfaces answer this honestly rather than an invented curve, S13-03) |
 | `DISTRIBUTION_PHASED_RELEASE_ACTION_INVALID` | 400 | The phased release action is invalid. (an action outside the PAUSE/RESUME/HALT vocabulary, S13-03) |
+| `DISTRIBUTION_ROLLOUT_NOT_FOUND` | 404 | Resource not found. (the addressed release carries no staged rollout on the play channel — a testing-track release, a full-list production release, or a foreign release, concealed; the rollout surfaces answer this honestly rather than an invented curve, S13-05) |
+| `DISTRIBUTION_ROLLOUT_ACTION_INVALID` | 400 | The rollout action is invalid. (S13-05: an action outside the ADVANCE/HALT/RESUME/REAPPLY vocabulary, a percentage outside 1..100 or not strictly greater than the curve's current intent, or an action the rollout's current state does not accept) |
+| `DISTRIBUTION_ROLLOUT_BLOCKED` | 409 | The rollout increase is blocked by policy. (S13-05, AC4: the production ring's BLOCK/HOLD rules evaluated against the release refuse to widen the curve while its metrics fail their thresholds — the message carries the rule's reference and evidence, the promotion question's own wording) |
+| `DISTRIBUTION_ROLLOUT_CONFLICT` | 409 | The rollout changed concurrently; reload and retry. (S13-05: the curve row's optimistic `version` stamp, the #51 subscription precedent — the stale control action answers the precise conflict instead of last-write-winning, so two concurrent ADVANCEs can never lower the curve or double-apply a step) |
 | `ADAPTER_FAILED` | 502 | The distribution channel failed. (the taxonomy's terminal answer for TRANSIENT/PERMANENT categories — the per-adapter retries are exhausted or the fault was final; any adapter throw outside the taxonomy lands here; since S13-03 also the problem a REFUSED production submission answers on the transition route — the store refused, the release cannot go ACTIVE, and the detail carries the provider's own words) |
 | `ADAPTER_RATE_LIMITED` | 503 | The distribution channel is rate limited. (the provider throttled every attempt) |
 | `ADAPTER_TIMEOUT` | 504 | The distribution channel timed out. (the per-adapter wall cut every attempt — `shipperdog.distribution.adapters.<channel>.timeout`) |
@@ -386,13 +390,16 @@ Android slot on the Play channel), `PLAY_AAB_REQUIRED` (the artifact
 is not an AAB — FR-006's channel rule enforced at the adapter
 boundary, the mirror of the Direct channel's APK-only rule),
 `PLAY_PACKAGE_FACTS_MISSING` (the artifact carries no extracted
-package name or version name), `PLAY_TRACK_UNMAPPED` and the
-`ADAPTER_FAILED` refusal whose detail names S13-05 (the ring-to-track
-mapping resolved no testing track, or resolved production — S13-05's
-surface), `PLAY_GROUPS_UNMAPPED` (the release targets groups but none
-are linked to the release's track — the mapping surface's gap,
-recorded loudly), and `PLAY_RELEASE_FAILED` (the track release failed
-on Google's side).
+package name or version name), `PLAY_TRACK_UNMAPPED` (the ring-to-track
+mapping resolved no track the vocabulary serves), the
+`PLAY_PRODUCTION_OVERRIDDEN` refusal (S13-05: the `play-track`
+configuration key names the production track — the override is a
+testing-track escape hatch, and the production track is the production
+ring's own mapping), `PLAY_GROUPS_UNMAPPED` (the release targets
+groups but none are linked to the release's testing track — the
+mapping surface's gap, recorded loudly; the production track is exempt,
+its audience is the store's own users), and `PLAY_RELEASE_FAILED` (the
+track release failed on Google's side).
 
 Since S13-03 the distribution record also carries
 `channel_distributions.failure_detail`: the actionable, human-facing

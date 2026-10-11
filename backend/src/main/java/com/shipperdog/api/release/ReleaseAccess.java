@@ -89,6 +89,20 @@ public interface ReleaseAccess {
     Set<UUID> targetTenantIdsOf(UUID releaseId);
 
     /**
+     * The release's CURRENT effective ring (S13-05, #65): the earliest
+     * ring in the organization's effective order that still holds any
+     * target — the release's standing on the ring walk, which starts
+     * at the starting ring and widens with every promotion hop. The
+     * distribution dispatch maps this onto its channel's ring-graded
+     * surfaces (the Play ring-to-track map), so a dispatch at the
+     * PROMOTED crossing addresses the ring the walk actually sits on
+     * (the final ring), never the ring the release was born on.
+     * Empty for an unknown or out-of-scope release, like every read
+     * here.
+     */
+    Optional<String> effectiveRingCodeOf(UUID releaseId);
+
+    /**
      * The release's frozen artifact selection (S13-01, issue #61): one
      * slot per platform, the id and platform the distribution
      * dispatcher addresses its records by. Empty for an unknown

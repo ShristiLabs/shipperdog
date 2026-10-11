@@ -85,11 +85,14 @@ import {
 } from "../api/gates";
 import {
   controlPhasedRelease,
+  controlPlayRollout,
   getPhasedRelease,
+  getPlayRollout,
   listDistributionRecords,
   refreshDistributionRecord,
   type DistributionRecord,
   type PhasedReleaseView,
+  type PlayRolloutView,
 } from "../api/distribution";
 import { getApplicationVersion } from "../api/versions";
 import {
@@ -591,6 +594,7 @@ export default function ReleaseDetailPage() {
         ) : null}
         <ChannelDistributions releaseId={release.id} />
         <PhasedReleaseCurve releaseId={release.id} />
+        <PlayRolloutCurve releaseId={release.id} />
       </Paper>
 
       <Paper variant="outlined" sx={{ padding: 2 }} data-testid="timeline-section">
@@ -1082,6 +1086,142 @@ function PhasedReleaseCurve({ releaseId }: { releaseId: string }) {
           >
             Halt (release to all)
           </Button>
+        </Stack>
+      </Stack>
+    </Box>
+  );
+}
+
+/** The staged rollout block (S13-05, AC1/AC2/AC3/AC5): the Google Play
+ * production channel's rollout answer — the INTENDED curve beside the
+ * store's observed percentage (drift is reported, never silently
+ * corrected), the timeline of every step, and the release actions:
+ * advance to a strictly greater percentage (the policy gate consulted
+ * first — a blocked advance renders the rule's evidence), halt (always
+ * allowed — stopping distribution is never a policy question), resume,
+ * and the explicit re-apply of intent after drift. */
+function PlayRolloutCurve({ releaseId }: { releaseId: string }) {
+  const { user } = useAuth();
+  const orgId = user?.orgId ?? null;
+  const toast = useToast();
+  const queryClient = useQueryClient();
+  const [advanceTo, setAdvanceTo] = useState("");
+
+  const rollout = useQuery({
+    queryKey: ["play-rollout", orgId, releaseId],
+    queryFn: () => getPlayRollout(orgId as string, releaseId),
+    enabled: orgId !== null,
+    retry: false,
+    refetchInterval: REFRESH_MS,
+  });
+
+  const control = useMutation({
+    mutationFn: (input: { action: "ADVANCE" | "HALT" | "RESUME" | "REAPPLY"; percent?: number }) =>
+      controlPlayRollout(orgId as string, releaseId, input.action, input.percent),
+    onSuccess: async (view: PlayRolloutView) => {
+      toast.showSuccess(`Rollout: ${view.status.toLowerCase()} at ${view.intendedPercent}%`);
+      setAdvanceTo("");
+      await queryClient.invalidateQueries({ queryKey: ["play-rollout", orgId, releaseId] });
+    },
+    onError: (error) => {
+      toast.showError(error);
+    },
+  });
+
+  if (rollout.error || !rollout.data) {
+    // A release the play channel never promoted to production (or one
+    // released to the full list) keeps this block quiet.
+    return null;
+  }
+  const view = rollout.data;
+  const observed = view.observedPercent ?? view.intendedPercent;
+  return (
+    <Box sx={{ marginTop: 2 }} data-testid="play-rollout">
+      <Divider sx={{ marginBottom: 1 }} />
+      <Stack
+        direction="row"
+        spacing={1}
+        sx={{ alignItems: "center", marginBottom: 1 }}
+      >
+        <Typography variant="subtitle2">Staged rollout (Google Play)</Typography>
+        <Chip
+          size="small"
+          variant="outlined"
+          color={view.status === "COMPLETE" ? "success" : view.status === "HALTED" ? "warning" : "info"}
+          label={view.status.toLowerCase()}
+        />
+        {view.drift ? (
+          <Chip size="small" color="error" label="drift: the store serves a different percentage" />
+        ) : null}
+        <Typography variant="caption" color="text.secondary">
+          {view.track} track, version code {view.versionCode}
+        </Typography>
+      </Stack>
+      <Stack spacing={1} sx={{ maxWidth: 480 }}>
+        <Typography variant="caption" color="text.secondary">
+          Intended {view.intendedPercent}% of users — the store serves {observed}%
+          {view.providerStatus ? ` (${view.providerStatus})` : ""}
+        </Typography>
+        <LinearProgress
+          variant="determinate"
+          value={observed}
+          data-testid="play-rollout-progress"
+        />
+        <Stack direction="row" spacing={1} sx={{ alignItems: "center" }}>
+          <TextField
+            size="small"
+            label="%"
+            value={advanceTo}
+            onChange={(event) => setAdvanceTo(event.target.value.replace(/[^0-9]/g, ""))}
+            sx={{ width: 88 }}
+            slotProps={{ htmlInput: { "data-testid": "play-rollout-advance-input" } }}
+          />
+          <Button
+            size="small"
+            disabled={
+              control.isPending ||
+              view.status !== "ROLLING" ||
+              advanceTo === "" ||
+              Number(advanceTo) <= view.intendedPercent
+            }
+            onClick={() => control.mutate({ action: "ADVANCE", percent: Number(advanceTo) })}
+            data-testid="play-rollout-advance"
+          >
+            Advance
+          </Button>
+          <Button
+            size="small"
+            color="warning"
+            disabled={control.isPending || view.status !== "ROLLING"}
+            onClick={() => control.mutate({ action: "HALT" })}
+            data-testid="play-rollout-halt"
+          >
+            Halt
+          </Button>
+          <Button
+            size="small"
+            disabled={control.isPending || view.status !== "HALTED"}
+            onClick={() => control.mutate({ action: "RESUME" })}
+            data-testid="play-rollout-resume"
+          >
+            Resume
+          </Button>
+          <Button
+            size="small"
+            disabled={control.isPending || view.status === "COMPLETE" || !view.drift}
+            onClick={() => control.mutate({ action: "REAPPLY" })}
+            data-testid="play-rollout-reapply"
+          >
+            Re-apply intent
+          </Button>
+        </Stack>
+        <Stack spacing={0.5} data-testid="play-rollout-steps">
+          {view.steps.map((step, index) => (
+            <Typography variant="caption" color="text.secondary" key={index}>
+              {step.occurredAt.slice(0, 19).replace("T", " ")} — {step.action.toLowerCase()}
+              {step.fromPercent !== null ? ` ${step.fromPercent}% -> ${step.toPercent}%` : ` at ${step.toPercent}%`}
+            </Typography>
+          ))}
         </Stack>
       </Stack>
     </Box>

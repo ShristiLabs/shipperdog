@@ -559,6 +559,90 @@ describe("ReleaseDetailPage", () => {
     expect(screen.getByTestId("phased-release")).toHaveTextContent("100%");
   });
 
+  it("renders the Google Play staged rollout with its actions, timeline, and drift (S13-05)", async () => {
+    const rollout = {
+      releaseId: RELEASE_ID,
+      channel: "play",
+      status: "ROLLING",
+      ringCode: "production",
+      track: "production",
+      versionCode: 2,
+      packageName: "com.example.banking",
+      intendedPercent: 10,
+      observedPercent: 5,
+      providerStatus: "inProgress",
+      drift: true,
+      steps: [
+        {
+          action: "START",
+          fromPercent: null,
+          toPercent: 10,
+          actorId: null,
+          occurredAt: "2026-10-07T12:00:00Z",
+        },
+      ],
+    };
+    renderDetail(DETAIL_ACTIVE, [
+      {
+        method: "GET",
+        url: `/api/v1/distribution/play/releases/${RELEASE_ID}/rollout`,
+        status: 200,
+        // The sequenced answers: the drifted rolling curve first, the
+        // re-applied curve after the operator action, the halted curve
+        // after halt, the resumed curve after resume.
+        sequence: [
+          { status: 200, body: rollout },
+          { status: 200, body: { ...rollout, drift: false, observedPercent: 10 } },
+          { status: 200, body: { ...rollout, drift: false, observedPercent: 10, status: "HALTED" } },
+          { status: 200, body: { ...rollout, drift: false, observedPercent: 10, status: "ROLLING" } },
+        ],
+      },
+      {
+        method: "POST",
+        url: `/api/v1/distribution/play/releases/${RELEASE_ID}/rollout`,
+        status: 200,
+        body: { ...rollout, drift: false, observedPercent: 10 },
+      },
+      {
+        method: "POST",
+        url: `/api/v1/distribution/play/releases/${RELEASE_ID}/rollout`,
+        status: 200,
+        body: { ...rollout, drift: false, observedPercent: 10, status: "HALTED" },
+      },
+      {
+        method: "POST",
+        url: `/api/v1/distribution/play/releases/${RELEASE_ID}/rollout`,
+        status: 200,
+        body: { ...rollout, drift: false, observedPercent: 10, status: "ROLLING" },
+      },
+    ]);
+
+    // The rollout block: the control state, the intended curve beside
+    // the store's observed percentage, the drift flag, and the
+    // timeline of steps.
+    const block = await screen.findByTestId("play-rollout");
+    expect(block).toHaveTextContent("rolling");
+    expect(block).toHaveTextContent("Intended 10%");
+    expect(block).toHaveTextContent("the store serves 5%");
+    expect(block).toHaveTextContent("drift");
+    expect(block).toHaveTextContent("start");
+    expect(screen.getByTestId("play-rollout-progress")).toHaveAttribute("aria-valuenow", "5");
+
+    // The drift's answer: the explicit re-apply of intent.
+    await userEvent.click(screen.getByTestId("play-rollout-reapply"));
+    await waitFor(() =>
+      expect(screen.getByTestId("play-rollout")).toHaveTextContent("the store serves 10%"),
+    );
+    expect(screen.getByTestId("play-rollout")).not.toHaveTextContent("drift:");
+
+    // Halt and resume are release actions on the curve.
+    await userEvent.click(screen.getByTestId("play-rollout-halt"));
+    await waitFor(() => expect(screen.getByTestId("play-rollout")).toHaveTextContent("halted"));
+    expect(screen.getByTestId("play-rollout-resume")).not.toBeDisabled();
+    await userEvent.click(screen.getByTestId("play-rollout-resume"));
+    await waitFor(() => expect(screen.getByTestId("play-rollout")).toHaveTextContent("rolling"));
+  });
+
   it("renders the channel-distribution records with the provider state and refreshes from the store (S13-02)", async () => {
     const record = {
       id: "20000000-0000-4000-8000-00000000000d1",

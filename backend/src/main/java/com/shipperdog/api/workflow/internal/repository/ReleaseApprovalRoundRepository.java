@@ -33,6 +33,23 @@ public interface ReleaseApprovalRoundRepository extends JpaRepository<ReleaseApp
     Optional<ReleaseApprovalRoundEntity> findFirstByReleaseIdOrderByRoundNumberDesc(UUID releaseId);
 
     /**
+     * The release's advisory serialization lock (S13-05, #65 — the
+     * #62/#63/#64 flake root cause's product fix): the promotion
+     * consult reads the ring-marked round and then the next number —
+     * two statements a concurrent consult can straddle (the loser
+     * reads no ring round, the winner commits one, the loser then
+     * numbers past it and opens a REDUNDANT DISTINCT round the unique
+     * index cannot see). The transaction-scoped advisory lock keys on
+     * the release id: the second consult WAITS inside this
+     * transaction's lifetime, then reads the state that won and opens
+     * nothing — the consult's reads serialize exactly like its writes
+     * (the unique-index path) already did. Locks release with the
+     * transaction (commit or rollback alike); nothing persists.
+     */
+    @Query(value = "select pg_advisory_xact_lock(hashtextextended(cast(:releaseId as text), 0))", nativeQuery = true)
+    void serializeRoundOpen(@Param("releaseId") UUID releaseId);
+
+    /**
      * The release's LATEST promotion round FOR ONE RING (V33, S10-05):
      * the round the promotion engine's approval leg resolves — by the
      * ring marker, never the global latest (a promotion round can never

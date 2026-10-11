@@ -171,6 +171,36 @@ class DistributionSchemaIntegrationTest {
     }
 
     @Test
+    void channelRolloutsHoldTheIntentModelAndItsTimeline() {
+        // V47 (S13-05): the staged rollout's intent -- ONE state row per
+        // release x channel (the intended curve beside the provider's
+        // observed standing, under the optimistic version stamp whose
+        // concurrent-edit refusal is the 409 conflict), and the
+        // append-only timeline of steps.
+        assertThat(columnsOf("channel_rollouts"))
+                .containsExactlyInAnyOrder(
+                        "id",
+                        "organization_id",
+                        "release_id",
+                        "channel",
+                        "external_id",
+                        "intended_percent",
+                        "observed_percent",
+                        "status",
+                        "ring_code",
+                        "version",
+                        "created_at",
+                        "updated_at");
+        Integer rolloutGrain = jdbc.queryForObject(
+                "SELECT count(*) FROM pg_constraint WHERE conname = 'uq_channel_rollouts_release_channel'",
+                Integer.class);
+        assertThat(rolloutGrain).isEqualTo(1);
+        assertThat(columnsOf("channel_rollout_steps"))
+                .containsExactlyInAnyOrder(
+                        "id", "rollout_id", "action", "from_percent", "to_percent", "actor_id", "occurred_at");
+    }
+
+    @Test
     void theChainLevelIsUniquePerProviderNullsIncluded() {
         // NULLS NOT DISTINCT: two organization-level rows of one provider
         // are impossible by constraint (the first-defined-wins resolution

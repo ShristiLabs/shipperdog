@@ -13,29 +13,42 @@ import java.util.UUID;
 import org.springframework.stereotype.Component;
 
 /**
- * The Google Play testing-track channel's adapter (issue #64, S13-04,
- * FR-021, PRD 19/25): the first Android connector on the S13-01 SPI —
- * an Android release promoted to ACTIVE on an environment bound to
- * {@code play} uploads its AAB through Play's two-phase edit model
- * (upload the bundle into an edit, write the mapped track's release,
- * commit), the track chosen by the ring-to-track mapping (the
- * environment's {@code play-track} configuration key overrides the
- * ring-code default), the release notes THE FROZEN MANIFEST BLOCK
- * carries, and the record lands DISTRIBUTING with the track release
- * as its external id — Google owns the next step, and the track's
- * journey surfaces through the refresh legs.
+ * The Google Play channel's adapter (issues #64-#65, S13-04/S13-05,
+ * FR-021, PRD 19/25): the Android connector on the S13-01 SPI — an
+ * Android release dispatched on an environment bound to {@code play}
+ * uploads its AAB through Play's two-phase edit model (upload the
+ * bundle into an edit, write the mapped track's release, commit),
+ * the track chosen by the ring-to-track mapping (the environment's
+ * {@code play-track} configuration key overrides the ring-code
+ * default), the release notes THE FROZEN MANIFEST BLOCK carries, and
+ * the record lands DISTRIBUTING with the track release as its
+ * external id — Google owns the next step, and the track's journey
+ * surfaces through the refresh legs.
  *
- * <p><strong>The boundary this story holds (S13-05 owns the rest):</strong>
- * the testing tracks only — internal and closed. A mapping that
- * resolves to the production track is refused loudly
- * ({@code PLAY_PRODUCTION_UNSUPPORTED}): production promotion and its
- * staged-rollout percentages are the NEXT story's surface, and an
- * accidental production release through a default mapping would be
- * the one mistake this channel cannot make quietly. The channel
- * therefore declares no SUBMISSION capability — the #61/#62
- * never-fail-the-crossing doctrine holds (store failures write
- * FAILED records; the release's platform-side availability stands
- * alone).
+ * <p><strong>Since S13-05 (#65) the walk carries to production.</strong>
+ * The adapter follows the release's ring walk onto its PROMOTED
+ * crossing ({@link #followsPromotionCrossings()}): the hop that lands
+ * every target on the final ring dispatches again, the production
+ * ring now maps to the PRODUCTION track, and a production release
+ * configured for a staged rollout (the environment's {@code
+ * play-rollout-percent} key, 1..99) is written {@code inProgress}
+ * with Play's {@code userFraction} — the fraction of users the
+ * staged rollout serves, advanced and halted through the rollout
+ * control surface (PlayRolloutService), never silently. A production
+ * dispatch is SUBMISSION-GRADE ({@link #submitsAtRing(String)}): its
+ * permanent refusal vetoes the crossing it rode on — the production
+ * track release is the store's call, exactly the App Store
+ * submission's doctrine; the testing tracks keep the
+ * never-fail-the-crossing doctrine (the release's platform-side
+ * availability stands alone while Google serves the testers).
+ *
+ * <p><strong>The mapping's one guard:</strong> the explicit {@code
+ * play-track} override names TESTING tracks only (a custom closed
+ * track's escape hatch); the production track is the production
+ * ring's OWN mapping — an override that names it answers the loud
+ * {@code PLAY_PRODUCTION_OVERRIDDEN} refusal, because a channel
+ * configuration key must never be the accidental road to a
+ * production release.
  *
  * <p><strong>The format rule at the adapter boundary (AC3, FR-006):</strong>
  * the Play channel serves AAB artifacts only. An APK slot fails its
@@ -58,8 +71,8 @@ public class PlayChannelAdapter implements DistributionChannelAdapter {
     /** The record's failure code when the ring-to-track mapping resolved no testing track. */
     static final String FAILURE_TRACK_UNMAPPED = "PLAY_TRACK_UNMAPPED";
 
-    /** The record's failure code when the mapping resolved the production track (S13-05's surface, never this story's). */
-    static final String FAILURE_PRODUCTION_UNSUPPORTED = "PLAY_PRODUCTION_UNSUPPORTED";
+    /** The record's failure code when the {@code play-track} override names the production track (the production ring's own mapping). */
+    static final String FAILURE_PRODUCTION_OVERRIDDEN = "PLAY_PRODUCTION_OVERRIDDEN";
 
     /** The record's failure code when the release targets groups but none are linked to the release's track. */
     static final String FAILURE_GROUPS_UNMAPPED = "PLAY_GROUPS_UNMAPPED";
@@ -70,17 +83,23 @@ public class PlayChannelAdapter implements DistributionChannelAdapter {
     /** The environment channel-config key that names the track explicitly (any testing track, custom closed names included). */
     static final String CONFIG_TRACK = "play-track";
 
+    /** The environment channel-config key carrying the production rollout's initial percentage (1..100; absent or 100 = the full list). */
+    static final String CONFIG_ROLLOUT_PERCENT = "play-rollout-percent";
+
     /** Play's internal track id (no review — the fast feedback loop of the Engineering/QA rings). */
     static final String TRACK_INTERNAL = "internal";
 
     /** Play's canonical closed track id (the default closed mapping of the pilot/UAT rings). */
     static final String TRACK_CLOSED_ALPHA = "alpha";
 
-    /** Play's production track id — S13-05's surface; this adapter refuses it. */
+    /** Play's production track id — the production ring's own mapping since S13-05. */
     static final String TRACK_PRODUCTION = "production";
 
-    /** The release status the adapter writes: released to the full tester list; Google's review words surface through the refresh. */
+    /** The release status the adapter writes for a full-list release; Google's review words surface through the refresh. */
     static final String RELEASE_STATUS_COMPLETED = "completed";
+
+    /** The release status of a staged rollout in progress (S13-05: with {@code userFraction}, the curve's current point). */
+    static final String RELEASE_STATUS_INPROGRESS = "inProgress";
 
     private final GooglePlayDeveloperApiClient play;
 
@@ -95,27 +114,54 @@ public class PlayChannelAdapter implements DistributionChannelAdapter {
 
     @Override
     public String displayName() {
-        return "Google Play (testing tracks)";
+        return "Google Play";
     }
 
     @Override
     public String description() {
-        return "Uploads the release's AAB to the Google Play track its ring maps to (internal and closed testing)"
-                + " through the official Play Developer API (service-account RS256 OAuth2), carries the frozen"
-                + " release notes, and syncs the track's tester email lists. Production promotion and staged"
-                + " rollout arrive with the next story; the internal track skips review for the fastest"
-                + " Engineering/QA loop.";
+        return "Uploads the release's AAB to the Google Play track its ring maps to through the official Play"
+                + " Developer API (service-account RS256 OAuth2), carries the frozen release notes, and syncs"
+                + " the track's tester email lists. The ring walk carries onto the production track at the"
+                + " PROMOTED crossing, where a configured staged rollout starts at its initial percentage and"
+                + " advances, halts, and resumes through the rollout control surface.";
     }
 
     @Override
     public Set<AdapterCapability> capabilities() {
         return Set.of(
-                AdapterCapability.BUILD_UPLOAD, AdapterCapability.BUILD_STATUS, AdapterCapability.TESTER_GROUP_SYNC);
+                AdapterCapability.BUILD_UPLOAD,
+                AdapterCapability.BUILD_STATUS,
+                AdapterCapability.TESTER_GROUP_SYNC,
+                AdapterCapability.SUBMISSION,
+                AdapterCapability.ROLLOUT_CONTROL);
     }
 
     @Override
     public Set<String> credentialProviders() {
         return Set.of("google-play");
+    }
+
+    /**
+     * The ring-graded channel (S13-05, #65): the ring-to-track map
+     * re-targets the same release to a wider track as the walk
+     * advances, so the dispatch follows the walk onto the ACTIVE to
+     * PROMOTED crossing the final ring's landing fires.
+     */
+    @Override
+    public boolean followsPromotionCrossings() {
+        return true;
+    }
+
+    /**
+     * Submission-grade at the production ring only (S13-05, #65): a
+     * permanent refusal of the PRODUCTION track release vetoes the
+     * crossing it rode on (the store's acceptance is the production
+     * deliverable); the testing tracks keep the
+     * never-fail-the-crossing doctrine.
+     */
+    @Override
+    public boolean submitsAtRing(String ringCode) {
+        return "production".equals(ringCode);
     }
 
     @Override
@@ -131,15 +177,23 @@ public class PlayChannelAdapter implements DistributionChannelAdapter {
                     "the google-play credential is incomplete (the service-account JSON document as material:"
                             + " client_email, private_key, token_uri)");
         }
-        // The ring-to-track mapping and the group-link verdict are
-        // release-level facts: resolve both before any slot dials.
+        // The ring-to-track mapping, the rollout fraction, and the
+        // group-link verdict are release-level facts: resolve all three
+        // before any slot dials.
         String track = trackOf(command);
-        boolean groupsMapped = command.targetGroups() == null
+        StagedRollout staged = stagedRolloutOf(command, track);
+        // The tester-group guard serves the TESTING tracks (a track
+        // with no linked group ships to testers the platform does not
+        // know); the production track's audience is the store's own
+        // users, never the platform's tester groups — the guard does
+        // not apply there (S13-05).
+        boolean groupsMapped = TRACK_PRODUCTION.equals(track)
+                || command.targetGroups() == null
                 || command.targetGroups().isEmpty()
                 || command.targetGroups().stream().anyMatch(group -> track.equals(group.externalGroupId()));
         List<AdapterOutcome> outcomes = new ArrayList<>();
         for (DistributionCommand.ArtifactSlot slot : command.artifacts()) {
-            outcomes.add(distributeSlot(command, credential, track, groupsMapped, slot));
+            outcomes.add(distributeSlot(command, credential, track, staged, groupsMapped, slot));
         }
         return outcomes;
     }
@@ -148,6 +202,7 @@ public class PlayChannelAdapter implements DistributionChannelAdapter {
             DistributionCommand command,
             GooglePlayCredentials credential,
             String track,
+            StagedRollout staged,
             boolean groupsMapped,
             DistributionCommand.ArtifactSlot slot) {
         if (!"ANDROID".equals(slot.platform())) {
@@ -232,9 +287,16 @@ public class PlayChannelAdapter implements DistributionChannelAdapter {
         // The track's release: the uploaded bundle's version code, the
         // FROZEN release notes (the manifest block the dispatch
         // resolved — never live authoring rows), released to the full
-        // tester list (rollout fractions are S13-05's surface).
+        // tester list — or, on a configured staged rollout, to the
+        // fraction of users the curve starts at (S13-05: the release
+        // holds inProgress with userFraction; the rollout control
+        // surface advances it).
         GooglePlayDeveloperApiClient.TrackRelease release = new GooglePlayDeveloperApiClient.TrackRelease(
-                slot.versionName(), List.of(bundle.versionCode()), releaseNotesOf(command), RELEASE_STATUS_COMPLETED);
+                slot.versionName(),
+                List.of(bundle.versionCode()),
+                releaseNotesOf(command),
+                staged.fraction() == null ? RELEASE_STATUS_COMPLETED : RELEASE_STATUS_INPROGRESS,
+                staged.fraction());
         GooglePlayDeveloperApiClient.Track updated = play.putTrack(
                 credential, packageName, edit.id(), new GooglePlayDeveloperApiClient.Track(track, List.of(release)));
         play.commitEdit(credential, packageName, edit.id());
@@ -313,14 +375,18 @@ public class PlayChannelAdapter implements DistributionChannelAdapter {
     }
 
     /**
-     * The ring-to-track mapping (AC2): the environment's {@code
-     * play-track} configuration key names the track explicitly (any
-     * testing track, custom closed names included); without it the
-     * ring code maps through the documented default (Engineering/QA
-     * to the review-free internal track, Tenant Pilot/UAT to the
-     * closed alpha track). The production track is refused — S13-05's
-     * surface — and an unmapped ring with no override is the mapping
-     * gap, answered PERMANENT with the actionable reason.
+     * The ring-to-track mapping (AC2 of #64, carried to production by
+     * S13-05): the environment's {@code play-track} configuration key
+     * names a TESTING track explicitly (any testing track, custom
+     * closed names included); without it the ring code maps through
+     * the documented default (Engineering/QA to the review-free
+     * internal track, Tenant Pilot/UAT to the closed alpha track,
+     * Production to the production track — the ring walk's own last
+     * step). An override that names the production track is refused
+     * (the override is a testing-track escape hatch; the production
+     * track is the production ring's own mapping), and an unmapped
+     * ring with no override is the mapping gap, answered PERMANENT
+     * with the actionable reason.
      */
     private static String trackOf(DistributionCommand command) {
         String configured =
@@ -332,7 +398,7 @@ public class PlayChannelAdapter implements DistributionChannelAdapter {
         return switch (ring) {
             case "engineering", "qa" -> TRACK_INTERNAL;
             case "tenant-pilot", "uat" -> TRACK_CLOSED_ALPHA;
-            case "production" -> throw productionRefused("the production ring maps to the production track");
+            case "production" -> TRACK_PRODUCTION;
             default ->
                 throw new AdapterException(
                         AdapterException.Category.PERMANENT,
@@ -345,7 +411,12 @@ public class PlayChannelAdapter implements DistributionChannelAdapter {
 
     private static String validateTrack(String track) {
         if (TRACK_PRODUCTION.equals(track)) {
-            throw productionRefused("the play-track configuration key names the production track");
+            throw new AdapterException(
+                    AdapterException.Category.PERMANENT,
+                    "play",
+                    "the play-track configuration key names the production track, which is the production ring's own"
+                            + " mapping (bind a testing track through the key; reach production by promoting the"
+                            + " release to the production ring)");
         }
         if (track.isBlank() || track.length() > 64) {
             throw new AdapterException(
@@ -356,13 +427,50 @@ public class PlayChannelAdapter implements DistributionChannelAdapter {
         return track;
     }
 
-    private static AdapterException productionRefused(String reason) {
-        return new AdapterException(
-                AdapterException.Category.PERMANENT,
-                "play",
-                reason + ", which this channel refuses (staged rollout and production promotion arrive with"
-                        + " S13-05); bind the play-track configuration key to a testing track or dispatch through"
-                        + " a testing ring");
+    /**
+     * The staged rollout the production release starts at (S13-05,
+     * AC1): the environment's {@code play-rollout-percent} key carries
+     * the initial percentage (1..100). Absent or 100 answers the full
+     * list (null fraction — exactly the testing tracks' shape); a
+     * configured fault (non-numeric, out of range) is a configuration
+     * fault refused PERMANENT before any dial, never a guessed
+     * default on a production release.
+     */
+    private static StagedRollout stagedRolloutOf(DistributionCommand command, String track) {
+        if (!TRACK_PRODUCTION.equals(track)) {
+            return StagedRollout.FULL_LIST;
+        }
+        String configured =
+                command.channelConfig() == null ? null : command.channelConfig().get(CONFIG_ROLLOUT_PERCENT);
+        if (configured == null || configured.isBlank()) {
+            return StagedRollout.FULL_LIST;
+        }
+        int percent;
+        try {
+            percent = Integer.parseInt(configured.trim());
+        } catch (NumberFormatException e) {
+            percent = -1;
+        }
+        if (percent < 1 || percent > 100) {
+            throw new AdapterException(
+                    AdapterException.Category.PERMANENT,
+                    "play",
+                    "the play-rollout-percent configuration key must carry an integer percentage between 1 and 100"
+                            + " (configured: '"
+                            + configured.trim() + "')");
+        }
+        return percent == 100 ? StagedRollout.FULL_LIST : StagedRollout.of(percent);
+    }
+
+    /** The staged rollout's shape: the fraction of users a production release serves, or the full list. */
+    record StagedRollout(Double fraction, int percent) {
+
+        /** The full-list release (no curve; the testing tracks' and a 100% production's shape). */
+        static final StagedRollout FULL_LIST = new StagedRollout(null, 100);
+
+        static StagedRollout of(int percent) {
+            return new StagedRollout(percent / 100.0d, percent);
+        }
     }
 
     /** The frozen manifest block's release notes as the track release carries them (PRD 16: what was sent). */

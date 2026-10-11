@@ -837,10 +837,23 @@ public class ApprovalWorkflowService implements ReleaseApprovalSource, Promotion
      * concurrent-open insert race this transaction is spent — {@code
      * instantiateRound} answers {@link PromotionRoundInsertRaceException}
      * and the rollback discards only the loser's duplicate.
+     *
+     * <p><strong>The consult serializes (S13-05, #65 — the
+     * #62/#63/#64 flake root cause's product fix):</strong> the
+     * advisory lock is taken BEFORE the two reads the open composes
+     * (the ring-marked round, then the next number), so the straddle
+     * that opened a redundant DISTINCT round cannot occur — the
+     * concurrent consult waits for the winner's commit, then reads
+     * the winner's PENDING round and opens nothing. The unique-index
+     * recovery path below stays exactly as it is: the lock narrows
+     * the window, the guard closes whatever races remain (a hop's
+     * crossing round and a promotion consult of the same release can
+     * still meet — different paths, same honest answers).
      */
     @Transactional
     public PromotionApprovalSource.Standing openPromotionRound(
             UUID releaseId, UUID organizationId, UUID ringId, UUID actorId) {
+        rounds.serializeRoundOpen(releaseId);
         return promotionStandingOf(releaseId, organizationId, ringId, true, actorId);
     }
 
