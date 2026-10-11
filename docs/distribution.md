@@ -2,11 +2,12 @@
 
 The distribution adapter framework (issue #61, S13-01, FR-019, PRD
 P6/19/25): every delivery channel — the platform's own Direct
-download tier; Apple TestFlight since #62 (submission and phased
-release follow in #63); Google Play (#64–#65) and MDMs later — sits
-behind ONE interface, so a new store plugs into distribution without
-a core change, and store credentials live behind secret references
-the platform holds instead of secret material.
+download tier; Apple TestFlight since #62; the Apple App Store's
+production submission and phased release since #63; Google Play
+(#64–#65) and MDMs later — sits behind ONE interface, so a new store
+plugs into distribution without a core change, and store credentials
+live behind secret references the platform holds instead of secret
+material.
 
 - The SPI and its contract: `DistributionChannelAdapter` (below)
 - The credential delegation chain (PRD 25): [Credential
@@ -18,6 +19,8 @@ the platform holds instead of secret material.
   sandbox](#adapter-sandbox)
 - The first store connector — Apple TestFlight (#62): [The TestFlight
   connector](#the-testflight-connector)
+- The production store connector — Apple App Store (#63): [The App
+  Store connector](#the-app-store-connector)
 - How to add a channel: [Adding an adapter](#adding-an-adapter)
 
 ## The SPI
@@ -31,7 +34,7 @@ interface every channel implements as a Spring bean:
 | `displayName()` / `description()` | Catalog facts the console renders. |
 | `capabilities()` | The declared surface: `BUILD_UPLOAD`, `BUILD_STATUS`, `TESTER_GROUP_SYNC`, `SUBMISSION`, `ROLLOUT_CONTROL`, `DIRECT_ISSUANCE` (`AdapterCapability`). Data for operators, never a dispatch branch. |
 | `credentialProviders()` | The provider vocabulary the channel's dispatches resolve the delegation chain for (`apple`, `google-play`). Empty means the channel needs no store account (Direct). |
-| `distribute(command)` | Deliver the command's artifact slots to its targets. Sandbox-walled (see below); reports one `AdapterOutcome` per slot: the record's status, the provider's external id (store reconciliation's key), and on failure the taxonomy code. Since #62 the outcome also carries the provider's own lifecycle word (`providerStatus`, Apple's beta-review states) verbatim for the release dashboard. |
+| `distribute(command)` | Deliver the command's artifact slots to its targets. Sandbox-walled (see below); reports one `AdapterOutcome` per slot: the record's status, the provider's external id (store reconciliation's key), and on failure the taxonomy code. Since #62 the outcome also carries the provider's own lifecycle word (`providerStatus`, Apple's beta-review states) verbatim for the release dashboard. Since #63 a SUBMISSION-capable channel's command also carries the release's frozen store-submission block (`submission`) — the manifest's immutable copy of what was sent (see [The App Store connector](#the-app-store-connector)). |
 | `status(artifactId, channel, externalId, credential)` | The provider-side status of one distributed artifact — the reconciliation half the #62–#65 store polls ride. Since #62 the refresh-resolved credential rides the call (null when the channel declared no providers — Direct has none to poll). |
 
 The `DistributionCommand` is complete and self-contained: the release's
@@ -175,9 +178,17 @@ Every adapter call runs under a per-channel sandbox
 
 - one traced, timed observation per attempt
   (`shipperdog.adapter.call.duration`, tagged `channel`, `attempt`,
-  `outcome` — the timer and the trace span are the same artifact);
+  `operation`, and `outcome` — the timer and the trace span are the
+  same artifact);
 - a wall-clock cut that interrupts the hung call;
-- bounded retries keyed on the failure taxonomy.
+- bounded retries keyed on the failure taxonomy. Since #63 the
+  sandbox is one shared runner (`AdapterCallSandbox`) for every
+  adapter conversation — dispatch, status polls, and the phased
+  release controls — and a `DistributionException` a conversation
+  surfaces passes through verbatim (the platform's own problem
+  answers, never a rewrite into the provider taxonomy); everything
+  else an adapter throws that is not an `AdapterException` is still
+  PERMANENT.
 
 The taxonomy (`AdapterException.Category` → public code → retry):
 
@@ -285,9 +296,12 @@ by the dispatch's first observation and every refresh.
 
 Apple's 429 answers map to the sandbox's RATE_LIMITED category —
 retried with the sandbox's backoff, and counted in the
-`shipperdog.adapter.ratelimit` counter (tagged `channel`) the moment
-the provider throttles, whether the retry lands or the exhaustion
-fails the record with `ADAPTER_RATE_LIMITED`.
+`shipperdog.adapter.ratelimit` counter the moment the provider
+throttles, whether the retry lands or the exhaustion fails the record
+with `ADAPTER_RATE_LIMITED`. Since #63 the counter is tagged
+`provider` (`apple`): Apple throttles the API key, not the calling
+channel, and one key usually serves both Apple channels — the
+per-channel sandbox timer answers the which-channel question.
 
 ### The portal's install handoff
 
@@ -301,6 +315,126 @@ platform download event: Apple's tier delivers the bytes while the
 engine's DOWNLOAD decision still governs who may ask (PRD 19's
 constraint — ShipperDog owns authorization and evidence, the channel
 owns installation mechanics).
+
+## The App Store connector
+
+The production store connector on the SPI (issue #63, S13-03, FR-020,
+PRD 16/17/19/25): the `appstore` channel — an iOS release promoted to
+ACTIVE on an environment bound to `appstore` creates or updates the
+ASC App Store version of the binary's marketing version string, writes
+the frozen per-locale listing metadata, starts the phased-release
+curve when the release configured one, and submits the version for
+App Review. Capabilities: `SUBMISSION`, `ROLLOUT_CONTROL`,
+`BUILD_STATUS`; credential provider `apple` — the production key is a
+distinct binding on the delegation chain (an app+environment-level
+row), exactly the S13-01 env override.
+
+### The listing metadata and the frozen manifest (AC1)
+
+Operators author the per-locale listing facts BEFORE approval through
+the authoring surface (`channel_submission_metadata`, V45; one row per
+application + channel + locale — a second write to a locale replaces
+the row whole):
+
+| Route | Purpose |
+|---|---|
+| `GET /api/v1/distribution/appstore/metadata?organizationId=` | The organization's authored locales. |
+| `PUT /api/v1/distribution/appstore/metadata` | Author or rotate `{organizationId, applicationId, locale, description, keywords?, screenshotRefs?, releaseNotes?}`. |
+| `DELETE /api/v1/distribution/appstore/metadata/{metadataId}?organizationId=` | Remove an authored locale. |
+
+The field set is the story's minimal one: description, keywords
+(Apple caps at 100 characters), release notes (what's-new), and
+screenshot REFERENCES — ASC-side assets upload through ASC's own
+surfaces; ShipperDog pins their references.
+
+**The manifest is the submission's source of truth (PRD 16).** At the
+APPROVED crossing the release manifest freezes a `storeSubmission`
+block: the authored locales deep-copied as values plus the
+phased-release decision the environment's configuration had in force
+(the `phased-release` config key, default `false`). At the ACTIVE
+crossing the dispatch reads THE FROZEN BLOCK back and the adapter
+sends exactly it — never the live rows, so the manifest and the wire
+cannot drift and the manifest remains the immutable copy of WHAT WAS
+SENT while ASC shows the version's current state. Consequences worth
+knowing:
+
+- an edit after APPROVED does not change a frozen release's
+  submission (the block belongs to its APPROVED moment);
+- a release promoted with no authored locale fails its submission
+  with the actionable reason (below);
+- an environment re-bound to a different channel between APPROVED and
+  ACTIVE dispatches on the CURRENT binding with the frozen block of
+  the old one — the submission fails loudly for the mismatch, and the
+  veto's reason names the missing metadata.
+
+### Submission and the veto doctrine (AC4)
+
+The dispatch runs under the same sandbox as every adapter
+conversation. The doctrine of #61/#62 — store failures never fail the
+crossing — holds for every channel whose platform-side availability
+stands alone (Direct, TestFlight). The production submission channel
+is different, and S13-03 splits the rule: **a PERMANENT submission
+refusal vetoes the crossing.** Apple refused the request (metadata
+rejected — its own entity-error words ride the failure detail), so
+the release's deliverable failed; the dispatch listener registers a
+post-rollback recorder, throws to roll the ACTIVE crossing back, and
+the recorder — in a fresh transaction — writes the FAILED records
+with the taxonomy code AND `failure_detail` (the provider's own
+words, V45), the dispatch audit, and carries the release across PRD
+17's DEPLOYING to FAILED edge with the actionable reason on the
+timeline row. The operator's transition request answers the same
+provider problem (502 `ADAPTER_FAILED` with Apple's words in the
+detail). AUTHENTICATION failures and retryable exhaustion (TRANSIENT,
+RATE_LIMITED, TIMEOUT) keep the record-level doctrine: FAILED records
+with the taxonomy code, the crossing commits, reconciliation owns the
+rest.
+
+### Review-state sync (AC2)
+
+The submitted version's review journey surfaces through two legs,
+both ending in the same refresh the dashboard's explicit button runs:
+
+- **The webhook leg** — the S12-04 receiver maps a verified App Store
+  notification to its `store_status_events` row and publishes a
+  `StoreStatusEventMapped` event; the distribution module's consumer
+  runs after the receipt's commit (off the request thread — Apple's
+  receipt never waits on store latency), resolves the bundle id to
+  the platform's applications, refreshes every walking appstore
+  record of those applications, and audits `STORE_EVENT_APPLIED`. The
+  event is a SYNC TRIGGER, never a state interpretation: the record's
+  review word is Apple's own `appStoreVersionState` (the adapter's
+  status observation), so a provider vocabulary change cannot
+  mis-map a release.
+- **The polling leg** — the reconciliation pass (opt-in, unchanged)
+  refreshes every PENDING/DISTRIBUTING store record with an external
+  id.
+
+`READY_FOR_SALE` moves the record DISTRIBUTED; the review words hold
+DISTRIBUTING; `REJECTED` fails it with `APPSTORE_VERSION_REJECTED`
+and Apple's rejection reasons in `failure_detail`.
+
+### Phased release (AC3)
+
+Apple's phased release is a fixed 7-day availability curve (1, 2, 5,
+10, 20, 50, 100 percent). A release on an environment configured
+`phased-release: "true"` enables the curve at submission (release
+type `AFTER_APPROVAL`; `false` submits MANUAL with no curve
+resource). The curve surfaces are release actions:
+
+| Route | Purpose |
+|---|---|
+| `GET /api/v1/distribution/appstore/releases/{releaseId}/phased-release?organizationId=` | The curve's state, current day, and availability percentage. |
+| `POST /api/v1/distribution/appstore/releases/{releaseId}/phased-release?organizationId=` | `{action: PAUSE \| RESUME \| HALT}`. |
+
+A release whose version carries no curve answers the honest
+`DISTRIBUTION_PHASED_RELEASE_NOT_FOUND` — never an invented curve.
+**The rollback posture (the story's documented response):** Apple
+offers no binary rollback on the App Store; HALT is Apple's "release
+to all users," completing the curve immediately. The platform's
+answer to a bad binary is a new version (and the Direct tier's own
+ROLLED_BACK edge — S13-06's orchestration). Every action is audited
+(`DISTRIBUTION_PHASED_RELEASE_CONTROLLED`) and runs under the same
+sandbox as the store conversations.
 
 ## Adding an adapter
 

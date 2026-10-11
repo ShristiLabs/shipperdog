@@ -54,6 +54,9 @@ public final class AppleAppStoreConnectMock {
     private final Map<String, Build> builds = new ConcurrentHashMap<>();
 
     private final Map<String, BetaGroupState> groups = new ConcurrentHashMap<>();
+    /** versionId -> state: the App Store production versions the submission connector drives (S13-03). */
+    private final Map<String, AppVersionState> versions = new ConcurrentHashMap<>();
+
     private final AtomicInteger idCounter = new AtomicInteger(1000);
 
     // The scenario knobs and the request log.
@@ -62,6 +65,7 @@ public final class AppleAppStoreConnectMock {
     private final java.util.concurrent.atomic.AtomicInteger throttleBudget =
             new java.util.concurrent.atomic.AtomicInteger(0);
     private volatile boolean failNextCallServerSide = false;
+    private volatile boolean rejectNextSubmissionMetadata = false;
     private final List<RecordedCall> calls = new CopyOnWriteArrayList<>();
 
     public AppleAppStoreConnectMock() {
@@ -92,9 +96,11 @@ public final class AppleAppStoreConnectMock {
         builds.clear();
         appIdsByBundle.clear();
         appBundleByAppId.clear();
+        versions.clear();
         rejectNextToken = false;
         throttleNextCall = false;
         failNextCallServerSide = false;
+        rejectNextSubmissionMetadata = false;
     }
 
     /** The base URL the Apple connector's property points at. */
@@ -178,6 +184,38 @@ public final class AppleAppStoreConnectMock {
         failNextCallServerSide = true;
     }
 
+    /**
+     * The metadata-rejection knob (S13-03, AC4): the next submission
+     * POST answers Apple's entity-error 409 with an actionable detail
+     * — the refused-submission family that vetoes the crossing.
+     */
+    public void rejectNextSubmissionMetadata() {
+        rejectNextSubmissionMetadata = true;
+    }
+
+    /** Moves a version's App Store state (the review-journey scenarios), with optional rejection reasons. */
+    public void setVersionState(String versionId, String state, String... rejectionReasons) {
+        AppVersionState version = versions.get(versionId);
+        if (version != null) {
+            versions.put(versionId, version.withState(state, List.of(rejectionReasons)));
+        }
+    }
+
+    /** Advances a version's phased-release curve one day (the progress scenarios); completes at the total. */
+    public void advancePhasedDay(String versionId) {
+        AppVersionState version = versions.get(versionId);
+        if (version != null && version.phased() != null) {
+            versions.put(
+                    versionId, version.withPhasedDay(Math.min(version.phased().currentDay() + 1, 7)));
+        }
+    }
+
+    /** The version's phased-release facts as the curve view expects them (null when none). */
+    public PhasedRelease phasedReleaseOf(String versionId) {
+        AppVersionState version = versions.get(versionId);
+        return version == null ? null : version.phased();
+    }
+
     /** Every recorded call: method, path, and the assignment bodies a test asserts on. */
     public List<RecordedCall> calls() {
         return List.copyOf(calls);
@@ -243,6 +281,31 @@ public final class AppleAppStoreConnectMock {
                 handleGroupTesters(exchange, path);
             } else if ("POST".equals(method) && path.matches("/v1/betaGroups/[^/]+/relationships/betaTesters")) {
                 handleAddTesters(exchange, path, body);
+            } else if ("GET".equals(method) && path.matches("/v1/apps/[^/]+/appStoreVersions")) {
+                handleListVersions(exchange, path);
+            } else if ("POST".equals(method) && path.equals("/v1/appStoreVersions")) {
+                handleCreateVersion(exchange, body);
+            } else if ("GET".equals(method) && path.matches("/v1/appStoreVersions/[^/]+")) {
+                handleGetVersion(exchange, path);
+            } else if ("PATCH".equals(method) && path.matches("/v1/appStoreVersions/[^/]+")) {
+                handlePatchVersion(exchange, path, body);
+            } else if ("GET".equals(method)
+                    && path.matches("/v1/appStoreVersions/[^/]+/appStoreVersionLocalizations")) {
+                handleListLocalizations(exchange, path);
+            } else if ("POST".equals(method)
+                    && path.matches("/v1/appStoreVersions/[^/]+/appStoreVersionLocalizations")) {
+                handleCreateLocalization(exchange, path, body);
+            } else if ("PATCH".equals(method) && path.matches("/v1/appStoreVersionLocalizations/[^/]+")) {
+                handlePatchLocalization(exchange, path, body);
+            } else if ("POST".equals(method) && path.equals("/v1/appStoreVersionSubmissions")) {
+                handleSubmitVersion(exchange, body);
+            } else if ("GET".equals(method)
+                    && path.matches("/v1/appStoreVersions/[^/]+/appStoreVersionPhasedRelease")) {
+                handleGetPhasedRelease(exchange, path);
+            } else if ("POST".equals(method) && path.equals("/v1/appStoreVersionPhasedReleases")) {
+                handleEnablePhasedRelease(exchange, body);
+            } else if ("PATCH".equals(method) && path.matches("/v1/appStoreVersionPhasedReleases/[^/]+")) {
+                handlePatchPhasedRelease(exchange, path, body);
             } else {
                 answer(exchange, 404, errors("NOT_FOUND", path));
             }
@@ -379,6 +442,330 @@ public final class AppleAppStoreConnectMock {
             }
         }
         exchange.sendResponseHeaders(204, -1);
+    }
+
+    // -------------------------------------------------------------------
+    // The App Store production version surfaces (S13-03)
+    // -------------------------------------------------------------------
+
+    private void handleListVersions(HttpExchange exchange, String path) throws IOException {
+        String appId = path.substring("/v1/apps/".length(), path.length() - "/appStoreVersions".length());
+        String versionString = queryOf(exchange, "filter[versionString]");
+        String platform = queryOf(exchange, "filter[platform]");
+        List<Map<String, Object>> data = new ArrayList<>();
+        for (AppVersionState version : versions.values()) {
+            if (version.appId().equals(appId)
+                    && (versionString == null || version.versionString().equals(versionString))
+                    && (platform == null || "IOS".equals(platform))) {
+                data.add(versionResource(versionIdOf(version), version));
+            }
+        }
+        answer(exchange, 200, page(data));
+    }
+
+    private void handleCreateVersion(HttpExchange exchange, String body) throws IOException {
+        JsonNode request = MAPPER.readTree(body);
+        String versionString =
+                request.path("data").path("attributes").path("versionString").asString(null);
+        String platform =
+                request.path("data").path("attributes").path("platform").asString("IOS");
+        String appId = request.path("data")
+                .path("relationships")
+                .path("app")
+                .path("data")
+                .path("id")
+                .asString();
+        if (versionString == null || versionString.isBlank()) {
+            answer(exchange, 409, entityError("You must provide a value for the key versionString"));
+            return;
+        }
+        if (!"IOS".equals(platform)) {
+            answer(exchange, 409, entityError("the platform must be IOS"));
+            return;
+        }
+        for (AppVersionState existing : versions.values()) {
+            if (existing.appId().equals(appId) && existing.versionString().equals(versionString)) {
+                answer(
+                        exchange,
+                        409,
+                        entityError("There is another version with the same version string " + versionString));
+                return;
+            }
+        }
+        String versionId = "version-" + idCounter.incrementAndGet();
+        versions.put(versionId, new AppVersionState(appId, versionString, "PREPARE_FOR_SUBMISSION", null));
+        answer(exchange, 201, Map.of("data", versionResource(versionId, versions.get(versionId))));
+    }
+
+    private void handleGetVersion(HttpExchange exchange, String path) throws IOException {
+        String versionId = lastSegmentOf(path);
+        AppVersionState version = versions.get(versionId);
+        if (version == null) {
+            answer(exchange, 404, errors("NOT_FOUND", versionId));
+            return;
+        }
+        answer(exchange, 200, Map.of("data", versionResource(versionId, version)));
+    }
+
+    private void handlePatchVersion(HttpExchange exchange, String path, String body) throws IOException {
+        String versionId = lastSegmentOf(path);
+        AppVersionState version = versions.get(versionId);
+        if (version == null) {
+            answer(exchange, 404, errors("NOT_FOUND", versionId));
+            return;
+        }
+        JsonNode attributes = MAPPER.readTree(body).path("data").path("attributes");
+        if (attributes.has("releaseType")) {
+            versions.put(
+                    versionId,
+                    version.withReleaseType(attributes.path("releaseType").asString()));
+        }
+        exchange.sendResponseHeaders(204, -1);
+    }
+
+    private void handleListLocalizations(HttpExchange exchange, String path) throws IOException {
+        String versionId = versionIdOfLocalizationPath(path);
+        AppVersionState version = versions.get(versionId);
+        List<Map<String, Object>> data = new ArrayList<>();
+        if (version != null) {
+            for (Map.Entry<String, Localization> locale :
+                    version.localizations().entrySet()) {
+                data.add(localizationResource(versionId + "-" + locale.getKey(), locale.getKey(), locale.getValue()));
+            }
+        }
+        answer(exchange, 200, page(data));
+    }
+
+    private void handleCreateLocalization(HttpExchange exchange, String path, String body) throws IOException {
+        String versionId = versionIdOfLocalizationPath(path);
+        AppVersionState version = versions.get(versionId);
+        if (version == null) {
+            answer(exchange, 404, errors("NOT_FOUND", versionId));
+            return;
+        }
+        JsonNode attributes = MAPPER.readTree(body).path("data").path("attributes");
+        String locale = attributes.path("locale").asString(null);
+        String description = attributes.path("description").asString(null);
+        String keywords = attributes.path("keywords").asString(null);
+        String whatsNew = attributes.path("whatsNew").asString(null);
+        // Apple's own metadata contract: the description is required,
+        // the keywords capped — the refused-submission family (AC4).
+        if (description == null || description.isBlank()) {
+            answer(exchange, 409, entityError("You must provide a value for the key description"));
+            return;
+        }
+        if (keywords != null && keywords.length() > 100) {
+            answer(exchange, 409, entityError("The keywords must not exceed 100 characters"));
+            return;
+        }
+        if (version.localizations().containsKey(locale)) {
+            answer(exchange, 409, entityError("There is already a localization for the locale " + locale));
+            return;
+        }
+        version.localizations().put(locale, new Localization(description, keywords, whatsNew));
+        answer(
+                exchange,
+                201,
+                Map.of(
+                        "data",
+                        localizationResource(
+                                versionId + "-" + locale,
+                                locale,
+                                version.localizations().get(locale))));
+    }
+
+    private void handlePatchLocalization(HttpExchange exchange, String path, String body) throws IOException {
+        String localizationId = lastSegmentOf(path);
+        // localizationId is <versionId>-<locale>: split at the FIRST
+        // hyphen boundary that names a known version.
+        for (Map.Entry<String, AppVersionState> entry : versions.entrySet()) {
+            if (localizationId.startsWith(entry.getKey() + "-")) {
+                String locale = localizationId.substring(entry.getKey().length() + 1);
+                AppVersionState version = entry.getValue();
+                Localization standing = version.localizations().get(locale);
+                if (standing == null) {
+                    break;
+                }
+                JsonNode attributes = MAPPER.readTree(body).path("data").path("attributes");
+                String description = attributes.has("description")
+                        ? attributes.path("description").asString()
+                        : standing.description();
+                String keywords =
+                        attributes.has("keywords") ? attributes.path("keywords").asString() : standing.keywords();
+                String whatsNew =
+                        attributes.has("whatsNew") ? attributes.path("whatsNew").asString() : standing.whatsNew();
+                if (description == null || description.isBlank()) {
+                    answer(exchange, 409, entityError("You must provide a value for the key description"));
+                    return;
+                }
+                if (keywords != null && keywords.length() > 100) {
+                    answer(exchange, 409, entityError("The keywords must not exceed 100 characters"));
+                    return;
+                }
+                version.localizations().put(locale, new Localization(description, keywords, whatsNew));
+                exchange.sendResponseHeaders(204, -1);
+                return;
+            }
+        }
+        answer(exchange, 404, errors("NOT_FOUND", localizationId));
+    }
+
+    private void handleSubmitVersion(HttpExchange exchange, String body) throws IOException {
+        String versionId = MAPPER.readTree(body)
+                .path("data")
+                .path("relationships")
+                .path("appStoreVersion")
+                .path("data")
+                .path("id")
+                .asString();
+        AppVersionState version = versions.get(versionId);
+        if (version == null) {
+            answer(exchange, 404, errors("NOT_FOUND", versionId));
+            return;
+        }
+        // The metadata-rejection knob: Apple's entity error with an
+        // actionable detail — the refused submission that vetoes the
+        // crossing (AC4).
+        if (rejectNextSubmissionMetadata) {
+            rejectNextSubmissionMetadata = false;
+            answer(
+                    exchange,
+                    409,
+                    entityError("You must provide a value for the key CFBundleShortVersionString - The value must"
+                            + " match the version of the uploaded build"));
+            return;
+        }
+        boolean described = version.localizations().values().stream()
+                .anyMatch(localization -> localization.description() != null
+                        && !localization.description().isBlank());
+        if (!described) {
+            answer(exchange, 409, entityError("You must provide a value for the key description"));
+            return;
+        }
+        versions.put(versionId, version.withState("WAITING_FOR_REVIEW", List.of()));
+        exchange.sendResponseHeaders(204, -1);
+    }
+
+    private void handleGetPhasedRelease(HttpExchange exchange, String path) throws IOException {
+        String versionId = path.substring(
+                "/v1/appStoreVersions/".length(), path.length() - "/appStoreVersionPhasedRelease".length());
+        AppVersionState version = versions.get(versionId);
+        if (version == null) {
+            answer(exchange, 404, errors("NOT_FOUND", versionId));
+            return;
+        }
+        if (version.phased() == null) {
+            answer(exchange, 404, errors("NOT_FOUND", "phasedRelease"));
+            return;
+        }
+        answer(exchange, 200, Map.of("data", phasedResource(version.phased())));
+    }
+
+    private void handleEnablePhasedRelease(HttpExchange exchange, String body) throws IOException {
+        String versionId = MAPPER.readTree(body)
+                .path("data")
+                .path("relationships")
+                .path("appStoreVersion")
+                .path("data")
+                .path("id")
+                .asString();
+        AppVersionState version = versions.get(versionId);
+        if (version == null) {
+            answer(exchange, 404, errors("NOT_FOUND", versionId));
+            return;
+        }
+        if (version.phased() != null) {
+            answer(exchange, 409, entityError("The phased release already exists"));
+            return;
+        }
+        versions.put(versionId, version.withPhased(new PhasedRelease("phased-" + versionId, "INACTIVE", 0, 7)));
+        answer(
+                exchange,
+                201,
+                Map.of("data", phasedResource(versions.get(versionId).phased())));
+    }
+
+    private void handlePatchPhasedRelease(HttpExchange exchange, String path, String body) throws IOException {
+        String phasedId = lastSegmentOf(path);
+        String state = MAPPER.readTree(body)
+                .path("data")
+                .path("attributes")
+                .path("phasedReleaseState")
+                .asString(null);
+        for (Map.Entry<String, AppVersionState> entry : versions.entrySet()) {
+            PhasedRelease phased = entry.getValue().phased();
+            if (phased != null && phased.id().equals(phasedId)) {
+                if (!"PAUSED".equals(state) && !"ACTIVE".equals(state) && !"COMPLETE".equals(state)) {
+                    answer(exchange, 409, entityError("The phased release state must be ACTIVE, PAUSED, or COMPLETE"));
+                    return;
+                }
+                int day = "COMPLETE".equals(state) ? phased.totalDays() : phased.currentDay();
+                versions.put(
+                        entry.getKey(),
+                        entry.getValue().withPhased(new PhasedRelease(phasedId, state, day, phased.totalDays())));
+                exchange.sendResponseHeaders(204, -1);
+                return;
+            }
+        }
+        answer(exchange, 404, errors("NOT_FOUND", phasedId));
+    }
+
+    private Map<String, Object> versionResource(String versionId, AppVersionState version) {
+        Map<String, Object> attributes = new LinkedHashMap<>();
+        attributes.put("versionString", version.versionString());
+        attributes.put("platform", "IOS");
+        attributes.put("appStoreVersionState", version.state());
+        if (version.releaseType() != null) {
+            attributes.put("releaseType", version.releaseType());
+        }
+        if (!version.rejectionReasons().isEmpty()) {
+            attributes.put("rejectionReasons", version.rejectionReasons());
+        }
+        return resource("appStoreVersions", versionId, attributes);
+    }
+
+    private static Map<String, Object> localizationResource(String id, String locale, Localization localization) {
+        Map<String, Object> attributes = new LinkedHashMap<>();
+        attributes.put("locale", locale);
+        attributes.put("description", localization.description());
+        if (localization.keywords() != null) {
+            attributes.put("keywords", localization.keywords());
+        }
+        if (localization.whatsNew() != null) {
+            attributes.put("whatsNew", localization.whatsNew());
+        }
+        return resource("appStoreVersionLocalizations", id, attributes);
+    }
+
+    private static Map<String, Object> phasedResource(PhasedRelease phased) {
+        Map<String, Object> attributes = new LinkedHashMap<>();
+        attributes.put("phasedReleaseState", phased.state());
+        attributes.put("currentDayNumber", phased.currentDay());
+        attributes.put("totalDayCount", phased.totalDays());
+        return resource("appStoreVersionPhasedReleases", phased.id(), attributes);
+    }
+
+    private static Map<String, Object> entityError(String detail) {
+        return Map.of(
+                "errors", List.of(Map.of("code", "ENTITY_ERROR", "title", "An error occurred", "detail", detail)));
+    }
+
+    private String versionIdOf(AppVersionState version) {
+        for (Map.Entry<String, AppVersionState> entry : versions.entrySet()) {
+            if (entry.getValue() == version) {
+                return entry.getKey();
+            }
+        }
+        return "unknown";
+    }
+
+    private static String versionIdOfLocalizationPath(String path) {
+        return path.substring(
+                "/v1/appStoreVersions/".length(), path.length() - "/appStoreVersionLocalizations".length());
+    }
+
+    private static String lastSegmentOf(String path) {
+        return path.substring(path.lastIndexOf('/') + 1);
     }
 
     // -------------------------------------------------------------------
@@ -537,4 +924,102 @@ public final class AppleAppStoreConnectMock {
             this.name = name;
         }
     }
+
+    /** One App Store production version's mock state (S13-03): the review journey, localizations, and curve. */
+    static final class AppVersionState {
+        final String appId;
+        final String versionString;
+        final String state;
+        final String releaseType;
+        final Map<String, Localization> localizations = new ConcurrentHashMap<>();
+        final List<String> rejectionReasons;
+        final PhasedRelease phased;
+
+        AppVersionState(String appId, String versionString, String state, String releaseType) {
+            this(appId, versionString, state, releaseType, List.of(), null);
+        }
+
+        AppVersionState(
+                String appId,
+                String versionString,
+                String state,
+                String releaseType,
+                List<String> rejectionReasons,
+                PhasedRelease phased) {
+            this.appId = appId;
+            this.versionString = versionString;
+            this.state = state;
+            this.releaseType = releaseType;
+            this.rejectionReasons = rejectionReasons;
+            this.phased = phased;
+        }
+
+        AppVersionState carrying(AppVersionState prior) {
+            // The with* copies replace the state row WHOLE; the
+            // localizations a test's version already carries ride the
+            // SAME map reference (the wire handlers mutate it in
+            // place), never a fresh empty one.
+            localizations.putAll(prior.localizations);
+            return this;
+        }
+
+        AppVersionState withState(String newState, List<String> reasons) {
+            return new AppVersionState(appId, versionString, newState, releaseType, reasons, phased).carrying(this);
+        }
+
+        AppVersionState withReleaseType(String newReleaseType) {
+            return new AppVersionState(appId, versionString, state, newReleaseType, rejectionReasons, phased)
+                    .carrying(this);
+        }
+
+        AppVersionState withPhased(PhasedRelease newPhased) {
+            return new AppVersionState(appId, versionString, state, releaseType, rejectionReasons, newPhased)
+                    .carrying(this);
+        }
+
+        AppVersionState withPhasedDay(int day) {
+            return new AppVersionState(
+                            appId,
+                            versionString,
+                            state,
+                            releaseType,
+                            rejectionReasons,
+                            new PhasedRelease(phased.id(), "ACTIVE", day, phased.totalDays()))
+                    .carrying(this);
+        }
+
+        String appId() {
+            return appId;
+        }
+
+        String versionString() {
+            return versionString;
+        }
+
+        String state() {
+            return state;
+        }
+
+        String releaseType() {
+            return releaseType;
+        }
+
+        Map<String, Localization> localizations() {
+            return localizations;
+        }
+
+        List<String> rejectionReasons() {
+            return rejectionReasons;
+        }
+
+        PhasedRelease phased() {
+            return phased;
+        }
+    }
+
+    /** One version localization's mock state. */
+    private record Localization(String description, String keywords, String whatsNew) {}
+
+    /** The version's phased-release mock state: Apple's fixed 7-day curve. */
+    public record PhasedRelease(String id, String state, int currentDay, int totalDays) {}
 }

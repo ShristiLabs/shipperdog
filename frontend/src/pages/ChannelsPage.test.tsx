@@ -56,6 +56,28 @@ function renderPage(extraRoutes: FetchRoute[] = []): void {
     },
     {
       method: "GET",
+      url: "/api/v1/distribution/appstore/metadata",
+      status: 200,
+      body: {
+        items: [
+          {
+            id: "50000000-0000-4000-8000-000000000001",
+            organizationId: ORG_ID,
+            applicationId: "30000000-0000-4000-8000-000000000001",
+            channel: "appstore",
+            locale: "en-US",
+            description: "The banking app your team pilots with.",
+            keywords: "banking,pilot",
+            screenshotRefs: ["asc-asset://screens/en-primary"],
+            releaseNotes: "Stability first.",
+            createdAt: "2026-10-01T10:00:00Z",
+            updatedAt: "2026-10-01T10:00:00Z",
+          },
+        ],
+      },
+    },
+    {
+      method: "GET",
       url: "/api/v1/distribution/credentials",
       status: 200,
       body: {
@@ -179,6 +201,80 @@ describe("ChannelsPage", () => {
     });
   });
 
+
+  it("authors a listing locale through the metadata dialog and removes a row", async () => {
+    renderPage([
+      {
+        method: "GET",
+        url: "/api/v1/applications",
+        status: 200,
+        body: {
+          items: [
+            {
+              id: "30000000-0000-4000-8000-000000000001",
+              name: "Banking",
+              status: "ACTIVE",
+            },
+          ],
+        },
+      },
+      {
+        method: "PUT",
+        url: "/api/v1/distribution/appstore/metadata",
+        status: 200,
+        body: {
+          id: "50000000-0000-4000-8000-000000000002",
+          organizationId: ORG_ID,
+          applicationId: "30000000-0000-4000-8000-000000000001",
+          channel: "appstore",
+          locale: "de-DE",
+          description: "Die Banking-App.",
+          keywords: null,
+          screenshotRefs: [],
+          releaseNotes: null,
+          createdAt: "2026-10-02T10:00:00Z",
+          updatedAt: "2026-10-02T10:00:00Z",
+        },
+      },
+      {
+        method: "DELETE",
+        url: "/api/v1/distribution/appstore/metadata/50000000-0000-4000-8000-000000000001",
+        status: 204,
+        body: undefined,
+      },
+    ]);
+
+    expect((await screen.findByTestId("metadata-en-US")).textContent).toContain("banking,pilot");
+
+    await user.click(await screen.findByTestId("add-metadata-button"));
+    chooseSelectOption("Application", "Banking");
+    await user.clear(screen.getByRole("textbox", { name: /Locale/ }));
+    await user.type(screen.getByRole("textbox", { name: /Locale/ }), "de-DE");
+    await user.type(screen.getByRole("textbox", { name: /Description/ }), "Die Banking-App.");
+    await user.click(screen.getByTestId("save-metadata-button"));
+
+    await waitFor(() => {
+      const body = bodyOf("/api/v1/distribution/appstore/metadata", "PUT");
+      expect(body).toMatchObject({
+        organizationId: ORG_ID,
+        applicationId: "30000000-0000-4000-8000-000000000001",
+        locale: "de-DE",
+        description: "Die Banking-App.",
+      });
+    });
+
+    await user.click(screen.getByLabelText("remove en-US metadata"));
+    await waitFor(() => {
+      expect(
+        fetchCalls().some(
+          ([url, init]) =>
+            url.includes("/distribution/appstore/metadata/50000000-0000-4000-8000-000000000001") &&
+            init?.method === "DELETE",
+        ),
+      ).toBe(true);
+    });
+  });
+
   it("answers the verify probe and removes a binding through its id", async () => {
     renderPage([
       {
@@ -200,7 +296,7 @@ describe("ChannelsPage", () => {
       expect(fetchCalls().some(([url]) => url.includes(`/verify?organizationId=${ORG_ID}`))).toBe(true);
     });
 
-    await user.click(screen.getByText("Remove"));
+    await user.click(screen.getByLabelText("remove apple organization"));
     await waitFor(() => {
       expect(
         fetchCalls().some(([url, init]) => url.includes(`/credentials/${ACCOUNT_ID}`) && init?.method === "DELETE"),

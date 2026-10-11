@@ -67,18 +67,21 @@ public class AppStoreWebhookService {
     private final AuditLogger audit;
     private final Clock clock;
     private final java.util.List<String> bundleAllowlist;
+    private final org.springframework.context.ApplicationEventPublisher events;
 
     public AppStoreWebhookService(
             InboundWebhookDeliveryRepository deliveries,
             StoreStatusEventRepository storeEvents,
             AuditLogger audit,
             Clock clock,
-            com.shipperdog.api.integration.internal.webhook.InboundWebhookProperties properties) {
+            com.shipperdog.api.integration.internal.webhook.InboundWebhookProperties properties,
+            org.springframework.context.ApplicationEventPublisher events) {
         this.deliveries = deliveries;
         this.storeEvents = storeEvents;
         this.audit = audit;
         this.clock = clock;
         this.bundleAllowlist = properties.appstoreBundleIds();
+        this.events = events;
     }
 
     /**
@@ -129,7 +132,8 @@ public class AppStoreWebhookService {
         // 0 affected rows would mean a fresh transport id for an
         // already-mapped notificationUUID: converged on the one row,
         // answered ACCEPTED either way (the domain key's idempotency).
-        storeEvents.map(rowId, PROVIDER, delivery, event, bundleId, null, null, Instant.now(clock));
+        Instant receivedAt = Instant.now(clock);
+        storeEvents.map(rowId, PROVIDER, delivery, event, bundleId, null, null, receivedAt);
         deliveries.markAccepted(rowId);
         Map<String, String> detail = new LinkedHashMap<>();
         detail.put("provider", PROVIDER);
@@ -142,6 +146,12 @@ public class AppStoreWebhookService {
                 null,
                 true,
                 Map.of("provider", PROVIDER, "event", event, "deliveryId", delivery));
+        // The connector leg (S13-03, #63, AC2): the mapped row's
+        // pointer, published for the distribution module's consumer —
+        // after commit, so the consumer reads a committed row and its
+        // faults never touch the receipt.
+        events.publishEvent(
+                new com.shipperdog.api.integration.StoreStatusEventMapped(PROVIDER, event, bundleId, receivedAt));
         log.info("mapped an appstore {} notification for bundle {}", event, bundleId);
         return new GitHubWebhookService.Receipt("ACCEPTED", delivery);
     }

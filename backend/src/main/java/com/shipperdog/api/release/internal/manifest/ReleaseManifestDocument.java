@@ -44,7 +44,21 @@ public record ReleaseManifestDocument(
         String environment,
         Rollout rollout,
         Configuration configuration,
-        Approval approval) {
+        Approval approval,
+        StoreSubmission storeSubmission) {
+
+    /** The S13-02 shape (no store-submission block): submissions answer null. */
+    public ReleaseManifestDocument(
+            Release release,
+            List<Artifact> artifacts,
+            List<Target> targets,
+            Ring ring,
+            String environment,
+            Rollout rollout,
+            Configuration configuration,
+            Approval approval) {
+        this(release, artifacts, targets, ring, environment, rollout, configuration, approval, null);
+    }
 
     /** The release identity block: who shipped what, frozen (PRD 16's release map). */
     public record Release(
@@ -93,4 +107,35 @@ public record ReleaseManifestDocument(
 
     /** The approval block: the required-approvers vocabulary (evaluation logic is S10-01's). */
     public record Approval(List<String> required) {}
+
+    /**
+     * The store-submission block (PRD 16's WHAT WAS SENT, S13-03,
+     * issue #63, AC1): the submission channel the release's
+     * environment bound, the phased-release decision its
+     * configuration had in force at the freeze, and the per-locale
+     * listing metadata the submission will send — deep-copied from the
+     * distribution module's authoring rows AT the APPROVED crossing.
+     * The dispatch at the ACTIVE crossing sends THIS block verbatim
+     * (never the live rows), so the manifest is the immutable copy of
+     * the submission while the store's own surfaces show the version's
+     * CURRENT state. Null for releases on channels that submit nothing
+     * (Direct, TestFlight); present with a possibly-empty locale list
+     * for submission channels (the honest empty the submission failure
+     * path acts on).
+     */
+    public record StoreSubmission(String channel, boolean phasedRelease, List<SubmissionLocale> locales) {
+
+        public StoreSubmission {
+            locales = List.copyOf(locales);
+        }
+    }
+
+    /** One frozen submission locale: the listing facts the manifest pins for one store locale. */
+    public record SubmissionLocale(
+            String locale, String description, String keywords, List<String> screenshotRefs, String releaseNotes) {
+
+        public SubmissionLocale {
+            screenshotRefs = screenshotRefs == null ? List.of() : List.copyOf(screenshotRefs);
+        }
+    }
 }

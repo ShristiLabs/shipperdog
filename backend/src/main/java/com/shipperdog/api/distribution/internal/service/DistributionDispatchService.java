@@ -3,28 +3,24 @@ package com.shipperdog.api.distribution.internal.service;
 import com.shipperdog.api.audit.AuditEvent;
 import com.shipperdog.api.audit.AuditEventType;
 import com.shipperdog.api.audit.AuditLogger;
-import com.shipperdog.api.config.MetricNames;
+import com.shipperdog.api.distribution.AdapterCapability;
 import com.shipperdog.api.distribution.AdapterException;
 import com.shipperdog.api.distribution.AdapterOutcome;
 import com.shipperdog.api.distribution.DistributionChannelAdapter;
 import com.shipperdog.api.distribution.DistributionCommand;
 import com.shipperdog.api.distribution.DistributionException;
 import com.shipperdog.api.distribution.SecretMaterial;
-import com.shipperdog.api.distribution.internal.config.DistributionProperties;
 import com.shipperdog.api.distribution.internal.entity.ChannelDistributionEntity;
 import com.shipperdog.api.distribution.internal.registry.DistributionAdapterRegistry;
 import com.shipperdog.api.distribution.internal.repository.ChannelDistributionRepository;
 import com.shipperdog.api.distribution.internal.secret.ChannelSecretStore;
 import com.shipperdog.api.environment.EnvironmentAccess;
 import com.shipperdog.api.release.ReleaseAccess;
+import com.shipperdog.api.release.ReleaseSubmissionManifests;
 import com.shipperdog.api.release.ReleaseTransitionedEvent;
 import com.shipperdog.api.version.VersionArtifacts;
-import io.micrometer.observation.Observation;
-import io.micrometer.observation.ObservationRegistry;
 import io.micrometer.tracing.Tracer;
-import jakarta.annotation.PreDestroy;
 import java.time.Clock;
-import java.time.Duration;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
@@ -33,16 +29,13 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
-import java.util.concurrent.Future;
-import java.util.concurrent.TimeUnit;
-import java.util.concurrent.TimeoutException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.context.event.EventListener;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionSynchronization;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
 
 /**
  * The dispatch half of the adapter framework (issue #61, S13-01,
@@ -59,14 +52,29 @@ import org.springframework.transaction.annotation.Transactional;
  * shipperdog.adapter.call.duration}; PRD 28 -- store latency is a top
  * debugging question).
  *
- * <p><strong>Store failures never fail the crossing.</strong> A store
- * adapter's exhausted sandbox writes FAILED records with the taxonomy
- * code and audits the dispatch -- the release still went ACTIVE,
- * because its platform-side availability (the authorization engine's
- * decisions) is not the store's to take away. S13-06 owns rollback
- * orchestration; the #62-#65 connectors own moving store dispatch off
- * the crossing's transaction onto the bus when their latencies demand
- * it (the seam: this listener stays; the sandbox call moves).
+ * <p><strong>Store failures never fail the crossing — except a
+ * refused SUBMISSION.</strong> A store adapter's exhausted sandbox
+ * writes FAILED records with the taxonomy code and audits the
+ * dispatch -- the release still went ACTIVE, because its
+ * platform-side availability (the authorization engine's decisions)
+ * is not the store's to take away. S13-03's doctrine split (issue
+ * #63, AC4, PRD 17): for a channel whose adapter declares the
+ * SUBMISSION capability, a PERMANENT exhaustion (Apple refused the
+ * submission — metadata rejected, with Apple's own words in the
+ * failure detail) VETOES the crossing: this listener registers a
+ * post-rollback handler and throws, the crossing's transaction rolls
+ * back, and the handler writes the FAILED records in a fresh
+ * transaction and carries the release across PRD 17's DEPLOYING to
+ * FAILED edge with the actionable reason (the {@link
+ * com.shipperdog.api.release.ReleaseDistributionFailures} port). The
+ * production submission channel's deliverable IS the store's
+ * acceptance; the assignment channels keep the never-fail doctrine
+ * (their platform-side availability stands alone). Retryable
+ * exhaustion keeps the record-level doctrine on every channel.
+ * S13-06 owns rollback orchestration; the #62-#65 connectors own
+ * moving store dispatch off the crossing's transaction onto the bus
+ * when their latencies demand it (the seam: this listener stays; the
+ * sandbox call moves).
  *
  * <p><strong>Idempotency.</strong> The record grain (release,
  * artifact, channel) is unique-indexed: a re-delivered transition or
@@ -92,14 +100,14 @@ public class DistributionDispatchService {
     private final com.shipperdog.api.distribution.internal.repository.ChannelGroupLinkRepository groupLinks;
     private final ChannelSecretStore secrets;
     private final ReleaseAccess releases;
+    private final ReleaseSubmissionManifests submissionManifests;
     private final EnvironmentAccess environments;
     private final VersionArtifacts versionArtifacts;
-    private final DistributionProperties properties;
+    private final AdapterCallSandbox sandbox;
+    private final SubmissionFailureRecorder submissionFailures;
     private final AuditLogger audit;
-    private final ObservationRegistry observations;
     private final Tracer tracer;
     private final Clock clock;
-    private final ExecutorService adapterCalls = Executors.newVirtualThreadPerTaskExecutor();
 
     public DistributionDispatchService(
             DistributionAdapterRegistry registry,
@@ -108,11 +116,12 @@ public class DistributionDispatchService {
             com.shipperdog.api.distribution.internal.repository.ChannelGroupLinkRepository groupLinks,
             ChannelSecretStore secrets,
             ReleaseAccess releases,
+            ReleaseSubmissionManifests submissionManifests,
             EnvironmentAccess environments,
             VersionArtifacts versionArtifacts,
-            DistributionProperties properties,
+            AdapterCallSandbox sandbox,
+            SubmissionFailureRecorder submissionFailures,
             AuditLogger audit,
-            ObservationRegistry observations,
             Tracer tracer,
             Clock clock) {
         this.registry = registry;
@@ -121,18 +130,14 @@ public class DistributionDispatchService {
         this.groupLinks = groupLinks;
         this.secrets = secrets;
         this.releases = releases;
+        this.submissionManifests = submissionManifests;
         this.environments = environments;
         this.versionArtifacts = versionArtifacts;
-        this.properties = properties;
+        this.sandbox = sandbox;
+        this.submissionFailures = submissionFailures;
         this.audit = audit;
-        this.observations = observations;
         this.tracer = tracer;
         this.clock = clock;
-    }
-
-    @PreDestroy
-    void shutdown() {
-        adapterCalls.close();
     }
 
     /** The ACTIVE crossing's dispatch: channels take over exactly where the state machine's distribution begins. */
@@ -180,21 +185,40 @@ public class DistributionDispatchService {
             return;
         }
 
-        SandboxResult sandbox = sandboxedCall(adapter.get(), command);
-        if (sandbox.failure() != null) {
-            // Store failures never fail the crossing (see class javadoc):
-            // the exhausted sandbox lands as FAILED records with the
-            // taxonomy code, the crossing commits, S13-06 owns rollback.
+        AdapterCallSandbox.Result<List<AdapterOutcome>> dispatchRun =
+                sandbox.run(channel, "distribute", attempt -> adapter.get().distribute(withAttempt(command, attempt)));
+        if (dispatchRun.failure() != null) {
+            // The S13-03 doctrine split (issue #63, AC4): a PERMANENT
+            // refusal of a SUBMISSION channel vetoes the crossing —
+            // the release's deliverable IS the store's acceptance, so
+            // the veto registers the post-rollback failure recorder
+            // (FAILED records, the DEPLOYING to FAILED edge, and the
+            // audits in a fresh transaction) and throws to roll this
+            // transaction back. Every other exhaustion keeps the
+            // never-fail-the-crossing doctrine: FAILED records with
+            // the taxonomy code, the crossing commits, S13-06 owns
+            // rollback.
+            if (dispatchRun.failure().category() == AdapterException.Category.PERMANENT
+                    && adapter.get().capabilities().contains(AdapterCapability.SUBMISSION)) {
+                registerSubmissionVeto(event, channel, slots, dispatchRun.failure());
+                throw new DistributionException(
+                        AdapterCallSandbox.taxonomyCodeOf(dispatchRun.failure()),
+                        "the store refused the submission and the release cannot go ACTIVE: "
+                                + dispatchRun.failure().getMessage());
+            }
             Instant now = Instant.now(clock);
-            String failureCode = taxonomyOf(sandbox.failure());
-            rows.forEach(row ->
-                    row.report(ChannelDistributionEntity.AdapterReport.failed(failureCode), sandbox.calls(), now));
+            String failureCode = AdapterCallSandbox.taxonomyOf(dispatchRun.failure());
+            String failureDetail = dispatchRun.failure().getMessage();
+            rows.forEach(row -> row.report(
+                    ChannelDistributionEntity.AdapterReport.failed(failureCode, failureDetail),
+                    dispatchRun.calls(),
+                    now));
             records.saveAll(rows);
             auditDispatch(event, channel, failureCode, false);
             return;
         }
         Instant now = Instant.now(clock);
-        List<AdapterOutcome> outcomes = sandbox.outcomes();
+        List<AdapterOutcome> outcomes = dispatchRun.answer();
         Map<UUID, AdapterOutcome> byArtifact = new LinkedHashMap<>();
         for (AdapterOutcome outcome : outcomes) {
             byArtifact.put(outcome.artifactId(), outcome);
@@ -206,7 +230,7 @@ public class DistributionDispatchService {
                 row.report(
                         ChannelDistributionEntity.AdapterReport.failed(
                                 DistributionException.Code.ADAPTER_FAILED.codeValue()),
-                        sandbox.calls(),
+                        dispatchRun.calls(),
                         now);
                 allDistributed = false;
             } else {
@@ -215,8 +239,9 @@ public class DistributionDispatchService {
                                 ChannelDistributionEntity.Status.valueOf(outcome.status()),
                                 outcome.externalId(),
                                 outcome.failureCode(),
+                                outcome.detail(),
                                 outcome.providerStatus()),
-                        sandbox.calls(),
+                        dispatchRun.calls(),
                         now);
                 allDistributed &= AdapterOutcome.DISTRIBUTED.equals(outcome.status());
             }
@@ -226,115 +251,66 @@ public class DistributionDispatchService {
     }
 
     /**
-     * The sandbox (AC5): one observation per attempt (trace + timer),
-     * a wall-clock cut, and bounded category-keyed retries. Anything
-     * the adapter throws that is not {@link AdapterException} is
-     * PERMANENT (the taxonomy is closed).
+     * The veto's post-rollback half (AC4): registers the failure
+     * recorder to run once THIS transaction has rolled back (the
+     * recorder writes the FAILED records, the audits, and the
+     * DEPLOYING to FAILED crossing in its own fresh transaction — a
+     * synchronization, so a commit despite the throw would leave the
+     * recorder quiet).
      */
-    private SandboxResult sandboxedCall(DistributionChannelAdapter adapter, DistributionCommand seed) {
-        DistributionProperties.AdapterSandbox sandbox = properties.sandboxOf(adapter.channelId());
-        int attempt = 1;
-        AdapterException lastFailure = null;
-        while (attempt <= sandbox.totalAttempts()) {
-            DistributionCommand command = new DistributionCommand(
-                    seed.releaseId(),
-                    seed.releaseRef(),
-                    seed.applicationId(),
-                    seed.versionId(),
-                    seed.organizationId(),
-                    seed.tenantId(),
-                    seed.environmentId(),
-                    seed.environmentCode(),
-                    seed.channel(),
-                    seed.artifacts(),
-                    seed.targetTenantIds(),
-                    seed.targetGroups(),
-                    seed.channelConfig(),
-                    new DistributionCommand.ResolvedCredential(
-                            seed.credential() == null ? null : seed.credential().provider(),
-                            seed.credential() == null ? null : seed.credential().name(),
-                            seed.credential() == null ? null : seed.credential().secretReference(),
-                            seed.credential() == null ? null : seed.credential().material(),
-                            seed.credential() == null ? null : seed.credential().metadata()),
-                    currentTraceId(),
-                    currentSpanId(),
-                    attempt,
-                    seed.initiatedAt());
-            Observation observation = Observation.createNotStarted(MetricNames.ADAPTER_CALL, observations)
-                    .lowCardinalityKeyValue("channel", adapter.channelId())
-                    .lowCardinalityKeyValue("attempt", String.valueOf(attempt));
-            Future<List<AdapterOutcome>> call = null;
-            try {
-                observation.start();
-                call = adapterCalls.submit(() -> adapter.distribute(command));
-                List<AdapterOutcome> outcomes = call.get(sandbox.timeout().toMillis(), TimeUnit.MILLISECONDS);
-                observation.lowCardinalityKeyValue("outcome", "ok");
-                observation.stop();
-                return new SandboxResult(outcomes, null, attempt);
-            } catch (TimeoutException e) {
-                // The wall cut: interrupt the hung call so its thread and
-                // socket do not linger past the sandbox's verdict.
-                if (call != null) {
-                    call.cancel(true);
+    private void registerSubmissionVeto(
+            ReleaseTransitionedEvent event,
+            String channel,
+            List<ReleaseAccess.ReleaseArtifactSlot> slots,
+            AdapterException failure) {
+        // The aftermath runs after the rollback, outside every bound
+        // scope the crossing ran in: the slots are captured HERE, and
+        // the recorder reads nothing scoped.
+        List<UUID> artifactIds = slots.stream()
+                .map(ReleaseAccess.ReleaseArtifactSlot::artifactId)
+                .toList();
+        if (!TransactionSynchronizationManager.isSynchronizationActive()) {
+            // No transaction to roll back (a direct invocation, e.g. a
+            // test): record the failure immediately in its own
+            // transaction instead of after a rollback that will not
+            // come.
+            submissionFailures.record(
+                    event, channel, artifactIds, AdapterCallSandbox.taxonomyOf(failure), failure.getMessage());
+            return;
+        }
+        TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+            @Override
+            public void afterCompletion(int status) {
+                if (status == TransactionSynchronization.STATUS_ROLLED_BACK) {
+                    submissionFailures.record(
+                            event, channel, artifactIds, AdapterCallSandbox.taxonomyOf(failure), failure.getMessage());
                 }
-                lastFailure = new AdapterException(
-                        AdapterException.Category.TIMEOUT,
-                        adapter.channelId(),
-                        "the adapter call exceeded its " + sandbox.timeout().toMillis() + " ms timeout");
-            } catch (java.util.concurrent.ExecutionException e) {
-                Throwable cause = e.getCause();
-                lastFailure = cause instanceof AdapterException adapterFailure
-                        ? adapterFailure
-                        : new AdapterException(
-                                AdapterException.Category.PERMANENT,
-                                adapter.channelId(),
-                                "the adapter failed: " + cause.getClass().getSimpleName());
-            } catch (InterruptedException e) {
-                Thread.currentThread().interrupt();
-                observation.lowCardinalityKeyValue("outcome", "interrupted");
-                observation.stop();
-                throw new IllegalStateException("adapter dispatch interrupted", e);
-            } catch (java.util.concurrent.RejectedExecutionException e) {
-                lastFailure = new AdapterException(
-                        AdapterException.Category.TRANSIENT, adapter.channelId(), "the adapter pool refused the call");
             }
-            observation.lowCardinalityKeyValue("outcome", taxonomyOf(lastFailure));
-            observation.stop();
-            if (!retryable(lastFailure.category()) || attempt == sandbox.totalAttempts()) {
-                return new SandboxResult(null, lastFailure, attempt);
-            }
-            attempt++;
-            sleep(sandbox.retryBackoff());
-        }
-        return new SandboxResult(null, lastFailure, attempt);
+        });
     }
 
-    /** The sandbox's answer: the report on success, the taxonomy failure on exhaustion, and the calls consumed. */
-    private record SandboxResult(List<AdapterOutcome> outcomes, AdapterException failure, int calls) {}
-
-    private static boolean retryable(AdapterException.Category category) {
-        return category == AdapterException.Category.TRANSIENT
-                || category == AdapterException.Category.RATE_LIMITED
-                || category == AdapterException.Category.TIMEOUT;
-    }
-
-    /** The taxonomy's public code for a failure (the record's and the metric's vocabulary). */
-    public static String taxonomyOf(AdapterException failure) {
-        return switch (failure.category()) {
-            case TIMEOUT -> DistributionException.Code.ADAPTER_TIMEOUT.codeValue();
-            case RATE_LIMITED -> DistributionException.Code.ADAPTER_RATE_LIMITED.codeValue();
-            case AUTHENTICATION -> DistributionException.Code.ADAPTER_AUTHENTICATION_FAILED.codeValue();
-            case TRANSIENT, PERMANENT -> DistributionException.Code.ADAPTER_FAILED.codeValue();
-        };
-    }
-
-    private void sleep(Duration backoff) {
-        try {
-            Thread.sleep(backoff.toMillis());
-        } catch (InterruptedException e) {
-            Thread.currentThread().interrupt();
-            throw new IllegalStateException("adapter backoff interrupted", e);
-        }
+    /** The command rebuilt for one sandbox attempt (the attempt number rides the retry). */
+    private static DistributionCommand withAttempt(DistributionCommand seed, int attempt) {
+        return new DistributionCommand(
+                seed.releaseId(),
+                seed.releaseRef(),
+                seed.applicationId(),
+                seed.versionId(),
+                seed.organizationId(),
+                seed.tenantId(),
+                seed.environmentId(),
+                seed.environmentCode(),
+                seed.channel(),
+                seed.artifacts(),
+                seed.targetTenantIds(),
+                seed.targetGroups(),
+                seed.channelConfig(),
+                seed.credential(),
+                seed.traceId(),
+                seed.spanId(),
+                attempt,
+                seed.initiatedAt(),
+                seed.submission());
     }
 
     private String channelOf(UUID environmentId) {
@@ -418,6 +394,28 @@ public class DistributionDispatchService {
                 .map(group -> new DistributionCommand.TargetGroup(
                         group.groupId(), group.tenantId(), linksOfGroup.get(group.groupId())))
                 .toList();
+        // The frozen store submission (S13-03, #63, AC1): a channel
+        // whose adapter declares SUBMISSION receives the release
+        // manifest's frozen block verbatim — THE immutable copy of what
+        // was sent (PRD 16), never the live authoring rows, so the
+        // manifest and the wire can never drift apart.
+        DistributionCommand.Submission submission = null;
+        if (adapter.capabilities().contains(AdapterCapability.SUBMISSION)) {
+            submission = submissionManifests
+                    .frozenSubmissionOf(event.releaseId())
+                    .map(frozen -> new DistributionCommand.Submission(
+                            frozen.channel(),
+                            frozen.phasedRelease(),
+                            frozen.locales().stream()
+                                    .map(locale -> new DistributionCommand.SubmissionLocale(
+                                            locale.locale(),
+                                            locale.description(),
+                                            locale.keywords(),
+                                            locale.screenshotRefs(),
+                                            locale.releaseNotes()))
+                                    .toList()))
+                    .orElse(null);
+        }
         return new DistributionCommand(
                 event.releaseId(),
                 event.releaseRef(),
@@ -436,7 +434,8 @@ public class DistributionDispatchService {
                 currentTraceId(),
                 currentSpanId(),
                 1,
-                Instant.now(clock));
+                Instant.now(clock),
+                submission);
     }
 
     private DistributionCommand.ResolvedCredential resolveCredential(
@@ -574,44 +573,48 @@ public class DistributionDispatchService {
                     DistributionException.Code.DISTRIBUTION_CREDENTIAL_NOT_FOUND,
                     "no credential is bound on the delegation chain for this record's channel and scope");
         }
-        RefreshResult refresh = sandboxedStatus(adapter, row, credential);
+        AdapterCallSandbox.Result<AdapterOutcome> refresh = sandbox.run(
+                row.getChannel(),
+                "status",
+                attempt -> adapter.status(row.getArtifactId(), row.getChannel(), row.getExternalId(), credential));
         Map<String, String> detail = new LinkedHashMap<>();
         detail.put("channel", row.getChannel());
         detail.put("recordId", row.getId().toString());
         detail.put(
                 "outcome",
-                refresh.outcome() == null
-                        ? taxonomyOf(refresh.failure())
-                        : refresh.outcome().status());
+                refresh.answer() == null
+                        ? AdapterCallSandbox.taxonomyOf(refresh.failure())
+                        : refresh.answer().status());
         detail.put(
                 "providerStatus",
-                refresh.outcome() == null || refresh.outcome().providerStatus() == null
+                refresh.answer() == null || refresh.answer().providerStatus() == null
                         ? ""
-                        : refresh.outcome().providerStatus());
+                        : refresh.answer().providerStatus());
         AuditEvent.Builder auditLine = AuditEvent.builder(AuditEventType.DISTRIBUTION_RECORD_REFRESHED)
                 .orgId(organizationId)
                 .applicationId(applicationId)
                 .detail(detail)
-                .success(refresh.outcome() != null);
+                .success(refresh.answer() != null);
         if (actorId != null) {
             auditLine.userId(actorId);
         }
         audit.record(auditLine.build());
-        if (refresh.outcome() == null) {
+        if (refresh.answer() == null) {
             // The provider's honest failure: the record keeps its
             // standing, the refresh answers the taxonomy's problem.
             AdapterException failure = refresh.failure();
             throw new DistributionException(
-                    taxonomyCodeOf(failure),
+                    AdapterCallSandbox.taxonomyCodeOf(failure),
                     failure.getMessage() == null ? "the provider refresh failed" : failure.getMessage());
         }
         row.report(
                 new ChannelDistributionEntity.AdapterReport(
                         ChannelDistributionEntity.Status.valueOf(
-                                refresh.outcome().status()),
-                        refresh.outcome().externalId(),
-                        refresh.outcome().failureCode(),
-                        refresh.outcome().providerStatus()),
+                                refresh.answer().status()),
+                        refresh.answer().externalId(),
+                        refresh.answer().failureCode(),
+                        refresh.answer().detail(),
+                        refresh.answer().providerStatus()),
                 refresh.calls(),
                 Instant.now(clock));
         records.save(row);
@@ -629,74 +632,6 @@ public class DistributionDispatchService {
                 .getContent();
     }
 
-    /** The taxonomy's problem code for a refresh failure (the same closed mapping the records carry). */
-    private static DistributionException.Code taxonomyCodeOf(AdapterException failure) {
-        return switch (failure.category()) {
-            case TIMEOUT -> DistributionException.Code.ADAPTER_TIMEOUT;
-            case RATE_LIMITED -> DistributionException.Code.ADAPTER_RATE_LIMITED;
-            case AUTHENTICATION -> DistributionException.Code.ADAPTER_AUTHENTICATION_FAILED;
-            case TRANSIENT, PERMANENT -> DistributionException.Code.ADAPTER_FAILED;
-        };
-    }
-
-    /** The status poll under the same sandbox the dispatch runs in (one wall, one taxonomy, one timer). */
-    private RefreshResult sandboxedStatus(
-            DistributionChannelAdapter adapter,
-            ChannelDistributionEntity row,
-            DistributionCommand.ResolvedCredential credential) {
-        DistributionProperties.AdapterSandbox sandbox = properties.sandboxOf(adapter.channelId());
-        int attempt = 1;
-        AdapterException lastFailure = null;
-        while (attempt <= sandbox.totalAttempts()) {
-            Observation observation = Observation.createNotStarted(MetricNames.ADAPTER_CALL, observations)
-                    .lowCardinalityKeyValue("channel", adapter.channelId())
-                    .lowCardinalityKeyValue("attempt", String.valueOf(attempt))
-                    .lowCardinalityKeyValue("operation", "status");
-            Future<AdapterOutcome> call = null;
-            try {
-                observation.start();
-                call = adapterCalls.submit(
-                        () -> adapter.status(row.getArtifactId(), row.getChannel(), row.getExternalId(), credential));
-                AdapterOutcome outcome = call.get(sandbox.timeout().toMillis(), TimeUnit.MILLISECONDS);
-                observation.lowCardinalityKeyValue("outcome", "ok");
-                observation.stop();
-                return new RefreshResult(outcome, null, attempt);
-            } catch (TimeoutException e) {
-                if (call != null) {
-                    call.cancel(true);
-                }
-                lastFailure = new AdapterException(
-                        AdapterException.Category.TIMEOUT,
-                        adapter.channelId(),
-                        "the status call exceeded its " + sandbox.timeout().toMillis() + " ms timeout");
-            } catch (java.util.concurrent.ExecutionException e) {
-                Throwable cause = e.getCause();
-                lastFailure = cause instanceof AdapterException adapterFailure
-                        ? adapterFailure
-                        : new AdapterException(
-                                AdapterException.Category.PERMANENT,
-                                adapter.channelId(),
-                                "the status call failed: " + cause.getClass().getSimpleName());
-            } catch (InterruptedException e) {
-                Thread.currentThread().interrupt();
-                observation.lowCardinalityKeyValue("outcome", "interrupted");
-                observation.stop();
-                throw new IllegalStateException("adapter refresh interrupted", e);
-            } catch (java.util.concurrent.RejectedExecutionException e) {
-                lastFailure = new AdapterException(
-                        AdapterException.Category.TRANSIENT, adapter.channelId(), "the adapter pool refused the call");
-            }
-            observation.lowCardinalityKeyValue("outcome", taxonomyOf(lastFailure));
-            observation.stop();
-            if (!retryable(lastFailure.category()) || attempt == sandbox.totalAttempts()) {
-                return new RefreshResult(null, lastFailure, attempt);
-            }
-            attempt++;
-            sleep(sandbox.retryBackoff());
-        }
-        return new RefreshResult(null, lastFailure, attempt);
-    }
-
     private static RecordView viewOf(ChannelDistributionEntity row) {
         return new RecordView(
                 row.getId(),
@@ -706,6 +641,7 @@ public class DistributionDispatchService {
                 row.getStatus().name(),
                 row.getExternalId(),
                 row.getFailureCode(),
+                row.getFailureDetail(),
                 row.getProviderStatus(),
                 row.getProviderStatusAt(),
                 row.getAttempts(),
@@ -714,9 +650,6 @@ public class DistributionDispatchService {
                 row.getCreatedAt(),
                 row.getUpdatedAt());
     }
-
-    /** The sandbox's answer for a status poll (the outcome, the failure, and the calls consumed). */
-    private record RefreshResult(AdapterOutcome outcome, AdapterException failure, int calls) {}
 
     /** One distribution record's served view (the adapter's report plus the framework's bookkeeping). */
     public record RecordView(
@@ -727,6 +660,7 @@ public class DistributionDispatchService {
             String status,
             String externalId,
             String failureCode,
+            String failureDetail,
             String providerStatus,
             Instant providerStatusAt,
             int attempts,

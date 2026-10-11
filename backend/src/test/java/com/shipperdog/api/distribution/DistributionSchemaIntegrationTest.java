@@ -81,6 +81,7 @@ class DistributionSchemaIntegrationTest {
                         "status",
                         "external_id",
                         "failure_code",
+                        "failure_detail",
                         "provider_status",
                         "provider_status_at",
                         "attempts",
@@ -117,6 +118,32 @@ class DistributionSchemaIntegrationTest {
                         "updated_at");
         Integer constraintCount = jdbc.queryForObject(
                 "SELECT count(*) FROM pg_constraint WHERE conname = 'uq_channel_group_links_channel_group'",
+                Integer.class);
+        assertThat(constraintCount).isEqualTo(1);
+    }
+
+    @Test
+    void channelSubmissionMetadataHoldOnlyTheAuthoringFacts() {
+        // V45 (S13-03): the authoring grain is (application, channel,
+        // locale) -- the listing facts beside their owning dimensions,
+        // and NOTHING submission-shaped (the manifest's frozen block is
+        // the submission's copy of record, never these rows).
+        assertThat(columnsOf("channel_submission_metadata"))
+                .containsExactlyInAnyOrder(
+                        "id",
+                        "organization_id",
+                        "application_id",
+                        "channel",
+                        "locale",
+                        "description",
+                        "keywords",
+                        "screenshot_refs",
+                        "release_notes",
+                        "created_at",
+                        "updated_at");
+        Integer constraintCount = jdbc.queryForObject(
+                "SELECT count(*) FROM pg_constraint"
+                        + " WHERE conname = 'uq_channel_submission_metadata_app_channel_locale'",
                 Integer.class);
         assertThat(constraintCount).isEqualTo(1);
     }

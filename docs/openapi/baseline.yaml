@@ -898,6 +898,52 @@ paths:
             '*/*':
               schema:
                 $ref: "#/components/schemas/StoreAccountView"
+  /api/v1/distribution/appstore/metadata:
+    get:
+      tags:
+      - distribution-controller
+      operationId: appStoreMetadata
+      parameters:
+      - name: organizationId
+        in: query
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - name: limit
+        in: query
+        required: false
+        schema:
+          type: string
+      - name: cursor
+        in: query
+        required: false
+        schema:
+          type: string
+      responses:
+        "200":
+          description: OK
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/PageResponseMetadataView"
+    put:
+      tags:
+      - distribution-controller
+      operationId: putAppStoreMetadata
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AppStoreMetadataRequest"
+        required: true
+      responses:
+        "200":
+          description: OK
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/MetadataView"
   /api/v1/approval-workflows/{workflowId}:
     get:
       tags:
@@ -2640,6 +2686,61 @@ paths:
             '*/*':
               schema:
                 $ref: "#/components/schemas/VerifyView"
+  /api/v1/distribution/appstore/releases/{releaseId}/phased-release:
+    get:
+      tags:
+      - distribution-controller
+      operationId: appStorePhasedRelease
+      parameters:
+      - name: releaseId
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - name: organizationId
+        in: query
+        required: true
+        schema:
+          type: string
+          format: uuid
+      responses:
+        "200":
+          description: OK
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/PhasedReleaseView"
+    post:
+      tags:
+      - distribution-controller
+      operationId: controlAppStorePhasedRelease
+      parameters:
+      - name: releaseId
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - name: organizationId
+        in: query
+        required: true
+        schema:
+          type: string
+          format: uuid
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PhasedReleaseActionRequest"
+        required: true
+      responses:
+        "200":
+          description: OK
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/PhasedReleaseView"
   /api/v1/authorization/decisions:
     post:
       tags:
@@ -4758,6 +4859,10 @@ paths:
           - DISTRIBUTION_DISPATCHED
           - DISTRIBUTION_GROUP_SYNCED
           - DISTRIBUTION_RECORD_REFRESHED
+          - DISTRIBUTION_METADATA_SAVED
+          - DISTRIBUTION_METADATA_REMOVED
+          - DISTRIBUTION_PHASED_RELEASE_CONTROLLED
+          - STORE_EVENT_APPLIED
       - name: applicationId
         in: query
         required: false
@@ -5110,6 +5215,27 @@ paths:
       operationId: deleteCredential
       parameters:
       - name: credentialId
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - name: organizationId
+        in: query
+        required: true
+        schema:
+          type: string
+          format: uuid
+      responses:
+        "204":
+          description: No Content
+  /api/v1/distribution/appstore/metadata/{metadataId}:
+    delete:
+      tags:
+      - distribution-controller
+      operationId: deleteAppStoreMetadata
+      parameters:
+      - name: metadataId
         in: path
         required: true
         schema:
@@ -5510,7 +5636,7 @@ components:
     JsonNode:
       type: object
       properties:
-        floatingPointNumber:
+        container:
           type: boolean
         nodeType:
           type: string
@@ -5555,7 +5681,7 @@ components:
           type: boolean
         binary:
           type: boolean
-        container:
+        floatingPointNumber:
           type: boolean
         empty:
           type: boolean
@@ -5819,6 +5945,59 @@ components:
         metadata:
           type: string
         secretReference:
+          type: string
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+    AppStoreMetadataRequest:
+      type: object
+      properties:
+        organizationId:
+          type: string
+          format: uuid
+        applicationId:
+          type: string
+          format: uuid
+        locale:
+          type: string
+        description:
+          type: string
+        keywords:
+          type: string
+        screenshotRefs:
+          type: array
+          items:
+            type: string
+        releaseNotes:
+          type: string
+    MetadataView:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        organizationId:
+          type: string
+          format: uuid
+        applicationId:
+          type: string
+          format: uuid
+        channel:
+          type: string
+        locale:
+          type: string
+        description:
+          type: string
+        keywords:
+          type: string
+        screenshotRefs:
+          type: array
+          items:
+            type: string
+        releaseNotes:
           type: string
         createdAt:
           type: string
@@ -6687,6 +6866,8 @@ components:
           type: string
         failureCode:
           type: string
+        failureDetail:
+          type: string
         providerStatus:
           type: string
         providerStatusAt:
@@ -6705,6 +6886,32 @@ components:
           type: string
           format: date-time
         updatedAt:
+          type: string
+          format: date-time
+    PhasedReleaseActionRequest:
+      type: object
+      properties:
+        action:
+          type: string
+    PhasedReleaseView:
+      type: object
+      properties:
+        versionId:
+          type: string
+        versionState:
+          type: string
+        phasedReleaseState:
+          type: string
+        currentDay:
+          type: integer
+          format: int32
+        totalDays:
+          type: integer
+          format: int32
+        percentage:
+          type: integer
+          format: int32
+        observedAt:
           type: string
           format: date-time
     InspectRequest:
@@ -8347,6 +8554,15 @@ components:
           type: array
           items:
             type: string
+    PageResponseMetadataView:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/MetadataView"
+        next_cursor:
+          type: string
     ApplicationCardView:
       type: object
       properties:
@@ -8595,6 +8811,10 @@ components:
           - DISTRIBUTION_DISPATCHED
           - DISTRIBUTION_GROUP_SYNCED
           - DISTRIBUTION_RECORD_REFRESHED
+          - DISTRIBUTION_METADATA_SAVED
+          - DISTRIBUTION_METADATA_REMOVED
+          - DISTRIBUTION_PHASED_RELEASE_CONTROLLED
+          - STORE_EVENT_APPLIED
         occurredAt:
           type: string
           format: date-time

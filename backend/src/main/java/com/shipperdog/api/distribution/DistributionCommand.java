@@ -49,6 +49,7 @@ import java.util.UUID;
  * @param spanId         the span id of the adapter-call observation
  * @param attempt        the 1-based attempt number of this call (retries increment it)
  * @param initiatedAt    when the framework initiated the dispatch
+ * @param submission     the release's frozen store-submission block for SUBMISSION-capable channels (S13-03; null otherwise)
  */
 public record DistributionCommand(
         UUID releaseId,
@@ -68,7 +69,50 @@ public record DistributionCommand(
         String traceId,
         String spanId,
         int attempt,
-        Instant initiatedAt) {
+        Instant initiatedAt,
+        Submission submission) {
+
+    /** The S13-02 shape (no store submission): the submission block answers null. */
+    public DistributionCommand(
+            UUID releaseId,
+            String releaseRef,
+            UUID applicationId,
+            UUID versionId,
+            UUID organizationId,
+            UUID tenantId,
+            UUID environmentId,
+            String environmentCode,
+            String channel,
+            List<ArtifactSlot> artifacts,
+            Set<UUID> targetTenantIds,
+            List<TargetGroup> targetGroups,
+            java.util.Map<String, String> channelConfig,
+            ResolvedCredential credential,
+            String traceId,
+            String spanId,
+            int attempt,
+            Instant initiatedAt) {
+        this(
+                releaseId,
+                releaseRef,
+                applicationId,
+                versionId,
+                organizationId,
+                tenantId,
+                environmentId,
+                environmentCode,
+                channel,
+                artifacts,
+                targetTenantIds,
+                targetGroups,
+                channelConfig,
+                credential,
+                traceId,
+                spanId,
+                attempt,
+                initiatedAt,
+                null);
+    }
 
     /** The S13-01 shape (no targeted tester groups): the group set answers empty. */
     public DistributionCommand(
@@ -107,7 +151,8 @@ public record DistributionCommand(
                 traceId,
                 spanId,
                 attempt,
-                initiatedAt);
+                initiatedAt,
+                null);
     }
 
     /**
@@ -146,6 +191,47 @@ public record DistributionCommand(
      * assigns builds to the groups that carry one.
      */
     public record TargetGroup(UUID groupId, UUID tenantId, String externalGroupId) {}
+
+    /**
+     * The release's frozen store submission as the SUBMISSION-capable
+     * channels address it (S13-03, #63): the channel, the phased
+     * release flag the environment's configuration had in force at the
+     * APPROVED freeze, and the per-locale listing metadata — THE
+     * FROZEN MANIFEST BLOCK, read back by the framework exactly as it
+     * was frozen, never the live authoring rows. The manifest is the
+     * submission's source of truth (PRD 16's immutable copy of what
+     * was sent); the adapter that submits anything else is defective
+     * by construction. Null for channels that declare no SUBMISSION
+     * capability (Direct, TestFlight).
+     *
+     * @param channel       the submission channel the block froze for
+     * @param phasedRelease whether the submission starts the store's phased-release curve
+     * @param locales       the frozen per-locale listing metadata (may be empty — the honest empty a submission failure acts on)
+     */
+    public record Submission(String channel, boolean phasedRelease, List<SubmissionLocale> locales) {
+
+        public Submission {
+            locales = List.copyOf(locales);
+        }
+    }
+
+    /**
+     * One frozen submission locale (S13-03, #63): the listing facts the
+     * manifest froze for one store locale.
+     *
+     * @param locale         the store locale (Apple's BCP-47 vocabulary)
+     * @param description    the locale's listing description
+     * @param keywords       the locale's search keywords (null when none was frozen)
+     * @param screenshotRefs the screenshot references the manifest pins
+     * @param releaseNotes   the locale's what's-new (release notes; null when none was frozen)
+     */
+    public record SubmissionLocale(
+            String locale, String description, String keywords, List<String> screenshotRefs, String releaseNotes) {
+
+        public SubmissionLocale {
+            screenshotRefs = screenshotRefs == null ? List.of() : List.copyOf(screenshotRefs);
+        }
+    }
 
     /**
      * The credential the delegation chain resolved for this dispatch

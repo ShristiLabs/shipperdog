@@ -156,6 +156,19 @@ references. Wiring ([distribution.md](distribution.md)):
 | `DISTRIBUTION_RECONCILIATION__ENABLED` | the reconciliation pass (S13-02) | `false` (default — a self-hosted stack never wakes up dialing Apple) or `true` (production with store connectors in service: the pass refreshes PENDING/DISTRIBUTING store records through the adapters' status answers) |
 | `DISTRIBUTION_RECONCILIATION__FIXED_DELAY` | the reconciliation pass | cadence between passes; default `PT15M` |
 
+The App Store production channel's phased release (S13-03) is an
+ENVIRONMENT CONFIGURATION key, not a process env var: set
+`phased-release` to `"true"` in the production environment's
+configuration snapshot (`PUT /api/v1/environments/{id}/config`) and
+every release the environment dispatches freezes that decision into
+its manifest at APPROVED and starts Apple's 7-day curve at
+submission; absent or `"false"` submits a manual release. Telemetry
+note for dashboards: `shipperdog.adapter.ratelimit` is tagged
+`provider` since #63 (Apple throttles the API key, which both Apple
+channels usually share), and `shipperdog.adapter.call.duration`
+gained an `operation` tag (distribute, status, phased-release-view,
+phased-release-control).
+
 ## Rollback
 
 Cloud Run revisions keep the last images: `gcloud run services

@@ -66,6 +66,15 @@ public class ChannelDistributionEntity {
     private String failureCode;
 
     /**
+     * The actionable, human-facing failure reason beside the taxonomy
+     * code (V45, S13-03, AC4): the provider's own words for a refused
+     * submission or a review rejection ("You must provide a value for
+     * the key ..."), truncated to the column's honest maximum; null
+     * when the record is not FAILED or the adapter offered no detail.
+     */
+    private String failureDetail;
+
+    /**
      * The provider's own lifecycle word for the artifact (V44, S13-02,
      * AC4: Apple's beta-review states), verbatim from the connector's
      * status observation; null until one exists (Direct answers none).
@@ -141,6 +150,10 @@ public class ChannelDistributionEntity {
         return failureCode;
     }
 
+    public String getFailureDetail() {
+        return failureDetail;
+    }
+
     public String getProviderStatus() {
         return providerStatus;
     }
@@ -178,6 +191,12 @@ public class ChannelDistributionEntity {
         this.status = report.status();
         this.externalId = report.externalId() == null ? this.externalId : report.externalId();
         this.failureCode = report.failureCode();
+        this.failureDetail =
+                report.failureDetail() == null || report.failureDetail().isBlank()
+                        ? null
+                        : report.failureDetail().length() > 512
+                                ? report.failureDetail().substring(0, 512)
+                                : report.failureDetail();
         this.attempts += sandboxCalls;
         this.lastAttemptAt = at;
         if (report.providerStatus() != null) {
@@ -190,11 +209,17 @@ public class ChannelDistributionEntity {
     }
 
     /** The adapter report as the record stores it (verbatim; the framework adds only bookkeeping). */
-    public record AdapterReport(Status status, String externalId, String failureCode, String providerStatus) {
+    public record AdapterReport(
+            Status status, String externalId, String failureCode, String failureDetail, String providerStatus) {
 
         /** The failed report of an exhausted sandbox (the taxonomy code the record keeps). */
         public static AdapterReport failed(String failureCode) {
-            return new AdapterReport(Status.FAILED, null, failureCode, null);
+            return new AdapterReport(Status.FAILED, null, failureCode, null, null);
+        }
+
+        /** The failed report with the provider's actionable reason (S13-03, AC4). */
+        public static AdapterReport failed(String failureCode, String failureDetail) {
+            return new AdapterReport(Status.FAILED, null, failureCode, failureDetail, null);
         }
     }
 }

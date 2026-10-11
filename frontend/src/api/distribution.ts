@@ -56,6 +56,7 @@ export interface DistributionRecord {
   status: "PENDING" | "DISTRIBUTING" | "DISTRIBUTED" | "FAILED";
   externalId: string | null;
   failureCode: string | null;
+  failureDetail: string | null;
   providerStatus: string | null;
   providerStatusAt: string | null;
   attempts: number;
@@ -202,5 +203,92 @@ export function unlinkTestFlightGroup(
     {
       method: "DELETE",
     },
+  );
+}
+
+/** One authored App Store listing locale (S13-03, AC1): the metadata
+ * the release manifest freezes at APPROVED and the submission sends --
+ * the manifest is the immutable copy of what was sent, these rows the
+ * authoring surface. */
+export interface AppStoreMetadata {
+  id: string;
+  organizationId: string;
+  applicationId: string;
+  channel: string;
+  locale: string;
+  description: string;
+  keywords: string | null;
+  screenshotRefs: string[];
+  releaseNotes: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+/** The release's phased-release curve (S13-03, AC3): the provider's
+ * curve state, the curve's current day of Apple's fixed 7-day
+ * availability curve, and the day's percentage. */
+export interface PhasedReleaseView {
+  versionId: string;
+  versionState: string | null;
+  phasedReleaseState: string | null;
+  currentDay: number;
+  totalDays: number;
+  percentage: number;
+  observedAt: string;
+}
+
+/** The organization's authored App Store listing metadata. */
+export function listAppStoreMetadata(
+  organizationId: string,
+): Promise<{ items: AppStoreMetadata[]; nextCursor?: string }> {
+  return pageFetch<AppStoreMetadata>("/distribution/appstore/metadata", {
+    organizationId,
+    limit: 100,
+  });
+}
+
+/** Authors (or rotates) one locale's listing metadata: a second write
+ * to the same locale replaces the row whole. */
+export function putAppStoreMetadata(input: {
+  organizationId: string;
+  applicationId: string;
+  locale: string;
+  description: string;
+  keywords?: string | null;
+  screenshotRefs?: string[];
+  releaseNotes?: string | null;
+}): Promise<AppStoreMetadata> {
+  return apiFetch("/distribution/appstore/metadata", { method: "PUT", body: input });
+}
+
+/** Removes one authored locale (the authoring surface; a frozen
+ * manifest block keeps its copy). */
+export function deleteAppStoreMetadata(organizationId: string, metadataId: string): Promise<void> {
+  return apiFetch(`/distribution/appstore/metadata/${metadataId}?organizationId=${organizationId}`, {
+    method: "DELETE",
+  });
+}
+
+/** The release's phased-release curve for the dashboard. */
+export function getPhasedRelease(
+  organizationId: string,
+  releaseId: string,
+): Promise<PhasedReleaseView> {
+  return apiFetch(
+    `/distribution/appstore/releases/${releaseId}/phased-release?organizationId=${organizationId}`,
+  );
+}
+
+/** One release action on the curve: pause, resume, or halt (halt
+ * completes the curve immediately -- the documented rollback posture
+ * of the production channel). */
+export function controlPhasedRelease(
+  organizationId: string,
+  releaseId: string,
+  action: "PAUSE" | "RESUME" | "HALT",
+): Promise<PhasedReleaseView> {
+  return apiFetch(
+    `/distribution/appstore/releases/${releaseId}/phased-release?organizationId=${organizationId}`,
+    { method: "POST", body: { action } },
   );
 }
