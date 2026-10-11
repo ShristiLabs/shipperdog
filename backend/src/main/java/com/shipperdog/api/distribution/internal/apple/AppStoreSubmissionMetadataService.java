@@ -4,17 +4,13 @@ import com.shipperdog.api.application.ApplicationAccess;
 import com.shipperdog.api.audit.AuditEvent;
 import com.shipperdog.api.audit.AuditEventType;
 import com.shipperdog.api.audit.AuditLogger;
-import com.shipperdog.api.distribution.ChannelSubmissionAccess;
 import com.shipperdog.api.distribution.DistributionException;
 import com.shipperdog.api.distribution.internal.entity.ChannelSubmissionMetadataEntity;
-import com.shipperdog.api.distribution.internal.registry.DistributionAdapterRegistry;
 import com.shipperdog.api.distribution.internal.repository.ChannelSubmissionMetadataRepository;
-import java.time.Clock;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.Optional;
 import java.util.UUID;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -29,13 +25,13 @@ import org.springframework.transaction.annotation.Transactional;
  * dispatch sends THE FROZEN BLOCK, never these rows — so an edit
  * after approval cannot silently change what a release submits.
  *
- * <p>This service also answers the {@link ChannelSubmissionAccess}
- * port the manifest freeze reads through, with the registry's
- * SUBMISSION-capability check that decides whether a channel carries
- * a submission block at all.
+ * <p>Since #64 the manifest freeze's snapshot read lives in the
+ * channel-generic {@link com.shipperdog.api.distribution.internal.service.ChannelSubmissionSnapshots}
+ * (the play channel's release notes freeze beside this surface's
+ * rows); this service owns the App Store authoring surface alone.
  */
 @Service
-public class AppStoreSubmissionMetadataService implements ChannelSubmissionAccess {
+public class AppStoreSubmissionMetadataService {
 
     /** The channel this surface authors for (the registry's vocabulary). */
     static final String CHANNEL = "appstore";
@@ -52,21 +48,13 @@ public class AppStoreSubmissionMetadataService implements ChannelSubmissionAcces
 
     private final ChannelSubmissionMetadataRepository metadata;
     private final ApplicationAccess applications;
-    private final DistributionAdapterRegistry registry;
     private final AuditLogger audit;
-    private final Clock clock;
 
     public AppStoreSubmissionMetadataService(
-            ChannelSubmissionMetadataRepository metadata,
-            ApplicationAccess applications,
-            DistributionAdapterRegistry registry,
-            AuditLogger audit,
-            Clock clock) {
+            ChannelSubmissionMetadataRepository metadata, ApplicationAccess applications, AuditLogger audit) {
         this.metadata = metadata;
         this.applications = applications;
-        this.registry = registry;
         this.audit = audit;
-        this.clock = clock;
     }
 
     /** The organization's authored App Store metadata, application- then locale-ordered for the console view. */
@@ -147,32 +135,18 @@ public class AppStoreSubmissionMetadataService implements ChannelSubmissionAcces
     }
 
     /**
-     * The manifest freeze's read (the {@link ChannelSubmissionAccess}
-     * port): the application's authored locales on a channel — empty
-     * when the channel is not a registered SUBMISSION channel (the
-     * manifest's block stays absent for those releases).
+     * The application's authored App Store metadata (the freeze's row
+     * source; the channel-generic snapshot service reads the same
+     * repository through its own query).
      */
-    @Override
     @Transactional(readOnly = true)
-    public Optional<SubmissionSnapshot> snapshotOf(UUID applicationId, String channel) {
-        boolean submissionChannel = registry.byChannelId(channel)
-                .map(adapter ->
-                        adapter.capabilities().contains(com.shipperdog.api.distribution.AdapterCapability.SUBMISSION))
-                .orElse(false);
-        if (!submissionChannel) {
-            return Optional.empty();
-        }
-        List<SubmissionLocale> locales = new ArrayList<>();
+    public List<MetadataView> applicationLocalesOf(UUID applicationId) {
+        List<MetadataView> views = new ArrayList<>();
         for (ChannelSubmissionMetadataEntity row :
-                metadata.findByApplicationIdAndChannelOrderByLocaleAsc(applicationId, channel)) {
-            locales.add(new SubmissionLocale(
-                    row.getLocale(),
-                    row.getDescription(),
-                    row.getKeywords(),
-                    row.getScreenshotRefs(),
-                    row.getReleaseNotes()));
+                metadata.findByApplicationIdAndChannelOrderByLocaleAsc(applicationId, CHANNEL)) {
+            views.add(viewOf(row));
         }
-        return Optional.of(new SubmissionSnapshot(List.copyOf(locales)));
+        return views;
     }
 
     private static MetadataView viewOf(ChannelSubmissionMetadataEntity row) {

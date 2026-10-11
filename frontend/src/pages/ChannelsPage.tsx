@@ -42,17 +42,29 @@ import { useState } from "react";
 import {
   bindStoreAccount,
   deleteAppStoreMetadata,
+  deletePlayReleaseNotes,
   deleteStoreAccount,
+  linkPlayGroup,
   listAppStoreMetadata,
   listChannels,
+  listPlayGroups,
+  listPlayReleaseNotes,
+  listPlayTracks,
   listStoreAccounts,
   putAppStoreMetadata,
+  putPlayReleaseNotes,
+  syncPlayGroup,
+  unlinkPlayGroup,
   verifyStoreAccount,
   type AppStoreMetadata,
+  type PlayGroupLink,
+  type PlayReleaseNotes,
   type StoreAccount,
 } from "../api/distribution";
 import { listEnvironments } from "../api/environments";
 import { listApplications } from "../api/applications";
+import { listTenants } from "../api/tenants";
+import { listTenantTesterGroups } from "../api/rings";
 import { useAuth } from "../auth/AuthContext";
 import { useToast } from "../components/ToastContext";
 
@@ -112,8 +124,11 @@ function AppStoreMetadataSection() {
   const applications = useQuery({
     queryKey: ["distribution-applications", orgId],
     queryFn: () => listApplications({ organizationId: orgId as string, limit: 100 }),
-    enabled: orgId !== null && open,
+    enabled: orgId !== null,
   });
+
+  const applicationNameOf = (applicationId: string): string =>
+    (applications.data?.items ?? []).find((application) => application.id === applicationId)?.name ?? applicationId;
 
   const save = useMutation({
     mutationFn: () =>
@@ -203,9 +218,7 @@ function AppStoreMetadataSection() {
               {metadata.data.items.map((row) => (
                 <TableRow key={row.id} data-testid={`metadata-${row.locale}`}>
                   <TableCell>
-                    <Typography variant="caption" sx={{ wordBreak: "break-all" }}>
-                      {row.applicationId}
-                    </Typography>
+                    <Typography variant="body2">{applicationNameOf(row.applicationId)}</Typography>
                   </TableCell>
                   <TableCell>
                     <Chip label={row.locale} size="small" variant="outlined" />
@@ -301,6 +314,500 @@ function AppStoreMetadataSection() {
             disabled={draftIncomplete || save.isPending}
             onClick={() => save.mutate()}
             data-testid="save-metadata-button"
+          >
+            Save
+          </Button>
+        </DialogActions>
+      </Dialog>
+    </>
+  );
+}
+
+/** The Play group mapping and tester-list sync section (S13-04,
+ * AC2/AC4): the tester-group to Play track links — the track name is
+ * the provider-side id — and the sync whose adds AND removes both
+ * reflect on the track's email list. The track model read below the
+ * links answers the listing console (Google's own status words). */
+function PlayGroupsSection() {
+  const { user } = useAuth();
+  const orgId = user?.orgId ?? null;
+  const toast = useToast();
+  const queryClient = useQueryClient();
+  const [open, setOpen] = useState(false);
+  const [applicationId, setApplicationId] = useState("");
+  const [tenantId, setTenantId] = useState("");
+  const [groupId, setGroupId] = useState("");
+  const [track, setTrack] = useState("internal");
+  const [tracksApplication, setTracksApplication] = useState("");
+
+  const links = useQuery({
+    queryKey: ["play-groups", orgId],
+    queryFn: () => listPlayGroups(orgId as string),
+    enabled: orgId !== null,
+  });
+
+  const applications = useQuery({
+    queryKey: ["distribution-applications", orgId],
+    queryFn: () => listApplications({ organizationId: orgId as string, limit: 100 }),
+    enabled: orgId !== null,
+  });
+
+  const tenants = useQuery({
+    queryKey: ["play-link-tenants", orgId],
+    queryFn: () => listTenants({ organizationId: orgId as string, limit: 100 }),
+    enabled: orgId !== null && open,
+  });
+
+  const groups = useQuery({
+    queryKey: ["play-link-groups", tenantId],
+    queryFn: () => listTenantTesterGroups(tenantId),
+    enabled: tenantId !== "",
+  });
+
+  const tracks = useQuery({
+    queryKey: ["play-tracks", orgId, tracksApplication],
+    queryFn: () => listPlayTracks(orgId as string, tracksApplication),
+    enabled: orgId !== null && tracksApplication !== "",
+  });
+
+  const invalidate = () => {
+    queryClient.invalidateQueries({ queryKey: ["play-groups", orgId] });
+  };
+
+  const link = useMutation({
+    mutationFn: () =>
+      linkPlayGroup({
+        organizationId: orgId as string,
+        applicationId,
+        groupId,
+        track: track.trim(),
+      }),
+    onSuccess: (row: PlayGroupLink) => {
+      toast.showSuccess(`Linked ${row.groupName} to the ${row.externalGroupName} track`);
+      setOpen(false);
+      setApplicationId("");
+      setTenantId("");
+      setGroupId("");
+      setTrack("internal");
+      invalidate();
+    },
+    onError: (error: Error) => toast.showError(error.message),
+  });
+
+  const sync = useMutation({
+    mutationFn: (row: PlayGroupLink) => syncPlayGroup(orgId as string, row.id),
+    onSuccess: (view: { addedEmails: string[]; removedEmails: string[] }, row: PlayGroupLink) => {
+      toast.showSuccess(
+        `Synced the ${row.externalGroupName} track: ${view.addedEmails.length} added, ${view.removedEmails.length} removed`,
+      );
+      invalidate();
+    },
+    onError: (error: Error) => toast.showError(error.message),
+  });
+
+  const remove = useMutation({
+    mutationFn: (row: PlayGroupLink) => unlinkPlayGroup(orgId as string, row.id),
+    onSuccess: (_result, row: PlayGroupLink) => {
+      toast.showSuccess(`Removed the ${row.groupName} link (the Play track stays)`);
+      invalidate();
+    },
+    onError: (error: Error) => toast.showError(error.message),
+  });
+
+  if (orgId === null) {
+    return null;
+  }
+  return (
+    <>
+      <Stack direction="row" sx={{ justifyContent: "space-between", alignItems: "center" }}>
+        <Box>
+          <Typography variant="h6">Google Play tester tracks</Typography>
+          <Typography variant="body2" color="text.secondary">
+            Tester groups linked to Play testing tracks; the sync makes the track&apos;s email list exactly the linked
+            groups&apos; members — adds and removes both reflect.
+          </Typography>
+        </Box>
+        <Button
+          variant="outlined"
+          startIcon={<AddIcon />}
+          onClick={() => setOpen(true)}
+          data-testid="link-play-group-button"
+        >
+          Link group
+        </Button>
+      </Stack>
+
+      {links.isPending ? <LinearProgress /> : null}
+      {links.isError ? <Alert severity="error">The Play group links could not be loaded.</Alert> : null}
+      {links.data ? (
+        <Paper elevation={2} data-testid="play-groups">
+          <Table size="small">
+            <TableHead>
+              <TableRow>
+                <TableCell>Tester group</TableCell>
+                <TableCell>Play track</TableCell>
+                <TableCell>Last synced</TableCell>
+                <TableCell align="right">Actions</TableCell>
+              </TableRow>
+            </TableHead>
+            <TableBody>
+              {links.data.items.length === 0 ? (
+                <TableRow>
+                  <TableCell colSpan={4}>
+                    <Typography variant="body2" color="text.secondary">
+                      No tester groups linked. A release targeting groups on an unlinked track fails its records with
+                      the mapping gap.
+                    </Typography>
+                  </TableCell>
+                </TableRow>
+              ) : null}
+              {links.data.items.map((row) => (
+                <TableRow key={row.id} data-testid={`play-link-${row.groupName}`}>
+                  <TableCell>{row.groupName}</TableCell>
+                  <TableCell>
+                    <Chip label={row.externalGroupName} size="small" color="primary" variant="outlined" />
+                  </TableCell>
+                  <TableCell>{row.lastSyncedAt ?? "-"}</TableCell>
+                  <TableCell align="right">
+                    <Stack direction="row" spacing={1} sx={{ justifyContent: "flex-end" }}>
+                      <Button
+                        size="small"
+                        startIcon={<TaskAltIcon />}
+                        onClick={() => sync.mutate(row)}
+                        disabled={sync.isPending}
+                        aria-label={`sync ${row.groupName}`}
+                      >
+                        Sync
+                      </Button>
+                      <Button
+                        size="small"
+                        color="error"
+                        startIcon={<DeleteIcon />}
+                        onClick={() => remove.mutate(row)}
+                        disabled={remove.isPending}
+                        aria-label={`unlink ${row.groupName}`}
+                      >
+                        Unlink
+                      </Button>
+                    </Stack>
+                  </TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        </Paper>
+      ) : null}
+
+      <Stack direction="row" spacing={1} sx={{ alignItems: "center" }}>
+        <TextField
+          select
+          label="Application tracks"
+          value={tracksApplication}
+          onChange={(event) => setTracksApplication(event.target.value)}
+          sx={{ minWidth: 280 }}
+          helperText="The app's Play tracks with their releases (Google's own status words)"
+        >
+          {(applications.data?.items ?? []).map((application) => (
+            <MenuItem key={application.id} value={application.id}>
+              {application.name}
+            </MenuItem>
+          ))}
+        </TextField>
+      </Stack>
+      {tracks.data ? (
+        <Paper elevation={2} data-testid="play-tracks">
+          <Table size="small">
+            <TableHead>
+              <TableRow>
+                <TableCell>Track</TableCell>
+                <TableCell>Releases</TableCell>
+                <TableCell>Status</TableCell>
+              </TableRow>
+            </TableHead>
+            <TableBody>
+              {tracks.data.tracks.map((trackRow) => (
+                <TableRow key={trackRow.track}>
+                  <TableCell>{trackRow.track}</TableCell>
+                  <TableCell>
+                    {trackRow.releases.length === 0
+                      ? "-"
+                      : trackRow.releases
+                          .map(
+                            (release) =>
+                              `${release.name ?? ""} (${release.versionCodes.join(", ")})`,
+                          )
+                          .join("; ")}
+                  </TableCell>
+                  <TableCell>
+                    {trackRow.releases.length === 0 ? (
+                      "-"
+                    ) : (
+                      <Stack direction="row" spacing={0.5} sx={{ flexWrap: "wrap", gap: 0.5 }}>
+                        {trackRow.releases.map((release, index) => (
+                          <Chip
+                            key={index}
+                            label={release.status ?? "unknown"}
+                            size="small"
+                            variant="outlined"
+                          />
+                        ))}
+                      </Stack>
+                    )}
+                  </TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        </Paper>
+      ) : null}
+
+      <Dialog open={open} onClose={() => setOpen(false)} fullWidth maxWidth="sm">
+        <DialogTitle>Link a tester group to a Play track</DialogTitle>
+        <DialogContent>
+          <Stack spacing={2} sx={{ marginTop: 1 }}>
+            <TextField
+              select
+              label="Application"
+              value={applicationId}
+              onChange={(event) => setApplicationId(event.target.value)}
+              fullWidth
+            >
+              {(applications.data?.items ?? []).map((application) => (
+                <MenuItem key={application.id} value={application.id}>
+                  {application.name}
+                </MenuItem>
+              ))}
+            </TextField>
+            <TextField
+              select
+              label="Tenant"
+              value={tenantId}
+              onChange={(event) => {
+                setTenantId(event.target.value);
+                setGroupId("");
+              }}
+              fullWidth
+            >
+              {(tenants.data?.items ?? []).map((tenant) => (
+                <MenuItem key={tenant.id} value={tenant.id}>
+                  {tenant.name}
+                </MenuItem>
+              ))}
+            </TextField>
+            <TextField
+              select
+              label="Tester group"
+              value={groupId}
+              onChange={(event) => setGroupId(event.target.value)}
+              disabled={tenantId === ""}
+              fullWidth
+            >
+              {(groups.data ?? []).map((group) => (
+                <MenuItem key={group.id} value={group.id}>
+                  {group.name}
+                </MenuItem>
+              ))}
+            </TextField>
+            <TextField
+              label="Track"
+              value={track}
+              onChange={(event) => setTrack(event.target.value)}
+              helperText="A testing track: internal, or the app's closed track name (production is refused)"
+              fullWidth
+            />
+          </Stack>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setOpen(false)}>Cancel</Button>
+          <Button
+            variant="contained"
+            disabled={applicationId === "" || groupId === "" || track.trim().length === 0 || link.isPending}
+            onClick={() => link.mutate()}
+            data-testid="link-play-group-submit"
+          >
+            Link
+          </Button>
+        </DialogActions>
+      </Dialog>
+    </>
+  );
+}
+
+/** The Play release-notes authoring section (S13-04, AC2): the
+ * per-locale what's-new the release manifest freezes at APPROVED and
+ * the track release sends — author before promoting; a later edit
+ * cannot change a frozen release's notes. */
+function PlayReleaseNotesSection() {
+  const { user } = useAuth();
+  const orgId = user?.orgId ?? null;
+  const toast = useToast();
+  const queryClient = useQueryClient();
+  const [open, setOpen] = useState(false);
+  const [applicationId, setApplicationId] = useState("");
+  const [locale, setLocale] = useState("en-US");
+  const [notes, setNotes] = useState("");
+
+  const releaseNotes = useQuery({
+    queryKey: ["play-release-notes", orgId],
+    queryFn: () => listPlayReleaseNotes(orgId as string),
+    enabled: orgId !== null,
+  });
+
+  const applications = useQuery({
+    queryKey: ["distribution-applications", orgId],
+    queryFn: () => listApplications({ organizationId: orgId as string, limit: 100 }),
+    enabled: orgId !== null,
+  });
+
+  const applicationNameOf = (id: string): string =>
+    (applications.data?.items ?? []).find((application) => application.id === id)?.name ?? id;
+
+  const save = useMutation({
+    mutationFn: () =>
+      putPlayReleaseNotes({
+        organizationId: orgId as string,
+        applicationId,
+        locale: locale.trim(),
+        notes: notes.trim(),
+      }),
+    onSuccess: (row: PlayReleaseNotes) => {
+      toast.showSuccess(`Saved the ${row.locale} release notes`);
+      setOpen(false);
+      setApplicationId("");
+      setLocale("en-US");
+      setNotes("");
+      queryClient.invalidateQueries({ queryKey: ["play-release-notes", orgId] });
+    },
+    onError: (error: Error) => toast.showError(error.message),
+  });
+
+  const remove = useMutation({
+    mutationFn: (row: PlayReleaseNotes) => deletePlayReleaseNotes(orgId as string, row.id),
+    onSuccess: (_result, row: PlayReleaseNotes) => {
+      toast.showSuccess(`Removed the ${row.locale} release notes`);
+      queryClient.invalidateQueries({ queryKey: ["play-release-notes", orgId] });
+    },
+    onError: (error: Error) => toast.showError(error.message),
+  });
+
+  if (orgId === null) {
+    return null;
+  }
+  return (
+    <>
+      <Stack direction="row" sx={{ justifyContent: "space-between", alignItems: "center" }}>
+        <Box>
+          <Typography variant="h6">Google Play release notes</Typography>
+          <Typography variant="body2" color="text.secondary">
+            The per-locale what&apos;s-new a Play track release sends; the release manifest freezes them at approval,
+            so author before promoting.
+          </Typography>
+        </Box>
+        <Button
+          variant="outlined"
+          startIcon={<AddIcon />}
+          onClick={() => setOpen(true)}
+          data-testid="add-release-notes-button"
+        >
+          Add locale
+        </Button>
+      </Stack>
+
+      {releaseNotes.isPending ? <LinearProgress /> : null}
+      {releaseNotes.isError ? <Alert severity="error">The release notes could not be loaded.</Alert> : null}
+      {releaseNotes.data ? (
+        <Paper elevation={2} data-testid="play-release-notes">
+          <Table size="small">
+            <TableHead>
+              <TableRow>
+                <TableCell>Application</TableCell>
+                <TableCell>Locale</TableCell>
+                <TableCell>Release notes</TableCell>
+                <TableCell align="right">Actions</TableCell>
+              </TableRow>
+            </TableHead>
+            <TableBody>
+              {releaseNotes.data.items.length === 0 ? (
+                <TableRow>
+                  <TableCell colSpan={4}>
+                    <Typography variant="body2" color="text.secondary">
+                      No release notes authored. A Play release without a frozen locale submits no notes.
+                    </Typography>
+                  </TableCell>
+                </TableRow>
+              ) : null}
+              {releaseNotes.data.items.map((row) => (
+                <TableRow key={row.id} data-testid={`release-notes-${row.locale}`}>
+                  <TableCell>{applicationNameOf(row.applicationId)}</TableCell>
+                  <TableCell>
+                    <Chip label={row.locale} size="small" variant="outlined" />
+                  </TableCell>
+                  <TableCell>
+                    <Typography variant="body2" sx={{ maxWidth: 420 }}>
+                      {row.notes}
+                    </Typography>
+                  </TableCell>
+                  <TableCell align="right">
+                    <Button
+                      size="small"
+                      color="error"
+                      startIcon={<DeleteIcon />}
+                      onClick={() => remove.mutate(row)}
+                      disabled={remove.isPending}
+                      aria-label={`remove ${row.locale} release notes`}
+                    >
+                      Remove
+                    </Button>
+                  </TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        </Paper>
+      ) : null}
+
+      <Dialog open={open} onClose={() => setOpen(false)} fullWidth maxWidth="sm">
+        <DialogTitle>Google Play release notes</DialogTitle>
+        <DialogContent>
+          <Stack spacing={2} sx={{ marginTop: 1 }}>
+            <TextField
+              select
+              label="Application"
+              value={applicationId}
+              onChange={(event) => setApplicationId(event.target.value)}
+              fullWidth
+            >
+              {(applications.data?.items ?? []).map((application) => (
+                <MenuItem key={application.id} value={application.id}>
+                  {application.name}
+                </MenuItem>
+              ))}
+            </TextField>
+            <TextField
+              label="Locale"
+              value={locale}
+              onChange={(event) => setLocale(event.target.value)}
+              helperText="The store locale, e.g. en-US or de-DE"
+              fullWidth
+            />
+            <TextField
+              label="Release notes"
+              value={notes}
+              onChange={(event) => setNotes(event.target.value)}
+              multiline
+              minRows={3}
+              helperText="Google caps the text at 500 characters"
+              fullWidth
+            />
+          </Stack>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setOpen(false)}>Cancel</Button>
+          <Button
+            variant="contained"
+            disabled={applicationId === "" || locale.trim().length === 0 || notes.trim().length === 0 || save.isPending}
+            onClick={() => save.mutate()}
+            data-testid="save-release-notes-button"
           >
             Save
           </Button>
@@ -548,6 +1055,10 @@ export default function ChannelsPage() {
       ) : null}
 
       <AppStoreMetadataSection />
+
+      <PlayReleaseNotesSection />
+
+      <PlayGroupsSection />
 
       <Dialog open={dialogOpen} onClose={() => setDialogOpen(false)} fullWidth maxWidth="sm">
         <DialogTitle>Bind store account</DialogTitle>

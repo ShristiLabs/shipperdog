@@ -3,8 +3,9 @@
 The distribution adapter framework (issue #61, S13-01, FR-019, PRD
 P6/19/25): every delivery channel — the platform's own Direct
 download tier; Apple TestFlight since #62; the Apple App Store's
-production submission and phased release since #63; Google Play
-(#64–#65) and MDMs later — sits behind ONE interface, so a new store
+production submission and phased release since #63; Google Play's
+testing tracks since #64 (production promotion and staged rollout in
+#65); MDMs later — sits behind ONE interface, so a new store
 plugs into distribution without a core change, and store credentials
 live behind secret references the platform holds instead of secret
 material.
@@ -21,6 +22,8 @@ material.
   connector](#the-testflight-connector)
 - The production store connector — Apple App Store (#63): [The App
   Store connector](#the-app-store-connector)
+- The Android testing-track connector — Google Play (#64): [The
+  Google Play connector](#the-google-play-connector)
 - How to add a channel: [Adding an adapter](#adding-an-adapter)
 
 ## The SPI
@@ -435,6 +438,165 @@ answer to a bad binary is a new version (and the Direct tier's own
 ROLLED_BACK edge — S13-06's orchestration). Every action is audited
 (`DISTRIBUTION_PHASED_RELEASE_CONTROLLED`) and runs under the same
 sandbox as the store conversations.
+
+## The Google Play connector
+
+The Android testing-track connector on the SPI (issue #64, S13-04,
+FR-021, PRD 19/25): the `play` channel — an Android release promoted
+to ACTIVE on an environment bound to `play` uploads its AAB through
+Play's two-phase edit model (upload the bundle into an edit, write
+the mapped track's release, commit), the track chosen by the
+ring-to-track mapping, the release notes THE FROZEN MANIFEST BLOCK
+carries. Capabilities: `BUILD_UPLOAD`, `BUILD_STATUS`,
+`TESTER_GROUP_SYNC` — deliberately NOT `SUBMISSION` or
+`ROLLOUT_CONTROL`: production promotion and staged-rollout
+percentages are S13-05's (#65) surface, a mapping that resolves to
+the production track is refused loudly (the detail names S13-05),
+and the never-fail-the-crossing doctrine holds — a Play failure
+fails the record, never the release's ACTIVE crossing.
+
+### The service account (AC1)
+
+The Apple channels' .p8-to-ES256 analog is the service-account JSON
+to an RS256 JWT-bearer exchange: the binding's secret material is the
+WHOLE service-account JSON document Google's console hands an
+operator — it carries every connection fact (client email, PKCS#8
+RSA private key, token endpoint) — and the binding needs no metadata
+convention. The connector signs the RFC 7523 assertion with the
+JDK's own JCA (issuer the client email, the `androidpublisher`
+scope, audience the document's `token_uri`, one-hour lifetime) and
+exchanges it for the bearer every Publishing-API call carries. One
+live access token per credential document, refreshed a minute before
+expiry; a rotated service account is a different document digest by
+construction, so its first call mints fresh and the superseded entry
+is never answered again. A rejected assertion (400 `invalid_grant`)
+is AUTHENTICATION — never retried, exactly like a rejected Apple
+key. Provider `google-play` on the delegation chain (org, app, or
+app+env level — the same PRD 25 matrix).
+
+### The two-phase upload and the ring-to-track mapping (AC2, AC3)
+
+The dispatch runs under the same sandbox as every adapter
+conversation:
+
+1. **The mapping** — the environment's `play-track` configuration
+   key names the track explicitly (any testing track, custom closed
+   track names included); absent it, the release's ring code maps
+   through the documented default (Engineering/QA to the review-free
+   `internal` track — the story's own note: use it for the fast
+   feedback loop; Tenant Pilot/UAT to the closed `alpha` track).
+   Production is refused; an unmapped ring with no override is the
+   loud mapping gap.
+2. **The format rule at the adapter boundary** — the Play channel
+   serves AAB artifacts only (FR-006): an APK slot fails its record
+   with `PLAY_AAB_REQUIRED` before any provider call, the mirror of
+   the Direct channel's APK-only rule for Android. This is where
+   AABs legitimately go.
+3. **The two-phase upload** — insert an edit; upload the artifact's
+   STORED BYTES to the edit's media endpoint (the command carries a
+   re-openable stream over the object-storage tier — the adapter
+   never reads platform tables, and a sandbox retry re-streams from
+   the start); write the track's release (the provider-assigned
+   version code, the FROZEN release notes, released to the full
+   tester list — rollout fractions are #65's); commit. The record
+   lands DISTRIBUTING with `external_id` = `track#versionCode#
+   packageName` — the refresh's complete addressing — and Google's
+   own track-release status word (`completed` for the internal
+   track, which serves immediately; `inProgress` for closed tracks,
+   which hold the release in review).
+
+The upload rides the ACTIVE crossing's transaction under the
+sandbox's wall, the documented #62 seam; size the play sandbox
+timeout (`DISTRIBUTION_ADAPTERS__PLAY__TIMEOUT`) and the client's
+read timeout to the artifact sizes a dispatch carries — the bus move
+stays reserved for when real latencies demand it.
+
+### Release notes and the frozen manifest (AC2)
+
+Operators author the per-locale what's-new BEFORE approval through
+`channel_release_notes` (V46; one row per application + channel +
+locale, Google's 500-character cap enforced author-side so a frozen
+block can never carry a value the provider would refuse):
+
+| Route | Purpose |
+|---|---|
+| `GET /api/v1/distribution/play/release-notes?organizationId=` | The organization's authored locales. |
+| `PUT /api/v1/distribution/play/release-notes` | Author or rotate `{organizationId, applicationId, locale, notes}`. |
+| `DELETE /api/v1/distribution/play/release-notes/{notesId}?organizationId=` | Remove an authored locale. |
+
+At the APPROVED crossing the manifest freezes a `storeSubmission`
+block exactly like the App Store's (the freeze is channel-generic
+since #64: the SUBMISSION channels keep the #63 contract verbatim;
+the play channel freezes its notes rows when some exist and freezes
+no block when none do — a Play release without authored notes
+submits none, legitimate). The dispatch sends THE FROZEN BLOCK,
+never the live rows, so an edit after approval cannot change what a
+release submits.
+
+### Tester email lists (AC4)
+
+ShipperDog tester groups link to Play TRACKS through
+`channel_group_links` (the track name is the provider-side id):
+
+| Route | Purpose |
+|---|---|
+| `GET /api/v1/distribution/play/groups?organizationId=` | The organization's links. |
+| `PUT /api/v1/distribution/play/groups` | Link `{organizationId, applicationId, groupId, track}` — the write validates the app carries the track and refuses production. |
+| `POST /api/v1/distribution/play/groups/{linkId}/sync?organizationId=` | The tester-list sync. |
+| `DELETE /api/v1/distribution/play/groups/{linkId}?organizationId=` | Remove the link (the ShipperDog side only; the track stays). |
+
+The sync doctrine is the **Play split** of #62's never-remove: a
+track's email list IS managed here — the story's own contract
+("add/remove reflected in Play Console") — so the write REPLACES the
+list with the union of the members of every group linked to that
+track, and the adds AND removes are reported in the sync's answer
+and the `DISTRIBUTION_GROUP_SYNCED` audit. A manual Play Console
+addition does not survive a sync of a linked track; the report is
+the operator's evidence of what changed. (The testers model is the
+Console's email list — internal testing's individual-email shape;
+the v3 API's googleGroups encoding is the provider SDK's concern,
+kept inside the client.) A release that targets tester groups but
+whose release track no group is linked to fails its records loudly
+with `PLAY_GROUPS_UNMAPPED` — the mapping surface's gap, never a
+silent skip.
+
+### Track statuses (AC5)
+
+The record carries Google's own track-release status word verbatim
+(`completed`, `inProgress`, `draft`, `halted`, `failed`), written by
+the dispatch's first observation (the LIVE track after the commit)
+and every refresh:
+
+- **The explicit refresh** — `POST
+  /api/v1/distribution/records/{recordId}/refresh` — `completed`
+  moves the record DISTRIBUTED, the in-flight words hold
+  DISTRIBUTING, `failed` fails with `PLAY_RELEASE_FAILED`.
+- **The receiver leg** — a verified Play Real-Time Developer
+  Notification maps to its `store_status_events` row and publishes
+  the mapped event; the distribution consumer's google-play arm
+  refreshes every walking play record. RTDN carries NO package
+  identity (the receiver maps kind and purchase context, never the
+  app), so the play arm refreshes the walking play records within
+  the same 500-record page discipline — a SYNC TRIGGER, never a
+  state interpretation, the polling pass the backstop.
+- **The polling leg** — the reconciliation pass (opt-in, unchanged)
+  refreshes every PENDING/DISTRIBUTING store record with an external
+  id.
+
+The track model itself surfaces for the listing console:
+
+| Route | Purpose |
+|---|---|
+| `GET /api/v1/distribution/play/tracks?organizationId=&applicationId=` | The app's Play tracks with their releases — Google's own status words verbatim. |
+
+### Rate limits (AC6)
+
+Google's 429 answers map to the sandbox's RATE_LIMITED category —
+retried with the sandbox's backoff, counted in the
+`shipperdog.adapter.ratelimit` counter tagged `provider`
+`google-play` (Google throttles the project's quota, not the calling
+channel), whether the retry lands or the exhaustion fails the record
+with `ADAPTER_RATE_LIMITED`.
 
 ## Adding an adapter
 

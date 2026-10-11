@@ -5,6 +5,8 @@ import com.shipperdog.api.config.PageResponse;
 import com.shipperdog.api.distribution.internal.apple.AppStorePhasedReleaseService;
 import com.shipperdog.api.distribution.internal.apple.AppStoreSubmissionMetadataService;
 import com.shipperdog.api.distribution.internal.apple.TestFlightGroupService;
+import com.shipperdog.api.distribution.internal.google.PlayGroupService;
+import com.shipperdog.api.distribution.internal.google.PlayReleaseNotesService;
 import com.shipperdog.api.distribution.internal.registry.DistributionAdapterRegistry;
 import com.shipperdog.api.distribution.internal.service.DistributionCredentialService;
 import com.shipperdog.api.distribution.internal.service.DistributionCredentialService.BindingCommand;
@@ -53,6 +55,8 @@ public class DistributionController {
     private final com.shipperdog.api.distribution.internal.apple.TestFlightGroupService testFlightGroups;
     private final AppStoreSubmissionMetadataService appStoreMetadata;
     private final AppStorePhasedReleaseService appStorePhasedRelease;
+    private final PlayGroupService playGroups;
+    private final PlayReleaseNotesService playReleaseNotes;
 
     public DistributionController(
             DistributionAdapterRegistry registry,
@@ -60,13 +64,17 @@ public class DistributionController {
             DistributionDispatchService dispatch,
             com.shipperdog.api.distribution.internal.apple.TestFlightGroupService testFlightGroups,
             AppStoreSubmissionMetadataService appStoreMetadata,
-            AppStorePhasedReleaseService appStorePhasedRelease) {
+            AppStorePhasedReleaseService appStorePhasedRelease,
+            PlayGroupService playGroups,
+            PlayReleaseNotesService playReleaseNotes) {
         this.registry = registry;
         this.credentials = credentials;
         this.dispatch = dispatch;
         this.testFlightGroups = testFlightGroups;
         this.appStoreMetadata = appStoreMetadata;
         this.appStorePhasedRelease = appStorePhasedRelease;
+        this.playGroups = playGroups;
+        this.playReleaseNotes = playReleaseNotes;
     }
 
     /** The channel catalog: every registered adapter with its capabilities and credential providers. */
@@ -314,6 +322,108 @@ public class DistributionController {
         return appStorePhasedRelease.control(organizationId, releaseId, request.action(), requireUserId(principal));
     }
 
+    // -------------------------------------------------------------------------
+    // The Google Play testing-track channel (S13-04, #64)
+    // -------------------------------------------------------------------------
+
+    /** The organization's Play group links (AC2/AC4: the mapping view). */
+    @GetMapping("/play/groups")
+    @PreAuthorize("hasPermission(#organizationId, 'organization', 'org:distribution:read')")
+    PageResponse<PlayGroupService.LinkView> playGroups(
+            @RequestParam UUID organizationId,
+            @RequestParam(required = false) String limit,
+            @RequestParam(required = false) String cursor) {
+        ListQuery query = ListQuery.of(limit, cursor);
+        List<PlayGroupService.LinkView> all = playGroups.list(organizationId);
+        List<PlayGroupService.LinkView> page = all.subList(
+                (int) Math.min(query.offset(), all.size()), (int) Math.min(query.offset() + query.limit(), all.size()));
+        return PageResponse.of(page, query.offset() + query.limit() < all.size(), query.offset() + query.limit());
+    }
+
+    /**
+     * Links one tester group to a Play testing track (AC2): the track
+     * name is the provider-side id; the write validates the app
+     * carries the track and lands the link.
+     */
+    @PutMapping("/play/groups")
+    @PreAuthorize("hasPermission(#request.organizationId(), 'organization', 'org:distribution:manage')")
+    PlayGroupService.LinkView putPlayGroup(
+            @AuthenticationPrincipal Object principal, @RequestBody PlayGroupLinkRequest request) {
+        return playGroups.link(
+                request.organizationId(),
+                request.applicationId(),
+                request.groupId(),
+                request.track(),
+                requireUserId(principal));
+    }
+
+    /**
+     * The tester-list sync of one link (AC4): the track's email list
+     * becomes exactly the linked groups' members — adds AND removes
+     * both reflect, and the answer reports every change.
+     */
+    @PostMapping("/play/groups/{linkId}/sync")
+    @PreAuthorize("hasPermission(#organizationId, 'organization', 'org:distribution:manage')")
+    PlayGroupService.SyncView syncPlayGroup(
+            @AuthenticationPrincipal Object principal, @PathVariable UUID linkId, @RequestParam UUID organizationId) {
+        return playGroups.sync(linkId, organizationId, requireUserId(principal));
+    }
+
+    /** Removes one link (the ShipperDog side only; the Play track stays). */
+    @DeleteMapping("/play/groups/{linkId}")
+    @ResponseStatus(HttpStatus.NO_CONTENT)
+    @PreAuthorize("hasPermission(#organizationId, 'organization', 'org:distribution:manage')")
+    void deletePlayGroup(
+            @AuthenticationPrincipal Object principal, @PathVariable UUID linkId, @RequestParam UUID organizationId) {
+        playGroups.unlink(linkId, organizationId, requireUserId(principal));
+    }
+
+    /** The app's Play track model (AC2/AC5: the listing console's read). */
+    @GetMapping("/play/tracks")
+    @PreAuthorize("hasPermission(#organizationId, 'organization', 'org:distribution:read')")
+    PlayTracksView playTracks(@RequestParam UUID organizationId, @RequestParam UUID applicationId) {
+        return new PlayTracksView(playGroups.tracks(organizationId, applicationId));
+    }
+
+    /** The organization's authored Play release notes (AC2's authoring view). */
+    @GetMapping("/play/release-notes")
+    @PreAuthorize("hasPermission(#organizationId, 'organization', 'org:distribution:read')")
+    PageResponse<PlayReleaseNotesService.NotesView> playReleaseNotes(
+            @RequestParam UUID organizationId,
+            @RequestParam(required = false) String limit,
+            @RequestParam(required = false) String cursor) {
+        ListQuery query = ListQuery.of(limit, cursor);
+        List<PlayReleaseNotesService.NotesView> all = playReleaseNotes.list(organizationId);
+        List<PlayReleaseNotesService.NotesView> page = all.subList(
+                (int) Math.min(query.offset(), all.size()), (int) Math.min(query.offset() + query.limit(), all.size()));
+        return PageResponse.of(page, query.offset() + query.limit() < all.size(), query.offset() + query.limit());
+    }
+
+    /**
+     * Authors (or rotates) one locale's release notes (AC2): the
+     * authoring surface the release manifest freezes at APPROVED and
+     * the track release sends — a second write to the same locale
+     * replaces the row whole.
+     */
+    @PutMapping("/play/release-notes")
+    @PreAuthorize("hasPermission(#request.organizationId(), 'organization', 'org:distribution:manage')")
+    PlayReleaseNotesService.NotesView putPlayReleaseNotes(
+            @AuthenticationPrincipal Object principal, @RequestBody PlayReleaseNotesRequest request) {
+        return playReleaseNotes.put(
+                new PlayReleaseNotesService.NotesCommand(
+                        request.organizationId(), request.applicationId(), request.locale(), request.notes()),
+                requireUserId(principal));
+    }
+
+    /** Removes one authored locale (the authoring surface; a frozen manifest block keeps its copy). */
+    @DeleteMapping("/play/release-notes/{notesId}")
+    @ResponseStatus(HttpStatus.NO_CONTENT)
+    @PreAuthorize("hasPermission(#organizationId, 'organization', 'org:distribution:manage')")
+    void deletePlayReleaseNotes(
+            @AuthenticationPrincipal Object principal, @PathVariable UUID notesId, @RequestParam UUID organizationId) {
+        playReleaseNotes.delete(notesId, organizationId, requireUserId(principal));
+    }
+
     private static UUID requireUserId(Object principal) {
         if (principal instanceof org.springframework.security.oauth2.jwt.Jwt jwt) {
             return UUID.fromString(jwt.getSubject());
@@ -381,4 +491,17 @@ public class DistributionController {
 
     /** The phased-release control's body (S13-03, AC3): PAUSE, RESUME, or HALT. */
     record PhasedReleaseActionRequest(String action) {}
+
+    /**
+     * The Play group-link write's body (S13-04, AC2): the owning
+     * dimensions, the tester group, and the Play testing track the
+     * group's email list syncs to.
+     */
+    record PlayGroupLinkRequest(UUID organizationId, UUID applicationId, UUID groupId, String track) {}
+
+    /** The release-notes authoring write's body (S13-04, AC2): the owning dimensions and the locale's what's-new. */
+    record PlayReleaseNotesRequest(UUID organizationId, UUID applicationId, String locale, String notes) {}
+
+    /** The track listing's answer (a wrapper shape, never a bare array). */
+    record PlayTracksView(List<PlayGroupService.TrackView> tracks) {}
 }

@@ -83,7 +83,10 @@ frontend/src/
                 credential-delegation console; since S13-03 also the
                 App Store listing-metadata authoring section —
                 per-locale facts the release manifest freezes at
-                approval)
+                approval, rendered with application NAMES (the #64
+                join fix); since S13-04 the Google Play sections:
+                release-notes authoring, tester-track group links
+                with the add/remove sync, and the track-model read)
   test/         harness.tsx (providers + fetch router), setup.ts
 frontend/e2e/   console-verify.mjs, applications-verify.mjs,
                 releases-verify.mjs + apk-fixture.mjs (Playwright

@@ -103,6 +103,7 @@ public class DistributionDispatchService {
     private final ReleaseSubmissionManifests submissionManifests;
     private final EnvironmentAccess environments;
     private final VersionArtifacts versionArtifacts;
+    private final com.shipperdog.api.artifact.ArtifactStore artifactStorage;
     private final AdapterCallSandbox sandbox;
     private final SubmissionFailureRecorder submissionFailures;
     private final AuditLogger audit;
@@ -119,6 +120,7 @@ public class DistributionDispatchService {
             ReleaseSubmissionManifests submissionManifests,
             EnvironmentAccess environments,
             VersionArtifacts versionArtifacts,
+            com.shipperdog.api.artifact.ArtifactStore artifactStorage,
             AdapterCallSandbox sandbox,
             SubmissionFailureRecorder submissionFailures,
             AuditLogger audit,
@@ -133,6 +135,7 @@ public class DistributionDispatchService {
         this.submissionManifests = submissionManifests;
         this.environments = environments;
         this.versionArtifacts = versionArtifacts;
+        this.artifactStorage = artifactStorage;
         this.sandbox = sandbox;
         this.submissionFailures = submissionFailures;
         this.audit = audit;
@@ -300,6 +303,7 @@ public class DistributionDispatchService {
                 seed.tenantId(),
                 seed.environmentId(),
                 seed.environmentCode(),
+                seed.ringCode(),
                 seed.channel(),
                 seed.artifacts(),
                 seed.targetTenantIds(),
@@ -357,6 +361,16 @@ public class DistributionDispatchService {
         List<DistributionCommand.ArtifactSlot> artifacts = slots.stream()
                 .map(slot -> {
                     VersionArtifacts.VersionArtifactSlot facts = enrich.get(slot.artifactId());
+                    // The upload channels' byte source (S13-04, #64): a
+                    // RE-OPENABLE supplier over the stored object, so an
+                    // adapter streams the binary and a sandbox retry
+                    // re-streams from the start. Null when the slot's
+                    // object carries no key (the assignment channels'
+                    // honest shape).
+                    java.util.function.Supplier<java.io.InputStream> contentOf =
+                            facts == null || facts.storageKey() == null
+                                    ? null
+                                    : () -> artifactStorage.open(facts.storageKey());
                     return new DistributionCommand.ArtifactSlot(
                             slot.artifactId(),
                             slot.platform(),
@@ -365,7 +379,8 @@ public class DistributionDispatchService {
                             facts == null ? 0L : facts.size(),
                             facts == null ? null : facts.buildNumber(),
                             facts == null ? null : facts.bundleId(),
-                            facts == null ? null : facts.versionName());
+                            facts == null ? null : facts.versionName(),
+                            contentOf);
                 })
                 .toList();
 
@@ -394,28 +409,32 @@ public class DistributionDispatchService {
                 .map(group -> new DistributionCommand.TargetGroup(
                         group.groupId(), group.tenantId(), linksOfGroup.get(group.groupId())))
                 .toList();
-        // The frozen store submission (S13-03, #63, AC1): a channel
-        // whose adapter declares SUBMISSION receives the release
-        // manifest's frozen block verbatim — THE immutable copy of what
-        // was sent (PRD 16), never the live authoring rows, so the
-        // manifest and the wire can never drift apart.
-        DistributionCommand.Submission submission = null;
-        if (adapter.capabilities().contains(AdapterCapability.SUBMISSION)) {
-            submission = submissionManifests
-                    .frozenSubmissionOf(event.releaseId())
-                    .map(frozen -> new DistributionCommand.Submission(
-                            frozen.channel(),
-                            frozen.phasedRelease(),
-                            frozen.locales().stream()
-                                    .map(locale -> new DistributionCommand.SubmissionLocale(
-                                            locale.locale(),
-                                            locale.description(),
-                                            locale.keywords(),
-                                            locale.screenshotRefs(),
-                                            locale.releaseNotes()))
-                                    .toList()))
-                    .orElse(null);
-        }
+        // The frozen store submission (S13-03, #63, AC1; generalized
+        // by S13-04, #64): the release manifest's frozen block verbatim
+        // — THE immutable copy of what was sent (PRD 16), never the
+        // live authoring rows, so the manifest and the wire can never
+        // drift apart. Since #64 the freeze is channel-generic (the
+        // App Store's listing metadata and the Play channel's release
+        // notes both freeze); the dispatch resolves whatever block the
+        // release froze, and each adapter decides what its block means
+        // — null when the release froze none.
+        DistributionCommand.Submission submission = submissionManifests
+                .frozenSubmissionOf(event.releaseId())
+                .map(frozen -> new DistributionCommand.Submission(
+                        frozen.channel(),
+                        frozen.phasedRelease(),
+                        frozen.locales().stream()
+                                .map(locale -> new DistributionCommand.SubmissionLocale(
+                                        locale.locale(),
+                                        locale.description(),
+                                        locale.keywords(),
+                                        locale.screenshotRefs(),
+                                        locale.releaseNotes()))
+                                .toList()))
+                .orElse(null);
+        String ringCode = releases.factsOf(event.releaseId())
+                .map(ReleaseAccess.ReleaseFacts::ringCode)
+                .orElse(null);
         return new DistributionCommand(
                 event.releaseId(),
                 event.releaseRef(),
@@ -425,6 +444,7 @@ public class DistributionDispatchService {
                 event.tenantId(),
                 environmentId,
                 environmentCode,
+                ringCode,
                 channel,
                 artifacts,
                 targets,

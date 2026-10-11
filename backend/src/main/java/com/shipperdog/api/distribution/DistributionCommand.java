@@ -39,6 +39,7 @@ import java.util.UUID;
  * @param tenantId       the owning tenant (exactly when tenant-owned)
  * @param environmentId  the targeted environment (null when creation named none)
  * @param environmentCode the targeted environment's stable code (null with environmentId)
+ * @param ringCode       the release's resolved ring code (S13-04, #64: the ring-to-track mapping's input; null when the release named no ring)
  * @param channel        the channel reference name this dispatch runs through
  * @param artifacts      the release's frozen artifact slots, one per platform
  * @param targetTenantIds the tenants the release targets (who may receive)
@@ -49,7 +50,7 @@ import java.util.UUID;
  * @param spanId         the span id of the adapter-call observation
  * @param attempt        the 1-based attempt number of this call (retries increment it)
  * @param initiatedAt    when the framework initiated the dispatch
- * @param submission     the release's frozen store-submission block for SUBMISSION-capable channels (S13-03; null otherwise)
+ * @param submission     the release's frozen store-submission block (S13-03 froze it for SUBMISSION channels; S13-04 generalizes the freeze to any channel whose authoring surface produced one — the block is null when the release froze none)
  */
 public record DistributionCommand(
         UUID releaseId,
@@ -60,6 +61,7 @@ public record DistributionCommand(
         UUID tenantId,
         UUID environmentId,
         String environmentCode,
+        String ringCode,
         String channel,
         List<ArtifactSlot> artifacts,
         Set<UUID> targetTenantIds,
@@ -71,6 +73,50 @@ public record DistributionCommand(
         int attempt,
         Instant initiatedAt,
         Submission submission) {
+
+    /** The S13-03 shape (no ring code): the ring code answers null. */
+    public DistributionCommand(
+            UUID releaseId,
+            String releaseRef,
+            UUID applicationId,
+            UUID versionId,
+            UUID organizationId,
+            UUID tenantId,
+            UUID environmentId,
+            String environmentCode,
+            String channel,
+            List<ArtifactSlot> artifacts,
+            Set<UUID> targetTenantIds,
+            List<TargetGroup> targetGroups,
+            java.util.Map<String, String> channelConfig,
+            ResolvedCredential credential,
+            String traceId,
+            String spanId,
+            int attempt,
+            Instant initiatedAt,
+            Submission submission) {
+        this(
+                releaseId,
+                releaseRef,
+                applicationId,
+                versionId,
+                organizationId,
+                tenantId,
+                environmentId,
+                environmentCode,
+                null,
+                channel,
+                artifacts,
+                targetTenantIds,
+                targetGroups,
+                channelConfig,
+                credential,
+                traceId,
+                spanId,
+                attempt,
+                initiatedAt,
+                submission);
+    }
 
     /** The S13-02 shape (no store submission): the submission block answers null. */
     public DistributionCommand(
@@ -164,6 +210,14 @@ public record DistributionCommand(
      * build number, bundle id (Apple) / package name (Google), and the
      * marketing version string (ASC's {@code CFBundleShortVersionString}
      * peer). Null when the extraction tier recorded none.
+     *
+     * <p>Since S13-04 (#64) the slot also carries {@link #contentOf}
+     * — a re-openable stream supplier over the artifact's STORED
+     * BYTES, resolved by the framework from the object-storage tier
+     * (the adapter never reads platform tables to fetch its binary).
+     * Null when the channel needs no bytes (the assignment channels);
+     * a supplier must answer a FRESH stream per call so a sandbox
+     * retry re-streams from the start.
      */
     public record ArtifactSlot(
             UUID artifactId,
@@ -173,11 +227,25 @@ public record DistributionCommand(
             long sizeBytes,
             Long buildNumber,
             String bundleId,
-            String versionName) {
+            String versionName,
+            java.util.function.Supplier<java.io.InputStream> contentOf) {
+
+        /** The S13-02 shape (no byte source): the content supplier answers null. */
+        public ArtifactSlot(
+                UUID artifactId,
+                String platform,
+                String format,
+                String fileName,
+                long sizeBytes,
+                Long buildNumber,
+                String bundleId,
+                String versionName) {
+            this(artifactId, platform, format, fileName, sizeBytes, buildNumber, bundleId, versionName, null);
+        }
 
         /** The S13-01 shape (identity through size only): the store-extraction facts answer null. */
         public ArtifactSlot(UUID artifactId, String platform, String format, String fileName, long sizeBytes) {
-            this(artifactId, platform, format, fileName, sizeBytes, null, null, null);
+            this(artifactId, platform, format, fileName, sizeBytes, null, null, null, null);
         }
     }
 

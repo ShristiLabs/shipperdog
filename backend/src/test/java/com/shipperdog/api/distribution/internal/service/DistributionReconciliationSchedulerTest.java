@@ -30,6 +30,10 @@ class DistributionReconciliationSchedulerTest {
                         "https://api.appstoreconnect.apple.com",
                         java.time.Duration.ofSeconds(20),
                         java.time.Duration.ofSeconds(20)),
+                new DistributionProperties.GooglePlayConnector(
+                        "https://androidpublisher.googleapis.com/androidpublisher/v3/applications",
+                        java.time.Duration.ofSeconds(20),
+                        java.time.Duration.ofSeconds(60)),
                 new DistributionProperties.Reconciliation(false, java.time.Duration.ofMinutes(15)));
         DistributionReconciliationScheduler scheduler = new DistributionReconciliationScheduler(dispatch, properties);
 
@@ -54,6 +58,10 @@ class DistributionReconciliationSchedulerTest {
                         "https://api.appstoreconnect.apple.com",
                         java.time.Duration.ofSeconds(20),
                         java.time.Duration.ofSeconds(20)),
+                new DistributionProperties.GooglePlayConnector(
+                        "https://androidpublisher.googleapis.com/androidpublisher/v3/applications",
+                        java.time.Duration.ofSeconds(20),
+                        java.time.Duration.ofSeconds(60)),
                 new DistributionProperties.Reconciliation(true, java.time.Duration.ofMinutes(15)));
         DistributionReconciliationScheduler scheduler = new DistributionReconciliationScheduler(dispatch, properties);
 

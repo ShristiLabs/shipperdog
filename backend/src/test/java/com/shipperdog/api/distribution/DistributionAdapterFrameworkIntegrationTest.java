@@ -577,7 +577,9 @@ class DistributionAdapterFrameworkIntegrationTest {
     @Test
     void unknownChannelFailsTheRecordsButNeverTheCrossing() {
         UUID production = environmentByCode("production");
-        setEnvironmentChannel(production, "play");
+        // #64 registered `play`; the unknown-channel proof names an id
+        // no adapter will ever claim.
+        setEnvironmentChannel(production, "no-such-channel");
         UUID release = releaseWalkedToActive(production);
         assertThat(jdbc.queryForObject("SELECT status FROM releases WHERE id = ?", String.class, release))
                 .isEqualTo("ACTIVE");

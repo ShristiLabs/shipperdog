@@ -1130,7 +1130,42 @@ final class IsolationEndpointRegistry {
                         404,
                         404,
                         side -> "/api/v1/distribution/appstore/releases/" + UUID.randomUUID()
-                                + "/phased-release?organizationId=" + UUID.randomUUID()));
+                                + "/phased-release?organizationId=" + UUID.randomUUID()),
+                // The Play group-mapping view (S13-04, the same
+                // org-addressed configuration standing): the honest
+                // EMPTY page for the seeded world -- the org guard is
+                // the leak-proofing, like the records read above.
+                surface(
+                        "/api/v1/distribution/play/groups",
+                        side -> "/api/v1/distribution/play/groups?organizationId=" + side.organizationId(),
+                        200,
+                        404,
+                        side -> "/api/v1/distribution/play/groups?organizationId=" + UUID.randomUUID()),
+                // The Play release-notes view (S13-04, the same
+                // org-addressed authoring standing): the honest EMPTY
+                // page, the org guard the leak-proofing.
+                surface(
+                        "/api/v1/distribution/play/release-notes",
+                        side -> "/api/v1/distribution/play/release-notes?organizationId=" + side.organizationId(),
+                        200,
+                        404,
+                        side -> "/api/v1/distribution/play/release-notes?organizationId=" + UUID.randomUUID()),
+                // The Play track-model read (S13-04): the app-addressed
+                // listing console surface -- the seeded world holds no
+                // google-play credential, so own and miss probes share
+                // the route's deterministic miss shapes (a random
+                // application answers the ownership check's 400; the
+                // parity proof is the point), and concealment of a REAL
+                // foreign app's tracks is pinned with live bindings by
+                // the S13-04 connector suite.
+                surface(
+                        "/api/v1/distribution/play/tracks",
+                        side -> "/api/v1/distribution/play/tracks?organizationId=" + side.organizationId()
+                                + "&applicationId=" + UUID.randomUUID(),
+                        400,
+                        404,
+                        side -> "/api/v1/distribution/play/tracks?organizationId=" + UUID.randomUUID()
+                                + "&applicationId=" + UUID.randomUUID()));
     }
 
     /**

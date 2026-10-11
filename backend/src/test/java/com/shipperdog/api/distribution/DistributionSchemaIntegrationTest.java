@@ -149,6 +149,28 @@ class DistributionSchemaIntegrationTest {
     }
 
     @Test
+    void channelReleaseNotesHoldOnlyTheAuthoringFacts() {
+        // V46 (S13-04): the authoring grain is (application, channel,
+        // locale) -- the release-note text beside its owning dimensions,
+        // and NOTHING submission-shaped (the manifest's frozen block is
+        // the submission's copy of record, never these rows).
+        assertThat(columnsOf("channel_release_notes"))
+                .containsExactlyInAnyOrder(
+                        "id",
+                        "organization_id",
+                        "application_id",
+                        "channel",
+                        "locale",
+                        "notes",
+                        "created_at",
+                        "updated_at");
+        Integer constraintCount = jdbc.queryForObject(
+                "SELECT count(*) FROM pg_constraint" + " WHERE conname = 'uq_channel_release_notes_app_channel_locale'",
+                Integer.class);
+        assertThat(constraintCount).isEqualTo(1);
+    }
+
+    @Test
     void theChainLevelIsUniquePerProviderNullsIncluded() {
         // NULLS NOT DISTINCT: two organization-level rows of one provider
         // are impossible by constraint (the first-defined-wins resolution

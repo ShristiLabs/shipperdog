@@ -292,3 +292,131 @@ export function controlPhasedRelease(
     { method: "POST", body: { action } },
   );
 }
+
+/** One tester-group link of the Play mapping surface (S13-04, AC2): the
+ * provider-side id is the TRACK NAME the group's email list syncs to. */
+export interface PlayGroupLink {
+  id: string;
+  organizationId: string;
+  tenantId: string;
+  applicationId: string;
+  groupId: string;
+  groupName: string;
+  channel: string;
+  externalGroupId: string;
+  externalGroupName: string;
+  lastSyncedAt: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+/** The Play sync's verdict (AC4): the emails added and the emails
+ * removed -- BOTH reflect on the track's list, the Play contract. */
+export interface PlaySyncView {
+  link: PlayGroupLink;
+  addedEmails: string[];
+  removedEmails: string[];
+}
+
+/** The organization's Play group links. */
+export function listPlayGroups(
+  organizationId: string,
+): Promise<{ items: PlayGroupLink[]; nextCursor?: string }> {
+  return pageFetch<PlayGroupLink>("/distribution/play/groups", {
+    organizationId,
+    limit: 100,
+  });
+}
+
+/** Links a tester group to a Play testing track: the write validates the
+ * app carries the track and refuses the production track. */
+export function linkPlayGroup(input: {
+  organizationId: string;
+  applicationId: string;
+  groupId: string;
+  track: string;
+}): Promise<PlayGroupLink> {
+  return apiFetch("/distribution/play/groups", {
+    method: "PUT",
+    body: input,
+  });
+}
+
+/** The tester-list sync: the track's email list becomes exactly the
+ * linked groups' members (adds AND removes both reflect). */
+export function syncPlayGroup(organizationId: string, linkId: string): Promise<PlaySyncView> {
+  return apiFetch(`/distribution/play/groups/${linkId}/sync?organizationId=${organizationId}`, {
+    method: "POST",
+  });
+}
+
+/** Removes one link (the ShipperDog side only; the Play track stays). */
+export function unlinkPlayGroup(organizationId: string, linkId: string): Promise<void> {
+  return apiFetch(`/distribution/play/groups/${linkId}?organizationId=${organizationId}`, {
+    method: "DELETE",
+  });
+}
+
+/** One authored Play release-notes locale (S13-04, AC2): the what's-new
+ * the release manifest freezes at APPROVED and the track release sends. */
+export interface PlayReleaseNotes {
+  id: string;
+  organizationId: string;
+  applicationId: string;
+  channel: string;
+  locale: string;
+  notes: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+/** The app's Play track model (AC2/AC5): every track with its releases,
+ * Google's own status words verbatim. */
+export interface PlayTrackView {
+  track: string;
+  releases: Array<{
+    name: string | null;
+    versionCodes: number[];
+    releaseNotes: Array<{ language: string | null; text: string | null }>;
+    status: string | null;
+  }>;
+}
+
+/** The organization's authored Play release notes. */
+export function listPlayReleaseNotes(
+  organizationId: string,
+): Promise<{ items: PlayReleaseNotes[]; nextCursor?: string }> {
+  return pageFetch<PlayReleaseNotes>("/distribution/play/release-notes", {
+    organizationId,
+    limit: 100,
+  });
+}
+
+/** Authors (or rotates) one locale's release notes: a second write to
+ * the same locale replaces the row whole. */
+export function putPlayReleaseNotes(input: {
+  organizationId: string;
+  applicationId: string;
+  locale: string;
+  notes: string;
+}): Promise<PlayReleaseNotes> {
+  return apiFetch("/distribution/play/release-notes", { method: "PUT", body: input });
+}
+
+/** Removes one authored locale (the authoring surface; a frozen manifest
+ * block keeps its copy). */
+export function deletePlayReleaseNotes(organizationId: string, notesId: string): Promise<void> {
+  return apiFetch(`/distribution/play/release-notes/${notesId}?organizationId=${organizationId}`, {
+    method: "DELETE",
+  });
+}
+
+/** The app's Play tracks with their releases (the listing console read). */
+export function listPlayTracks(
+  organizationId: string,
+  applicationId: string,
+): Promise<{ tracks: PlayTrackView[] }> {
+  return apiFetch(
+    `/distribution/play/tracks?organizationId=${organizationId}&applicationId=${applicationId}`,
+  );
+}
