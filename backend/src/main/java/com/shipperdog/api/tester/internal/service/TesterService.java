@@ -11,6 +11,7 @@ import com.shipperdog.api.notification.EmailSender;
 import com.shipperdog.api.organization.OrganizationAccess;
 import com.shipperdog.api.tester.TesterAccess;
 import com.shipperdog.api.tester.TesterAccounts;
+import com.shipperdog.api.tester.TesterDeprovisioning;
 import com.shipperdog.api.tester.TesterException;
 import com.shipperdog.api.tester.TesterInvitedEvent;
 import com.shipperdog.api.tester.TesterOnboarding;
@@ -54,7 +55,7 @@ import org.springframework.transaction.annotation.Transactional;
  * accept flow alone.
  */
 @Service
-public class TesterService implements TesterOnboarding, TesterAccounts, TesterAccess {
+public class TesterService implements TesterOnboarding, TesterAccounts, TesterAccess, TesterDeprovisioning {
 
     private final TesterRepository testers;
     private final TesterInvitations invitations;
@@ -362,6 +363,48 @@ public class TesterService implements TesterOnboarding, TesterAccounts, TesterAc
     @Transactional(readOnly = true)
     public Optional<UUID> testerIdOfUser(UUID userId) {
         return testers.findByUserId(userId).map(TesterEntity::getId);
+    }
+
+    // -------------------------------------------------------------------------
+    // TesterDeprovisioning: the SCIM lifecycle's linked-record half
+    // (S14-03, issue #69)
+    // -------------------------------------------------------------------------
+
+    /**
+     * The leaver flow's tester leg: the account's linked tester record
+     * crosses to DISABLED through the same guarded transition the
+     * administration route uses (the mandatory reason, the membership
+     * cascade, and the refresh-family revocation ride along). Already
+     * DISABLED answers the tester id without a second event — the
+     * state is the fact, not the transition.
+     */
+    @Override
+    @Transactional
+    public Optional<UUID> deactivateLinked(UUID userId, String reason, UUID actingUserId) {
+        return testers.findByUserId(userId).map(tester -> {
+            if (tester.getStatus() != TesterEntity.Status.DISABLED) {
+                changeStatus(actingUserId, tester.getId(), TesterEntity.Status.DISABLED, reason);
+            }
+            return tester.getId();
+        });
+    }
+
+    /**
+     * The re-provision leg: a DISABLED linked record returns to ACTIVE
+     * (the IdP's re-provision is the organization's authoritative
+     * onboarding signal). Memberships stay SUSPENDED — the S6-04
+     * manual-restoration doctrine; nothing is silently restored.
+     */
+    @Override
+    @Transactional
+    public Optional<UUID> reactivateLinked(UUID userId, UUID actingUserId) {
+        return testers.findByUserId(userId).flatMap(tester -> {
+            if (tester.getStatus() != TesterEntity.Status.DISABLED) {
+                return Optional.empty();
+            }
+            changeStatus(actingUserId, tester.getId(), TesterEntity.Status.ACTIVE, null);
+            return Optional.of(tester.getId());
+        });
     }
 
     @Override

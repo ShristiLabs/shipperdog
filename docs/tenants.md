@@ -110,7 +110,13 @@ technical notes):
   (`membership_suspended`), so their tenant context ends at the next
   token refresh at the latest. Suspension is reversible (reactivation
   revokes nothing), keeps the row, and never touches the owning
-  organization's roles — the org overlay survives suspension.
+  organization's roles — the org overlay survives suspension. SCIM
+  deprovisioning (S14-03) is a second writer of this state: the leaver
+  cascade suspends every ACTIVE membership of the account in one bulk
+  statement (reason `scim_deactivated`), and — per the manual-
+  restoration doctrine — a SCIM re-provision re-derives assignments
+  but deliberately does NOT reactivate what the cascade suspended
+  ([scim](scim.md)).
 
 Member management is administrators-only: `tenant:members:manage`
 (tenant administrators and the owning organization's administrators).

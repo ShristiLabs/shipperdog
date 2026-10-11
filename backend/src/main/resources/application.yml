@@ -316,6 +316,18 @@ shipperdog:
       webhooks:
         capacity: ${RATE_LIMIT_WEBHOOKS_CAPACITY:60}
         refill: ${RATE_LIMIT_WEBHOOKS_REFILL:PT1M}
+      # The SCIM provisioning surface (S14-03, issue #69): a healthy
+      # connector's steady state is short bursts around an initial
+      # sync (Entra batches creates; Okta syncs per change), so the
+      # burst bound sits above a provisioning pipeline's rate while
+      # still throttling an abusive or mis-wired connector per client
+      # IP before it costs token-hash or provisioning work. The 429
+      # stays the platform envelope even on the SCIM routes: the
+      # limiter is deployment infrastructure, not SCIM protocol
+      # surface (documented in docs/scim.md).
+      scim:
+        capacity: ${RATE_LIMIT_SCIM_CAPACITY:120}
+        refill: ${RATE_LIMIT_SCIM_REFILL:PT6S}
   authorization-cache:
     # The decision-input cache (issue #32, S7-03): Redis-backed, above
     # the grant contributor and the effective-set resolution. Caches

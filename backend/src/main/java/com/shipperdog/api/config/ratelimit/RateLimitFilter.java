@@ -96,11 +96,12 @@ final class RateLimitFilter extends OncePerRequestFilter {
     /**
      * The rule table: the login door, both legs of the download tier
      * (the anonymous emulator proxy and the authenticated issuance
-     * behind it), and the inbound webhook receivers (S12-04, issue
-     * #54) -- anonymous, provider-facing POSTs whose senders retry,
-     * throttled per client before they cost signature or chain work.
-     * Everything else passes — the limiter protects specific abuse
-     * surfaces, it is not a general tariff.
+     * behind it), the inbound webhook receivers (S12-04, issue
+     * #54), and the SCIM provisioning surface (S14-03, issue #69) --
+     * anonymous, provider-facing requests whose senders retry,
+     * throttled per client before they cost signature, token-hash,
+     * or provisioning work. Everything else passes — the limiter
+     * protects specific abuse surfaces, it is not a general tariff.
      */
     private static String ruleFor(String method, String path) {
         if ("POST".equals(method) && "/api/v1/auth/login".equals(path)) {
@@ -108,6 +109,9 @@ final class RateLimitFilter extends OncePerRequestFilter {
         }
         if ("POST".equals(method) && path.startsWith("/webhooks/")) {
             return "webhooks";
+        }
+        if (path.startsWith("/scim/v2/")) {
+            return "scim";
         }
         if ("GET".equals(method) && path.startsWith("/api/v1/downloads/")) {
             return "downloads";

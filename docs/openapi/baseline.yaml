@@ -8,6 +8,216 @@ servers:
 - url: https://api.shipperdog.dev
   description: canonical API endpoint
 paths:
+  /scim/v2/Users/{id}:
+    get:
+      tags:
+      - scim-controller
+      summary: Read one SCIM user by its SCIM id
+      operationId: getUser
+      parameters:
+      - name: Authorization
+        in: header
+        required: false
+        schema:
+          type: string
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      responses:
+        "200":
+          description: OK
+          content:
+            application/scim+json:
+              schema:
+                $ref: "#/components/schemas/ScimUserResource"
+    put:
+      tags:
+      - scim-controller
+      summary: Replace a SCIM user (active=false deprovisions)
+      operationId: replaceUser
+      parameters:
+      - name: Authorization
+        in: header
+        required: false
+        schema:
+          type: string
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ScimUserResource"
+        required: true
+      responses:
+        "200":
+          description: OK
+          content:
+            application/scim+json:
+              schema:
+                $ref: "#/components/schemas/ScimUserResource"
+    delete:
+      tags:
+      - scim-controller
+      summary: "Deprovision a SCIM user (deactivation cascade, not a row delete)"
+      operationId: deleteUser
+      parameters:
+      - name: Authorization
+        in: header
+        required: false
+        schema:
+          type: string
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      responses:
+        "200":
+          description: OK
+    patch:
+      tags:
+      - scim-controller
+      summary: Patch a SCIM user (attribute replaces; active=false deprovisions)
+      operationId: patchUser
+      parameters:
+      - name: Authorization
+        in: header
+        required: false
+        schema:
+          type: string
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ScimPatchRequest"
+        required: true
+      responses:
+        "200":
+          description: OK
+          content:
+            application/scim+json:
+              schema:
+                $ref: "#/components/schemas/ScimUserResource"
+  /scim/v2/Groups/{id}:
+    get:
+      tags:
+      - scim-controller
+      summary: Read one SCIM group by its SCIM id
+      operationId: getGroup
+      parameters:
+      - name: Authorization
+        in: header
+        required: false
+        schema:
+          type: string
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      responses:
+        "200":
+          description: OK
+          content:
+            application/scim+json:
+              schema:
+                $ref: "#/components/schemas/ScimGroupResource"
+    put:
+      tags:
+      - scim-controller
+      summary: Replace a SCIM group's state and membership
+      operationId: replaceGroup
+      parameters:
+      - name: Authorization
+        in: header
+        required: false
+        schema:
+          type: string
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ScimGroupResource"
+        required: true
+      responses:
+        "200":
+          description: OK
+          content:
+            application/scim+json:
+              schema:
+                $ref: "#/components/schemas/ScimGroupResource"
+    delete:
+      tags:
+      - scim-controller
+      summary: Delete a SCIM group (memberships go; assignments re-derive)
+      operationId: deleteGroup
+      parameters:
+      - name: Authorization
+        in: header
+        required: false
+        schema:
+          type: string
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      responses:
+        "200":
+          description: OK
+    patch:
+      tags:
+      - scim-controller
+      summary: Patch a SCIM group's membership (re-derives affected users)
+      operationId: patchGroup
+      parameters:
+      - name: Authorization
+        in: header
+        required: false
+        schema:
+          type: string
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ScimPatchRequest"
+        required: true
+      responses:
+        "200":
+          description: OK
+          content:
+            application/scim+json:
+              schema:
+                $ref: "#/components/schemas/ScimGroupResource"
   /api/v1/testers/{id}/status:
     put:
       tags:
@@ -497,6 +707,49 @@ paths:
             '*/*':
               schema:
                 $ref: "#/components/schemas/OrganizationResponse"
+  /api/v1/organizations/{id}/scim-config:
+    get:
+      tags:
+      - scim-config-controller
+      operationId: view
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      responses:
+        "200":
+          description: OK
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/ScimConfig"
+    put:
+      tags:
+      - scim-config-controller
+      operationId: update_4
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateRequest"
+        required: true
+      responses:
+        "200":
+          description: OK
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/ScimConfig"
   /api/v1/organizations/{id}/members/{userId}/role:
     put:
       tags:
@@ -532,7 +785,7 @@ paths:
     get:
       tags:
       - sso-config-controller
-      operationId: view
+      operationId: view_1
       parameters:
       - name: id
         in: path
@@ -550,7 +803,7 @@ paths:
     put:
       tags:
       - sso-config-controller
-      operationId: update_4
+      operationId: update_5
       parameters:
       - name: id
         in: path
@@ -599,7 +852,7 @@ paths:
     put:
       tags:
       - gate-controller
-      operationId: update_5
+      operationId: update_6
       parameters:
       - name: definitionId
         in: path
@@ -1149,7 +1402,7 @@ paths:
     put:
       tags:
       - workflow-controller
-      operationId: update_6
+      operationId: update_7
       parameters:
       - name: workflowId
         in: path
@@ -1472,6 +1725,131 @@ paths:
             '*/*':
               schema:
                 $ref: "#/components/schemas/WebhookReceiptView"
+  /scim/v2/Users:
+    get:
+      tags:
+      - scim-controller
+      summary: List SCIM users (userName/externalId eq filter; startIndex/count paging)
+      operationId: listUsers
+      parameters:
+      - name: Authorization
+        in: header
+        required: false
+        schema:
+          type: string
+      - name: filter
+        in: query
+        required: false
+        schema:
+          type: string
+      - name: startIndex
+        in: query
+        required: false
+        schema:
+          type: integer
+          format: int32
+          default: 1
+      - name: count
+        in: query
+        required: false
+        schema:
+          type: integer
+          format: int32
+          default: 100
+      responses:
+        "200":
+          description: OK
+          content:
+            application/scim+json:
+              schema:
+                $ref: "#/components/schemas/ScimListResponseScimUserResource"
+    post:
+      tags:
+      - scim-controller
+      summary: Provision a SCIM user (idempotent on externalId; email match links)
+      operationId: createUser
+      parameters:
+      - name: Authorization
+        in: header
+        required: false
+        schema:
+          type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ScimUserResource"
+        required: true
+      responses:
+        "200":
+          description: OK
+          content:
+            application/scim+json:
+              schema:
+                $ref: "#/components/schemas/ScimUserResource"
+  /scim/v2/Groups:
+    get:
+      tags:
+      - scim-controller
+      summary: List SCIM groups (displayName/externalId eq filter; startIndex/count
+        paging)
+      operationId: listGroups
+      parameters:
+      - name: Authorization
+        in: header
+        required: false
+        schema:
+          type: string
+      - name: filter
+        in: query
+        required: false
+        schema:
+          type: string
+      - name: startIndex
+        in: query
+        required: false
+        schema:
+          type: integer
+          format: int32
+          default: 1
+      - name: count
+        in: query
+        required: false
+        schema:
+          type: integer
+          format: int32
+          default: 100
+      responses:
+        "200":
+          description: OK
+          content:
+            application/scim+json:
+              schema:
+                $ref: "#/components/schemas/ScimListResponseScimGroupResource"
+    post:
+      tags:
+      - scim-controller
+      summary: Create a SCIM group (membership changes re-derive assignments)
+      operationId: createGroup
+      parameters:
+      - name: Authorization
+        in: header
+        required: false
+        schema:
+          type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ScimGroupResource"
+        required: true
+      responses:
+        "200":
+          description: OK
+          content:
+            application/scim+json:
+              schema:
+                $ref: "#/components/schemas/ScimGroupResource"
   /api/v1/testers:
     get:
       tags:
@@ -2592,6 +2970,44 @@ paths:
             '*/*':
               schema:
                 $ref: "#/components/schemas/TestMessageView"
+  /api/v1/organizations/{id}/scim-config/token:
+    post:
+      tags:
+      - scim-config-controller
+      operationId: generateToken
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/TokenRequest"
+      responses:
+        "200":
+          description: OK
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/TokenView"
+    delete:
+      tags:
+      - scim-config-controller
+      operationId: revokeToken
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      responses:
+        "204":
+          description: No Content
   /api/v1/gate-definitions:
     get:
       tags:
@@ -3700,7 +4116,7 @@ paths:
     patch:
       tags:
       - ring-controller
-      operationId: update_7
+      operationId: update_8
       parameters:
       - name: ringId
         in: path
@@ -3775,7 +4191,7 @@ paths:
     patch:
       tags:
       - notification-controller
-      operationId: update_8
+      operationId: update_9
       parameters:
       - name: organizationId
         in: path
@@ -3824,7 +4240,7 @@ paths:
     patch:
       tags:
       - environment-controller
-      operationId: update_9
+      operationId: update_10
       parameters:
       - name: environmentId
         in: path
@@ -3867,7 +4283,7 @@ paths:
     patch:
       tags:
       - application-controller
-      operationId: update_10
+      operationId: update_11
       parameters:
       - name: id
         in: path
@@ -3888,6 +4304,49 @@ paths:
             '*/*':
               schema:
                 $ref: "#/components/schemas/ApplicationView"
+  /scim/v2/ServiceProviderConfig:
+    get:
+      tags:
+      - scim-controller
+      summary: SCIM ServiceProviderConfig (capability metadata; anonymous)
+      operationId: serviceProviderConfig
+      responses:
+        "200":
+          description: OK
+          content:
+            application/scim+json:
+              schema:
+                $ref: "#/components/schemas/ServiceProviderConfig"
+  /scim/v2/Schemas:
+    get:
+      tags:
+      - scim-controller
+      summary: SCIM Schemas collection (anonymous capability metadata)
+      operationId: schemas
+      responses:
+        "200":
+          description: OK
+          content:
+            application/scim+json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/SchemaDocument"
+  /scim/v2/ResourceTypes:
+    get:
+      tags:
+      - scim-controller
+      summary: SCIM ResourceTypes collection (anonymous capability metadata)
+      operationId: resourceTypes
+      responses:
+        "200":
+          description: OK
+          content:
+            application/scim+json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/ResourceType"
   /api/v1/testers/{id}:
     get:
       tags:
@@ -5292,6 +5751,14 @@ paths:
           - SSO_ROLE_MAPPED
           - SSO_ACCOUNT_LOCKED
           - SSO_LOGOUT
+          - SCIM_CONFIGURED
+          - SCIM_TOKEN_ROTATED
+          - SCIM_USER_PROVISIONED
+          - SCIM_USER_UPDATED
+          - SCIM_USER_DEACTIVATED
+          - SCIM_USER_REACTIVATED
+          - SCIM_GROUP_SYNCED
+          - SCIM_REQUEST_REJECTED
       - name: applicationId
         in: query
         required: false
@@ -5725,7 +6192,7 @@ paths:
     delete:
       tags:
       - auth-controller
-      operationId: revokeToken
+      operationId: revokeToken_1
       parameters:
       - name: id
         in: path
@@ -5738,6 +6205,99 @@ paths:
           description: No Content
 components:
   schemas:
+    Email:
+      type: object
+      properties:
+        value:
+          type: string
+        type:
+          type: string
+        primary:
+          type: boolean
+    GroupRef:
+      type: object
+      properties:
+        value:
+          type: string
+        display:
+          type: string
+        ref:
+          type: string
+    Name:
+      type: object
+      properties:
+        formatted:
+          type: string
+        familyName:
+          type: string
+        givenName:
+          type: string
+    ScimMeta:
+      type: object
+      properties:
+        resourceType:
+          type: string
+        created:
+          type: string
+          format: date-time
+        lastModified:
+          type: string
+          format: date-time
+    ScimUserResource:
+      type: object
+      properties:
+        schemas:
+          type: array
+          items:
+            type: string
+        id:
+          type: string
+        externalId:
+          type: string
+        userName:
+          type: string
+        name:
+          $ref: "#/components/schemas/Name"
+        active:
+          type: boolean
+        emails:
+          type: array
+          items:
+            $ref: "#/components/schemas/Email"
+        groups:
+          type: array
+          items:
+            $ref: "#/components/schemas/GroupRef"
+        meta:
+          $ref: "#/components/schemas/ScimMeta"
+    Member:
+      type: object
+      properties:
+        value:
+          type: string
+        display:
+          type: string
+        ref:
+          type: string
+    ScimGroupResource:
+      type: object
+      properties:
+        schemas:
+          type: array
+          items:
+            type: string
+        id:
+          type: string
+        externalId:
+          type: string
+        displayName:
+          type: string
+        members:
+          type: array
+          items:
+            $ref: "#/components/schemas/Member"
+        meta:
+          $ref: "#/components/schemas/ScimMeta"
     TesterStatusChangeRequest:
       type: object
       properties:
@@ -6097,45 +6657,68 @@ components:
         updatedAt:
           type: string
           format: date-time
+    RoleMapping:
+      type: object
+      properties:
+        group:
+          type: string
+        orgRole:
+          type: string
+    TenantMapping:
+      type: object
+      properties:
+        group:
+          type: string
+        tenantId:
+          type: string
+        tenantRole:
+          type: string
     UpdateRequest:
       type: object
       properties:
-        providerType:
-          type: string
-        issuerUrl:
-          type: string
-        clientId:
-          type: string
-        clientSecret:
-          type: string
-        clientSecretRef:
-          type: string
-        scopes:
-          type: string
-        groupClaimName:
-          type: string
-        inactiveClaimName:
-          type: string
-        provisioningMode:
-          type: string
-        jitDefaultRole:
-          type: string
-        requireVerifiedEmail:
-          type: boolean
-        roleMappings:
-          type: object
-          additionalProperties:
-            type: string
         enabled:
           type: boolean
-        idpMetadataXml:
+        defaultRole:
           type: string
-        wantAssertionsSigned:
+        groupRoleMappings:
+          type: array
+          items:
+            $ref: "#/components/schemas/RoleMapping"
+        groupTenantMappings:
+          type: array
+          items:
+            $ref: "#/components/schemas/TenantMapping"
+    ScimConfig:
+      type: object
+      properties:
+        enabled:
           type: boolean
-        wantResponseSigned:
-          type: boolean
-        enforceSsoLogin:
-          type: boolean
+        defaultRole:
+          type: string
+        groupRoleMappings:
+          type: array
+          items:
+            $ref: "#/components/schemas/RoleMapping"
+        groupTenantMappings:
+          type: array
+          items:
+            $ref: "#/components/schemas/TenantMapping"
+        token:
+          $ref: "#/components/schemas/TokenMeta"
+        updatedAt:
+          type: string
+          format: date-time
+    TokenMeta:
+      type: object
+      properties:
+        label:
+          type: string
+        createdAt:
+          type: string
+          format: date-time
+        lastUsedAt:
+          type: string
+          format: date-time
     SsoConfig:
       type: object
       properties:
@@ -6547,15 +7130,7 @@ components:
     JsonNode:
       type: object
       properties:
-        string:
-          type: boolean
-        binary:
-          type: boolean
-        pojo:
-          type: boolean
-        valueNode:
-          type: boolean
-        missingNode:
+        container:
           type: boolean
         nodeType:
           type: string
@@ -6569,7 +7144,17 @@ components:
           - OBJECT
           - POJO
           - STRING
+        string:
+          type: boolean
         integralNumber:
+          type: boolean
+        missingNode:
+          type: boolean
+        valueNode:
+          type: boolean
+        pojo:
+          type: boolean
+        number:
           type: boolean
         short:
           type: boolean
@@ -6588,9 +7173,7 @@ components:
           deprecated: true
         boolean:
           type: boolean
-        number:
-          type: boolean
-        container:
+        binary:
           type: boolean
         floatingPointNumber:
           type: boolean
@@ -7499,6 +8082,21 @@ components:
         sentAt:
           type: string
           format: date-time
+    TokenRequest:
+      type: object
+      properties:
+        label:
+          type: string
+    TokenView:
+      type: object
+      properties:
+        token:
+          type: string
+        label:
+          type: string
+        generatedAt:
+          type: string
+          format: date-time
     VerifyView:
       type: object
       properties:
@@ -8183,6 +8781,25 @@ components:
           type: string
         to:
           type: string
+    Operation:
+      type: object
+      properties:
+        op:
+          type: string
+        path:
+          type: string
+        value: {}
+    ScimPatchRequest:
+      type: object
+      properties:
+        schemas:
+          type: array
+          items:
+            type: string
+        Operations:
+          type: array
+          items:
+            $ref: "#/components/schemas/Operation"
     RingUpdateRequest:
       type: object
       description: "The ring edit body: name, position, eligibility (empty object\
@@ -8238,6 +8855,163 @@ components:
         tenantId:
           type: string
           format: uuid
+    ScimListResponseScimUserResource:
+      type: object
+      properties:
+        schemas:
+          type: array
+          items:
+            type: string
+        totalResults:
+          type: integer
+          format: int32
+        startIndex:
+          type: integer
+          format: int32
+        itemsPerPage:
+          type: integer
+          format: int32
+        resources:
+          type: array
+          items:
+            $ref: "#/components/schemas/ScimUserResource"
+    AuthenticationScheme:
+      type: object
+      properties:
+        type:
+          type: string
+        name:
+          type: string
+        description:
+          type: string
+        specUri:
+          type: string
+        primary:
+          type: boolean
+    Bulk:
+      type: object
+      properties:
+        supported:
+          type: boolean
+        maxOperations:
+          type: integer
+          format: int32
+        maxPayloadSize:
+          type: integer
+          format: int32
+    Feature:
+      type: object
+      properties:
+        supported:
+          type: boolean
+    ServiceProviderConfig:
+      type: object
+      properties:
+        schemas:
+          type: array
+          items:
+            type: string
+        documentationUri:
+          type: string
+        patch:
+          $ref: "#/components/schemas/Feature"
+        bulk:
+          $ref: "#/components/schemas/Bulk"
+        filter:
+          $ref: "#/components/schemas/Feature"
+        changePassword:
+          $ref: "#/components/schemas/Feature"
+        sort:
+          $ref: "#/components/schemas/Feature"
+        etag:
+          $ref: "#/components/schemas/Feature"
+        authenticationSchemes:
+          type: array
+          items:
+            $ref: "#/components/schemas/AuthenticationScheme"
+        meta:
+          $ref: "#/components/schemas/ScimMeta"
+    Attribute:
+      type: object
+      properties:
+        name:
+          type: string
+        type:
+          type: string
+        description:
+          type: string
+        required:
+          type: boolean
+        caseExact:
+          type: boolean
+        multiValued:
+          type: boolean
+        returned:
+          type: string
+        subAttributes:
+          type: array
+          items:
+            type: string
+    SchemaDocument:
+      type: object
+      properties:
+        schemas:
+          type: array
+          items:
+            type: string
+        id:
+          type: string
+        name:
+          type: string
+        description:
+          type: string
+        attributes:
+          type: array
+          items:
+            $ref: "#/components/schemas/Attribute"
+    ResourceType:
+      type: object
+      properties:
+        schemas:
+          type: array
+          items:
+            type: string
+        id:
+          type: string
+        name:
+          type: string
+        description:
+          type: string
+        endpoint:
+          type: string
+        schema:
+          type: string
+        schemaExtensions:
+          type: array
+          items:
+            type: string
+        meta:
+          $ref: "#/components/schemas/ScimMeta"
+    ScimListResponseScimGroupResource:
+      type: object
+      properties:
+        schemas:
+          type: array
+          items:
+            type: string
+        totalResults:
+          type: integer
+          format: int32
+        startIndex:
+          type: integer
+          format: int32
+        itemsPerPage:
+          type: integer
+          format: int32
+        resources:
+          type: array
+          items:
+            $ref: "#/components/schemas/ScimGroupResource"
     PageResponseTesterResponse:
       type: object
       properties:
@@ -9628,6 +10402,14 @@ components:
           - SSO_ROLE_MAPPED
           - SSO_ACCOUNT_LOCKED
           - SSO_LOGOUT
+          - SCIM_CONFIGURED
+          - SCIM_TOKEN_ROTATED
+          - SCIM_USER_PROVISIONED
+          - SCIM_USER_UPDATED
+          - SCIM_USER_DEACTIVATED
+          - SCIM_USER_REACTIVATED
+          - SCIM_GROUP_SYNCED
+          - SCIM_REQUEST_REJECTED
         occurredAt:
           type: string
           format: date-time
