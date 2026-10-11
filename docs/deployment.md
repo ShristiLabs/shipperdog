@@ -152,6 +152,9 @@ references. Wiring ([distribution.md](distribution.md)):
 | `SECRETS_GCP_PROJECT_ID` | the GCP store | the project owning the secrets (with ADC configured) |
 | `SECRETS_GCP_ENDPOINT` | the GCP store | override (tests/mirrors); default secretmanager.googleapis.com |
 | `DISTRIBUTION_ADAPTERS__<CHANNEL>__TIMEOUT` / `__RETRY_ATTEMPTS` / `__RETRY_BACKOFF` | the adapter sandbox | per-channel wall and retry posture (defaults 30 s / 2 / 1 s); e.g. `DISTRIBUTION_ADAPTERS__TESTFLIGHT__TIMEOUT` |
+| `DISTRIBUTION_APPLE__BASE_URL` | the App Store Connect client (S13-02) | default `https://api.appstoreconnect.apple.com`; override only for mirrors/test stacks — the connector dials it under dispatches, group syncs, and record refreshes |
+| `DISTRIBUTION_RECONCILIATION__ENABLED` | the reconciliation pass (S13-02) | `false` (default — a self-hosted stack never wakes up dialing Apple) or `true` (production with store connectors in service: the pass refreshes PENDING/DISTRIBUTING store records through the adapters' status answers) |
+| `DISTRIBUTION_RECONCILIATION__FIXED_DELAY` | the reconciliation pass | cadence between passes; default `PT15M` |
 
 ## Rollback
 

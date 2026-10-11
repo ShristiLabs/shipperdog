@@ -45,7 +45,9 @@ export interface StoreAccountInput {
 }
 
 /** One distribution record of a release (the adapter's report plus
- * the framework's sandbox bookkeeping). */
+ * the framework's sandbox bookkeeping; since S13-02 the provider's own
+ * lifecycle word -- Apple's beta-review states -- rides beside the
+ * status). */
 export interface DistributionRecord {
   id: string;
   releaseId: string;
@@ -54,6 +56,8 @@ export interface DistributionRecord {
   status: "PENDING" | "DISTRIBUTING" | "DISTRIBUTED" | "FAILED";
   externalId: string | null;
   failureCode: string | null;
+  providerStatus: string | null;
+  providerStatusAt: string | null;
   attempts: number;
   lastAttemptAt: string | null;
   distributedAt: string | null;
@@ -108,4 +112,95 @@ export function listDistributionRecords(
     releaseId,
     limit: 100,
   });
+}
+
+/** One record's refresh from its provider (S13-02, AC4): the adapter's
+ * status observation lands on the record -- the beta-review answer a
+ * Release Manager refreshes from App Store Connect. */
+export function refreshDistributionRecord(
+  organizationId: string,
+  recordId: string,
+): Promise<DistributionRecord> {
+  return apiFetch(
+    `/distribution/records/${recordId}/refresh?organizationId=${organizationId}`,
+    {
+      method: "POST",
+    },
+  );
+}
+
+/** One tester-group link of the TestFlight mapping surface (S13-02, AC2). */
+export interface TestFlightGroupLink {
+  id: string;
+  organizationId: string;
+  tenantId: string;
+  groupId: string;
+  groupName: string;
+  channel: string;
+  externalGroupId: string;
+  externalGroupName: string;
+  lastSyncedAt: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+/** The sync's verdict (AC5): what was pushed and the drift reported
+ * (provider-side facts ShipperDog does not own -- reported, never
+ * removed). */
+export interface TestFlightSyncView {
+  link: TestFlightGroupLink;
+  pushedEmails: string[];
+  driftTesterEmails: string[];
+  driftBuildIds: string[];
+}
+
+/** The organization's TestFlight group links. */
+export function listTestFlightGroups(
+  organizationId: string,
+): Promise<{ items: TestFlightGroupLink[]; nextCursor?: string }> {
+  return pageFetch<TestFlightGroupLink>("/distribution/testflight/groups", {
+    organizationId,
+    limit: 100,
+  });
+}
+
+/** Links a tester group to an ASC beta group: an existing same-named
+ * group wins; createOnDemand mints one; the link lands with its first
+ * idempotent membership push. */
+export function linkTestFlightGroup(input: {
+  organizationId: string;
+  applicationId: string;
+  groupId: string;
+  createOnDemand: boolean;
+}): Promise<TestFlightGroupLink> {
+  return apiFetch("/distribution/testflight/groups", {
+    method: "PUT",
+    body: input,
+  });
+}
+
+/** The idempotent re-sync: pushes membership, reports drift. */
+export function syncTestFlightGroup(
+  organizationId: string,
+  linkId: string,
+): Promise<TestFlightSyncView> {
+  return apiFetch(
+    `/distribution/testflight/groups/${linkId}/sync?organizationId=${organizationId}`,
+    {
+      method: "POST",
+    },
+  );
+}
+
+/** Removes one link (the ShipperDog side only; the ASC group stays). */
+export function unlinkTestFlightGroup(
+  organizationId: string,
+  linkId: string,
+): Promise<void> {
+  return apiFetch(
+    `/distribution/testflight/groups/${linkId}?organizationId=${organizationId}`,
+    {
+      method: "DELETE",
+    },
+  );
 }

@@ -473,6 +473,62 @@ afterEach(() => {
 });
 
 describe("ReleaseDetailPage", () => {
+  it("renders the channel-distribution records with the provider state and refreshes from the store (S13-02)", async () => {
+    const record = {
+      id: "20000000-0000-4000-8000-00000000000d1",
+      releaseId: RELEASE_ID,
+      artifactId: ARTIFACT_ID,
+      channel: "testflight",
+      status: "DISTRIBUTING",
+      externalId: "build-4242",
+      failureCode: null,
+      providerStatus: "IN_BETA_REVIEW",
+      providerStatusAt: "2026-10-04T12:00:00Z",
+      attempts: 1,
+      lastAttemptAt: "2026-10-04T12:00:00Z",
+      distributedAt: null,
+      createdAt: "2026-10-04T11:00:00Z",
+      updatedAt: "2026-10-04T12:00:00Z",
+    };
+    const refreshed = { ...record, status: "DISTRIBUTED", providerStatus: "READY_FOR_BETA_TESTING" };
+    renderDetail(DETAIL_DRAFT, [
+      {
+        method: "GET",
+        url: `/api/v1/distribution/records`,
+        status: 200,
+        // The sequenced answers: the walking record first, the
+        // store-refreshed record on the post-refresh refetch.
+        sequence: [
+          { status: 200, body: { items: [record] } },
+          { status: 200, body: { items: [refreshed] } },
+        ],
+      },
+      {
+        method: "POST",
+        url: `/api/v1/distribution/records/${record.id}/refresh`,
+        status: 200,
+        body: refreshed,
+      },
+    ]);
+
+    // The record row: channel, platform status, the provider's own
+    // beta-review word, and the external id stores reconcile by.
+    const row = await screen.findByTestId("channel-distribution-testflight");
+    expect(row).toHaveTextContent("testflight");
+    expect(row).toHaveTextContent("DISTRIBUTING");
+    expect(row).toHaveTextContent("IN_BETA_REVIEW");
+    expect(row).toHaveTextContent("build-4242");
+
+    // The refresh: the store answers the provider's next word and the
+    // row walks to the store's own truth.
+    await userEvent.click(screen.getByTestId("distribution-refresh-testflight"));
+    await waitFor(() =>
+      expect(screen.getByTestId("channel-distribution-testflight")).toHaveTextContent(
+        "READY_FOR_BETA_TESTING",
+      ),
+    );
+  });
+
   it("renders the §32 blocks: artifacts, gate/approval empty states, distribution, timeline", async () => {
     renderDetail();
 

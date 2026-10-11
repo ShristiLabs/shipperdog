@@ -25,4 +25,20 @@ public interface ChannelDistributionRepository extends JpaRepository<ChannelDist
     /** The records of one release inside the organization (the concealed-miss guard of the read route). */
     List<ChannelDistributionEntity> findByReleaseIdAndOrganizationIdOrderByChannelAsc(
             UUID releaseId, UUID organizationId);
+
+    /**
+     * The reconciliation pass's input (S13-02, #62): store-channel
+     * records with an external id still walking toward their provider
+     * answer — PENDING or DISTRIBUTING, capped per pass.
+     */
+    org.springframework.data.domain.Page<ChannelDistributionEntity> findByStatusInAndExternalIdIsNotNull(
+            java.util.Collection<ChannelDistributionEntity.Status> statuses,
+            org.springframework.data.domain.Pageable pageable);
+
+    /** The organization's records on one channel (the group sync's build-drift walk). */
+    List<ChannelDistributionEntity> findByOrganizationIdAndChannelOrderByCreatedAtAsc(
+            UUID organizationId, String channel);
+
+    /** The artifact's records newest-first (the download channel's live-store question). */
+    List<ChannelDistributionEntity> findByArtifactIdOrderByUpdatedAtDesc(UUID artifactId);
 }

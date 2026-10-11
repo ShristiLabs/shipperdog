@@ -636,6 +636,21 @@ public class ReleaseService implements ReleaseAccess, VersionDistributionContrib
     }
 
     /**
+     * The release's targeted tester groups, served through the seam
+     * (S13-02, issue #62): the store connectors' group-mapping walk at
+     * dispatch. Frozen at creation like the artifact set.
+     */
+    @Override
+    @Transactional(readOnly = true)
+    public List<ReleaseTargetGroup> targetGroupsOf(UUID releaseId) {
+        return releases.findScoped(releaseId)
+                .map(release -> targetGroups.findByReleaseIdOrderByTenantIdAscGroupIdAsc(release.getId()).stream()
+                        .map(row -> new ReleaseTargetGroup(row.getTenantId(), row.getGroupId()))
+                        .toList())
+                .orElse(List.of());
+    }
+
+    /**
      * The feedback submission's resolution (S11-01, issue #46): the one
      * release of the application and version, answered only when the
      * named submitter tenant is one of the release's targets — the
@@ -709,6 +724,35 @@ public class ReleaseService implements ReleaseAccess, VersionDistributionContrib
     @Transactional(readOnly = true)
     public Optional<String> ringCodeOf(UUID ringId) {
         return rings.findById(ringId).map(RingEntity::getCode);
+    }
+
+    /**
+     * The release facts the store connectors' credential resolution
+     * reads (S13-02, issue #62): registry-served, deliberately not
+     * seam-served — the refresh and reconciliation paths run on
+     * organization-grain routes and background threads whose bound
+     * scope is by construction not the release's owning scope, and the
+     * caller's standing over the distribution record (the organization
+     * check) is the read's own guard.
+     */
+    @Override
+    @Transactional(readOnly = true)
+    public Optional<ReleaseAccess.ReleaseFacts> distributionFactsOf(UUID releaseId) {
+        return registry.probeById(releaseId).map(release -> {
+            RingEntity ring = rings.findById(release.getStartingRingId()).orElse(null);
+            return new ReleaseAccess.ReleaseFacts(
+                    release.getId(),
+                    release.releaseRef(),
+                    release.getApplicationId(),
+                    release.getVersionId(),
+                    release.getOrganizationId(),
+                    release.getTenantId(),
+                    release.getCreatedBy(),
+                    release.getStatus().name(),
+                    ring == null ? null : ring.getId(),
+                    ring == null ? null : ring.getCode(),
+                    release.getEnvironmentId());
+        });
     }
 
     /**

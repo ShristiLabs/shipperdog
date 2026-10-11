@@ -357,6 +357,67 @@ class ArtifactDownloadIntegrationTest {
     }
 
     // -----------------------------------------------------------------------
+    // The TestFlight row activating (S13-02, issue #62): a build the
+    // store connector distributed deep-links into Apple's channel; the
+    // platform mints nothing, counts nothing, and hands the install to
+    // TestFlight.
+    // -----------------------------------------------------------------------
+
+    @Test
+    void aTestFlightDistributedBuildDeepLinksIntoApplesChannel() throws Exception {
+        World world = worldIos("s804-tf");
+        byte[] ipa = IpaFixtures.releaseIpa();
+        UUID artifactId = readyArtifact(world, world.versionId, "bank.ipa", "IOS", ipa);
+        TesterPerson john = testerOf(world, "s804-tf@example.com", "TestFlight Tester");
+        grantExplicitVersion(world, john);
+
+        // The store connector's record: the artifact went out through
+        // TestFlight and is walking (Apple owns the next step). The
+        // release row is the fixture's own (a DRAFT walk suffices --
+        // the routing port reads the distribution record, not the
+        // release's lifecycle).
+        UUID releaseId = java.util.UUID.randomUUID();
+        UUID qaRing =
+                jdbc.queryForObject("SELECT id FROM rings WHERE code = 'qa' AND organization_id IS NULL", UUID.class);
+        jdbc.update(
+                "INSERT INTO releases (id, application_id, version_id, organization_id, starting_ring_id)"
+                        + " VALUES (?::uuid, ?::uuid, ?::uuid, ?::uuid, ?::uuid)",
+                releaseId,
+                world.applicationId,
+                world.versionId,
+                world.orgId,
+                qaRing);
+        jdbc.update(
+                "INSERT INTO channel_distributions (id, release_id, artifact_id, organization_id, channel, status,"
+                        + " external_id, attempts, last_attempt_at, created_at, updated_at)"
+                        + " VALUES (?::uuid, ?::uuid, ?::uuid, ?::uuid, 'testflight', 'DISTRIBUTING',"
+                        + " 'build-mock-1', 1, now(), now(), now())",
+                java.util.UUID.randomUUID(),
+                releaseId,
+                artifactId,
+                world.orgId);
+
+        JsonNode issued =
+                get(john.token(), "/api/v1/artifacts/" + artifactId + "/download?version_id=" + world.versionId, 200);
+        assertThat(issued.get("platform").asString()).isEqualTo("IOS");
+        assertThat(issued.get("channel").asString()).isEqualTo("TESTFLIGHT");
+        assertThat(issued.get("behavior").asString()).isEqualTo("DEEP_LINK_TESTFLIGHT");
+        assertThat(issued.get("url").asString())
+                .as("the S8-04 route row's own deep link: Apple's tier owns this install")
+                .isEqualTo("itms-beta://");
+
+        // The platform side mints nothing and counts nothing: no
+        // storage URL, no download counter, no download event — the
+        // audit keeps the decision and the handoff.
+        assertThat(downloadCountOf(artifactId)).isZero();
+        assertThat(audit.eventsOfType(AuditEventType.DOWNLOAD_ISSUED).stream()
+                        .anyMatch(event -> artifactId.equals(event.artifactId())
+                                && "TESTFLIGHT".equals(event.detail().get("channel"))
+                                && "DEEP_LINK_TESTFLIGHT".equals(event.detail().get("behavior"))))
+                .isTrue();
+    }
+
+    // -----------------------------------------------------------------------
     // The decision API's ALLOW no longer carries the storage key: the
     // issuance route is the only consumer of that reference.
     // -----------------------------------------------------------------------

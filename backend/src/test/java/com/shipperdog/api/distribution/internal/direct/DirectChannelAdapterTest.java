@@ -58,7 +58,8 @@ class DirectChannelAdapterTest {
         assertThat(adapter.capabilities())
                 .containsExactly(com.shipperdog.api.distribution.AdapterCapability.DIRECT_ISSUANCE);
         assertThat(adapter.credentialProviders()).isEmpty();
-        assertThat(adapter.status(UUID.randomUUID(), "direct", null).status()).isEqualTo(AdapterOutcome.DISTRIBUTED);
+        assertThat(adapter.status(UUID.randomUUID(), "direct", null, null).status())
+                .isEqualTo(AdapterOutcome.DISTRIBUTED);
     }
 
     private static DistributionCommand.ArtifactSlot slot(UUID artifactId, String platform, String format) {

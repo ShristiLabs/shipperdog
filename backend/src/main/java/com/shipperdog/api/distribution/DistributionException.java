@@ -67,6 +67,18 @@ public class DistributionException extends RuntimeException {
                 HttpStatus.BAD_GATEWAY, "ADAPTER_AUTHENTICATION_FAILED", "The channel credentials were rejected."),
         /** The dispatch reached an unregistered channel reference (a configuration fault, recorded loudly). */
         CHANNEL_UNKNOWN(HttpStatus.BAD_REQUEST, "CHANNEL_UNKNOWN", "The distribution channel is not registered."),
+        /**
+         * The group-mapping write's shape or target fault (S13-02):
+         * an unknown application, tester group, or bundle id; a
+         * provider group that does not exist and was not asked to be
+         * created. The message names the fault's fact, never a
+         * foreign row (concealment).
+         */
+        DISTRIBUTION_GROUP_LINK_INVALID(
+                HttpStatus.BAD_REQUEST, "DISTRIBUTION_GROUP_LINK_INVALID", "The group link request is invalid."),
+        /** The addressed group link's miss (concealed across organizations, S13-02). */
+        DISTRIBUTION_GROUP_LINK_NOT_FOUND(
+                HttpStatus.NOT_FOUND, "DISTRIBUTION_GROUP_LINK_NOT_FOUND", "Resource not found."),
         FORBIDDEN(HttpStatus.FORBIDDEN, "FORBIDDEN", "Access denied.");
 
         final HttpStatus httpStatus;

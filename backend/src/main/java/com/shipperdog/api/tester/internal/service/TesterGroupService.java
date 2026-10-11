@@ -404,6 +404,37 @@ public class TesterGroupService implements TesterGroupAccess, TesterGroupProvisi
                 .toList();
     }
 
+    /**
+     * The group's standing facts (S13-02, issue #62): the store
+     * connectors' mapping surface reads the ShipperDog side of a link.
+     */
+    @Override
+    @Transactional(readOnly = true)
+    public java.util.Optional<TesterGroupAccess.GroupFacts> groupFactsOf(UUID groupId) {
+        return catalog.findGroupById(groupId)
+                .map(group -> new TesterGroupAccess.GroupFacts(group.getId(), group.getTenantId(), group.getName()));
+    }
+
+    /**
+     * The group's members with emails (S13-02, issue #62): the sync's
+     * push set. The tester rows live beside the membership rows, so a
+     * vanished tester's orphaned membership answers nothing.
+     */
+    @Override
+    @Transactional(readOnly = true)
+    public List<TesterGroupAccess.GroupMember> membersOf(UUID groupId) {
+        List<UUID> testerIds = members.findByGroupId(groupId).stream()
+                .map(TesterGroupMemberEntity::getTesterId)
+                .toList();
+        if (testerIds.isEmpty()) {
+            return List.of();
+        }
+        return testers.findAllById(testerIds).stream()
+                .map(tester -> new TesterGroupAccess.GroupMember(tester.getId(), tester.getEmail()))
+                .sorted(java.util.Comparator.comparing(TesterGroupAccess.GroupMember::email))
+                .toList();
+    }
+
     // -------------------------------------------------------------------------
     // Helpers
     // -------------------------------------------------------------------------

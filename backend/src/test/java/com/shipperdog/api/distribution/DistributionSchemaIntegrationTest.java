@@ -81,6 +81,8 @@ class DistributionSchemaIntegrationTest {
                         "status",
                         "external_id",
                         "failure_code",
+                        "provider_status",
+                        "provider_status_at",
                         "attempts",
                         "last_attempt_at",
                         "distributed_at",
@@ -92,6 +94,31 @@ class DistributionSchemaIntegrationTest {
                         + " JOIN pg_type t ON t.oid = e.enumtypid WHERE t.typname = 'distribution_status'",
                 String.class);
         assertThat(enumValues).isEqualTo("PENDING,DISTRIBUTING,DISTRIBUTED,FAILED");
+    }
+
+    @Test
+    void channelGroupLinksHoldOnlyTheMappingFacts() {
+        // V44 (S13-02): the mapping grain is (channel, tester group) --
+        // one link per group per channel, the provider-side group id
+        // beside it, and NOTHING membership-shaped (provider membership
+        // is reconciled, never mirrored).
+        assertThat(columnsOf("channel_group_links"))
+                .containsExactlyInAnyOrder(
+                        "id",
+                        "organization_id",
+                        "tenant_id",
+                        "application_id",
+                        "group_id",
+                        "channel",
+                        "external_group_id",
+                        "external_group_name",
+                        "last_synced_at",
+                        "created_at",
+                        "updated_at");
+        Integer constraintCount = jdbc.queryForObject(
+                "SELECT count(*) FROM pg_constraint WHERE conname = 'uq_channel_group_links_channel_group'",
+                Integer.class);
+        assertThat(constraintCount).isEqualTo(1);
     }
 
     @Test

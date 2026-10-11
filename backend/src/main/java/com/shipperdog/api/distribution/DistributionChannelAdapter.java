@@ -106,10 +106,17 @@ public interface DistributionChannelAdapter {
 
     /**
      * Reports the provider-side status of one previously distributed
-     * artifact, for store reconciliation (AC4). The external id is
-     * the one the adapter reported at distribution time.
+     * artifact, for store reconciliation (AC4; the App Store
+     * build-processing and beta-review polls of #62-#65 ride it).
+     * The external id is the one the adapter reported at distribution
+     * time; the credential is the one the refresh resolved through
+     * the delegation chain for this channel's providers (null when
+     * the channel declared none — Direct has no provider to poll).
+     * Throws {@link AdapterException} on provider failure, same
+     * taxonomy.
      *
      * @return the current outcome as the provider tells it
      */
-    AdapterOutcome status(UUID artifactId, String channel, String externalId);
+    AdapterOutcome status(
+            UUID artifactId, String channel, String externalId, DistributionCommand.ResolvedCredential credential);
 }

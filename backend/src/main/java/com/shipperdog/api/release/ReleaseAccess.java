@@ -99,6 +99,29 @@ public interface ReleaseAccess {
     List<ReleaseArtifactSlot> artifactSlotsOf(UUID releaseId);
 
     /**
+     * The release's targeted tester groups (S13-02, issue #62): every
+     * group every target selected, tenant-addressed — the store
+     * connectors' group mapping walks this set at dispatch. Empty for
+     * an unknown release or a release that targeted tenants at large,
+     * like every read here; frozen at creation like the artifact set.
+     */
+    List<ReleaseTargetGroup> targetGroupsOf(UUID releaseId);
+
+    /**
+     * The release facts the store connectors' credential resolution
+     * reads (S13-02, issue #62): the owning dimensions and the
+     * targeted environment of a release the distribution record already
+     * names. Deliberately NOT seam-served, exactly like {@link
+     * #submissionFactsOf}: the refresh and reconciliation paths run on
+     * organization-grain console routes and background threads whose
+     * bound scope is by construction not the release's owning scope,
+     * and the caller has already established its own standing over the
+     * record (the organization check) before this read. Authorization
+     * data only — never an endpoint data path.
+     */
+    Optional<ReleaseFacts> distributionFactsOf(UUID releaseId);
+
+    /**
      * The release a feedback submission evaluates (S11-01, issue #46,
      * PRD 8.13): the one release of the application and version
      * (V1's {@code uq_releases_application_version}), resolved ONLY
@@ -159,4 +182,10 @@ public interface ReleaseAccess {
 
     /** One frozen artifact slot as the distribution dispatcher addresses it (S13-01). */
     record ReleaseArtifactSlot(UUID artifactId, String platform) {}
+
+    /**
+     * One targeted tester group as the store connectors address it
+     * (S13-02): the group and the tenant whose target selected it.
+     */
+    record ReleaseTargetGroup(UUID tenantId, UUID groupId) {}
 }

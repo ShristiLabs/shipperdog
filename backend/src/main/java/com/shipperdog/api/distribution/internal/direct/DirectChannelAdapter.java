@@ -86,7 +86,8 @@ public class DirectChannelAdapter implements DistributionChannelAdapter {
     }
 
     @Override
-    public AdapterOutcome status(UUID artifactId, String channel, String externalId) {
+    public AdapterOutcome status(
+            UUID artifactId, String channel, String externalId, DistributionCommand.ResolvedCredential credential) {
         // No provider to poll: the standing DISTRIBUTED the adapter
         // reported is the truth (the download tier's own cutoffs govern
         // live availability).

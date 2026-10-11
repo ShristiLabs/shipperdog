@@ -72,7 +72,10 @@ frontend/src/
                 ApplicationDialog (create/edit form),
                 applicationRules (client mirrors of field rules),
                 ReleasesPage, ReleaseDetailPage, releaseRules
-                (PRD 17 state-vocabulary mirrors; S9-05),
+                (PRD 17 state-vocabulary mirrors; S9-05; the detail
+                page's distribution section carries the S13-02
+                channel-distribution block — provider status words
+                and the per-record store refresh),
                 ChannelsPage (the S13-01 channel catalog +
                 credential-delegation console)
   test/         harness.tsx (providers + fetch router), setup.ts

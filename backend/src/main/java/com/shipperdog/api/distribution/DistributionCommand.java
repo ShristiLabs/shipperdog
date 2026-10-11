@@ -42,6 +42,7 @@ import java.util.UUID;
  * @param channel        the channel reference name this dispatch runs through
  * @param artifacts      the release's frozen artifact slots, one per platform
  * @param targetTenantIds the tenants the release targets (who may receive)
+ * @param targetGroups   the release's targeted tester groups with the channel's resolved group links (S13-02; the framework resolves, the adapter assigns)
  * @param channelConfig  the resolved channel configuration in force (key/value, deep values)
  * @param credential     the credential the delegation chain resolved (null when the channel needs none -- Direct)
  * @param traceId        the trace id of the adapter-call observation
@@ -61,6 +62,7 @@ public record DistributionCommand(
         String channel,
         List<ArtifactSlot> artifacts,
         Set<UUID> targetTenantIds,
+        List<TargetGroup> targetGroups,
         java.util.Map<String, String> channelConfig,
         ResolvedCredential credential,
         String traceId,
@@ -68,13 +70,82 @@ public record DistributionCommand(
         int attempt,
         Instant initiatedAt) {
 
+    /** The S13-01 shape (no targeted tester groups): the group set answers empty. */
+    public DistributionCommand(
+            UUID releaseId,
+            String releaseRef,
+            UUID applicationId,
+            UUID versionId,
+            UUID organizationId,
+            UUID tenantId,
+            UUID environmentId,
+            String environmentCode,
+            String channel,
+            List<ArtifactSlot> artifacts,
+            Set<UUID> targetTenantIds,
+            java.util.Map<String, String> channelConfig,
+            ResolvedCredential credential,
+            String traceId,
+            String spanId,
+            int attempt,
+            Instant initiatedAt) {
+        this(
+                releaseId,
+                releaseRef,
+                applicationId,
+                versionId,
+                organizationId,
+                tenantId,
+                environmentId,
+                environmentCode,
+                channel,
+                artifacts,
+                targetTenantIds,
+                List.of(),
+                channelConfig,
+                credential,
+                traceId,
+                spanId,
+                attempt,
+                initiatedAt);
+    }
+
     /**
      * One frozen artifact slot of the release: identity, platform, the
      * STRUCTURAL format verdict (FR-006's IPA/APK/AAB vocabulary; the
      * Direct channel's format rule judges on it), the client file
-     * name, and the stored size.
+     * name, the stored size, and — since S13-02 (#62), the store
+     * connectors' matching keys — the binary's extracted identity:
+     * build number, bundle id (Apple) / package name (Google), and the
+     * marketing version string (ASC's {@code CFBundleShortVersionString}
+     * peer). Null when the extraction tier recorded none.
      */
-    public record ArtifactSlot(UUID artifactId, String platform, String format, String fileName, long sizeBytes) {}
+    public record ArtifactSlot(
+            UUID artifactId,
+            String platform,
+            String format,
+            String fileName,
+            long sizeBytes,
+            Long buildNumber,
+            String bundleId,
+            String versionName) {
+
+        /** The S13-01 shape (identity through size only): the store-extraction facts answer null. */
+        public ArtifactSlot(UUID artifactId, String platform, String format, String fileName, long sizeBytes) {
+            this(artifactId, platform, format, fileName, sizeBytes, null, null, null);
+        }
+    }
+
+    /**
+     * One targeted tester group as the store connectors address it
+     * (S13-02, #62): the group, the tenant whose target selected it,
+     * and — when the channel keeps a group link — the provider-side
+     * group id the channel's mapping surface recorded (null when the
+     * group is unmapped on this channel). The FRAMEWORK resolves the
+     * link (the adapter never reads platform tables); the adapter
+     * assigns builds to the groups that carry one.
+     */
+    public record TargetGroup(UUID groupId, UUID tenantId, String externalGroupId) {}
 
     /**
      * The credential the delegation chain resolved for this dispatch
@@ -86,8 +157,17 @@ public record DistributionCommand(
      * @param name            the account's human label
      * @param secretReference the opaque reference the material lives behind
      * @param material        the resolved material, redacted in any log or dump
+     * @param metadata        the binding's NON-SECRET metadata JSON (the provider's own
+     *                        connection facts, e.g. Apple's issuer id and key id beside
+     *                        the .p8 material; never material, the binding surface's rule)
      */
-    public record ResolvedCredential(String provider, String name, String secretReference, SecretMaterial material) {
+    public record ResolvedCredential(
+            String provider, String name, String secretReference, SecretMaterial material, String metadata) {
+
+        /** The S13-01 shape (no metadata): the provider connection facts answer null. */
+        public ResolvedCredential(String provider, String name, String secretReference, SecretMaterial material) {
+            this(provider, name, secretReference, material, null);
+        }
 
         @Override
         public String toString() {

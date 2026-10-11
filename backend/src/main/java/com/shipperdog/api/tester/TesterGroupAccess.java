@@ -37,4 +37,31 @@ public interface TesterGroupAccess {
      * Unknown testers answer empty, not a confirmed nobody.
      */
     List<UUID> groupIdsOfTester(UUID testerId);
+
+    /**
+     * The group's standing facts (S13-02, issue #62): identity, owning
+     * tenant, and name — the store connectors' group-mapping surface
+     * renders the ShipperDog side of a link from these. Empty when no
+     * such group exists (concealed like every read here).
+     */
+    default Optional<GroupFacts> groupFactsOf(UUID groupId) {
+        return Optional.empty();
+    }
+
+    /**
+     * The group's members with their emails (S13-02, issue #62): the
+     * ShipperDog-side membership the TestFlight group sync pushes to
+     * the mapped ASC beta group, keyed by the email Apple matches
+     * testers on. Empty for an unknown group; members whose tester row
+     * vanished answer nothing (an orphaned membership is not a tester).
+     */
+    default List<GroupMember> membersOf(UUID groupId) {
+        return List.of();
+    }
+
+    /** A tester group's served facts (S13-02). */
+    record GroupFacts(UUID groupId, UUID tenantId, String name) {}
+
+    /** One group member as the store sync addresses them (S13-02). */
+    record GroupMember(UUID testerId, String email) {}
 }
