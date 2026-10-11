@@ -16,7 +16,7 @@ import org.springframework.web.bind.annotation.RestControllerAdvice;
  * cause) is preserved by the shared registry detail.
  */
 @Order(0)
-@RestControllerAdvice(assignableTypes = AuthController.class)
+@RestControllerAdvice(assignableTypes = {AuthController.class, SsoController.class, SsoConfigController.class})
 public class IdentityExceptionHandler {
 
     @ExceptionHandler(AuthException.class)

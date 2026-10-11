@@ -106,6 +106,22 @@ public class AuthService {
             audit(AuditEventType.LOGIN_FAILURE, user.getId(), "account_locked");
             throw invalidCredentials();
         }
+        if (user.getStatus() == UserEntity.Status.LOCKED && user.getLockedUntil() == null) {
+            // S14-01: the IdP-inactive hard lock (no expiry) refuses
+            // local password login too -- offboarding follows the IdP.
+            passwordEncoder.matches(candidate, DUMMY_HASH);
+            audit(AuditEventType.LOGIN_FAILURE, user.getId(), "account_locked");
+            throw invalidCredentials();
+        }
+        if (user.getPasswordHash() == null) {
+            // S14-01: a JIT-provisioned SSO account carries no local
+            // password until its owner sets one; password login is
+            // simply not its credential. Same dummy comparison so the
+            // branch is not distinguishable by timing.
+            passwordEncoder.matches(candidate, DUMMY_HASH);
+            audit(AuditEventType.LOGIN_FAILURE, user.getId(), "invalid_credentials");
+            throw invalidCredentials();
+        }
         if (!passwordEncoder.matches(candidate, user.getPasswordHash())) {
             // REQUIRES_NEW: the counter must survive this throw.
             failures.registerFailure(user.getId());

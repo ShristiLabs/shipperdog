@@ -8,6 +8,7 @@ import ApplicationDetailPage from "./pages/ApplicationDetailPage";
 import ApplicationsPage from "./pages/ApplicationsPage";
 import DashboardPage from "./pages/DashboardPage";
 import LoginPage from "./pages/LoginPage";
+import SsoCallbackPage from "./pages/SsoCallbackPage";
 import NotificationsPage from "./pages/NotificationsPage";
 import ReleaseDetailPage from "./pages/ReleaseDetailPage";
 import ReleasePoliciesPage from "./pages/ReleasePoliciesPage";
@@ -25,6 +26,7 @@ export default function App() {
       <ToastProvider>
         <Routes>
           <Route path="/login" element={<LoginPage />} />
+          <Route path="/sso/callback" element={<SsoCallbackPage />} />
           <Route
             path="/"
             element={

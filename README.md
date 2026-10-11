@@ -128,6 +128,8 @@ and `.env.example`):
 | `AUTH_LOCKOUT_DURATION` | Lockout duration | `PT15M` |
 | `AUTH_PASSWORD_RESET_TTL` | Password-reset token lifetime | `PT30M` |
 | `AUTH_INVITATION_TTL` | Registration invitation lifetime | `P3D` |
+| `SSO_REDIRECT_BASE_URI` | OIDC relying-party callback base (S14-01) | `http://localhost:8080` |
+| `SSO_CONSOLE_CALLBACK_URI` | Console SSO landing route | `http://localhost:5173/sso/callback` |
 | `MANAGEMENT_ENDPOINTS_EXPOSE` | Actuator endpoints exposed | `health,info` (compose: `health,info,prometheus`) |
 | `MANAGEMENT_HEALTH_SHOW_DETAILS` | Health detail visibility | `never` |
 | `MANAGEMENT_SERVER_PORT` | Internal management port (compose sets `8081`) | unset = API port |

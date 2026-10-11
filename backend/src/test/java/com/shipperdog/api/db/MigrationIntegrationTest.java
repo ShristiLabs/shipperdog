@@ -121,7 +121,7 @@ class MigrationIntegrationTest {
                 .contains(
                         "uq_organizations_external_id",
                         "uq_organization_members_org_user",
-                        "uq_organization_idp_configs_organization",
+                        "uq_organization_idp_configs_org_provider",
                         "fk_organization_members_organization_id",
                         "fk_organization_members_user_id",
                         "fk_user_invitations_organization_id",

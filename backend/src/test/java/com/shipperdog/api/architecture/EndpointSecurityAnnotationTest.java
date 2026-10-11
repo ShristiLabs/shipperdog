@@ -43,7 +43,17 @@ class EndpointSecurityAnnotationTest {
             "com.shipperdog.api.identity.AuthController.refresh",
             "com.shipperdog.api.identity.AuthController.logout",
             "com.shipperdog.api.identity.AuthController.requestPasswordReset",
-            "com.shipperdog.api.identity.AuthController.confirmPasswordReset");
+            "com.shipperdog.api.identity.AuthController.confirmPasswordReset",
+            // The OIDC SSO flow's anonymous legs (S14-01): the probe,
+            // the authorization redirect, the provider callback, the
+            // one-time session-code exchange, and the Back-Channel
+            // Logout receiver. The flow's one-time state and its
+            // cryptographic verification are the authority.
+            "com.shipperdog.api.identity.SsoController.options",
+            "com.shipperdog.api.identity.SsoController.authorize",
+            "com.shipperdog.api.identity.SsoController.callback",
+            "com.shipperdog.api.identity.SsoController.exchange",
+            "com.shipperdog.api.identity.SsoController.backChannelLogout");
 
     private static final Pattern MAPPING_ANNOTATION =
             Pattern.compile("org\\.springframework\\.web\\.bind\\.annotation\\.[A-Za-z]+Mapping");

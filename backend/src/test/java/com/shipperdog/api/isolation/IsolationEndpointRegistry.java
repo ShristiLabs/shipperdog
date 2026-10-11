@@ -1201,7 +1201,18 @@ final class IsolationEndpointRegistry {
      * new read endpoint fails the guard until it joins the matrix.
      */
     static List<String> allowlistedGetRoutes() {
-        return List.of("GET /api/v1/auth/me", "GET /api/v1/auth/tokens", "GET /api/v1/organizations");
+        return List.of(
+                "GET /api/v1/auth/me",
+                "GET /api/v1/auth/tokens",
+                "GET /api/v1/organizations",
+                // The OIDC SSO flow's anonymous browser legs (S14-01):
+                // the probe answers a uniform miss (no org data), the
+                // redirect and callback carry only flow state -- the
+                // flow's own verification is the authority, like the
+                // anonymous download proxy below.
+                "GET /api/v1/auth/sso/options",
+                "GET /api/v1/auth/sso/authorize",
+                "GET /api/v1/auth/sso/callback");
     }
 
     private IsolationEndpointRegistry() {}

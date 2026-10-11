@@ -245,37 +245,6 @@ class OrganizationFlowIntegrationTest {
     }
 
     @Test
-    void idpConfigurationRecordIsStoredAndAudited() throws Exception {
-        String devToken = accessToken(login(DEV_ADMIN_EMAIL, DEV_ADMIN_PASSWORD));
-        UUID orgId = createOrganization(devToken, "Epsilon SSO");
-
-        Map<String, Object> config = Map.of("issuer", "https://sso.example.com", "clientId", "shipperdog");
-        JsonNode stored = put(
-                devToken,
-                "/api/v1/organizations/" + orgId + "/idp-config",
-                Map.of("providerType", "oidc", "config", config),
-                200);
-        assertThat(stored.get("providerType").asText()).isEqualTo("oidc");
-        assertThat(stored.get("config").get("issuer").asText()).isEqualTo("https://sso.example.com");
-
-        JsonNode fetched = get(devToken, "/api/v1/organizations/" + orgId + "/idp-config", 200);
-        assertThat(fetched.get("config").get("clientId").asText()).isEqualTo("shipperdog");
-        assertThat(audit.eventsOfType(AuditEventType.ORG_IDP_CONFIGURED)).isNotEmpty();
-
-        assertThat(statusOf(client.put()
-                        .uri("/api/v1/organizations/" + orgId + "/idp-config")
-                        .header("Authorization", "Bearer " + devToken)
-                        .body(Map.of("providerType", "oidc", "config", "not-an-object"))))
-                .isEqualTo(400);
-
-        UUID unconfigured = createOrganization(devToken, "Zeta No SSO");
-        assertThat(statusOf(client.get()
-                        .uri("/api/v1/organizations/" + unconfigured + "/idp-config")
-                        .header("Authorization", "Bearer " + devToken)))
-                .isEqualTo(404);
-    }
-
-    @Test
     void externalIdIsPlatformAdminManagedAndUnique() throws Exception {
         String devToken = accessToken(login(DEV_ADMIN_EMAIL, DEV_ADMIN_PASSWORD));
         String adminToken = loginOfOrgAdmin("eta@example.com", "Eta Industries");

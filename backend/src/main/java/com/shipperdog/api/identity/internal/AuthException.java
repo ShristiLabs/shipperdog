@@ -31,7 +31,16 @@ public class AuthException extends RuntimeException {
                 HttpStatus.BAD_REQUEST, "INVALID_RESET_TOKEN", "The password reset token is invalid or expired."),
         INVALID_REQUEST(HttpStatus.BAD_REQUEST, "INVALID_REQUEST", "The request is invalid."),
         NOT_FOUND(HttpStatus.NOT_FOUND, "NOT_FOUND", "Resource not found."),
-        FORBIDDEN(HttpStatus.FORBIDDEN, "FORBIDDEN", "Access denied.");
+        FORBIDDEN(HttpStatus.FORBIDDEN, "FORBIDDEN", "Access denied."),
+        /**
+         * SSO session code failure (S14-01): one uniform detail for unknown,
+         * expired, and already-consumed codes -- the code is single-use by
+         * design and a replay must not be distinguishable from a guess.
+         */
+        INVALID_SSO_SESSION_CODE(
+                HttpStatus.UNAUTHORIZED,
+                "INVALID_SSO_SESSION_CODE",
+                "The single sign-on session code is invalid or expired.");
 
         final HttpStatus httpStatus;
         final String code;

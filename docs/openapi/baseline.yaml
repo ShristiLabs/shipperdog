@@ -531,8 +531,8 @@ paths:
   /api/v1/organizations/{id}/idp-config:
     get:
       tags:
-      - organization-controller
-      operationId: getIdpConfig
+      - sso-config-controller
+      operationId: view
       parameters:
       - name: id
         in: path
@@ -546,11 +546,11 @@ paths:
           content:
             '*/*':
               schema:
-                $ref: "#/components/schemas/IdpConfig"
+                $ref: "#/components/schemas/SsoConfig"
     put:
       tags:
-      - organization-controller
-      operationId: updateIdpConfig
+      - sso-config-controller
+      operationId: update_4
       parameters:
       - name: id
         in: path
@@ -562,7 +562,7 @@ paths:
         content:
           application/json:
             schema:
-              $ref: "#/components/schemas/IdpConfigRequest"
+              $ref: "#/components/schemas/UpdateRequest"
         required: true
       responses:
         "200":
@@ -570,7 +570,7 @@ paths:
           content:
             '*/*':
               schema:
-                $ref: "#/components/schemas/IdpConfig"
+                $ref: "#/components/schemas/SsoConfig"
   /api/v1/gate-definitions/{definitionId}:
     get:
       tags:
@@ -599,7 +599,7 @@ paths:
     put:
       tags:
       - gate-controller
-      operationId: update_4
+      operationId: update_5
       parameters:
       - name: definitionId
         in: path
@@ -1149,7 +1149,7 @@ paths:
     put:
       tags:
       - workflow-controller
-      operationId: update_5
+      operationId: update_6
       parameters:
       - name: workflowId
         in: path
@@ -1472,6 +1472,44 @@ paths:
             '*/*':
               schema:
                 $ref: "#/components/schemas/WebhookReceiptView"
+  /mock-idp/token:
+    post:
+      tags:
+      - mock-oidc-provider
+      operationId: token
+      requestBody:
+        content:
+          application/x-www-form-urlencoded:
+            schema:
+              type: object
+              properties:
+                grant_type:
+                  type: string
+                code:
+                  type: string
+                redirect_uri:
+                  type: string
+                client_id:
+                  type: string
+                client_secret:
+                  type: string
+                code_verifier:
+                  type: string
+              required:
+              - client_id
+              - client_secret
+              - code
+              - code_verifier
+              - grant_type
+              - redirect_uri
+      responses:
+        "200":
+          description: OK
+          content:
+            '*/*':
+              schema:
+                type: object
+                additionalProperties: {}
   /api/v1/testers:
     get:
       tags:
@@ -3056,6 +3094,38 @@ paths:
             '*/*':
               schema:
                 $ref: "#/components/schemas/CreatedPatResponse"
+  /api/v1/auth/sso/logout:
+    post:
+      tags:
+      - sso-controller
+      operationId: backChannelLogout
+      parameters:
+      - name: logout_token
+        in: query
+        required: false
+        schema:
+          type: string
+      responses:
+        "200":
+          description: OK
+  /api/v1/auth/sso/exchange:
+    post:
+      tags:
+      - sso-controller
+      operationId: exchange
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ExchangeRequest"
+        required: true
+      responses:
+        "200":
+          description: OK
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/TokenResponse"
   /api/v1/auth/register:
     post:
       tags:
@@ -3643,7 +3713,7 @@ paths:
     patch:
       tags:
       - ring-controller
-      operationId: update_6
+      operationId: update_7
       parameters:
       - name: ringId
         in: path
@@ -3718,7 +3788,7 @@ paths:
     patch:
       tags:
       - notification-controller
-      operationId: update_7
+      operationId: update_8
       parameters:
       - name: organizationId
         in: path
@@ -3767,7 +3837,7 @@ paths:
     patch:
       tags:
       - environment-controller
-      operationId: update_8
+      operationId: update_9
       parameters:
       - name: environmentId
         in: path
@@ -3810,7 +3880,7 @@ paths:
     patch:
       tags:
       - application-controller
-      operationId: update_9
+      operationId: update_10
       parameters:
       - name: id
         in: path
@@ -3831,6 +3901,81 @@ paths:
             '*/*':
               schema:
                 $ref: "#/components/schemas/ApplicationView"
+  /mock-idp/jwks:
+    get:
+      tags:
+      - mock-oidc-provider
+      operationId: jwks
+      responses:
+        "200":
+          description: OK
+          content:
+            '*/*':
+              schema:
+                type: object
+                additionalProperties: {}
+  /mock-idp/authorize:
+    get:
+      tags:
+      - mock-oidc-provider
+      operationId: authorize_1
+      parameters:
+      - name: client_id
+        in: query
+        required: true
+        schema:
+          type: string
+      - name: redirect_uri
+        in: query
+        required: true
+        schema:
+          type: string
+      - name: response_type
+        in: query
+        required: true
+        schema:
+          type: string
+      - name: scope
+        in: query
+        required: true
+        schema:
+          type: string
+      - name: state
+        in: query
+        required: true
+        schema:
+          type: string
+      - name: nonce
+        in: query
+        required: true
+        schema:
+          type: string
+      - name: code_challenge
+        in: query
+        required: true
+        schema:
+          type: string
+      - name: code_challenge_method
+        in: query
+        required: true
+        schema:
+          type: string
+      responses:
+        "200":
+          description: OK
+  /mock-idp/.well-known/openid-configuration:
+    get:
+      tags:
+      - mock-oidc-provider
+      operationId: discovery
+      responses:
+        "200":
+          description: OK
+          content:
+            '*/*':
+              schema:
+                type: object
+                additionalProperties: {}
   /api/v1/testers/{id}:
     get:
       tags:
@@ -4983,6 +5128,64 @@ paths:
             '*/*':
               schema:
                 $ref: "#/components/schemas/CatalogView"
+  /api/v1/auth/sso/options:
+    get:
+      tags:
+      - sso-controller
+      operationId: options
+      parameters:
+      - name: organizationId
+        in: query
+        required: true
+        schema:
+          type: string
+          format: uuid
+      responses:
+        "200":
+          description: OK
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/SsoOptionsResponse"
+  /api/v1/auth/sso/callback:
+    get:
+      tags:
+      - sso-controller
+      operationId: callback
+      parameters:
+      - name: code
+        in: query
+        required: false
+        schema:
+          type: string
+      - name: state
+        in: query
+        required: false
+        schema:
+          type: string
+      - name: error
+        in: query
+        required: false
+        schema:
+          type: string
+      responses:
+        "200":
+          description: OK
+  /api/v1/auth/sso/authorize:
+    get:
+      tags:
+      - sso-controller
+      operationId: authorize_2
+      parameters:
+      - name: organizationId
+        in: query
+        required: true
+        schema:
+          type: string
+          format: uuid
+      responses:
+        "200":
+          description: OK
   /api/v1/auth/me:
     get:
       tags:
@@ -5151,6 +5354,13 @@ paths:
           - STAGED_ROLLOUT_ADVANCED
           - STAGED_ROLLOUT_BLOCKED
           - STAGED_ROLLOUT_ROLLED_BACK
+          - SSO_LOGIN_SUCCESS
+          - SSO_LOGIN_FAILURE
+          - SSO_IDENTITY_LINKED
+          - SSO_USER_JIT_PROVISIONED
+          - SSO_ROLE_MAPPED
+          - SSO_ACCOUNT_LOCKED
+          - SSO_LOGOUT
       - name: applicationId
         in: query
         required: false
@@ -5956,82 +6166,66 @@ components:
         updatedAt:
           type: string
           format: date-time
-    IdpConfigRequest:
+    UpdateRequest:
       type: object
       properties:
         providerType:
           type: string
-        config:
-          $ref: "#/components/schemas/JsonNode"
-    JsonNode:
-      type: object
-      properties:
-        string:
-          type: boolean
-        valueNode:
-          type: boolean
-        nodeType:
+        issuerUrl:
           type: string
-          enum:
-          - ARRAY
-          - BINARY
-          - BOOLEAN
-          - MISSING
-          - "NULL"
-          - NUMBER
-          - OBJECT
-          - POJO
-          - STRING
-        missingNode:
+        clientId:
+          type: string
+        clientSecret:
+          type: string
+        clientSecretRef:
+          type: string
+        scopes:
+          type: string
+        groupClaimName:
+          type: string
+        inactiveClaimName:
+          type: string
+        provisioningMode:
+          type: string
+        jitDefaultRole:
+          type: string
+        requireVerifiedEmail:
           type: boolean
-        pojo:
+        roleMappings:
+          type: object
+          additionalProperties:
+            type: string
+        enabled:
           type: boolean
-        integralNumber:
-          type: boolean
-        short:
-          type: boolean
-        int:
-          type: boolean
-        long:
-          type: boolean
-        double:
-          type: boolean
-        bigDecimal:
-          type: boolean
-        bigInteger:
-          type: boolean
-        textual:
-          type: boolean
-          deprecated: true
-        boolean:
-          type: boolean
-        binary:
-          type: boolean
-        floatingPointNumber:
-          type: boolean
-        container:
-          type: boolean
-        number:
-          type: boolean
-        empty:
-          type: boolean
-        array:
-          type: boolean
-        "null":
-          type: boolean
-        object:
-          type: boolean
-        float:
-          type: boolean
-        embeddedValue:
-          type: boolean
-    IdpConfig:
+    SsoConfig:
       type: object
       properties:
         providerType:
           type: string
-        config:
-          $ref: "#/components/schemas/JsonNode"
+        issuerUrl:
+          type: string
+        clientId:
+          type: string
+        clientSecretRef:
+          type: string
+        scopes:
+          type: string
+        groupClaimName:
+          type: string
+        inactiveClaimName:
+          type: string
+        provisioningMode:
+          type: string
+        jitDefaultRole:
+          type: string
+        requireVerifiedEmail:
+          type: boolean
+        roleMappings:
+          type: object
+          additionalProperties:
+            type: string
+        enabled:
+          type: boolean
         updatedAt:
           type: string
           format: date-time
@@ -6401,6 +6595,68 @@ components:
           format: uuid
         track:
           type: string
+    JsonNode:
+      type: object
+      properties:
+        string:
+          type: boolean
+        valueNode:
+          type: boolean
+        nodeType:
+          type: string
+          enum:
+          - ARRAY
+          - BINARY
+          - BOOLEAN
+          - MISSING
+          - "NULL"
+          - NUMBER
+          - OBJECT
+          - POJO
+          - STRING
+        missingNode:
+          type: boolean
+        pojo:
+          type: boolean
+        integralNumber:
+          type: boolean
+        short:
+          type: boolean
+        int:
+          type: boolean
+        long:
+          type: boolean
+        double:
+          type: boolean
+        bigDecimal:
+          type: boolean
+        bigInteger:
+          type: boolean
+        textual:
+          type: boolean
+          deprecated: true
+        boolean:
+          type: boolean
+        binary:
+          type: boolean
+        number:
+          type: boolean
+        container:
+          type: boolean
+        floatingPointNumber:
+          type: boolean
+        empty:
+          type: boolean
+        array:
+          type: boolean
+        "null":
+          type: boolean
+        object:
+          type: boolean
+        float:
+          type: boolean
+        embeddedValue:
+          type: boolean
     StoreAccountView:
       type: object
       properties:
@@ -7531,6 +7787,23 @@ components:
         expiresAt:
           type: string
           format: date-time
+    ExchangeRequest:
+      type: object
+      properties:
+        code:
+          type: string
+    TokenResponse:
+      type: object
+      properties:
+        accessToken:
+          type: string
+        refreshToken:
+          type: string
+        tokenType:
+          type: string
+        expiresInSeconds:
+          type: integer
+          format: int64
     RegisterRequest:
       type: object
       properties:
@@ -7980,31 +8253,6 @@ components:
           type: string
         distributionChannel:
           type: string
-    UpdateRequest:
-      type: object
-      description: "The notification subscription edit body: event types, recipients,\
-        \ the webhook pair (supplying the secret rotates it), and the enabled switch;\
-        \ the channel never moves."
-      properties:
-        eventTypes:
-          type: array
-          items:
-            type: string
-        recipientRoles:
-          type: array
-          items:
-            type: string
-        recipientUserIds:
-          type: array
-          items:
-            type: string
-            format: uuid
-        webhookUrl:
-          type: string
-        webhookSecret:
-          type: string
-        enabled:
-          type: boolean
     EnvironmentUpdateRequest:
       type: object
       description: "The environment PATCH body: null fields stay unchanged (the code\
@@ -9261,6 +9509,14 @@ components:
         revokedAt:
           type: string
           format: date-time
+    SsoOptionsResponse:
+      type: object
+      properties:
+        organizationId:
+          type: string
+          format: uuid
+        providerType:
+          type: string
     MeResponse:
       type: object
       properties:
@@ -9416,6 +9672,13 @@ components:
           - STAGED_ROLLOUT_ADVANCED
           - STAGED_ROLLOUT_BLOCKED
           - STAGED_ROLLOUT_ROLLED_BACK
+          - SSO_LOGIN_SUCCESS
+          - SSO_LOGIN_FAILURE
+          - SSO_IDENTITY_LINKED
+          - SSO_USER_JIT_PROVISIONED
+          - SSO_ROLE_MAPPED
+          - SSO_ACCOUNT_LOCKED
+          - SSO_LOGOUT
         occurredAt:
           type: string
           format: date-time

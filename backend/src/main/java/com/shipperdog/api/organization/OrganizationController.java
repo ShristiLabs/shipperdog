@@ -24,7 +24,6 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestController;
-import tools.jackson.databind.JsonNode;
 
 /**
  * Organization management API (issues #4, #5 and #8, PRD 19): creation
@@ -87,19 +86,6 @@ public class OrganizationController {
                 requireUserId(principal), id, request.name(), request.status(), request.externalId()));
     }
 
-    @GetMapping("/{id}/idp-config")
-    @PreAuthorize("hasPermission(#id, 'organization', 'org:idp-configs:read')")
-    OrganizationService.IdpConfig getIdpConfig(@AuthenticationPrincipal Object principal, @PathVariable UUID id) {
-        return organizations.getIdpConfig(id);
-    }
-
-    @PutMapping("/{id}/idp-config")
-    @PreAuthorize("hasPermission(#id, 'organization', 'org:idp-configs:write')")
-    OrganizationService.IdpConfig updateIdpConfig(
-            @AuthenticationPrincipal Object principal, @PathVariable UUID id, @RequestBody IdpConfigRequest request) {
-        return organizations.updateIdpConfig(requireUserId(principal), id, request.providerType(), request.config());
-    }
-
     @GetMapping("/{id}/members")
     @PreAuthorize("hasPermission(#id, 'organization', 'org:members:read')")
     PageResponse<OrganizationService.MemberView> listMembers(
@@ -154,8 +140,6 @@ public class OrganizationController {
 
     /** Partial update: null fields are left unchanged. */
     private record OrganizationUpdateRequest(String name, String status, String externalId) {}
-
-    private record IdpConfigRequest(String providerType, JsonNode config) {}
 
     /** Target role for a member role assignment (issue #5). */
     public record RoleChangeRequest(String role) {}

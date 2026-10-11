@@ -70,4 +70,16 @@ public interface OrganizationAccess {
      *                     granted (the inviter for invitation acceptance)
      */
     void addMember(UUID organizationId, UUID userId, OrgRole role, UUID actingUserId);
+
+    /**
+     * Replaces a member's organization role (S14-01): the SSO
+     * group-claim mapping's apply step, on the same guarded mutation
+     * the member administration uses (last-ORG_ADMIN protection,
+     * demotion session revocation, and the ORG_MEMBER_ROLE_CHANGED
+     * audit ride along unchanged).
+     *
+     * @param actingUserId the user on whose behalf the role changes
+     *                     (the mapped user itself for SSO logins)
+     */
+    void updateMemberRole(UUID organizationId, UUID userId, OrgRole newRole, UUID actingUserId);
 }
