@@ -491,5 +491,60 @@ public enum AuditEventType {
      * rolled-back state, and the artifacts stayed untouched
      * (INV-008). The mandatory reason rides the line (FR-024).
      */
-    STAGED_ROLLOUT_ROLLED_BACK
+    STAGED_ROLLOUT_ROLLED_BACK,
+    /**
+     * One SSO login completed through an organization's OIDC provider
+     * (S14-01, issue #67, PRD 25): the organization, the issuer, the
+     * OIDC subject, and whether the session was minted for a linked
+     * identity or a freshly provisioned one. The issued token pair is
+     * the local-login TOKEN_ISSUED shape -- this event is the SSO leg
+     * beside it. Client secret material is deliberately absent (the
+     * reference-only posture of the whole chain).
+     */
+    SSO_LOGIN_SUCCESS,
+    /**
+     * One SSO login refused (S14-01, issue #67): the organization and
+     * the distinct failure reason (unverified email, not invited, no
+     * email claim, disabled account, IdP-reported inactive, IdP
+     * configuration incomplete, token verification) -- the HTTP answer
+     * the browser receives stays a bare redirect, so the audit line is
+     * the only place the reason exists.
+     */
+    SSO_LOGIN_FAILURE,
+    /**
+     * One OIDC subject linked to an existing account (S14-01): the
+     * organization, the subject, and the link kind -- by verified
+     * email match or as part of JIT provisioning.
+     */
+    SSO_IDENTITY_LINKED,
+    /**
+     * One account provisioned just-in-time by SSO (S14-01): the
+     * organization, the new user, the granted role (the configured
+     * least-privilege default, or the group-mapped role when the
+     * first login already carried groups), and the OIDC subject. The
+     * account is password-less until its owner sets a local password.
+     */
+    SSO_USER_JIT_PROVISIONED,
+    /**
+     * One group-claim role mapping applied on login (S14-01): the
+     * organization, the user, the matched group, and the from/to
+     * membership roles -- the mapping table's own trail beside
+     * ORG_IDP_CONFIGURED (which records the table's edits).
+     */
+    SSO_ROLE_MAPPED,
+    /**
+     * One account locked because its identity provider asserted the
+     * account inactive (S14-01): the organization, the user, and the
+     * subject -- the lock revokes every refresh family (reason
+     * idp_inactive), the offboarding-follows-the-IdP posture.
+     */
+    SSO_ACCOUNT_LOCKED,
+    /**
+     * One local session invalidated at the identity provider's demand
+     * (S14-01): the back-channel logout token verified (issuer,
+     * audience, signature), the organization and subject resolved, and
+     * the user's refresh families revoked -- IdP-initiated logout and
+     * IdP session expiry land on the same leg.
+     */
+    SSO_LOGOUT
 }

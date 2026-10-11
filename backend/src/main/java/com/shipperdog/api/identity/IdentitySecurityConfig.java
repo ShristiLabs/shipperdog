@@ -30,8 +30,9 @@ import org.springframework.security.web.SecurityFilterChain;
  * server, with personal access tokens handled by a dedicated filter.
  * Refresh-type JWTs are rejected as bearer credentials; only
  * {@code type=access} tokens authenticate. The chain is shaped so an OIDC
- * provider can later be added as another credential source without
- * touching callers (S14-01).
+ * provider can be added as another credential source without touching
+ * callers (S14-01): the SSO flow's browser legs are permitted here and
+ * authenticated by their own one-time state and token verification.
  */
 @Configuration
 public class IdentitySecurityConfig {
@@ -52,7 +53,21 @@ public class IdentitySecurityConfig {
                                 "/api/v1/auth/refresh",
                                 "/api/v1/auth/logout",
                                 "/api/v1/auth/password-reset/request",
-                                "/api/v1/auth/password-reset/confirm")
+                                "/api/v1/auth/password-reset/confirm",
+                                "/api/v1/auth/sso/exchange",
+                                "/api/v1/auth/sso/logout")
+                        .permitAll()
+                        // The OIDC SSO flow's browser legs (S14-01):
+                        // the probe, the authorization redirect, and
+                        // the provider callback. Anonymous by design --
+                        // the flow's one-time state and the ID token's
+                        // cryptographic verification are the authority,
+                        // and every failure leg is uniform.
+                        .requestMatchers(
+                                HttpMethod.GET,
+                                "/api/v1/auth/sso/options",
+                                "/api/v1/auth/sso/authorize",
+                                "/api/v1/auth/sso/callback")
                         .permitAll()
                         // The emulator-mode download proxy (issue #38, S8-04): the
                         // HMAC token in the path IS the credential — an engine ALLOW

@@ -161,7 +161,14 @@ allowed.
 
 - **Login** (`/login`): opaque failure message, post-login redirect to
   the intended route; deep links to console pages bounce here when
-  anonymous (`RequireAuth`).
+  anonymous (`RequireAuth`). Since S14-01 the card also carries the
+  single sign-on panel: an organization id probes
+  `GET /api/v1/auth/sso/options` and, when the organization offers
+  SSO, hands the browser to the backend's authorize redirect
+  (full-page navigation).
+- **SSO landing** (`/sso/callback`, S14-01): exchanges the one-time
+  session code for the token pair and enters the console; the uniform
+  failure redirect renders an opaque retry message.
 - **Organization dashboard** (`/dashboard`, the console's index and
   first nav section, S11-05; PRD §29): the six counts (applications,
   tenants, active releases, pending approvals, testing, production —

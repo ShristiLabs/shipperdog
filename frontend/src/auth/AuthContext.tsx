@@ -28,6 +28,8 @@ interface AuthContextValue {
   status: AuthStatus;
   user: CurrentUser | null;
   login: (email: string, password: string) => Promise<void>;
+  /** Adopts an already-minted pair (the SSO exchange, S14-01). */
+  adoptTokens: (pair: import("../api/auth").TokenPair) => Promise<void>;
   logout: () => Promise<void>;
 }
 
@@ -122,6 +124,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     [loadMe, armSilentRefresh],
   );
 
+  const adoptTokens = useCallback(
+    async (pair: import("../api/auth").TokenPair) => {
+      tokenStore.save(pair.accessToken, pair.refreshToken, pair.expiresInSeconds);
+      await loadMe();
+      armSilentRefresh();
+    },
+    [loadMe, armSilentRefresh],
+  );
+
   const logout = useCallback(async () => {
     const session = tokenStore.get();
     if (session) {
@@ -131,8 +142,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const value = useMemo(
-    () => ({ status, user, login, logout }),
-    [status, user, login, logout],
+    () => ({ status, user, login, adoptTokens, logout }),
+    [status, user, login, adoptTokens, logout],
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

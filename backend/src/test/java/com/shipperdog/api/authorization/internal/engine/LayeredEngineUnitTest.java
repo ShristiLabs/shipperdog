@@ -131,6 +131,11 @@ class LayeredEngineUnitTest {
             }
 
             @Override
+            public void updateMemberRole(UUID organizationId, UUID userId, OrgRole newRole, UUID actingUserId) {
+                throw new UnsupportedOperationException();
+            }
+
+            @Override
             public Map<UUID, OrgRole> activeOrganizationRoles(UUID userId) {
                 return Map.of();
             }

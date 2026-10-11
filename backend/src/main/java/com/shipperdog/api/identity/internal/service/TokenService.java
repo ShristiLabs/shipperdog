@@ -143,6 +143,19 @@ public class TokenService implements SessionRevocation {
                     Map.of("kind", "refresh", "reason", "account_disabled"));
             throw invalidRefresh();
         }
+        if (hardLocked(record.getUserId())) {
+            // S14-01: the IdP-inactive lock is a hard lock (LOCKED with
+            // no expiry -- distinct from the timed failed-login lockout)
+            // and must outlive sessions like a disabling: offboarding
+            // follows the identity provider.
+            refreshTokens.revokeFamily(record.getFamilyId(), now);
+            audit(
+                    AuditEventType.TOKEN_REFRESHED,
+                    record.getUserId(),
+                    false,
+                    Map.of("kind", "refresh", "reason", "idp_inactive"));
+            throw invalidRefresh();
+        }
         if (deactivatedOrgBlocksUser(record.getUserId())) {
             // S1-04: org deactivation must outlive tokens issued before it,
             // so refresh is refused for affected users (platform admins stay
@@ -254,6 +267,7 @@ public class TokenService implements SessionRevocation {
                 .filter(pat -> pat.getRevokedAt() == null)
                 .filter(pat -> pat.getExpiresAt() == null || pat.getExpiresAt().isAfter(Instant.now(clock)))
                 .filter(pat -> !userDisabled(pat.getUserId()))
+                .filter(pat -> !hardLocked(pat.getUserId()))
                 .filter(pat -> testerBlockFor(pat.getUserId()).isEmpty())
                 .map(pat -> {
                     Instant now = Instant.now(clock);
@@ -313,6 +327,19 @@ public class TokenService implements SessionRevocation {
     private boolean userDisabled(UUID userId) {
         return users.findById(userId)
                 .map(user -> user.getStatus() == UserEntity.Status.DISABLED)
+                .orElse(false);
+    }
+
+    /**
+     * S14-01: the IdP-inactive hard lock -- LOCKED with no expiry, the
+     * only state that sets status without lockedUntil -- is refused at
+     * every stateful surface, exactly like a disabling. The timed
+     * failed-login lockout (LOCKED with a future lockedUntil) stays a
+     * login-attack brake and does not reach this check.
+     */
+    private boolean hardLocked(UUID userId) {
+        return users.findById(userId)
+                .map(user -> user.getStatus() == UserEntity.Status.LOCKED && user.getLockedUntil() == null)
                 .orElse(false);
     }
 

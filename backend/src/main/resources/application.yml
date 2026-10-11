@@ -64,6 +64,19 @@ shipperdog:
     lockout-duration: ${AUTH_LOCKOUT_DURATION:PT15M}
     password-reset-ttl: ${AUTH_PASSWORD_RESET_TTL:PT30M}
     invitation-ttl: ${AUTH_INVITATION_TTL:P3D}
+  sso:
+    # The OIDC relying party's deployment posture (S14-01): where this
+    # API's own callback lives (the redirect_uri registered with every
+    # identity provider) and where the console expects its SSO landing
+    # route. Production points both at its real origins; the defaults
+    # are the local development ports.
+    redirect-base-uri: ${SSO_REDIRECT_BASE_URI:http://localhost:8080}
+    console-callback-uri: ${SSO_CONSOLE_CALLBACK_URI:http://localhost:5173/sso/callback}
+    authorization-request-ttl: ${SSO_AUTHORIZATION_REQUEST_TTL:PT10M}
+    session-code-ttl: ${SSO_SESSION_CODE_TTL:PT60S}
+    discovery-cache-ttl: ${SSO_DISCOVERY_CACHE_TTL:PT10M}
+    jwks-cache-ttl: ${SSO_JWKS_CACHE_TTL:PT10M}
+    clock-skew: ${SSO_CLOCK_SKEW:PT1M}
   artifact:
     # Object storage (issue #20, S5-01, FR-007/PRD 24, ADR-0003):
     # binaries live in object storage under the PRD 24 layout,

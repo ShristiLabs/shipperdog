@@ -44,6 +44,7 @@ Stable public error codes of the problem+json envelope (issue #8). Rules:
 | `INVALID_REQUEST` | 400 | The request is invalid. |
 | `NOT_FOUND` | 404 | Resource not found. |
 | `FORBIDDEN` | 403 | Access denied. |
+| `INVALID_SSO_SESSION_CODE` | 401 | The single sign-on session code is invalid or expired. (uniform across unknown, expired, and already-consumed codes — S14-01) |
 
 ## Organization (`OrganizationException.Code`)
 

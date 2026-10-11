@@ -14,9 +14,7 @@ import com.shipperdog.api.organization.OrgRole;
 import com.shipperdog.api.organization.OrganizationAccess;
 import com.shipperdog.api.organization.OrganizationException;
 import com.shipperdog.api.organization.internal.entity.OrganizationEntity;
-import com.shipperdog.api.organization.internal.entity.OrganizationIdpConfigEntity;
 import com.shipperdog.api.organization.internal.entity.OrganizationMemberEntity;
-import com.shipperdog.api.organization.internal.repository.OrganizationIdpConfigRepository;
 import com.shipperdog.api.organization.internal.repository.OrganizationMemberRepository;
 import com.shipperdog.api.organization.internal.repository.OrganizationRepository;
 import com.shipperdog.api.release.RingProvisioning;
@@ -37,13 +35,11 @@ import org.springframework.data.domain.Pageable;
 import org.springframework.data.domain.Sort;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
-import tools.jackson.databind.JsonNode;
-import tools.jackson.databind.ObjectMapper;
 
 /**
  * Organization lifecycle and membership (issues #4 and #5): creation by
  * platform administrators (creator becomes ORG_ADMIN), settings and
- * status changes, the stored IdP configuration record (S14 placeholder),
+ * status changes,
  * member listing and role assignment (S1-05), and the cross-module
  * {@link OrganizationAccess} queries the identity and authorization
  * modules use for login blocks, token claims, and permission snapshots.
@@ -62,7 +58,6 @@ public class OrganizationService implements OrganizationAccess {
 
     private final OrganizationRepository organizations;
     private final OrganizationMemberRepository members;
-    private final OrganizationIdpConfigRepository idpConfigs;
     private final PlatformAdmins platformAdmins;
     /**
      * Lazy on purpose: TokenService depends on OrganizationAccess, so a
@@ -90,33 +85,28 @@ public class OrganizationService implements OrganizationAccess {
 
     private final UserDirectory directory;
     private final AuditEventPublisher audit;
-    private final ObjectMapper mapper;
     private final Clock clock;
     private final TraceAttributes trace;
 
     OrganizationService(
             OrganizationRepository organizations,
             OrganizationMemberRepository members,
-            OrganizationIdpConfigRepository idpConfigs,
             PlatformAdmins platformAdmins,
             ObjectProvider<SessionRevocation> sessions,
             ObjectProvider<EnvironmentProvisioning> environmentDefaults,
             ObjectProvider<RingProvisioning> ringDefaults,
             UserDirectory directory,
             AuditEventPublisher audit,
-            ObjectMapper mapper,
             Clock clock,
             TraceAttributes trace) {
         this.organizations = organizations;
         this.members = members;
-        this.idpConfigs = idpConfigs;
         this.platformAdmins = platformAdmins;
         this.sessions = sessions;
         this.environmentDefaults = environmentDefaults;
         this.ringDefaults = ringDefaults;
         this.directory = directory;
         this.audit = audit;
-        this.mapper = mapper;
         this.clock = clock;
         this.trace = trace;
     }
@@ -124,6 +114,14 @@ public class OrganizationService implements OrganizationAccess {
     // -------------------------------------------------------------------------
     // OrganizationAccess: cross-module surface
     // -------------------------------------------------------------------------
+
+    @Override
+    @Transactional
+    public void updateMemberRole(UUID organizationId, UUID userId, OrgRole newRole, UUID actingUserId) {
+        // S14-01: the SSO group-claim mapping applies through the same
+        // guarded mutation the member administration uses.
+        changeMemberRole(organizationId, userId, newRole, actingUserId);
+    }
 
     @Override
     @Transactional(readOnly = true)
@@ -321,45 +319,6 @@ public class OrganizationService implements OrganizationAccess {
         return organization;
     }
 
-    /**
-     * Stores (upserts) the IdP configuration record (S14 placeholder).
-     * Caller permission (org:idp-configs:write) is enforced at the
-     * controller (S1-05).
-     */
-    @Transactional
-    public IdpConfig updateIdpConfig(UUID actorId, UUID organizationId, String providerType, JsonNode config) {
-        mustFind(organizationId);
-        String validatedProvider = requireProviderType(providerType);
-        String serialized = serializeConfig(config);
-        OrganizationIdpConfigEntity entity =
-                idpConfigs.findByOrganizationId(organizationId).orElse(null);
-        String previousProvider = entity == null ? null : entity.getProviderType();
-        if (entity == null) {
-            entity = new OrganizationIdpConfigEntity(organizationId, validatedProvider, serialized);
-        } else {
-            entity.setProviderType(validatedProvider);
-            entity.setConfig(serialized);
-        }
-        idpConfigs.save(entity);
-        Map<String, String> configured = new LinkedHashMap<>();
-        configured.put("providerType.before", previousProvider == null ? "" : previousProvider);
-        configured.put("providerType.after", validatedProvider);
-        configured.put("record", "stored");
-        audit(AuditEventType.ORG_IDP_CONFIGURED, actorId, organizationId, true, Map.copyOf(configured));
-        return new IdpConfig(validatedProvider, config, entity.getUpdatedAt());
-    }
-
-    /** Read is permission-gated at the controller (org:idp-configs:read). */
-    @Transactional(readOnly = true)
-    public IdpConfig getIdpConfig(UUID organizationId) {
-        mustFind(organizationId);
-        OrganizationIdpConfigEntity entity = idpConfigs
-                .findByOrganizationId(organizationId)
-                .orElseThrow(() -> new OrganizationException(
-                        OrganizationException.Code.NOT_FOUND, "no identity provider configuration stored"));
-        return new IdpConfig(entity.getProviderType(), mapper.readTree(entity.getConfig()), entity.getUpdatedAt());
-    }
-
     // -------------------------------------------------------------------------
     // Member listing and role assignment (issue #5)
     // -------------------------------------------------------------------------
@@ -510,16 +469,6 @@ public class OrganizationService implements OrganizationAccess {
         return name.trim();
     }
 
-    private static String requireProviderType(String providerType) {
-        if (providerType == null
-                || providerType.isBlank()
-                || providerType.trim().length() > 64) {
-            throw new OrganizationException(
-                    OrganizationException.Code.INVALID_REQUEST, "providerType is required (max 64 characters)");
-        }
-        return providerType.trim();
-    }
-
     /** null stays null (no mapping); blank is rejected; value is trimmed. */
     private static String validateExternalId(String externalId) {
         if (externalId == null) {
@@ -541,13 +490,6 @@ public class OrganizationService implements OrganizationAccess {
                 OrganizationException.Code.INVALID_REQUEST, "status must be ACTIVE or DEACTIVATED");
     }
 
-    private String serializeConfig(JsonNode config) {
-        if (config == null || config.isMissingNode() || !config.isObject()) {
-            throw new OrganizationException(OrganizationException.Code.INVALID_REQUEST, "config must be a JSON object");
-        }
-        return mapper.writeValueAsString(config);
-    }
-
     private static OrganizationException externalIdTaken() {
         return new OrganizationException(
                 OrganizationException.Code.EXTERNAL_ID_TAKEN, "externalId is already mapped to another organization");
@@ -562,9 +504,6 @@ public class OrganizationService implements OrganizationAccess {
     private void audit(AuditEventType type, UUID actorId, UUID orgId, boolean success, Map<String, String> detailMap) {
         audit.publish(new AuditEvent(type, Instant.now(clock), actorId, orgId, null, success, detailMap));
     }
-
-    /** Stored IdP configuration view (S14 placeholder). */
-    public record IdpConfig(String providerType, JsonNode config, Instant updatedAt) {}
 
     /**
      * Organization member view (issue #5); display fields are null when

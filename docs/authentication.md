@@ -1,9 +1,10 @@
-# Authentication (S1-03, extended by S1-04 and S1-05)
+# Authentication (S1-03, extended by S1-04, S1-05, and S14-01)
 
 First-party authentication for the platform: invitation-only user
 registration, email/password login, JWT access tokens with rotating
-refresh tokens, single-use password resets, and personal access tokens
-(PATs) for CLI/CI. Implemented by the `identity` module
+refresh tokens, single-use password resets, personal access tokens
+(PATs) for CLI/CI, and — since S14-01 — organization-scoped OIDC single
+sign-on for console users. Implemented by the `identity` module
 (`backend/src/main/java/com/shipperdog/api/identity`); every auth event
 flows through the `audit` module's `AuditEventPublisher` surface.
 Since S1-04, identity also enforces the organization-deactivation login
@@ -25,6 +26,17 @@ module's public `OrganizationAccess` surface.
 | POST | `/tokens` | access JWT or PAT | `201` with the raw PAT (shown once); optional `expiresInSeconds` |
 | GET | `/tokens` | access JWT or PAT | `200` PAT metadata (prefix only, never the secret), cursor-paginated (S1-08) |
 | DELETE | `/tokens/{id}` | access JWT or PAT | `204`; `404` when the PAT belongs to another user |
+
+SSO flow endpoints (base `/api/v1/auth/sso`, all anonymous; since
+S14-01 — see [the SSO section](#oidc-single-sign-on-s14-01)):
+
+| Method | Path | Auth | Result |
+|---|---|---|---|
+| GET | `/sso/options?organizationId=` | none | `200 {organizationId, providerType: "OIDC"}` when the organization has an enabled configuration; the same `404` for unknown, unconfigured, and disabled alike (the console learns nothing beyond "no") |
+| GET | `/sso/authorize?organizationId=` | none | `302` to the provider's authorization endpoint (authorization-code + PKCE `S256`, backend-generated state/nonce/verifier); `400` when discovery fails, `404` when SSO is off |
+| GET | `/sso/callback` | none (the IdP's redirect) | always `302` to the console's SSO landing route: `?code=<one-time session code>` on success, `?error=sso` on every failure (uniform — the distinct reason lives on the `SSO_LOGIN_FAILURE` audit line only) |
+| POST | `/sso/exchange` | none (session code in body) | `200` with the same `{accessToken, refreshToken, tokenType, expiresInSeconds}` shape as `/login`; `401 INVALID_SSO_SESSION_CODE` for unknown, expired, and already-consumed codes alike |
+| POST | `/sso/logout` | none (OIDC Back-Channel Logout) | `204` — the verified logout token (issuer, audience, signature, the spec's `events` claim, no nonce) revokes the linked account's refresh families; `400` for a token that fails verification. Unknown subjects answer `204` per the spec |
 
 ## Token semantics
 
@@ -75,6 +87,10 @@ module's public `OrganizationAccess` surface.
 - Passwords: Argon2id (19 MiB, 2 iterations, 1 lane, 32-byte hash);
   policy is length 12-128. Hash parameters are parsed from the stored
   hash, so they can be raised later without invalidating accounts.
+  Since S14-01 the hash is nullable: a JIT-provisioned SSO account is
+  password-less until its owner sets one, and password login for such
+  an account answers the uniform `401` (with the same dummy
+  comparison, so the branch is not distinguishable by timing).
 - Failed-login lockout: after 5 consecutive failures (configurable) the
   account locks for 15 minutes. Locked, disabled, and unknown accounts
   all answer the same generic 401, with a dummy Argon2 comparison on
@@ -105,6 +121,13 @@ module's public `OrganizationAccess` surface.
   15-minute JWTs and die at expiry (the revocation SLA — see
   [testers](testers.md)); every stateful surface (login, refresh, PAT,
   authorization decisions) denies on the very next request.
+- IdP-inactive hard lock (S14-01): when the organization's provider
+  asserts the configured inactive claim, the linked account crosses to
+  `LOCKED` with no expiry — a hard lock distinct from the timed
+  failed-login lockout above — and every refresh family is revoked
+  (reason `idp_inactive`). A hard-locked account is refused at every
+  stateful surface: refresh, PAT authentication, password login, and
+  SSO alike. Offboarding follows the identity provider.
 - Password reset tokens are single-use with a 30-minute TTL. Until the
   notification module exists (S12-02), the reset link is emitted on a
   WARN log line; treat local logs as sensitive. Confirming a reset
@@ -121,7 +144,16 @@ All values are environment variables (defaults in parentheses):
 (`shipperdog-api`), `AUTH_ACCESS_TOKEN_TTL` (`PT15M`),
 `AUTH_REFRESH_TOKEN_TTL` (`P7D`), `AUTH_LOCKOUT_THRESHOLD` (`5`),
 `AUTH_LOCKOUT_DURATION` (`PT15M`), `AUTH_PASSWORD_RESET_TTL` (`PT30M`),
-`AUTH_INVITATION_TTL` (`P3D`).
+`AUTH_INVITATION_TTL` (`P3D`). The OIDC relying party's deployment
+posture (S14-01) lives under `shipperdog.sso.*`:
+`SSO_REDIRECT_BASE_URI` (`http://localhost:8080` — the API's
+externally reachable base; the callback `redirect_uri` registered with
+every provider is `<base>/api/v1/auth/sso/callback`),
+`SSO_CONSOLE_CALLBACK_URI`
+(`http://localhost:5173/sso/callback` — the console route the callback
+redirects the browser to), `SSO_AUTHORIZATION_REQUEST_TTL` (`PT10M`),
+`SSO_SESSION_CODE_TTL` (`PT60S`), `SSO_DISCOVERY_CACHE_TTL` (`PT10M`),
+`SSO_JWKS_CACHE_TTL` (`PT10M`), `SSO_CLOCK_SKEW` (`PT1M`).
 
 ## Local development
 
@@ -146,7 +178,14 @@ curl -s -X POST http://localhost:8080/api/v1/auth/login \
 `LOGIN_FAILURE` distinguishes `invalid_credentials` from
 `organization_deactivated` in its audit detail (never in the HTTP
 response); org-scoped `INVITATION_CREATED` events carry
-`organizationId` and `role`. The S1-04 organization mutations emit
+`organizationId` and `role`. S14-01 adds the SSO vocabulary:
+`SSO_LOGIN_SUCCESS` (organization, issuer, subject, provisioning
+mode), `SSO_LOGIN_FAILURE` (the distinct refusal reason — the only
+place it exists, since the browser redirect is uniform),
+`SSO_IDENTITY_LINKED` (subject, link kind `EMAIL`/`JIT`),
+`SSO_USER_JIT_PROVISIONED` (the granted role), `SSO_ROLE_MAPPED`
+(matched group, from/to roles), `SSO_ACCOUNT_LOCKED`, and `SSO_LOGOUT`
+(back-channel logout: issuer, subject). The S1-04 organization mutations emit
 `ORGANIZATION_CREATED`, `ORGANIZATION_UPDATED`, `ORG_MEMBER_ADDED`, and
 `ORG_IDP_CONFIGURED` from the organization module; S1-05 adds
 `ORG_MEMBER_ROLE_CHANGED`, `ORG_MEMBER_REMOVED`,
@@ -158,13 +197,74 @@ enriches, redacts, and persists every event to the append-only audit
 store in the same transaction — no caller changed shape (see
 [audit](audit.md)).
 
+## OIDC single sign-on (S14-01)
+
+Enterprise identity (PRD 25, FR-001): an Organization Admin configures
+the organization's corporate OIDC provider (Google Workspace, Entra,
+Okta) and console users sign in through it, while local login stays
+for platform administrators as break-glass — platform admins never
+authenticate through an organization's provider.
+
+**Configuration** is the typed `PUT /api/v1/organizations/{id}/idp-config`
+record (owned by the identity module since S14-01; permissions
+unchanged since S1-04): `issuerUrl` (https, or http for loopback;
+paths allowed — Entra's `/<tenant>/v2.0` shape), `clientId`, the
+client secret as one-time `clientSecret` material or a
+pre-provisioned `clientSecretRef` (exactly one per write; material is
+stored once through the platform's secret store and only the opaque
+reference is kept, echoed, and audited — rotation discards the
+replaced material), `scopes` (default `openid email`, must contain
+`openid`), `provisioningMode` (`INVITED_ONLY` default, or `JIT`),
+`jitDefaultRole` (default `VIEWER`, the least-privilege floor),
+`requireVerifiedEmail` (default strict), `groupClaimName` +
+`roleMappings` (group claim value to org role), `inactiveClaimName`,
+and `enabled` (default false — SSO is off until the record says
+otherwise).
+
+**The flow** is backend-driven authorization-code + PKCE (`S256`):
+`GET /sso/authorize` persists the hashed state, hashed nonce, and the
+PKCE verifier (10-minute TTL, single-use — consumed atomically, so a
+racing replay loses), redirects the browser to the provider, and the
+provider's redirect back lands on `GET /sso/callback`. The callback
+exchanges the code (`client_secret_post`), verifies the ID token
+against the provider's JWKS — algorithm pinning accepts only RS256 and
+ES256 (`alg:none` and the HMAC family are refused before any key is
+consulted), issuer and audience must match the configuration, expiry
+and issued-at within the clock skew, and the nonce must hash-match the
+authorization request — then resolves the account and hands the
+browser a one-time session code (60-second TTL) that the console's
+`POST /sso/exchange` swaps for the same token pair a local login
+receives: SSO sessions ARE local sessions (same claims, same refresh
+rotation, same revocation surfaces), minted through the identical
+issuance path. JWKS and discovery documents are cached per issuer/TTL
+and refreshed on an unknown `kid` (the #54 receiver's doctrine);
+a fetch outage keeps the stale set and verification fails closed.
+
+**Provisioning and linkage**: once an OIDC subject is linked
+(`user_idp_identities`, unique per organization), logins resolve
+through the subject and never re-derive the account from email.
+Unlinked assertions match by email — refused outright when the token's
+email is unverified under the strict default. INVITED_ONLY links only
+existing members; JIT additionally provisions a password-less account
+and admits existing non-member accounts, both with the configured
+default role. Group-claim role mapping applies on every login: the
+most privileged mapped group the token carries wins, no mapped group
+leaves the membership untouched, and a refused change (the
+last-ORG_ADMIN guard) never blocks a login. Every leg audits.
+
+**Session end**: the OIDC Back-Channel Logout receiver
+(`POST /sso/logout`) verifies the logout token with the same
+pinned-algorithm machinery (plus the spec's `events` claim; a
+nonce-bearing token is refused) and revokes the linked account's
+refresh families — IdP-initiated logout and IdP session expiry land on
+the same leg.
+
 ## Extension path
 
-Credential sources sit behind the identity services so an OIDC provider
-can be added (S14-01) as an alternative without touching callers; the
-per-organization IdP configuration record itself is stored (not yet
-functional) by the `organization` module since S1-04. Identity touches
-organizations only through the `OrganizationAccess` interface (login
-block, `org_id` claim, invitation membership grants, role snapshots for
-the S1-05 RBAC engine — see [authorization](authorization.md));
-`tenant_id` claims arrive with S2-03.
+The OIDC provider S1-03's structure reserved a place for has landed
+(S14-01, above); SAML (S14-02) and SCIM (S14-03) follow in E14.
+Identity touches organizations only through the `OrganizationAccess`
+interface (login block, `org_id` claim, invitation membership grants,
+role snapshots and the SSO role-mapping apply for the S1-05 RBAC
+engine — see [authorization](authorization.md)); `tenant_id` claims
+arrive with S2-03.

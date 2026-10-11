@@ -93,3 +93,45 @@ describe("LoginPage", () => {
     expect(tokenStore.get()).toBeNull();
   });
 });
+
+describe("LoginPage SSO panel (S14-01)", () => {
+  it("redirects the browser to the authorize route when the organization offers SSO", async () => {
+    installFetchRouter([
+      { method: "GET", url: "/api/v1/auth/sso/options", status: 200, body: { organizationId: "10000000-0000-4000-8000-000000000003", providerType: "OIDC" } },
+    ]);
+    renderConsole(
+      <Routes>
+        <Route path="/login" element={<LoginPage />} />
+      </Routes>,
+      { route: "/login" },
+    );
+
+    await user.type(screen.getByTestId("sso-organization-input"), "10000000-0000-4000-8000-000000000003");
+    await user.click(screen.getByTestId("sso-submit"));
+
+    await vi.waitFor(() =>
+      expect(window.location.href).toBe(
+        "http://localhost:3000/api/v1/auth/sso/authorize?organizationId=10000000-0000-4000-8000-000000000003",
+      ),
+    );
+  });
+
+  it("shows the opaque message when the organization does not offer SSO", async () => {
+    installFetchRouter([
+      { method: "GET", url: "/api/v1/auth/sso/options", status: 404, body: { status: 404, code: "NOT_FOUND" } },
+    ]);
+    renderConsole(
+      <Routes>
+        <Route path="/login" element={<LoginPage />} />
+      </Routes>,
+      { route: "/login" },
+    );
+
+    await user.type(screen.getByTestId("sso-organization-input"), "10000000-0000-4000-8000-000000000004");
+    await user.click(screen.getByTestId("sso-submit"));
+
+    expect(await screen.findByTestId("login-error")).toHaveTextContent(
+      "Single sign-on is not available for this organization.",
+    );
+  });
+});

@@ -1,12 +1,13 @@
 /** Console login (issue #12): POST /auth/login, then straight to the
  * tenant console. Failures keep the uniform opaque 401 message the API
  * returns (docs/authentication.md — no account-state hints). */
-import { Alert, Box, Button, Card, CardContent, Stack, TextField, Typography } from "@mui/material";
+import { Alert, Box, Button, Card, CardContent, Divider, Stack, TextField, Typography } from "@mui/material";
 import LockIcon from "@mui/icons-material/Lock";
 import { useState, type FormEvent } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { useAuth } from "../auth/AuthContext";
 import { ApiError } from "../api/problem";
+import { ssoOptionsRequest } from "../api/auth";
 
 export default function LoginPage() {
   const { login, status } = useAuth();
@@ -24,6 +25,8 @@ export default function LoginPage() {
   const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
+  const [ssoOrganizationId, setSsoOrganizationId] = useState("");
+  const [ssoBusy, setSsoBusy] = useState(false);
 
   async function handleSubmit(event: FormEvent) {
     event.preventDefault();
@@ -40,6 +43,27 @@ export default function LoginPage() {
       );
     } finally {
       setSubmitting(false);
+    }
+  }
+
+  /** SSO (S14-01): probe the organization, then hand the browser to
+   * the backend-driven authorize redirect (full-page navigation -- the
+   * flow continues at the identity provider and lands on /sso/callback). */
+  async function handleSso(event: FormEvent) {
+    event.preventDefault();
+    setError(null);
+    setSsoBusy(true);
+    try {
+      await ssoOptionsRequest(ssoOrganizationId.trim());
+      window.location.href =
+        "/api/v1/auth/sso/authorize?organizationId=" + encodeURIComponent(ssoOrganizationId.trim());
+    } catch (cause) {
+      setError(
+        cause instanceof ApiError && cause.status === 404
+          ? "Single sign-on is not available for this organization."
+          : "Single sign-on could not be started. Please retry.",
+      );
+      setSsoBusy(false);
     }
   }
 
@@ -87,6 +111,24 @@ export default function LoginPage() {
               data-testid="login-submit"
             >
               {submitting ? "Signing in..." : "Sign in"}
+            </Button>
+          </Stack>
+          <Divider sx={{ my: 2 }}>or</Divider>
+          <Stack spacing={2} component="form" onSubmit={handleSso} noValidate data-testid="sso-panel">
+            <TextField
+              label="Organization ID (single sign-on)"
+              value={ssoOrganizationId}
+              onChange={(event) => setSsoOrganizationId(event.target.value)}
+              required
+              slotProps={{ htmlInput: { "data-testid": "sso-organization-input" } }}
+            />
+            <Button
+              type="submit"
+              variant="outlined"
+              disabled={ssoBusy || status === "loading"}
+              data-testid="sso-submit"
+            >
+              {ssoBusy ? "Redirecting..." : "Continue with SSO"}
             </Button>
           </Stack>
         </CardContent>

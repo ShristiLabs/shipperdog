@@ -28,7 +28,7 @@ import org.springframework.security.oauth2.jwt.NimbusJwtEncoder;
  * startup fails fast when the secret is absent or under-sized.
  */
 @Configuration
-@EnableConfigurationProperties(AuthProperties.class)
+@EnableConfigurationProperties({AuthProperties.class, SsoProperties.class})
 public class IdentityConfig {
 
     /** Central clock so time-dependent logic (TTLs, lockouts) is testable. */

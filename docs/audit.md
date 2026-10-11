@@ -64,7 +64,12 @@ integrate the framework. Current vocabulary: identity
 `LOGIN_FAILURE`, `USER_LOCKED_OUT`, `PASSWORD_RESET_REQUESTED`,
 `PASSWORD_RESET_COMPLETED`, `TOKEN_ISSUED`, `TOKEN_REFRESHED`,
 `TOKEN_REVOKED`, `TOKEN_REUSE_DETECTED`, `PAT_CREATED`,
-`PAT_REVOKED` — see [authentication](authentication.md)),
+`PAT_REVOKED`, and since S14-01 the SSO vocabulary
+(`SSO_LOGIN_SUCCESS`, `SSO_LOGIN_FAILURE` — carrying the distinct
+refusal reason the browser's uniform redirect never reveals,
+`SSO_IDENTITY_LINKED`, `SSO_USER_JIT_PROVISIONED`, `SSO_ROLE_MAPPED`,
+`SSO_ACCOUNT_LOCKED`, `SSO_LOGOUT` — see
+[authentication](authentication.md)),
 organization (`ORGANIZATION_CREATED`, `ORGANIZATION_UPDATED`,
 `ORG_MEMBER_ADDED`, `ORG_IDP_CONFIGURED`, `ORG_MEMBER_ROLE_CHANGED`,
 `ORG_MEMBER_REMOVED`), tenant (`TENANT_CREATED`, `TENANT_UPDATED`,

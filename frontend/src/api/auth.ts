@@ -23,6 +23,28 @@ export interface CurrentUser {
   authenticatedVia: string;
 }
 
+/** Whether an organization offers OIDC SSO (S14-01): 200 when the
+ * console should offer the button; ApiError 404 otherwise. */
+export async function ssoOptionsRequest(organizationId: string): Promise<void> {
+  const response = await fetch(
+    "/api/v1/auth/sso/options?organizationId=" + encodeURIComponent(organizationId),
+    { headers: { Accept: "application/json" } },
+  );
+  if (!response.ok) throw await parseProblem(response);
+}
+
+/** Exchanges the one-time SSO session code for the same token pair a
+ * local login receives; the code is single-use. */
+export async function ssoExchangeRequest(code: string): Promise<TokenPair> {
+  const response = await fetch("/api/v1/auth/sso/exchange", {
+    method: "POST",
+    headers: jsonHeaders(),
+    body: JSON.stringify({ code }),
+  });
+  if (!response.ok) throw await parseProblem(response);
+  return (await response.json()) as TokenPair;
+}
+
 export async function loginRequest(email: string, password: string): Promise<TokenPair> {
   const response = await fetch("/api/v1/auth/login", {
     method: "POST",
