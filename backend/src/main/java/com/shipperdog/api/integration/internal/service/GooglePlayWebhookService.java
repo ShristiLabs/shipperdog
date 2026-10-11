@@ -68,16 +68,19 @@ public class GooglePlayWebhookService {
 
     private final InboundWebhookDeliveryRepository deliveries;
     private final StoreStatusEventRepository storeEvents;
+    private final org.springframework.context.ApplicationEventPublisher events;
     private final AuditLogger audit;
     private final Clock clock;
 
     public GooglePlayWebhookService(
             InboundWebhookDeliveryRepository deliveries,
             StoreStatusEventRepository storeEvents,
+            org.springframework.context.ApplicationEventPublisher events,
             AuditLogger audit,
             Clock clock) {
         this.deliveries = deliveries;
         this.storeEvents = storeEvents;
+        this.events = events;
         this.audit = audit;
         this.clock = clock;
     }
@@ -141,6 +144,15 @@ public class GooglePlayWebhookService {
                 null,
                 true,
                 Map.of("provider", PROVIDER, "event", event, "deliveryId", delivery));
+        // The connector leg (S13-04, #64, AC5): the mapped row's
+        // pointer, published for the distribution module's consumer —
+        // after commit, so the consumer reads a committed row and its
+        // faults never touch the receipt Google was acknowledged with.
+        // RTDN carries no bundle/package identity: the consumer's play
+        // arm refreshes the walking play records (the event is a sync
+        // trigger, never a state interpretation).
+        events.publishEvent(
+                new com.shipperdog.api.integration.StoreStatusEventMapped(PROVIDER, event, null, Instant.now(clock)));
         log.info("mapped a google-play {} notification", event);
         return new GitHubWebhookService.Receipt("ACCEPTED", delivery);
     }

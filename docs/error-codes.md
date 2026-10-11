@@ -380,7 +380,19 @@ was frozen — author per-locale metadata before approval),
 `APPSTORE_APP_NOT_FOUND` (no ASC app matches the artifact's bundle
 id), `APPSTORE_VERSION_REJECTED` (Apple's App Review rejected the
 version), and `APPSTORE_VERSION_REMOVED` (the version was removed
-from the App Store).
+from the App Store); the Google Play testing-track connector's
+per-slot codes (S13-04, same grain): `PLAY_ANDROID_ONLY` (a non-
+Android slot on the Play channel), `PLAY_AAB_REQUIRED` (the artifact
+is not an AAB — FR-006's channel rule enforced at the adapter
+boundary, the mirror of the Direct channel's APK-only rule),
+`PLAY_PACKAGE_FACTS_MISSING` (the artifact carries no extracted
+package name or version name), `PLAY_TRACK_UNMAPPED` and the
+`ADAPTER_FAILED` refusal whose detail names S13-05 (the ring-to-track
+mapping resolved no testing track, or resolved production — S13-05's
+surface), `PLAY_GROUPS_UNMAPPED` (the release targets groups but none
+are linked to the release's track — the mapping surface's gap,
+recorded loudly), and `PLAY_RELEASE_FAILED` (the track release failed
+on Google's side).
 
 Since S13-03 the distribution record also carries
 `channel_distributions.failure_detail`: the actionable, human-facing

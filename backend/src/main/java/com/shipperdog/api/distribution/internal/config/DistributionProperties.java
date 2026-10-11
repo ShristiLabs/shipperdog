@@ -21,12 +21,14 @@ import org.springframework.boot.context.properties.bind.DefaultValue;
  *
  * @param adapters       per-channel sandbox settings, keyed by channel id
  * @param apple          the App Store Connect client wiring (S13-02, #62)
+ * @param googlePlay     the Google Play Developer API client wiring (S13-04, #64)
  * @param reconciliation the provider-status refresh pass (S13-02, #62)
  */
 @ConfigurationProperties(prefix = "shipperdog.distribution")
 public record DistributionProperties(
         @DefaultValue Map<String, AdapterSandbox> adapters,
         @DefaultValue AppleConnector apple,
+        @DefaultValue GooglePlayConnector googlePlay,
         @DefaultValue Reconciliation reconciliation) {
 
     /** The sandbox every channel runs under when none is configured for it. */
@@ -100,14 +102,49 @@ public record DistributionProperties(
         return apple == null ? DEFAULT_APPLE : apple;
     }
 
+    /** The Google Play connector's wiring (the defaults when unconfigured). */
+    public GooglePlayConnector googlePlay() {
+        return googlePlay == null ? DEFAULT_GOOGLE_PLAY : googlePlay;
+    }
+
     /** The reconciliation pass's knobs (the defaults when unconfigured). */
     public Reconciliation reconciliation() {
         return reconciliation == null ? DEFAULT_RECONCILIATION : reconciliation;
     }
 
+    /**
+     * The Google Play Developer API client's wiring (S13-04, #64): the
+     * Publishing API's base URL and the REST timeouts. The default is
+     * Google's production endpoint, and a default-configured stack
+     * never dials it: the connector calls only under a dispatch, an
+     * explicit group sync or track listing, or an explicit record
+     * refresh — and the scheduled reconciliation pass is opt-in. Tests
+     * and local stacks point the base URL at a contract-faithful mock
+     * Play server. The OAuth2 token endpoint rides the service-account
+     * document itself (its {@code token_uri}), so it is not a knob
+     * here; the timeouts below govern both legs.
+     *
+     * @param baseUrl        the Play Developer (Publishing) API root
+     * @param connectTimeout the REST connect timeout
+     * @param readTimeout    the REST read timeout (the AAB media upload
+     *                       rides it — size the timeout to the artifact)
+     */
+    public record GooglePlayConnector(
+            @DefaultValue("https://androidpublisher.googleapis.com/androidpublisher/v3/applications")
+            String baseUrl,
+
+            @DefaultValue("PT20S") Duration connectTimeout,
+            @DefaultValue("PT60S") Duration readTimeout) {}
+
     /** The Apple connector's defaults (production Apple). */
     static final AppleConnector DEFAULT_APPLE =
             new AppleConnector("https://api.appstoreconnect.apple.com", Duration.ofSeconds(20), Duration.ofSeconds(20));
+
+    /** The Google Play connector's defaults (production Google). */
+    static final GooglePlayConnector DEFAULT_GOOGLE_PLAY = new GooglePlayConnector(
+            "https://androidpublisher.googleapis.com/androidpublisher/v3/applications",
+            Duration.ofSeconds(20),
+            Duration.ofSeconds(60));
 
     /** The reconciliation pass's default: off until a deployment opts in. */
     static final Reconciliation DEFAULT_RECONCILIATION = new Reconciliation(false, Duration.ofMinutes(15));

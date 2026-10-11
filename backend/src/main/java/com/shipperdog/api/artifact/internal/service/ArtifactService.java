@@ -611,7 +611,8 @@ public class ArtifactService implements VersionArtifacts {
                             row.extractionOutcome(),
                             provenanceSlot(row.getProvenance()),
                             row.getFormat(),
-                            ValidationView.outcomeOf(row.getValidation())));
+                            ValidationView.outcomeOf(row.getValidation()),
+                            row.getStorageKey()));
         }
         return byVersion;
     }

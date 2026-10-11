@@ -51,6 +51,8 @@ public class StoreStatusEventConsumer {
 
     private static final String PROVIDER_APPSTORE = "appstore";
     private static final String CHANNEL_APPSTORE = "appstore";
+    private static final String PROVIDER_GOOGLE_PLAY = "google-play";
+    private static final String CHANNEL_PLAY = "play";
 
     private final ChannelDistributionRepository records;
     private final ReleaseAccess releases;
@@ -100,8 +102,19 @@ public class StoreStatusEventConsumer {
      * The application itself (also the deterministic path tests drive
      * directly): resolve the walking appstore records whose release's
      * version carries the event's bundle id, refresh each, audit.
+     * Since #64 a mapped google-play event refreshes the walking play
+     * records: Google's Real-Time Developer Notifications carry no
+     * package identity (the thin reader maps kind and purchase
+     * context, never the app), so the play arm refreshes every
+     * walking play-channel record within the same page discipline —
+     * the sync-trigger-never-interpret doctrine, with the polling
+     * reconciliation pass as the backstop.
      */
     public void apply(StoreStatusEventMapped event) {
+        if (PROVIDER_GOOGLE_PLAY.equals(event.provider())) {
+            applyPlay(event);
+            return;
+        }
         if (!PROVIDER_APPSTORE.equals(event.provider())
                 || event.bundleId() == null
                 || event.bundleId().isBlank()) {
@@ -132,6 +145,24 @@ public class StoreStatusEventConsumer {
                 refreshable.add(row.getId());
             }
         }
+        refreshRecords(event, refreshable);
+    }
+
+    /** The play arm (S13-04, #64, AC5): refresh every walking play record, audit. */
+    private void applyPlay(StoreStatusEventMapped event) {
+        Set<UUID> refreshable = new LinkedHashSet<>();
+        for (ChannelDistributionEntity row : records.findByStatusInAndExternalIdIsNotNull(
+                List.of(ChannelDistributionEntity.Status.PENDING, ChannelDistributionEntity.Status.DISTRIBUTING),
+                org.springframework.data.domain.PageRequest.of(0, 500))) {
+            if (CHANNEL_PLAY.equals(row.getChannel())) {
+                refreshable.add(row.getId());
+            }
+        }
+        refreshRecords(event, refreshable);
+    }
+
+    /** The shared leg: refresh each record (contained), audit the event's application. */
+    private void refreshRecords(StoreStatusEventMapped event, Set<UUID> refreshable) {
         int refreshed = 0;
         for (UUID recordId : refreshable) {
             ChannelDistributionEntity row = records.findById(recordId).orElse(null);
@@ -152,7 +183,7 @@ public class StoreStatusEventConsumer {
         Map<String, String> detail = new LinkedHashMap<>();
         detail.put("provider", event.provider());
         detail.put("eventType", event.eventType() == null ? "" : event.eventType());
-        detail.put("bundleId", event.bundleId());
+        detail.put("bundleId", event.bundleId() == null ? "" : event.bundleId());
         detail.put("recordsRefreshed", String.valueOf(refreshed));
         audit.record(AuditEvent.builder(AuditEventType.STORE_EVENT_APPLIED)
                 .detail(detail)

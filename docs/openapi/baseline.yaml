@@ -852,6 +852,98 @@ paths:
             '*/*':
               schema:
                 $ref: "#/components/schemas/LinkView"
+  /api/v1/distribution/play/release-notes:
+    get:
+      tags:
+      - distribution-controller
+      operationId: playReleaseNotes
+      parameters:
+      - name: organizationId
+        in: query
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - name: limit
+        in: query
+        required: false
+        schema:
+          type: string
+      - name: cursor
+        in: query
+        required: false
+        schema:
+          type: string
+      responses:
+        "200":
+          description: OK
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/PageResponseNotesView"
+    put:
+      tags:
+      - distribution-controller
+      operationId: putPlayReleaseNotes
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PlayReleaseNotesRequest"
+        required: true
+      responses:
+        "200":
+          description: OK
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/NotesView"
+  /api/v1/distribution/play/groups:
+    get:
+      tags:
+      - distribution-controller
+      operationId: playGroups
+      parameters:
+      - name: organizationId
+        in: query
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - name: limit
+        in: query
+        required: false
+        schema:
+          type: string
+      - name: cursor
+        in: query
+        required: false
+        schema:
+          type: string
+      responses:
+        "200":
+          description: OK
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/PageResponseLinkView"
+    put:
+      tags:
+      - distribution-controller
+      operationId: putPlayGroup
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PlayGroupLinkRequest"
+        required: true
+      responses:
+        "200":
+          description: OK
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/LinkView"
   /api/v1/distribution/credentials:
     get:
       tags:
@@ -2661,6 +2753,31 @@ paths:
             '*/*':
               schema:
                 $ref: "#/components/schemas/RecordView"
+  /api/v1/distribution/play/groups/{linkId}/sync:
+    post:
+      tags:
+      - distribution-controller
+      operationId: syncPlayGroup
+      parameters:
+      - name: linkId
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - name: organizationId
+        in: query
+        required: true
+        schema:
+          type: string
+          format: uuid
+      responses:
+        "200":
+          description: OK
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/SyncView"
   /api/v1/distribution/credentials/{credentialId}/verify:
     post:
       tags:
@@ -4557,6 +4674,31 @@ paths:
             '*/*':
               schema:
                 $ref: "#/components/schemas/PageResponseRecordView"
+  /api/v1/distribution/play/tracks:
+    get:
+      tags:
+      - distribution-controller
+      operationId: playTracks
+      parameters:
+      - name: organizationId
+        in: query
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - name: applicationId
+        in: query
+        required: true
+        schema:
+          type: string
+          format: uuid
+      responses:
+        "200":
+          description: OK
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/PlayTracksView"
   /api/v1/distribution/credentials/effective:
     get:
       tags:
@@ -5208,6 +5350,48 @@ paths:
       responses:
         "204":
           description: No Content
+  /api/v1/distribution/play/release-notes/{notesId}:
+    delete:
+      tags:
+      - distribution-controller
+      operationId: deletePlayReleaseNotes
+      parameters:
+      - name: notesId
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - name: organizationId
+        in: query
+        required: true
+        schema:
+          type: string
+          format: uuid
+      responses:
+        "204":
+          description: No Content
+  /api/v1/distribution/play/groups/{linkId}:
+    delete:
+      tags:
+      - distribution-controller
+      operationId: deletePlayGroup
+      parameters:
+      - name: linkId
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - name: organizationId
+        in: query
+        required: true
+        schema:
+          type: string
+          format: uuid
+      responses:
+        "204":
+          description: No Content
   /api/v1/distribution/credentials/{credentialId}:
     delete:
       tags:
@@ -5636,8 +5820,6 @@ components:
     JsonNode:
       type: object
       properties:
-        container:
-          type: boolean
         nodeType:
           type: string
           enum:
@@ -5680,6 +5862,8 @@ components:
         boolean:
           type: boolean
         binary:
+          type: boolean
+        container:
           type: boolean
         floatingPointNumber:
           type: boolean
@@ -5921,6 +6105,57 @@ components:
         updatedAt:
           type: string
           format: date-time
+    PlayReleaseNotesRequest:
+      type: object
+      properties:
+        organizationId:
+          type: string
+          format: uuid
+        applicationId:
+          type: string
+          format: uuid
+        locale:
+          type: string
+        notes:
+          type: string
+    NotesView:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        organizationId:
+          type: string
+          format: uuid
+        applicationId:
+          type: string
+          format: uuid
+        channel:
+          type: string
+        locale:
+          type: string
+        notes:
+          type: string
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+    PlayGroupLinkRequest:
+      type: object
+      properties:
+        organizationId:
+          type: string
+          format: uuid
+        applicationId:
+          type: string
+          format: uuid
+        groupId:
+          type: string
+          format: uuid
+        track:
+          type: string
     StoreAccountView:
       type: object
       properties:
@@ -7357,6 +7592,8 @@ components:
           type: string
         validation:
           type: string
+        storageKey:
+          type: string
     VersionDetail:
       type: object
       properties:
@@ -8505,6 +8742,54 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/RecordView"
+        next_cursor:
+          type: string
+    PlayTracksView:
+      type: object
+      properties:
+        tracks:
+          type: array
+          items:
+            $ref: "#/components/schemas/TrackView"
+    ReleaseNoteView:
+      type: object
+      properties:
+        language:
+          type: string
+        text:
+          type: string
+    TrackReleaseView:
+      type: object
+      properties:
+        name:
+          type: string
+        versionCodes:
+          type: array
+          items:
+            type: integer
+            format: int64
+        releaseNotes:
+          type: array
+          items:
+            $ref: "#/components/schemas/ReleaseNoteView"
+        status:
+          type: string
+    TrackView:
+      type: object
+      properties:
+        track:
+          type: string
+        releases:
+          type: array
+          items:
+            $ref: "#/components/schemas/TrackReleaseView"
+    PageResponseNotesView:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/NotesView"
         next_cursor:
           type: string
     PageResponseStoreAccountView:

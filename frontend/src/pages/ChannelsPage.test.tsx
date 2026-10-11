@@ -1,9 +1,10 @@
-/** Distribution channels behavior (S13-01, issue #61): the channel
- * catalog renders the registered adapters with their capabilities and
- * credential providers, the bindings table carries the opaque secret
- * reference (never material), the bind dialog issues the PUT that
- * carries material exactly once at the addressed level, and the verify
- * action answers only whether the reference resolves. */
+/** Distribution channels behavior (S13-01, issue #61; the Play
+ * sections since S13-04): the channel catalog renders the registered
+ * adapters with their capabilities and credential providers, the
+ * bindings table carries the opaque secret reference (never
+ * material), the bind dialog issues the PUT that carries material
+ * exactly once at the addressed level, and the verify action answers
+ * only whether the reference resolves. */
 import { cleanup, fireEvent, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -15,6 +16,10 @@ const user = userEvent.setup();
 
 const ORG_ID = "10000000-0000-4000-8000-000000000001";
 const ACCOUNT_ID = "40000000-0000-4000-8000-000000000001";
+const APPLICATION_ID = "30000000-0000-4000-8000-000000000001";
+const TENANT_ID = "20000000-0000-4000-8000-000000000001";
+const GROUP_ID = "60000000-0000-4000-8000-000000000001";
+const PLAY_LINK_ID = "70000000-0000-4000-8000-000000000001";
 
 function fetchCalls(): Array<[string, RequestInit | undefined]> {
   const mock = fetch as unknown as { mock: { calls: Array<[string, RequestInit]> } };
@@ -30,7 +35,10 @@ function bodyOf(url: string, method: string): Record<string, unknown> {
 }
 
 function renderPage(extraRoutes: FetchRoute[] = []): void {
+  // Extras precede the defaults: a test's route for the same URL wins
+  // (the router matches in order), so a test can seed its own world.
   installFetchRouter([
+    ...extraRoutes,
     {
       method: "GET",
       url: "/api/v1/distribution/channels",
@@ -97,6 +105,24 @@ function renderPage(extraRoutes: FetchRoute[] = []): void {
           },
         ],
       },
+    },
+    {
+      method: "GET",
+      url: "/api/v1/applications",
+      status: 200,
+      body: { items: [{ id: APPLICATION_ID, name: "Banking", status: "ACTIVE" }] },
+    },
+    {
+      method: "GET",
+      url: "/api/v1/distribution/play/release-notes",
+      status: 200,
+      body: { items: [] },
+    },
+    {
+      method: "GET",
+      url: "/api/v1/distribution/play/groups",
+      status: 200,
+      body: { items: [] },
     },
     ...extraRoutes,
   ]);
@@ -301,6 +327,143 @@ describe("ChannelsPage", () => {
       expect(
         fetchCalls().some(([url, init]) => url.includes(`/credentials/${ACCOUNT_ID}`) && init?.method === "DELETE"),
       ).toBe(true);
+    });
+  });
+
+  it("renders the metadata table with application names, not raw ids (the #63 follow-up)", async () => {
+    renderPage();
+    expect((await screen.findByTestId("metadata-en-US")).textContent).toContain("Banking");
+  });
+
+  it("links a tester group to a Play track, syncs it, and reads the track model (S13-04)", async () => {
+    renderPage([
+      {
+        method: "GET",
+        url: "/api/v1/distribution/play/groups",
+        status: 200,
+        body: {
+          items: [
+            {
+              id: PLAY_LINK_ID,
+              organizationId: ORG_ID,
+              tenantId: TENANT_ID,
+              applicationId: APPLICATION_ID,
+              groupId: GROUP_ID,
+              groupName: "Pilot",
+              channel: "play",
+              externalGroupId: "internal",
+              externalGroupName: "internal",
+              lastSyncedAt: null,
+              createdAt: "2026-10-04T10:00:00Z",
+              updatedAt: "2026-10-04T10:00:00Z",
+            },
+          ],
+        },
+      },
+      {
+        method: "POST",
+        url: `/api/v1/distribution/play/groups/${PLAY_LINK_ID}/sync`,
+        status: 200,
+        body: {
+          link: { groupName: "Pilot", externalGroupName: "internal" },
+          addedEmails: ["pilot@example.com"],
+          removedEmails: [],
+        },
+      },
+      {
+        method: "DELETE",
+        url: `/api/v1/distribution/play/groups/${PLAY_LINK_ID}`,
+        status: 204,
+        body: undefined,
+      },
+      {
+        method: "GET",
+        url: `/api/v1/distribution/play/tracks`,
+        status: 200,
+        body: {
+          tracks: [
+            {
+              track: "internal",
+              releases: [
+                {
+                  name: "2.0.1",
+                  versionCodes: [3],
+                  releaseNotes: [{ language: "en-US", text: "Stability." }],
+                  status: "completed",
+                },
+              ],
+            },
+          ],
+        },
+      },
+    ]);
+
+    const row = await screen.findByTestId("play-link-Pilot");
+    expect(row.textContent).toContain("internal");
+
+    await user.click(screen.getByLabelText("sync Pilot"));
+    await waitFor(() => {
+      expect(
+        fetchCalls().some(
+          ([url, init]) => url.includes(`/play/groups/${PLAY_LINK_ID}/sync`) && (init?.method ?? "") === "POST",
+        ),
+      ).toBe(true);
+    });
+
+    chooseSelectOption("Application tracks", "Banking");
+    expect(await screen.findByTestId("play-tracks")).toBeTruthy();
+    expect(screen.getByTestId("play-tracks").textContent).toContain("completed");
+
+    await user.click(screen.getByLabelText("unlink Pilot"));
+    await waitFor(() => {
+      expect(
+        fetchCalls().some(
+          ([url, init]) => url.includes(`/play/groups/${PLAY_LINK_ID}?`) && init?.method === "DELETE",
+        ),
+      ).toBe(true);
+    });
+  });
+
+  it("authors a Play release-notes locale and removes it (S13-04)", async () => {
+    renderPage([
+      {
+        method: "PUT",
+        url: "/api/v1/distribution/play/release-notes",
+        status: 200,
+        body: {
+          id: "80000000-0000-4000-8000-000000000001",
+          organizationId: ORG_ID,
+          applicationId: APPLICATION_ID,
+          channel: "play",
+          locale: "de-DE",
+          notes: "Stabilitaet zuerst.",
+          createdAt: "2026-10-04T10:00:00Z",
+          updatedAt: "2026-10-04T10:00:00Z",
+        },
+      },
+      {
+        method: "DELETE",
+        url: "/api/v1/distribution/play/release-notes/80000000-0000-4000-8000-000000000001",
+        status: 204,
+        body: undefined,
+      },
+    ]);
+
+    await user.click(await screen.findByTestId("add-release-notes-button"));
+    chooseSelectOption("Application", "Banking");
+    await user.clear(screen.getByRole("textbox", { name: /Locale/ }));
+    await user.type(screen.getByRole("textbox", { name: /Locale/ }), "de-DE");
+    await user.type(screen.getByRole("textbox", { name: /Release notes/ }), "Stabilitaet zuerst.");
+    await user.click(screen.getByTestId("save-release-notes-button"));
+
+    await waitFor(() => {
+      const body = bodyOf("/api/v1/distribution/play/release-notes", "PUT");
+      expect(body).toMatchObject({
+        organizationId: ORG_ID,
+        applicationId: APPLICATION_ID,
+        locale: "de-DE",
+        notes: "Stabilitaet zuerst.",
+      });
     });
   });
 });

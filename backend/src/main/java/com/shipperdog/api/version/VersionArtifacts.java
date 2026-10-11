@@ -53,7 +53,10 @@ public interface VersionArtifacts {
      * AAB/APK rule; {@code null} until a verdict exists) and the
      * validation outcome ({@code PENDING|PASSED|FAILED|BLOCKED}) so a
      * slot never hides a failed or blocked validation behind its
-     * status either.
+     * status either. Since S13-04 (#64) the slot also carries the
+     * server-derived storage key — the byte source the upload-capable
+     * distribution channels (Google Play) stream the stored binary
+     * from; the artifact view's own key, now on the port tuple too.
      */
     record VersionArtifactSlot(
             UUID id,
@@ -70,7 +73,45 @@ public interface VersionArtifacts {
             String extraction,
             ArtifactProvenance provenance,
             String format,
-            String validation) {}
+            String validation,
+            String storageKey) {
+
+        /** The S13-03 shape (no storage key on the tuple): the key answers null. */
+        public VersionArtifactSlot(
+                UUID id,
+                String platform,
+                String fileName,
+                long size,
+                String sha256,
+                String status,
+                Instant uploadedAt,
+                Long buildNumber,
+                String bundleId,
+                String versionName,
+                String minimumOs,
+                String extraction,
+                ArtifactProvenance provenance,
+                String format,
+                String validation) {
+            this(
+                    id,
+                    platform,
+                    fileName,
+                    size,
+                    sha256,
+                    status,
+                    uploadedAt,
+                    buildNumber,
+                    bundleId,
+                    versionName,
+                    minimumOs,
+                    extraction,
+                    provenance,
+                    format,
+                    validation,
+                    null);
+        }
+    }
 
     /**
      * The provenance block of a version-view artifact slot (issue

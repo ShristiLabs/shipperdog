@@ -153,6 +153,8 @@ references. Wiring ([distribution.md](distribution.md)):
 | `SECRETS_GCP_ENDPOINT` | the GCP store | override (tests/mirrors); default secretmanager.googleapis.com |
 | `DISTRIBUTION_ADAPTERS__<CHANNEL>__TIMEOUT` / `__RETRY_ATTEMPTS` / `__RETRY_BACKOFF` | the adapter sandbox | per-channel wall and retry posture (defaults 30 s / 2 / 1 s); e.g. `DISTRIBUTION_ADAPTERS__TESTFLIGHT__TIMEOUT` |
 | `DISTRIBUTION_APPLE__BASE_URL` | the App Store Connect client (S13-02) | default `https://api.appstoreconnect.apple.com`; override only for mirrors/test stacks — the connector dials it under dispatches, group syncs, and record refreshes |
+| `DISTRIBUTION_GOOGLE-PLAY__BASE_URL` | the Google Play Developer API client (S13-04) | default `https://androidpublisher.googleapis.com/androidpublisher/v3/applications`; override only for mirrors/test stacks. The OAuth2 token endpoint is NOT a knob: it rides the service-account JSON document itself (`token_uri`) |
+| `DISTRIBUTION_GOOGLE-PLAY__READ_TIMEOUT` | the Google Play client (S13-04) | default `PT60S`; the AAB media upload rides it, so size the timeout to the artifact sizes a dispatch carries (the sandbox's own wall applies above it: `DISTRIBUTION_ADAPTERS__PLAY__TIMEOUT`) |
 | `DISTRIBUTION_RECONCILIATION__ENABLED` | the reconciliation pass (S13-02) | `false` (default — a self-hosted stack never wakes up dialing Apple) or `true` (production with store connectors in service: the pass refreshes PENDING/DISTRIBUTING store records through the adapters' status answers) |
 | `DISTRIBUTION_RECONCILIATION__FIXED_DELAY` | the reconciliation pass | cadence between passes; default `PT15M` |
 
@@ -162,12 +164,18 @@ ENVIRONMENT CONFIGURATION key, not a process env var: set
 configuration snapshot (`PUT /api/v1/environments/{id}/config`) and
 every release the environment dispatches freezes that decision into
 its manifest at APPROVED and starts Apple's 7-day curve at
-submission; absent or `"false"` submits a manual release. Telemetry
-note for dashboards: `shipperdog.adapter.ratelimit` is tagged
-`provider` since #63 (Apple throttles the API key, which both Apple
-channels usually share), and `shipperdog.adapter.call.duration`
-gained an `operation` tag (distribute, status, phased-release-view,
-phased-release-control).
+submission; absent or `"false"` submits a manual release. The Google
+Play channel's ring-to-track mapping override (S13-04) is the same
+kind of key: `play-track` names the testing track explicitly
+(`internal` or a closed track name); absent, the release's ring code
+maps through the documented default (Engineering/QA to `internal`,
+Tenant Pilot/UAT to `alpha`), and production is refused — S13-05 owns
+it. Telemetry note for dashboards:
+`shipperdog.adapter.ratelimit` is tagged `provider` since #63 (Apple
+throttles the API key, which both Apple channels usually share; the
+Play connector answers `google-play`, the project's quota grain), and
+`shipperdog.adapter.call.duration` gained an `operation` tag
+(distribute, status, phased-release-view, phased-release-control).
 
 ## Rollback
 
