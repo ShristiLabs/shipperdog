@@ -293,6 +293,54 @@ export function controlPhasedRelease(
   );
 }
 
+/** The release's staged rollout (S13-05, AC1/AC2/AC5): the intended
+ * curve, the store's observed percentage, the drift flag, and the
+ * timeline of every control step. */
+export interface PlayRolloutView {
+  releaseId: string;
+  channel: string;
+  status: "ROLLING" | "HALTED" | "COMPLETE";
+  ringCode: string;
+  track: string;
+  versionCode: number;
+  packageName: string;
+  intendedPercent: number;
+  observedPercent: number | null;
+  providerStatus: string | null;
+  drift: boolean;
+  steps: PlayRolloutStep[];
+}
+
+/** One timeline step (AC3): the action, the curve's two ends, the
+ * actor, and the moment. */
+export interface PlayRolloutStep {
+  action: "START" | "ADVANCE" | "HALT" | "RESUME" | "REAPPLY";
+  fromPercent: number | null;
+  toPercent: number;
+  actorId: string | null;
+  occurredAt: string;
+}
+
+/** The release's staged rollout for the dashboard. */
+export function getPlayRollout(organizationId: string, releaseId: string): Promise<PlayRolloutView> {
+  return apiFetch(`/distribution/play/releases/${releaseId}/rollout?organizationId=${organizationId}`);
+}
+
+/** One release action on the curve (S13-05, AC1/AC2/AC4/AC5): advance
+ * to a strictly greater percentage (the policy gate consulted first),
+ * halt (always allowed), resume, or re-apply intent after drift. */
+export function controlPlayRollout(
+  organizationId: string,
+  releaseId: string,
+  action: "ADVANCE" | "HALT" | "RESUME" | "REAPPLY",
+  percent?: number,
+): Promise<PlayRolloutView> {
+  return apiFetch(`/distribution/play/releases/${releaseId}/rollout?organizationId=${organizationId}`, {
+    method: "POST",
+    body: percent === undefined ? { action } : { action, percent },
+  });
+}
+
 /** One tester-group link of the Play mapping surface (S13-04, AC2): the
  * provider-side id is the TRACK NAME the group's email list syncs to. */
 export interface PlayGroupLink {

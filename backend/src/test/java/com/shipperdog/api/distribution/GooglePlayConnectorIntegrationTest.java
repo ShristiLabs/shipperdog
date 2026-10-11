@@ -10,10 +10,16 @@ import com.shipperdog.api.identity.AuditCapture;
 import com.shipperdog.api.integration.StoreStatusEventMapped;
 import java.io.ByteArrayInputStream;
 import java.nio.charset.StandardCharsets;
+import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
+import java.util.concurrent.CyclicBarrier;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
+import java.util.concurrent.TimeUnit;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -60,8 +66,34 @@ import tools.jackson.databind.ObjectMapper;
         })
 @TestPropertySource(properties = "shipperdog.distribution.adapters.play.retry-backoff=PT0.05S")
 @Testcontainers
-@org.springframework.context.annotation.Import(com.shipperdog.api.identity.AuditCapture.class)
+@org.springframework.context.annotation.Import({
+    com.shipperdog.api.identity.AuditCapture.class,
+    GooglePlayConnectorIntegrationTest.RolloutMetricSource.class
+})
 class GooglePlayConnectorIntegrationTest {
+
+    /**
+     * The analytics stand-in for the rollout policy gate's end-to-end
+     * proof (S13-05, AC4): the single registrant of the policy metric
+     * seam, armed per release exactly the ReleasePolicy suite's shape.
+     */
+    @org.springframework.boot.test.context.TestConfiguration(proxyBeanMethods = false)
+    static class RolloutMetricSource implements com.shipperdog.api.release.ReleasePolicyMetricSource {
+
+        static final java.util.Map<UUID, java.util.Map<com.shipperdog.api.release.PolicyMetric, Double>> VALUES =
+                new java.util.concurrent.ConcurrentHashMap<>();
+
+        static void arm(UUID releaseId, com.shipperdog.api.release.PolicyMetric metric, Double value) {
+            VALUES.computeIfAbsent(releaseId, key -> new java.util.concurrent.ConcurrentHashMap<>())
+                    .put(metric, value);
+        }
+
+        @Override
+        public java.util.Optional<Double> metricOf(UUID releaseId, com.shipperdog.api.release.PolicyMetric metric) {
+            return java.util.Optional.ofNullable(
+                    VALUES.getOrDefault(releaseId, java.util.Map.of()).get(metric));
+        }
+    }
 
     private static final String DEV_ADMIN_EMAIL = "dev@shipperdog.local";
     private static final String DEV_ADMIN_PASSWORD = "shipperdog-dev-admin";
@@ -337,7 +369,7 @@ class GooglePlayConnectorIntegrationTest {
     }
 
     @Test
-    void aProductionMappingIsRefusedLoudlyAsTheNextStorysSurface() {
+    void aTrackOverrideNamingProductionIsRefusedLoudly() {
         linkPilotToInternal();
         UUID environment = playEnvironment("production");
         PLAY.clearCalls();
@@ -345,7 +377,9 @@ class GooglePlayConnectorIntegrationTest {
         JsonNode row = recordOf(release);
         assertThat(row.get("status").asString()).isEqualTo("FAILED");
         assertThat(row.get("failureCode").asString()).isEqualTo("ADAPTER_FAILED");
-        assertThat(row.get("failureDetail").asString()).contains("S13-05");
+        assertThat(row.get("failureDetail").asString())
+                .contains("production ring's own mapping")
+                .contains("play-track");
         assertThat(PLAY.callsOf("POST", "/edits")).isEmpty();
     }
 
@@ -767,6 +801,429 @@ class GooglePlayConnectorIntegrationTest {
     }
 
     // -----------------------------------------------------------------------
+    // S13-05 (#65): the production promotion and the staged rollout
+    // -----------------------------------------------------------------------
+
+    @Test
+    void thePromotionWalkCarriesOntoTheProductionTrackAtItsConfiguredPercentage() {
+        linkPilotToInternal();
+        UUID environment = playEnvironment(null, "10");
+        UUID release = releaseWalkedToActive(environment, "qa");
+        // The walk: qa -> tenant-pilot -> uat -> production (the final
+        // ring's landing fires the PROMOTED crossing, the dispatch
+        // follows the walk onto the production track).
+        for (String ring : List.of("tenant-pilot", "uat", "production")) {
+            post(
+                    managerToken,
+                    "/api/v1/releases/" + release + "/promote",
+                    Map.of("applicationId", app.toString(), "tenants", List.of(tenantA.toString())),
+                    200);
+        }
+        assertThat(jdbc.queryForObject("SELECT status FROM releases WHERE id = ?", String.class, release))
+                .isEqualTo("PROMOTED");
+
+        // The record walked forward with the release: the production
+        // track release, staged at the configured 10%.
+        JsonNode row = recordOf(release);
+        assertThat(row.get("channel").asString()).isEqualTo("play");
+        assertThat(row.get("externalId").asString()).isEqualTo("production#2#" + packageName);
+        assertThat(row.get("status").asString()).isEqualTo("DISTRIBUTING");
+        assertThat(row.get("providerStatus").asString()).isEqualTo("inProgress");
+
+        // The wire: the track write carried Play's userFraction.
+        List<GooglePlayDeveloperApiMock.RecordedCall> writes = PLAY.callsOf("PUT", "/tracks/production");
+        assertThat(writes).hasSize(1);
+        assertThat(writes.get(0).body()).contains("\"userFraction\":0.1");
+
+        // The rollout state (AC1): the intent at the configured
+        // percentage, the START step on the timeline, the audit line.
+        JsonNode rollout = rolloutView(release);
+        assertThat(rollout.get("status").asString()).isEqualTo("ROLLING");
+        assertThat(rollout.get("intendedPercent").asInt()).isEqualTo(10);
+        assertThat(rollout.get("observedPercent").asInt()).isEqualTo(10);
+        assertThat(rollout.get("drift").asBoolean()).isFalse();
+        assertThat(rollout.get("steps").size()).isEqualTo(1);
+        assertThat(rollout.get("steps").get(0).get("action").asString()).isEqualTo("START");
+        assertThat(audit.eventsOfType(AuditEventType.DISTRIBUTION_ROLLOUT_CONTROLLED))
+                .hasSize(1);
+    }
+
+    @Test
+    void aProductionReleaseWithoutARolloutConfigIsTheFullList() {
+        linkPilotToInternal();
+        UUID release = releasePromotedToProduction(playEnvironment(null, null));
+        // No curve configured: the full-list production release, the
+        // rollout state honest at COMPLETE 100.
+        List<GooglePlayDeveloperApiMock.RecordedCall> writes = PLAY.callsOf("PUT", "/tracks/production");
+        assertThat(writes.get(0).body()).doesNotContain("userFraction");
+        JsonNode rollout = rolloutView(release);
+        assertThat(rollout.get("status").asString()).isEqualTo("COMPLETE");
+        assertThat(rollout.get("intendedPercent").asInt()).isEqualTo(100);
+    }
+
+    @Test
+    void percentageIncreasesApplyThroughThePlayApiAndReflectInShipperdog() {
+        linkPilotToInternal();
+        UUID release = releasePromotedToProduction(playEnvironment(null, "10"));
+        JsonNode advanced = rolloutControl(release, "ADVANCE", 50, 200);
+        assertThat(advanced.get("intendedPercent").asInt()).isEqualTo(50);
+        assertThat(advanced.get("observedPercent").asInt()).isEqualTo(50);
+        assertThat(advanced.get("status").asString()).isEqualTo("ROLLING");
+        List<GooglePlayDeveloperApiMock.RecordedCall> writes = PLAY.callsOf("PUT", "/tracks/production");
+        assertThat(writes).hasSize(2);
+        assertThat(writes.get(1).body()).contains("\"userFraction\":0.5");
+        assertThat(writes.get(1).body()).contains("\"status\":\"inProgress\"");
+        // The curve at 100: the full list; Google's completion word
+        // completes the rollout on the next observation.
+        PLAY.clearCalls();
+        rolloutControl(release, "ADVANCE", 100, 200);
+        assertThat(PLAY.callsOf("PUT", "/tracks/production").get(0).body()).contains("\"userFraction\":1.0");
+        PLAY.setTrackReleaseStatus(packageName, "production", 2, "completed");
+        JsonNode done = rolloutView(release);
+        assertThat(done.get("status").asString()).isEqualTo("COMPLETE");
+    }
+
+    @Test
+    void advanceShapeAndStateFaultsAreRefusedLoudly() {
+        linkPilotToInternal();
+        UUID release = releasePromotedToProduction(playEnvironment(null, "10"));
+        // An unknown vocabulary word.
+        post(
+                managerToken,
+                "/api/v1/distribution/play/releases/" + release + "/rollout?organizationId=" + org,
+                Map.of("action", "PAUSE"),
+                400);
+        // An advance without its percentage.
+        rolloutControl(release, "ADVANCE", null, 400);
+        // Out of range.
+        rolloutControl(release, "ADVANCE", 0, 400);
+        rolloutControl(release, "ADVANCE", 101, 400);
+        // Not strictly greater.
+        rolloutControl(release, "ADVANCE", 10, 400);
+        rolloutControl(release, "ADVANCE", 5, 400);
+        // A testing-track release carries no rollout at all: the honest miss.
+        UUID testing = releaseWalkedToActive(playEnvironment(null), "qa");
+        get(managerToken, "/api/v1/distribution/play/releases/" + testing + "/rollout?organizationId=" + org, 404);
+    }
+
+    @Test
+    void haltStopsDistributionResumesAndBothAreVisibleOnTheTimeline() {
+        linkPilotToInternal();
+        UUID release = releasePromotedToProduction(playEnvironment(null, "10"));
+        rolloutControl(release, "ADVANCE", 25, 200);
+        JsonNode halted = rolloutControl(release, "HALT", null, 200);
+        assertThat(halted.get("status").asString()).isEqualTo("HALTED");
+        assertThat(PLAY.callsOf("PUT", "/tracks/production").get(2).body()).contains("\"status\":\"halted\"");
+        // A halt of a halted rollout is the state fault.
+        rolloutControl(release, "HALT", null, 400);
+        // The resume continues from the same percentage.
+        JsonNode resumed = rolloutControl(release, "RESUME", null, 200);
+        assertThat(resumed.get("status").asString()).isEqualTo("ROLLING");
+        assertThat(resumed.get("intendedPercent").asInt()).isEqualTo(25);
+        assertThat(PLAY.callsOf("PUT", "/tracks/production").get(3).body()).contains("\"userFraction\":0.25");
+        // AC3: the full timeline with actor and percentages.
+        JsonNode view = rolloutView(release);
+        assertThat(view.get("steps").size()).isEqualTo(4);
+        assertThat(view.get("steps").get(1).get("action").asString()).isEqualTo("ADVANCE");
+        assertThat(view.get("steps").get(1).get("fromPercent").asInt()).isEqualTo(10);
+        assertThat(view.get("steps").get(1).get("toPercent").asInt()).isEqualTo(25);
+        assertThat(view.get("steps").get(2).get("action").asString()).isEqualTo("HALT");
+        assertThat(view.get("steps").get(3).get("action").asString()).isEqualTo("RESUME");
+        for (JsonNode step : view.get("steps")) {
+            if (!"START".equals(step.get("action").asText())) {
+                assertThat(step.get("actorId").isNull()).isFalse();
+            }
+        }
+        assertThat(audit.eventsOfType(AuditEventType.DISTRIBUTION_ROLLOUT_CONTROLLED))
+                .hasSize(4);
+    }
+
+    @Test
+    void policyRulesBlockIncreasesOnFailingMetricsAndAdmitSatisfiedOnes() {
+        linkPilotToInternal();
+        UUID release = releasePromotedToProduction(playEnvironment(null, "10"));
+        // AC4's end-to-end example: a BLOCK rule on the production
+        // ring, the metric answering a failing value.
+        Map<String, Object> condition = new LinkedHashMap<>();
+        condition.put("metric", "CRASH_FREE_RATE");
+        condition.put("operator", "<");
+        condition.put("value", 0.99);
+        Map<String, Object> rule = new LinkedHashMap<>();
+        rule.put("organizationId", org.toString());
+        rule.put("name", "production-crash-floor");
+        rule.put("scope", "RING");
+        rule.put("ring", "production");
+        rule.put("action", "BLOCK");
+        rule.put("position", 10);
+        rule.put("condition", condition);
+        JsonNode created = post(adminToken, "/api/v1/release-policies", rule, 201);
+        RolloutMetricSource.arm(release, com.shipperdog.api.release.PolicyMetric.CRASH_FREE_RATE, 0.80);
+        int evaluationsBefore = jdbc.queryForObject(
+                "SELECT count(*) FROM release_policy_evaluations WHERE release_id = ?", Integer.class, release);
+
+        JsonNode problem = post(
+                managerToken,
+                "/api/v1/distribution/play/releases/" + release + "/rollout?organizationId=" + org,
+                Map.of("action", "ADVANCE", "percent", 50),
+                409);
+        assertThat(problem.get("code").asString()).isEqualTo("DISTRIBUTION_ROLLOUT_BLOCKED");
+        assertThat(problem.get("detail").asString())
+                .contains("production-crash-floor")
+                .contains("0.8");
+        // The refusal's evidence SURVIVED the 409's rollback (the #45
+        // discipline, the review's round-1 finding): the consult runs
+        // in its own transaction, so the blocked attempt's evaluation
+        // row stands exactly a refused promotion's does.
+        assertThat(jdbc.queryForObject(
+                        "SELECT count(*) FROM release_policy_evaluations WHERE release_id = ? AND verdict = 'BLOCKED'",
+                        Integer.class,
+                        release))
+                .isEqualTo(1);
+        assertThat(jdbc.queryForObject(
+                        "SELECT count(*) FROM release_policy_evaluations WHERE release_id = ?", Integer.class, release))
+                .isEqualTo(evaluationsBefore + 1);
+        // HALT stays ungated: stopping distribution is always allowed.
+        assertThat(rolloutControl(release, "HALT", null, 200).get("status").asString())
+                .isEqualTo("HALTED");
+        rolloutControl(release, "RESUME", null, 200);
+        // The satisfied metric admits the increase.
+        RolloutMetricSource.arm(release, com.shipperdog.api.release.PolicyMetric.CRASH_FREE_RATE, 0.998);
+        assertThat(rolloutControl(release, "ADVANCE", 50, 200)
+                        .get("intendedPercent")
+                        .asInt())
+                .isEqualTo(50);
+        exchange(
+                        "/api/v1/release-policies/" + created.get("id").asText() + "?organizationId=" + org,
+                        adminToken,
+                        "DELETE",
+                        null)
+                .expect(204);
+    }
+
+    @Test
+    void reconciliationReportsManualConsoleChangesAsDriftAndReapplyIsExplicit() {
+        linkPilotToInternal();
+        UUID release = releasePromotedToProduction(playEnvironment(null, "10"));
+        // The manual Play Console change: an operator moved the store's
+        // fraction against the platform's intent.
+        PLAY.setTrackReleaseUserFraction(packageName, "production", 2, 0.05);
+        JsonNode drifted = rolloutView(release);
+        assertThat(drifted.get("drift").asBoolean()).isTrue();
+        assertThat(drifted.get("observedPercent").asInt()).isEqualTo(5);
+        assertThat(drifted.get("intendedPercent").asInt()).isEqualTo(10);
+        assertThat(audit.eventsOfType(AuditEventType.DISTRIBUTION_ROLLOUT_DRIFT))
+                .hasSize(1);
+        // The steady state renders without a new audit line per read.
+        rolloutView(release);
+        assertThat(audit.eventsOfType(AuditEventType.DISTRIBUTION_ROLLOUT_DRIFT))
+                .hasSize(1);
+        // REAPPLY: the explicit operator act, the wire re-writes intent.
+        JsonNode reapplied = rolloutControl(release, "REAPPLY", null, 200);
+        assertThat(reapplied.get("drift").asBoolean()).isFalse();
+        assertThat(reapplied.get("observedPercent").asInt()).isEqualTo(10);
+        assertThat(PLAY.callsOf("PUT", "/tracks/production").get(1).body()).contains("\"userFraction\":0.1");
+        assertThat(reapplied.get("steps").get(1).get("action").asString()).isEqualTo("REAPPLY");
+    }
+
+    @Test
+    void aRefusedProductionReleaseVetoesThePromotionAndTheReleaseStandsActive() {
+        linkPilotToInternal();
+        UUID environment = playEnvironment(null, "10");
+        UUID release = releaseWalkedToActive(environment, "qa");
+        for (String ring : List.of("tenant-pilot", "uat")) {
+            post(
+                    managerToken,
+                    "/api/v1/releases/" + release + "/promote",
+                    Map.of("applicationId", app.toString(), "tenants", List.of(tenantA.toString())),
+                    200);
+        }
+        // The production leg's permanent refusal (Google's own words):
+        // the submission-grade dispatch vetoes the PROMOTED crossing —
+        // the hop rolls back, the release stands ACTIVE on uat, the
+        // failure records land with the actionable reason.
+        PLAY.rejectNextTrackWrite();
+        JsonNode problem = post(
+                managerToken,
+                "/api/v1/releases/" + release + "/promote",
+                Map.of("applicationId", app.toString(), "tenants", List.of(tenantA.toString())),
+                502);
+        assertThat(problem.get("code").asString()).isEqualTo("ADAPTER_FAILED");
+        assertThat(problem.get("detail").asString()).contains("cannot go PROMOTED");
+        assertThat(jdbc.queryForObject("SELECT status FROM releases WHERE id = ?", String.class, release))
+                .isEqualTo("ACTIVE");
+        assertThat(jdbc.queryForObject(
+                        "SELECT r.code FROM release_targets t JOIN rings r ON r.id = t.ring_id"
+                                + " WHERE t.release_id = ?",
+                        String.class,
+                        release))
+                .isEqualTo("uat");
+        JsonNode row = recordOf(release);
+        assertThat(row.get("status").asString()).isEqualTo("FAILED");
+        assertThat(row.get("failureDetail").asString()).contains("Release note text");
+        // No rollout state exists: the landing never happened.
+        get(managerToken, "/api/v1/distribution/play/releases/" + release + "/rollout?organizationId=" + org, 404);
+    }
+
+    @Test
+    void aFailedControlWriteAnswersTheTaxonomyProblemAndTheCurvesIntentStandsUnmoved() {
+        linkPilotToInternal();
+        UUID release = releasePromotedToProduction(playEnvironment(null, "10"));
+        // The provider refuses the control write (Google's own words):
+        // the taxonomy problem answers, and the intent model does NOT
+        // move — the write precedes every state change, so no
+        // half-applied step ever lands on the timeline.
+        PLAY.rejectNextTrackWrite();
+        JsonNode problem = post(
+                managerToken,
+                "/api/v1/distribution/play/releases/" + release + "/rollout?organizationId=" + org,
+                Map.of("action", "ADVANCE", "percent", 50),
+                502);
+        assertThat(problem.get("code").asString()).isEqualTo("ADAPTER_FAILED");
+        assertThat(problem.get("detail").asString()).contains("Release note text");
+        JsonNode after = rolloutView(release);
+        assertThat(after.get("intendedPercent").asInt()).isEqualTo(10);
+        assertThat(after.get("status").asString()).isEqualTo("ROLLING");
+        assertThat(after.get("steps").size()).isEqualTo(1);
+        assertThat(after.get("steps").get(0).get("action").asString()).isEqualTo("START");
+        // The refused attempt left no audit line of a completed act.
+        assertThat(audit.eventsOfType(AuditEventType.DISTRIBUTION_ROLLOUT_CONTROLLED))
+                .hasSize(1);
+        // The curve is not wedged: the next write proceeds.
+        assertThat(rolloutControl(release, "ADVANCE", 50, 200)
+                        .get("intendedPercent")
+                        .asInt())
+                .isEqualTo(50);
+    }
+
+    @Test
+    void aBrokenReadAfterTheControlWriteNeverRollsBackAnActGoogleAlreadyApplied() {
+        linkPilotToInternal();
+        UUID release = releasePromotedToProduction(playEnvironment(null, "10"));
+        // The review's round-1 finding: the store's LIVE read breaks
+        // right after the control's write lands. The control answers
+        // from the WRITE'S OWN ECHO — it performs no follow-up read —
+        // so the applied act's platform state (the intent, the
+        // observation, the timeline step) commits regardless; only a
+        // control that re-read the live track inside its transaction
+        // could fail here (the transient exhausting, the act Google
+        // already applied rolled back).
+        // Scope the wire assertions to the control's own calls (the
+        // landing dispatch's refresh reads the live track too).
+        PLAY.clearCalls();
+        PLAY.failNextLiveTrackRead();
+        JsonNode advanced = rolloutControl(release, "ADVANCE", 50, 200);
+        assertThat(advanced.get("intendedPercent").asInt()).isEqualTo(50);
+        assertThat(advanced.get("observedPercent").asInt()).isEqualTo(50);
+        assertThat(advanced.get("providerStatus").asString()).isEqualTo("inProgress");
+        assertThat(PLAY.callsOf("PUT", "/tracks/production")).hasSize(1);
+        assertThat(PLAY.callsOf("PUT", "/tracks/production").get(0).body()).contains("\"userFraction\":0.5");
+        // The control never re-read the live track: its only reads are
+        // the edit model's own (inside /edits/), the answer came from
+        // the write's echo.
+        assertThat(PLAY.calls().stream()
+                        .filter(call -> "GET".equals(call.method()))
+                        .filter(call ->
+                                call.path().contains("/tracks/") && !call.path().contains("/edits/"))
+                        .count())
+                .isZero();
+        // The state stands and the read path recovers on its own
+        // retries (the knob spends itself on the view's first
+        // attempt): the timeline carries exactly the one ADVANCE.
+        JsonNode after = rolloutView(release);
+        assertThat(after.get("intendedPercent").asInt()).isEqualTo(50);
+        assertThat(after.get("status").asString()).isEqualTo("ROLLING");
+        assertThat(after.get("steps").size()).isEqualTo(2);
+        assertThat(after.get("steps").get(1).get("action").asString()).isEqualTo("ADVANCE");
+        assertThat(audit.eventsOfType(AuditEventType.DISTRIBUTION_ROLLOUT_CONTROLLED))
+                .hasSize(2);
+    }
+
+    @Test
+    void concurrentAdvancesProveExactlyOneWinnerAndTheLoserAnswersTheConflict() throws Exception {
+        linkPilotToInternal();
+        UUID release = releasePromotedToProduction(playEnvironment(null, "10"));
+        // Two operators race an ADVANCE off a common barrier. The
+        // version stamp (the #51 subscription precedent, the review's
+        // round-1 finding) admits exactly ONE winner; the loser answers
+        // the precise conflict 409 — or, when the barrier interleaves
+        // loosely and the loser's read lands after the winner's
+        // commit, the strict-increase guard's own refusal (still one
+        // winner, still a single applied step — never a double-applied
+        // advance, never a lowered curve, never a 5xx).
+        int racers = 2;
+        CyclicBarrier start = new CyclicBarrier(racers);
+        ExecutorService pool = Executors.newFixedThreadPool(racers);
+        List<Recording> answers;
+        try {
+            List<Future<Recording>> attempts = new ArrayList<>();
+            for (int i = 0; i < racers; i++) {
+                attempts.add(pool.submit(() -> {
+                    start.await(30, TimeUnit.SECONDS);
+                    return exchange(
+                            "/api/v1/distribution/play/releases/" + release + "/rollout?organizationId=" + org,
+                            managerToken,
+                            "POST",
+                            Map.of("action", "ADVANCE", "percent", 50));
+                }));
+            }
+            answers = new ArrayList<>();
+            for (Future<Recording> attempt : attempts) {
+                answers.add(attempt.get(60, TimeUnit.SECONDS));
+            }
+        } finally {
+            pool.shutdownNow();
+        }
+        int committed = 0;
+        for (Recording answer : answers) {
+            if (answer.status() == 200) {
+                committed++;
+            } else {
+                // The loser's precise refusal: the version stamp's 409
+                // conflict, or — when the loser's initial read landed
+                // after the winner's commit — the strict-increase
+                // guard's 400 off the moved state. Both prove one
+                // winner; never a 5xx, never a double-applied step.
+                assertThat(answer.status()).as("body %s", answer.body()).isIn(400, 409);
+                assertThat(answer.body().get("code").asText())
+                        .isIn("DISTRIBUTION_ROLLOUT_CONFLICT", "DISTRIBUTION_ROLLOUT_ACTION_INVALID");
+            }
+        }
+        assertThat(committed).isEqualTo(1);
+        // The curve moved exactly once: one ADVANCE step beside the
+        // START, the intent at the winner's 50, one audit line of the
+        // completed act (the loser's audit rolled back with its
+        // transaction).
+        JsonNode view = rolloutView(release);
+        assertThat(view.get("intendedPercent").asInt()).isEqualTo(50);
+        assertThat(view.get("status").asString()).isEqualTo("ROLLING");
+        assertThat(view.get("steps").size()).isEqualTo(2);
+        assertThat(view.get("steps").get(1).get("action").asString()).isEqualTo("ADVANCE");
+        assertThat(audit.eventsOfType(AuditEventType.DISTRIBUTION_ROLLOUT_CONTROLLED))
+                .hasSize(2);
+    }
+
+    @Test
+    void aReleaseBornOnTheProductionRingDispatchesToTheProductionTrackAtTheActiveCrossing() {
+        linkPilotToInternal();
+        UUID environment = playEnvironment(null, "10");
+        UUID release = releaseWalkedToActive(environment, "production");
+        // The dispatch's other face: a release whose walk STARTS at
+        // production addresses the production track at the ACTIVE
+        // crossing itself — the same mapping, the same staged start.
+        assertThat(jdbc.queryForObject("SELECT status FROM releases WHERE id = ?", String.class, release))
+                .isEqualTo("ACTIVE");
+        JsonNode row = recordOf(release);
+        assertThat(row.get("externalId").asString()).isEqualTo("production#1#" + packageName);
+        assertThat(row.get("status").asString()).isEqualTo("DISTRIBUTING");
+        assertThat(row.get("providerStatus").asString()).isEqualTo("inProgress");
+        assertThat(PLAY.callsOf("PUT", "/tracks/production").get(0).body()).contains("\"userFraction\":0.1");
+        JsonNode rollout = rolloutView(release);
+        assertThat(rollout.get("status").asString()).isEqualTo("ROLLING");
+        assertThat(rollout.get("intendedPercent").asInt()).isEqualTo(10);
+        assertThat(rollout.get("steps").get(0).get("action").asString()).isEqualTo("START");
+    }
+
+    // -----------------------------------------------------------------------
     // Fixtures
     // -----------------------------------------------------------------------
 
@@ -825,14 +1282,26 @@ class GooglePlayConnectorIntegrationTest {
 
     /** The production environment bound to the play channel, with the optional track override. */
     private UUID playEnvironment(String trackOverride) {
+        return playEnvironment(trackOverride, null);
+    }
+
+    /**
+     * The production environment bound to the play channel, with the
+     * optional track override and the optional staged rollout's
+     * initial percentage (S13-05's configuration key).
+     */
+    private UUID playEnvironment(String trackOverride, String rolloutPercent) {
         UUID production = environmentByCode("production");
         patch(adminToken, "/api/v1/environments/" + production, Map.of("distributionChannel", "play"), 200);
+        Map<String, String> entries = new LinkedHashMap<>();
         if (trackOverride != null) {
-            put(
-                    adminToken,
-                    "/api/v1/environments/" + production + "/config",
-                    Map.of("entries", Map.of("play-track", trackOverride)),
-                    200);
+            entries.put("play-track", trackOverride);
+        }
+        if (rolloutPercent != null) {
+            entries.put("play-rollout-percent", rolloutPercent);
+        }
+        if (!entries.isEmpty()) {
+            put(adminToken, "/api/v1/environments/" + production + "/config", Map.of("entries", entries), 200);
         }
         put(
                 adminToken,
@@ -840,6 +1309,46 @@ class GooglePlayConnectorIntegrationTest {
                 Map.of("tenantIds", List.of(tenantA.toString())),
                 200);
         return production;
+    }
+
+    /**
+     * The full promotion journey of S13-05 (AC1): a release walked to
+     * ACTIVE on the qa ring, then promoted ring by ring onto the
+     * production ring — the final landing fires the PROMOTED crossing
+     * the production dispatch follows.
+     */
+    private UUID releasePromotedToProduction(UUID environmentId) {
+        UUID release = releaseWalkedToActive(environmentId, "qa");
+        for (String ring : List.of("tenant-pilot", "uat", "production")) {
+            post(
+                    managerToken,
+                    "/api/v1/releases/" + release + "/promote",
+                    Map.of("applicationId", app.toString(), "tenants", List.of(tenantA.toString())),
+                    200);
+        }
+        return release;
+    }
+
+    /** The rollout view read (the dashboard's own route). */
+    private JsonNode rolloutView(UUID releaseId) {
+        return get(
+                managerToken,
+                "/api/v1/distribution/play/releases/" + releaseId + "/rollout?organizationId=" + org,
+                200);
+    }
+
+    /** One rollout control action through the release-actions route. */
+    private JsonNode rolloutControl(UUID releaseId, String action, Integer percent, int expected) {
+        Map<String, Object> body = new LinkedHashMap<>();
+        body.put("action", action);
+        if (percent != null) {
+            body.put("percent", percent);
+        }
+        return post(
+                managerToken,
+                "/api/v1/distribution/play/releases/" + releaseId + "/rollout?organizationId=" + org,
+                body,
+                expected);
     }
 
     /** A fresh Android release walked DRAFT to ACTIVE through PRD 17's spine, targeting the Pilot group. */

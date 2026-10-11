@@ -35,6 +35,7 @@ import java.util.UUID;
 import java.util.function.Supplier;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 
 /**
@@ -61,7 +62,7 @@ import org.springframework.transaction.annotation.Transactional;
  * log keeps loose name snapshots and survives deletion by design).
  */
 @Service
-public class ReleasePolicyService {
+public class ReleasePolicyService implements com.shipperdog.api.release.ReleaseRolloutPolicyGate {
 
     /** The rule name shape: lowercase kebab, 3-64 (the ring code family). */
     private static final String NAME_PATTERN = "^[a-z][a-z0-9-]{2,63}$";
@@ -79,6 +80,7 @@ public class ReleasePolicyService {
     private final EnvironmentAccess environments;
     private final GateDefinitionAccess gateDefinitions;
     private final ReleaseScopedRepository releases;
+    private final com.shipperdog.api.release.internal.repository.ReleaseRegistryRepository registry;
     private final ReleaseTargetRepository targets;
     private final TenantScopeExecutor scopeExecutor;
     private final AuditEventPublisher audit;
@@ -99,6 +101,7 @@ public class ReleasePolicyService {
             EnvironmentAccess environments,
             GateDefinitionAccess gateDefinitions,
             ReleaseScopedRepository releases,
+            com.shipperdog.api.release.internal.repository.ReleaseRegistryRepository registry,
             ReleaseTargetRepository targets,
             TenantScopeExecutor scopeExecutor,
             AuditEventPublisher audit,
@@ -117,6 +120,7 @@ public class ReleasePolicyService {
         this.environments = environments;
         this.gateDefinitions = gateDefinitions;
         this.releases = releases;
+        this.registry = registry;
         this.targets = targets;
         this.scopeExecutor = scopeExecutor;
         this.audit = audit;
@@ -367,6 +371,66 @@ public class ReleasePolicyService {
                     result.verdict().name(),
                     outcomes);
         });
+    }
+
+    /**
+     * The rollout policy consult (S13-05, #65, AC4): the SAME
+     * evaluation the promotion precheck runs, asked for a staged
+     * rollout's percentage INCREASE on the named ring — the ring's
+     * BLOCK and HOLD rules with their metric conditions decide. Runs
+     * attempt-grade (the evaluation log and hold ledger write, the
+     * #45 discipline), registry-resolved and scope-bound like the
+     * store connectors' credential reads: the consult arrives on
+     * organization-grain distribution routes whose bound scope is by
+     * construction not the release's owning scope, so the release
+     * resolves through the registry probe and the evaluation runs
+     * inside the application's owning scope (the engine's own reads
+     * are seam-served). Fail-closed: a release that cannot be
+     * resolved answers the honest refusal, never a silent pass.
+     *
+     * <p>The consult runs in its OWN transaction ({@code REQUIRES_NEW},
+     * the #45 evidence-survives-the-refusal discipline): the evaluation
+     * log row and any new PENDING hold commit when the consult returns,
+     * INDEPENDENT of the calling control's outcome — a BLOCKED advance
+     * answers its 409 and rolls the control back, but the refusal's
+     * evidence stands exactly a refused promotion's does.
+     */
+    @Override
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
+    public java.util.Optional<String> rolloutDenialOf(
+            UUID organizationId, UUID releaseId, String ringCode, UUID actorId) {
+        ReleaseEntity release = registry.probeById(releaseId)
+                .filter(row -> row.getOrganizationId().equals(organizationId))
+                .orElse(null);
+        if (release == null || ringCode == null || ringCode.isBlank()) {
+            return java.util.Optional.of(
+                    "the release could not be resolved for the rollout policy consult (fail closed)");
+        }
+        List<UUID> tenants = targets.findByReleaseIdOrderByTenantIdAsc(release.getId()).stream()
+                .map(ReleaseTargetEntity::getTenantId)
+                .toList();
+        com.shipperdog.api.release.ReleasePromotionPolicy.PromotionCheck check =
+                new com.shipperdog.api.release.ReleasePromotionPolicy.PromotionCheck(
+                        release.getId(),
+                        release.releaseRef(),
+                        release.getApplicationId(),
+                        release.getOrganizationId(),
+                        ringCode,
+                        ringCode,
+                        tenants,
+                        actorId,
+                        com.shipperdog.api.release.ReleasePromotionPolicy.Purpose.ROLLOUT);
+        ApplicationAccess.ApplicationProfile application =
+                applications.profileOf(release.getApplicationId()).orElse(null);
+        if (application == null) {
+            // The owning application no longer resolves: the honest
+            // degraded consult (the engine's scoped reads answer their
+            // own misses) — still the engine's verdict, never a guess.
+            return engine.denial(check);
+        }
+        return application.tenantId() != null
+                ? scopeExecutor.inScope(application.tenantId(), actorId, () -> engine.denial(check))
+                : scopeExecutor.inOrganizationScope(application.organizationId(), actorId, () -> engine.denial(check));
     }
 
     /** The release's hold ledger: the pending demands first-class, the acknowledged history beside them. */

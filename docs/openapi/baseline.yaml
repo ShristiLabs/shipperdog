@@ -2753,6 +2753,61 @@ paths:
             '*/*':
               schema:
                 $ref: "#/components/schemas/RecordView"
+  /api/v1/distribution/play/releases/{releaseId}/rollout:
+    get:
+      tags:
+      - distribution-controller
+      operationId: playRolloutView
+      parameters:
+      - name: releaseId
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - name: organizationId
+        in: query
+        required: true
+        schema:
+          type: string
+          format: uuid
+      responses:
+        "200":
+          description: OK
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/RolloutView"
+    post:
+      tags:
+      - distribution-controller
+      operationId: controlPlayRollout
+      parameters:
+      - name: releaseId
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - name: organizationId
+        in: query
+        required: true
+        schema:
+          type: string
+          format: uuid
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RolloutActionRequest"
+        required: true
+      responses:
+        "200":
+          description: OK
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/RolloutView"
   /api/v1/distribution/play/groups/{linkId}/sync:
     post:
       tags:
@@ -5005,6 +5060,8 @@ paths:
           - DISTRIBUTION_METADATA_REMOVED
           - DISTRIBUTION_PHASED_RELEASE_CONTROLLED
           - STORE_EVENT_APPLIED
+          - DISTRIBUTION_ROLLOUT_CONTROLLED
+          - DISTRIBUTION_ROLLOUT_DRIFT
       - name: applicationId
         in: query
         required: false
@@ -5820,22 +5877,6 @@ components:
     JsonNode:
       type: object
       properties:
-        nodeType:
-          type: string
-          enum:
-          - ARRAY
-          - BINARY
-          - BOOLEAN
-          - MISSING
-          - "NULL"
-          - NUMBER
-          - OBJECT
-          - POJO
-          - STRING
-        string:
-          type: boolean
-        integralNumber:
-          type: boolean
         missingNode:
           type: boolean
         valueNode:
@@ -5863,9 +5904,25 @@ components:
           type: boolean
         binary:
           type: boolean
-        container:
+        nodeType:
+          type: string
+          enum:
+          - ARRAY
+          - BINARY
+          - BOOLEAN
+          - MISSING
+          - "NULL"
+          - NUMBER
+          - OBJECT
+          - POJO
+          - STRING
+        string:
+          type: boolean
+        integralNumber:
           type: boolean
         floatingPointNumber:
+          type: boolean
+        container:
           type: boolean
         empty:
           type: boolean
@@ -7121,6 +7178,64 @@ components:
           type: string
           format: date-time
         updatedAt:
+          type: string
+          format: date-time
+    RolloutActionRequest:
+      type: object
+      properties:
+        action:
+          type: string
+        percent:
+          type: integer
+          format: int32
+    RolloutView:
+      type: object
+      properties:
+        releaseId:
+          type: string
+          format: uuid
+        channel:
+          type: string
+        status:
+          type: string
+        ringCode:
+          type: string
+        track:
+          type: string
+        versionCode:
+          type: integer
+          format: int64
+        packageName:
+          type: string
+        intendedPercent:
+          type: integer
+          format: int32
+        observedPercent:
+          type: integer
+          format: int32
+        providerStatus:
+          type: string
+        drift:
+          type: boolean
+        steps:
+          type: array
+          items:
+            $ref: "#/components/schemas/StepView"
+    StepView:
+      type: object
+      properties:
+        action:
+          type: string
+        fromPercent:
+          type: integer
+          format: int32
+        toPercent:
+          type: integer
+          format: int32
+        actorId:
+          type: string
+          format: uuid
+        occurredAt:
           type: string
           format: date-time
     PhasedReleaseActionRequest:
@@ -9100,6 +9215,8 @@ components:
           - DISTRIBUTION_METADATA_REMOVED
           - DISTRIBUTION_PHASED_RELEASE_CONTROLLED
           - STORE_EVENT_APPLIED
+          - DISTRIBUTION_ROLLOUT_CONTROLLED
+          - DISTRIBUTION_ROLLOUT_DRIFT
         occurredAt:
           type: string
           format: date-time

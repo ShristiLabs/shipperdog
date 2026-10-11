@@ -440,5 +440,21 @@ public enum AuditEventType {
      * triggered a refresh for -- the webhook leg of the review-state
      * sync (the polling reconciliation pass is the other leg).
      */
-    STORE_EVENT_APPLIED
+    STORE_EVENT_APPLIED,
+    /**
+     * One staged-rollout action driven from the platform (S13-05,
+     * issue #65, AC3): the release, the channel, the action (start,
+     * advance, halt, resume, reapply), the curve's from/to
+     * percentages, and the actor -- the rollout's own audit line per
+     * step, beside the timeline table the dashboard renders.
+     */
+    DISTRIBUTION_ROLLOUT_CONTROLLED,
+    /**
+     * The reconciliation's drift report (S13-05, issue #65, AC5): the
+     * provider's observed percentage diverged from the curve's intent
+     * (a manual Play Console change) -- the report is the audit line;
+     * the re-apply of intent is ALWAYS an explicit operator action,
+     * never a silent correction.
+     */
+    DISTRIBUTION_ROLLOUT_DRIFT
 }

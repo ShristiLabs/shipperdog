@@ -75,6 +75,7 @@ public final class GooglePlayDeveloperApiMock {
     private final AtomicInteger throttleBudget = new AtomicInteger(0);
     private volatile boolean failNextCallServerSide = false;
     private volatile boolean rejectNextTrackWrite = false;
+    private volatile boolean failNextLiveTrackRead = false;
     private final List<RecordedCall> calls = new CopyOnWriteArrayList<>();
 
     public GooglePlayDeveloperApiMock() {
@@ -103,6 +104,7 @@ public final class GooglePlayDeveloperApiMock {
         throttleNextCall = false;
         failNextCallServerSide = false;
         rejectNextTrackWrite = false;
+        failNextLiveTrackRead = false;
     }
 
     /** The base URL the Play connector's property points at (the API root ends with the applications path). */
@@ -146,6 +148,28 @@ public final class GooglePlayDeveloperApiMock {
     /** Registers an app for a package name (the Play Console's app under the service account). */
     public void registerApp(String packageName) {
         apps.put(packageName, new AppState());
+    }
+
+    /**
+     * Moves a track release's rollout fraction OUT-OF-BAND (S13-05,
+     * AC5): the manual Play Console change an operator makes against
+     * the store directly — the drift the reconciliation must report,
+     * never silently correct.
+     */
+    public void setTrackReleaseUserFraction(String packageName, String track, long versionCode, double fraction) {
+        AppState app = apps.get(packageName);
+        if (app == null) {
+            return;
+        }
+        TrackState trackState = app.tracks.get(track);
+        if (trackState == null) {
+            return;
+        }
+        for (ReleaseState release : trackState.releases) {
+            if (release.versionCodes.contains(versionCode)) {
+                release.userFraction = fraction;
+            }
+        }
     }
 
     /** Moves a track release's status (the refresh scenarios: completed, failed, halted, ...). */
@@ -221,6 +245,16 @@ public final class GooglePlayDeveloperApiMock {
     /** The refused-write knob: the next track write answers Google's 400 with an actionable message. */
     public void rejectNextTrackWrite() {
         rejectNextTrackWrite = true;
+    }
+
+    /**
+     * The broken-read-after-write knob (S13-05): the next LIVE track
+     * read (the committed-side GET, never an edit's own read) answers
+     * 500 — a control whose write succeeded must never depend on a
+     * follow-up read of the store (the write's own echo answers it).
+     */
+    public void failNextLiveTrackRead() {
+        failNextLiveTrackRead = true;
     }
 
     /** Every recorded wire call: method, path, and the body a test asserts on. */
@@ -330,6 +364,11 @@ public final class GooglePlayDeveloperApiMock {
             } else if (rest.matches("edits/[^/]+/testers/[^/]+") && "PUT".equals(method)) {
                 handlePutTesters(exchange, app, lastSegment(rest), new String(rawBody, StandardCharsets.UTF_8));
             } else if (rest.matches("tracks/[^/]+") && "GET".equals(method)) {
+                if (failNextLiveTrackRead) {
+                    failNextLiveTrackRead = false;
+                    answer(exchange, 500, googleError(500, "Internal error"));
+                    return;
+                }
                 handleGetTrack(exchange, app, lastSegment(rest));
             } else {
                 answer(exchange, 404, googleError(404, "not found: " + path));
@@ -491,9 +530,24 @@ public final class GooglePlayDeveloperApiMock {
                 }
                 versionCodes.add(versionCode);
             }
+            Double userFraction = release.hasNonNull("userFraction")
+                    ? release.path("userFraction").asDouble()
+                    : null;
+            if (userFraction != null && (userFraction <= 0.0d || userFraction > 1.0d)) {
+                answer(
+                        exchange,
+                        400,
+                        googleError(
+                                400,
+                                "userFraction must be greater than 0.0 and at most 1.0 (received: "
+                                        + userFraction
+                                        + ")"));
+                return;
+            }
             ReleaseState state = new ReleaseState();
             state.name = release.path("name").asString(null);
             state.status = release.path("status").asString("draft");
+            state.userFraction = userFraction;
             state.versionCodes.addAll(versionCodes);
             for (JsonNode note : release.path("releaseNotes")) {
                 if (note.path("text").asString("").length() > 500) {
@@ -570,6 +624,9 @@ public final class GooglePlayDeveloperApiMock {
                 release.versionCodes.stream().map(String::valueOf).toList());
         body.put("releaseNotes", List.copyOf(release.releaseNotes));
         body.put("status", release.status);
+        if (release.userFraction != null) {
+            body.put("userFraction", release.userFraction);
+        }
         return body;
     }
 
@@ -644,6 +701,7 @@ public final class GooglePlayDeveloperApiMock {
     private static final class ReleaseState {
         String name;
         String status;
+        Double userFraction;
         final List<Long> versionCodes = new CopyOnWriteArrayList<>();
         final List<Map<String, String>> releaseNotes = new CopyOnWriteArrayList<>();
     }

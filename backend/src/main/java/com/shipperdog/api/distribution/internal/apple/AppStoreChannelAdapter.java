@@ -108,6 +108,17 @@ public class AppStoreChannelAdapter implements DistributionChannelAdapter {
         return Set.of("apple");
     }
 
+    /**
+     * The channel's one dispatch IS the submission (the #63 doctrine
+     * split, unchanged by S13-05's ring grading): every ring this
+     * channel dispatches at is submission-grade, so a permanent
+     * refusal of the store vetoes the crossing it rode on.
+     */
+    @Override
+    public boolean submitsAtRing(String ringCode) {
+        return true;
+    }
+
     @Override
     public List<AdapterOutcome> distribute(DistributionCommand command) {
         AppleCredentials credential = AppleCredentials.of(command.credential());

@@ -63,7 +63,14 @@ public interface ReleasePromotionPolicy {
         /** The promote act: governed writes (the evaluation log, the hold ledger) are sanctioned. */
         ATTEMPT,
         /** The hop's in-transaction revalidation: a pure read (the ATTEMPT phase already logged). */
-        RE_COMMIT
+        RE_COMMIT,
+        /**
+         * A staged rollout's percentage increase on its ring (S13-05,
+         * #65, AC4): attempt-grade — the evaluation log and hold
+         * ledger write, the curve's widening is a promotion-grade act
+         * under the same rules the ring's hops evaluate.
+         */
+        ROLLOUT
     }
 
     /**

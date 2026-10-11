@@ -99,6 +99,46 @@ public class DistributionException extends RuntimeException {
                 HttpStatus.BAD_REQUEST,
                 "DISTRIBUTION_PHASED_RELEASE_ACTION_INVALID",
                 "The phased release action is invalid."),
+        /**
+         * The addressed release carries no staged rollout on the
+         * channel (S13-05, AC1/AC2): the release's production
+         * dispatch never landed a rollout (a testing-track release,
+         * a full-list release, or a foreign release — concealed). A
+         * read answers this honestly rather than an invented curve.
+         */
+        DISTRIBUTION_ROLLOUT_NOT_FOUND(HttpStatus.NOT_FOUND, "DISTRIBUTION_ROLLOUT_NOT_FOUND", "Resource not found."),
+        /**
+         * The rollout control's shape fault (S13-05, AC1/AC2): an
+         * action outside the advance/halt/resume/reapply vocabulary,
+         * a percentage outside 1..100 or not strictly greater than
+         * the curve's current intent, or an action the rollout's
+         * current state does not accept.
+         */
+        DISTRIBUTION_ROLLOUT_ACTION_INVALID(
+                HttpStatus.BAD_REQUEST, "DISTRIBUTION_ROLLOUT_ACTION_INVALID", "The rollout action is invalid."),
+        /**
+         * The policy engine's refusal of a rollout increase (S13-05,
+         * AC4): the production ring's BLOCK/HOLD rules evaluated
+         * against the release refuse to widen the curve while the
+         * release's metrics fail their thresholds — the promotion
+         * question's own wording, applied to the rollout's
+         * promotion-grade act. The message carries the rule's
+         * reference and evidence.
+         */
+        DISTRIBUTION_ROLLOUT_BLOCKED(
+                HttpStatus.CONFLICT, "DISTRIBUTION_ROLLOUT_BLOCKED", "The rollout increase is blocked by policy."),
+        /**
+         * The rollout control's concurrent-edit refusal (S13-05): the
+         * curve row changed under the action (the optimistic {@code
+         * version} column, the #51 subscription precedent) — the stale
+         * action answers the public 409 instead of last-write-winning,
+         * so two concurrent ADVANCEs can never lower the curve or
+         * double-apply a step. The operator reloads and retries.
+         */
+        DISTRIBUTION_ROLLOUT_CONFLICT(
+                HttpStatus.CONFLICT,
+                "DISTRIBUTION_ROLLOUT_CONFLICT",
+                "The rollout changed concurrently; reload and retry."),
         FORBIDDEN(HttpStatus.FORBIDDEN, "FORBIDDEN", "Access denied.");
 
         final HttpStatus httpStatus;

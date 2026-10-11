@@ -131,6 +131,7 @@ public class ReleaseService implements ReleaseAccess, VersionDistributionContrib
     private final ReleaseStatusHistoryRepository statusHistory;
     private final ReleaseRegistryRepository registry;
     private final RingRepository rings;
+    private final org.springframework.beans.factory.ObjectProvider<RingService> ringServiceProvider;
     private final ApplicationAccess applications;
     private final VersionAccess versions;
     private final ArtifactAccess artifacts;
@@ -152,6 +153,7 @@ public class ReleaseService implements ReleaseAccess, VersionDistributionContrib
             ReleaseStatusHistoryRepository statusHistory,
             ReleaseRegistryRepository registry,
             RingRepository rings,
+            org.springframework.beans.factory.ObjectProvider<RingService> ringServiceProvider,
             ApplicationAccess applications,
             VersionAccess versions,
             ArtifactAccess artifacts,
@@ -171,6 +173,7 @@ public class ReleaseService implements ReleaseAccess, VersionDistributionContrib
         this.statusHistory = statusHistory;
         this.registry = registry;
         this.rings = rings;
+        this.ringServiceProvider = ringServiceProvider;
         this.applications = applications;
         this.versions = versions;
         this.artifacts = artifacts;
@@ -616,6 +619,45 @@ public class ReleaseService implements ReleaseAccess, VersionDistributionContrib
                                 .map(ReleaseTargetEntity::getTenantId)
                                 .toList()));
         return targeted;
+    }
+
+    /**
+     * The release's CURRENT effective ring (S13-05, #65), served
+     * through the seam: the earliest ring in the organization's
+     * effective order that still holds any target. The walk's own
+     * arithmetic: promotion hops move targets forward one ring at a
+     * time, so the earliest occupied position IS the release's
+     * standing (a staggered selective walk answers the narrowest ring
+     * still serving — the honest conservative answer for a dispatch
+     * that must not overshoot what the walk has actually widened to).
+     */
+    @Override
+    @Transactional(readOnly = true)
+    public Optional<String> effectiveRingCodeOf(UUID releaseId) {
+        ReleaseEntity release = releases.findScoped(releaseId).orElse(null);
+        if (release == null) {
+            return Optional.empty();
+        }
+        List<RingEntity> order = ringServiceProvider.getObject().effectiveVocabularyOf(release.getOrganizationId());
+        Set<UUID> occupied = targets.findByReleaseIdOrderByTenantIdAsc(release.getId()).stream()
+                .map(ReleaseTargetEntity::getRingId)
+                .collect(java.util.stream.Collectors.toSet());
+        for (RingEntity ring : order) {
+            if (occupied.contains(ring.getId())) {
+                return Optional.of(ring.getCode());
+            }
+            // A shadowed vocabulary holds the organization's own ring
+            // beside the system default of the same code: the stored
+            // id may be either row while the EFFECTIVE code matches
+            // (the promotion engine's resolution discipline).
+            for (UUID ringId : occupied) {
+                String code = rings.findById(ringId).map(RingEntity::getCode).orElse(null);
+                if (ring.getCode().equals(code)) {
+                    return Optional.of(ring.getCode());
+                }
+            }
+        }
+        return Optional.empty();
     }
 
     /**

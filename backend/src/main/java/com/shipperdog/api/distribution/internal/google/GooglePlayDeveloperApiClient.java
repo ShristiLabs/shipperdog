@@ -324,7 +324,10 @@ public class GooglePlayDeveloperApiClient {
                     release.path("name").asString(null),
                     List.copyOf(versionCodes),
                     List.copyOf(notes),
-                    release.path("status").asString(null)));
+                    release.path("status").asString(null),
+                    release.hasNonNull("userFraction")
+                            ? release.path("userFraction").asDouble()
+                            : null));
         }
         return new Track(node.path("track").asString(null), List.copyOf(releases));
     }
@@ -347,6 +350,12 @@ public class GooglePlayDeveloperApiClient {
                                 .toList());
             }
             body.put("status", release.status());
+            // The staged-rollout fraction (S13-05): Play carries it on
+            // the in-progress track release; absent on completed and
+            // halted-shaped writes that mean the full list.
+            if (release.userFraction() != null) {
+                body.put("userFraction", release.userFraction());
+            }
             releases.add(body);
         }
         Map<String, Object> body = new LinkedHashMap<>();
@@ -379,11 +388,21 @@ public class GooglePlayDeveloperApiClient {
 
     /**
      * One track release: the release's name, its version codes, its
-     * per-language release notes, and Google's own status word
+     * per-language release notes, Google's own status word
      * ({@code completed}, {@code inProgress}, {@code draft},
-     * {@code halted}) the record carries verbatim.
+     * {@code halted}) the record carries verbatim, and the staged
+     * rollout's fraction of users (S13-05: {@code userFraction},
+     * 0..1, present while a production release rolls out staged —
+     * null on a full-list release).
      */
-    record TrackRelease(String name, List<Long> versionCodes, List<ReleaseNote> releaseNotes, String status) {}
+    record TrackRelease(
+            String name, List<Long> versionCodes, List<ReleaseNote> releaseNotes, String status, Double userFraction) {
+
+        /** The full-list shape (S13-04's testing tracks: no fraction). */
+        TrackRelease(String name, List<Long> versionCodes, List<ReleaseNote> releaseNotes, String status) {
+            this(name, versionCodes, releaseNotes, status, null);
+        }
+    }
 
     /** One language's release note. */
     record ReleaseNote(String language, String text) {}

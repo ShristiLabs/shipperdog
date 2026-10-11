@@ -75,10 +75,13 @@ frontend/src/
                 (PRD 17 state-vocabulary mirrors; S9-05; the detail
                 page's distribution section carries the S13-02
                 channel-distribution block — provider status words
-                and the per-record store refresh — and, since S13-03,
-                the App Store phased-release block: the curve's state,
-                day, and percentage with the pause/resume/halt release
-                actions),
+                and the per-record store refresh — the S13-03 App
+                Store phased-release block: the curve's state, day,
+                and percentage with the pause/resume/halt release
+                actions; and, since S13-05, the Google Play rollout
+                curve: intended vs observed percentage with the
+                drift chip and the advance/halt/resume/re-apply
+                release actions),
                 ChannelsPage (the S13-01 channel catalog +
                 credential-delegation console; since S13-03 also the
                 App Store listing-metadata authoring section —

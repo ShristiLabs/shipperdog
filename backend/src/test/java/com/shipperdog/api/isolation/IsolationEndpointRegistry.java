@@ -1141,6 +1141,18 @@ final class IsolationEndpointRegistry {
                         200,
                         404,
                         side -> "/api/v1/distribution/play/groups?organizationId=" + UUID.randomUUID()),
+                // The staged rollout view (S13-05): a release the
+                // seeded world never promoted to production answers
+                // the rollout miss (404) in the owning org, identically
+                // concealed for a foreign org and a foreign release.
+                surface(
+                        "/api/v1/distribution/play/releases/{releaseId}/rollout",
+                        side -> "/api/v1/distribution/play/releases/" + UUID.randomUUID() + "/rollout?organizationId="
+                                + side.organizationId(),
+                        404,
+                        404,
+                        side -> "/api/v1/distribution/play/releases/" + UUID.randomUUID() + "/rollout?organizationId="
+                                + UUID.randomUUID()),
                 // The Play release-notes view (S13-04, the same
                 // org-addressed authoring standing): the honest EMPTY
                 // page, the org guard the leak-proofing.

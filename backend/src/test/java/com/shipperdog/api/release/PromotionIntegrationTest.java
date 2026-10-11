@@ -727,46 +727,28 @@ class PromotionIntegrationTest {
         for (Recording answer : answers) {
             assertThat(answer.status()).as("body %s", answer.body()).isEqualTo(409);
             assertThat(answer.body().get("code").asText()).isEqualTo("RELEASE_PROMOTION_BLOCKED");
-            // The blocked message's ROUND NUMBER is cosmetic under the
-            // race: the loser answers from the committed state it
-            // re-reads after losing the insert, and on a loaded runner
-            // that read can number the pending round past the winner's
-            // (#62/#63's documented promotion-round CI flake — observed
-            // again on #137's first run). The strong invariants are the
-            // ones below: the governed refusal and the round-set
-            // invariants under every legal interleaving.
+            // The consult SERIALIZES (S13-05, #65 — the advisory lock
+            // on the release the open takes before its two reads): the
+            // loser waits for the winner's commit, then reads the
+            // winner's PENDING round and opens nothing. Both refusals
+            // answer the SAME committed round — the sequential second
+            // attempt's answer, byte for byte.
             assertThat(answer.body().get("errors").get("approval").asText())
                     .contains("pilot-promo")
-                    .contains("round ")
+                    .contains("round 1")
                     .contains("pending");
         }
 
-        // The round set under every legal interleaving: the common case
-        // is the winner's single PENDING round. The loser's consult
-        // reads the ring-marked round and the next number in two
-        // separate statements — when the winner's commit lands BETWEEN
-        // them the loser opens a DISTINCT next round before blocking on
-        // it (#62/#63's promotion-round flake, observed twice on #137:
-        // first as the loser's re-numbered message, then as the second
-        // round row). The invariants that hold in both worlds: every
-        // round number is distinct, the latest round is PENDING (the
-        // winner's demanded step), no duplicate or partial round ever
-        // landed, and a serialized retry would answer from it.
+        // The round set: EXACTLY the winner's single PENDING round —
+        // the redundant DISTINCT round the straddle once opened
+        // (#62/#63/#64's documented promotion-round CI flake, observed
+        // twice on #137) can no longer occur; the lock closed the
+        // window the unique index could not see.
         JsonNode rounds =
                 get(world.viewerToken, "/api/v1/releases/" + release.id + "/approvals?applicationId=" + world.app, 200);
-        assertThat(rounds.get("rounds").size()).isBetween(1, 2);
-        java.util.Set<Integer> numbers = new java.util.LinkedHashSet<>();
-        for (JsonNode round : rounds.get("rounds")) {
-            numbers.add(round.get("roundNumber").asInt());
-        }
-        assertThat(numbers)
-                .as("no duplicate round number ever lands")
-                .hasSize(rounds.get("rounds").size());
-        assertThat(numbers).contains(1);
-        JsonNode latest = rounds.get("rounds").get(rounds.get("rounds").size() - 1);
-        assertThat(latest.get("roundNumber").asInt())
-                .isEqualTo(numbers.stream().max(Integer::compare).orElseThrow());
-        assertThat(latest.get("status").asText()).isEqualTo("PENDING");
+        assertThat(rounds.get("rounds").size()).isEqualTo(1);
+        assertThat(rounds.get("rounds").get(0).get("roundNumber").asInt()).isEqualTo(1);
+        assertThat(rounds.get("rounds").get(0).get("status").asText()).isEqualTo("PENDING");
 
         // Both refusals are governed evidence; nothing moved.
         JsonNode history = promotions(world.viewerToken, world.app, release.id);

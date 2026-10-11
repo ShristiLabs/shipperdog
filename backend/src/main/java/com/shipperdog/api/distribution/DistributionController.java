@@ -57,6 +57,7 @@ public class DistributionController {
     private final AppStorePhasedReleaseService appStorePhasedRelease;
     private final PlayGroupService playGroups;
     private final PlayReleaseNotesService playReleaseNotes;
+    private final com.shipperdog.api.distribution.internal.google.PlayRolloutService playRollout;
 
     public DistributionController(
             DistributionAdapterRegistry registry,
@@ -66,7 +67,8 @@ public class DistributionController {
             AppStoreSubmissionMetadataService appStoreMetadata,
             AppStorePhasedReleaseService appStorePhasedRelease,
             PlayGroupService playGroups,
-            PlayReleaseNotesService playReleaseNotes) {
+            PlayReleaseNotesService playReleaseNotes,
+            com.shipperdog.api.distribution.internal.google.PlayRolloutService playRollout) {
         this.registry = registry;
         this.credentials = credentials;
         this.dispatch = dispatch;
@@ -75,6 +77,7 @@ public class DistributionController {
         this.appStorePhasedRelease = appStorePhasedRelease;
         this.playGroups = playGroups;
         this.playReleaseNotes = playReleaseNotes;
+        this.playRollout = playRollout;
     }
 
     /** The channel catalog: every registered adapter with its capabilities and credential providers. */
@@ -385,6 +388,35 @@ public class DistributionController {
         return new PlayTracksView(playGroups.tracks(organizationId, applicationId));
     }
 
+    /**
+     * The release's staged rollout state (S13-05, AC2/AC5): the
+     * intent, the store's observed percentage, the drift flag, and
+     * the timeline — the release dashboard's rollout answer.
+     */
+    @GetMapping("/play/releases/{releaseId}/rollout")
+    @PreAuthorize("hasPermission(#organizationId, 'organization', 'org:distribution:read')")
+    com.shipperdog.api.distribution.internal.google.PlayRolloutService.RolloutView playRolloutView(
+            @PathVariable UUID releaseId, @RequestParam UUID organizationId) {
+        return playRollout.view(organizationId, releaseId);
+    }
+
+    /**
+     * One release action on the curve (S13-05, AC1/AC2/AC4/AC5):
+     * ADVANCE to a strictly greater percentage (the policy gate
+     * consulted first), HALT (always allowed), RESUME, or the
+     * explicit REAPPLY of intent after drift.
+     */
+    @PostMapping("/play/releases/{releaseId}/rollout")
+    @PreAuthorize("hasPermission(#organizationId, 'organization', 'org:distribution:manage')")
+    com.shipperdog.api.distribution.internal.google.PlayRolloutService.RolloutView controlPlayRollout(
+            @AuthenticationPrincipal Object principal,
+            @PathVariable UUID releaseId,
+            @RequestParam UUID organizationId,
+            @RequestBody RolloutActionRequest request) {
+        return playRollout.control(
+                organizationId, releaseId, request.action(), request.percent(), requireUserId(principal));
+    }
+
     /** The organization's authored Play release notes (AC2's authoring view). */
     @GetMapping("/play/release-notes")
     @PreAuthorize("hasPermission(#organizationId, 'organization', 'org:distribution:read')")
@@ -491,6 +523,13 @@ public class DistributionController {
 
     /** The phased-release control's body (S13-03, AC3): PAUSE, RESUME, or HALT. */
     record PhasedReleaseActionRequest(String action) {}
+
+    /**
+     * The rollout control's body (S13-05, AC1/AC2/AC5): the action
+     * (ADVANCE, HALT, RESUME, REAPPLY) and the advance's target
+     * percentage (required by ADVANCE alone).
+     */
+    record RolloutActionRequest(String action, Integer percent) {}
 
     /**
      * The Play group-link write's body (S13-04, AC2): the owning

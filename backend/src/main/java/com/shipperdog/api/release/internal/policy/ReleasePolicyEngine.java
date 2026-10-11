@@ -162,7 +162,7 @@ public class ReleasePolicyEngine implements ReleasePromotionPolicy {
     public Optional<String> denial(PromotionCheck check) {
         EngineResult result =
                 evaluate(check.releaseId(), check.organizationId(), check.applicationId(), check.toRing());
-        if (check.purpose() == Purpose.ATTEMPT) {
+        if (check.purpose() == Purpose.ATTEMPT || check.purpose() == Purpose.ROLLOUT) {
             writer.recordEvaluation(check, result);
         }
         if (result.verdict() == Verdict.ALLOWED) {
