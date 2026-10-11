@@ -29,7 +29,8 @@ public record DistributionProperties(
         @DefaultValue Map<String, AdapterSandbox> adapters,
         @DefaultValue AppleConnector apple,
         @DefaultValue GooglePlayConnector googlePlay,
-        @DefaultValue Reconciliation reconciliation) {
+        @DefaultValue Reconciliation reconciliation,
+        @DefaultValue StagedRollout stagedRollout) {
 
     /** The sandbox every channel runs under when none is configured for it. */
     public static final AdapterSandbox DEFAULT_SANDBOX =
@@ -112,6 +113,36 @@ public record DistributionProperties(
         return reconciliation == null ? DEFAULT_RECONCILIATION : reconciliation;
     }
 
+    /** The staged rollout advancement pass's knobs (the defaults when unconfigured). */
+    public StagedRollout stagedRollout() {
+        return stagedRollout == null ? DEFAULT_STAGED_ROLLOUT : stagedRollout;
+    }
+
+    /**
+     * The staged TENANT rollout's pass (S13-06, #66, AC2): the
+     * unattended cadence of the AUTOMATIC advancement mode — every
+     * RUNNING AUTOMATIC plan gets one gated advancement attempt per
+     * pass. Off by default (the reconciliation precedent): an
+     * unattended pass that widens production rollouts is a
+     * deployment's own decision; the ADVANCE action on the staged
+     * rollout route serves the same engine everywhere regardless, and
+     * a CHECKPOINT plan is never advanced unattended.
+     *
+     * @param advancement the pass's own knobs
+     */
+    public record StagedRollout(@DefaultValue Advancement advancement) {
+
+        /**
+         * The pass's knobs.
+         *
+         * @param enabled    whether the scheduled pass runs at all
+         * @param fixedDelay the cadence between passes
+         */
+        public record Advancement(
+                @DefaultValue("false") boolean enabled,
+                @DefaultValue("PT5M") Duration fixedDelay) {}
+    }
+
     /**
      * The Google Play Developer API client's wiring (S13-04, #64): the
      * Publishing API's base URL and the REST timeouts. The default is
@@ -148,4 +179,8 @@ public record DistributionProperties(
 
     /** The reconciliation pass's default: off until a deployment opts in. */
     static final Reconciliation DEFAULT_RECONCILIATION = new Reconciliation(false, Duration.ofMinutes(15));
+
+    /** The staged rollout advancement pass's default: off until a deployment opts in. */
+    static final StagedRollout DEFAULT_STAGED_ROLLOUT =
+            new StagedRollout(new StagedRollout.Advancement(false, Duration.ofMinutes(5)));
 }

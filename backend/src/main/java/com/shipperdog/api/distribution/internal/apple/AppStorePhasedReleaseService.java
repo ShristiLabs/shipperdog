@@ -159,6 +159,35 @@ public class AppStorePhasedReleaseService {
         return refreshed;
     }
 
+    /**
+     * The orchestrated rollback's App Store arm (S13-06, issue #66,
+     * AC4): HALT the phased curve where one runs — the documented
+     * posture (no binary rollback exists on the App Store; HALT is
+     * Apple's own stop). Tolerant by design: a release with no
+     * submission record, no curve, or a halt the store refuses each
+     * answer their honest verdict, never a throw — the rollback's
+     * other arms are not this curve's to veto, and the outcome
+     * vocabulary records what happened for the timeline.
+     *
+     * @return the arm's outcome: halted, no-submission-record,
+     *         no-phased-curve, or halt-failed:{@code CODE}
+     */
+    @Transactional
+    public String haltForStagedRollback(UUID organizationId, UUID releaseId, UUID actorId) {
+        try {
+            control(organizationId, releaseId, ACTION_HALT, actorId);
+            return "halted";
+        } catch (DistributionException e) {
+            if (e.code() == DistributionException.Code.DISTRIBUTION_RECORD_NOT_FOUND) {
+                return "no-submission-record";
+            }
+            if (e.code() == DistributionException.Code.DISTRIBUTION_PHASED_RELEASE_NOT_FOUND) {
+                return "no-phased-curve";
+            }
+            return "halt-failed:" + e.code().codeValue();
+        }
+    }
+
     private PhasedReleaseView readCurve(AppleCredentials credential, String versionId) {
         AppStoreConnectClient.AppVersionState version = asc.versionStateOf(credential, versionId);
         AppStoreConnectClient.PhasedRelease phased =

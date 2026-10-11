@@ -86,8 +86,40 @@ public record ReleaseManifestDocument(
     /** The starting ring as of the freeze: code, display name, and progressive-distribution position. */
     public record Ring(String code, String name, int position) {}
 
-    /** The staged-rollout block (PRD 16's rollout map): null percentage until E10's staged rollouts. */
-    public record Rollout(Integer percentage) {}
+    /**
+     * The staged-rollout block (PRD 16's rollout map): the percentage
+     * stays null (the simple curve E10 reserved), and since S13-06
+     * (issue #66, AC6) a release carrying a staged TENANT rollout plan
+     * freezes it here — the widening intent (mode and ordered stages
+     * with their resolved cohorts) deep-copied at the APPROVED
+     * crossing. The plan is the immutable copy of WHAT WAS PLANNED;
+     * the rollout's own append-only ledger (the staged rollout view)
+     * records the reached stages through completion — the manifest
+     * never rewrites history.
+     */
+    public record Rollout(Integer percentage, StagedRollout staged) {
+
+        /** The pre-S13-06 shape: no staged plan. */
+        public Rollout(Integer percentage) {
+            this(percentage, null);
+        }
+    }
+
+    /** The frozen staged plan: the advancement mode and the ordered stages. */
+    public record StagedRollout(String mode, List<StagedStage> stages) {
+
+        public StagedRollout {
+            stages = List.copyOf(stages);
+        }
+    }
+
+    /** One frozen staged stage: its order, shape, and resolved cohort. */
+    public record StagedStage(int position, String kind, Integer percent, List<UUID> cohort) {
+
+        public StagedStage {
+            cohort = cohort == null ? List.of() : List.copyOf(cohort);
+        }
+    }
 
     /**
      * The configuration snapshot block (PRD 16's configuration map,

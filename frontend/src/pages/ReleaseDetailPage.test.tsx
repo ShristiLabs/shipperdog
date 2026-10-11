@@ -643,6 +643,126 @@ describe("ReleaseDetailPage", () => {
     await waitFor(() => expect(screen.getByTestId("play-rollout")).toHaveTextContent("rolling"));
   });
 
+  it("renders the staged tenant rollout with per-tenant progress, advance, and the one-action rollback (S13-06)", async () => {
+    const staged = {
+      releaseId: RELEASE_ID,
+      mode: "CHECKPOINT",
+      status: "RUNNING",
+      currentStage: 1,
+      stages: [
+        {
+          position: 1,
+          kind: "EXPLICIT",
+          percent: null,
+          cohortSize: 1,
+          status: "REACHED",
+          reachedAt: "2026-10-10T12:00:00Z",
+          cohort: ["30000000-0000-4000-8000-00000000000a1"],
+        },
+        {
+          position: 2,
+          kind: "PERCENT",
+          percent: 50,
+          cohortSize: 2,
+          status: "PENDING",
+          reachedAt: null,
+          cohort: [
+            "30000000-0000-4000-8000-00000000000a1",
+            "30000000-0000-4000-8000-00000000000a2",
+          ],
+        },
+      ],
+      tenantProgress: [
+        { tenantId: "30000000-0000-4000-8000-00000000000a1", reachedAtStage: 1, reachedAt: "2026-10-10T12:00:00Z" },
+        { tenantId: "30000000-0000-4000-8000-00000000000a2", reachedAtStage: null, reachedAt: null },
+      ],
+      timeline: [
+        {
+          action: "PLANNED",
+          stagePosition: null,
+          channel: null,
+          detail: "stages=2;mode=CHECKPOINT",
+          actorId: "10000000-0000-4000-8000-0000000000001",
+          occurredAt: "2026-10-10T11:00:00Z",
+        },
+        {
+          action: "STARTED",
+          stagePosition: 1,
+          channel: "direct",
+          detail: "cohort=1",
+          actorId: null,
+          occurredAt: "2026-10-10T12:00:00Z",
+        },
+      ],
+    };
+    renderDetail(DETAIL_ACTIVE, [
+      {
+        method: "GET",
+        url: `/api/v1/distribution/releases/${RELEASE_ID}/staged-rollout`,
+        status: 200,
+        // The sequenced answers: the running plan, the advanced plan,
+        // the rolled-back plan.
+        sequence: [
+          { status: 200, body: staged },
+          {
+            status: 200,
+            body: {
+              ...staged,
+              status: "COMPLETE",
+              currentStage: 2,
+              stages: staged.stages.map((stage) => ({ ...stage, status: "REACHED" })),
+              tenantProgress: staged.tenantProgress.map((tenant) => ({
+                ...tenant,
+                reachedAtStage: 2,
+                reachedAt: "2026-10-10T13:00:00Z",
+              })),
+            },
+          },
+          { status: 200, body: { ...staged, status: "ROLLED_BACK" } },
+        ],
+      },
+      {
+        method: "POST",
+        url: `/api/v1/distribution/releases/${RELEASE_ID}/staged-rollout`,
+        status: 200,
+        body: {
+          ...staged,
+          status: "COMPLETE",
+          currentStage: 2,
+        },
+      },
+      {
+        method: "POST",
+        url: `/api/v1/distribution/releases/${RELEASE_ID}/staged-rollout`,
+        status: 200,
+        body: { ...staged, status: "ROLLED_BACK" },
+      },
+    ]);
+
+    // The staged block: the plan's mode and standing, the stages with
+    // their cohorts, the per-tenant progress, the timeline.
+    const block = await screen.findByTestId("staged-rollout");
+    expect(block).toHaveTextContent("Staged tenant rollout");
+    expect(block).toHaveTextContent("running");
+    expect(block).toHaveTextContent("checkpoint (RM approval)");
+    expect(block).toHaveTextContent("1 of 2 tenants reached");
+    expect(block).toHaveTextContent("explicit cohort");
+    expect(block).toHaveTextContent("50% of tenants");
+    expect(block).toHaveTextContent("planned");
+    expect(block).toHaveTextContent("started");
+    expect(screen.getByTestId("staged-rollout-progress")).toHaveAttribute("aria-valuenow", "50");
+
+    // The checkpoint approval: advance the plan.
+    await userEvent.click(screen.getByTestId("staged-rollout-advance"));
+    await waitFor(() => expect(screen.getByTestId("staged-rollout")).toHaveTextContent("complete"));
+
+    // The rollback needs its reason (FR-024) and pulls everything.
+    const reason = screen.getByTestId("staged-rollout-reason-input");
+    await userEvent.type(reason, "crash spike in cohort 2");
+    await userEvent.click(screen.getByTestId("staged-rollout-rollback"));
+    await waitFor(() => expect(screen.getByTestId("staged-rollout")).toHaveTextContent("rolled_back"));
+  });
+
   it("renders the channel-distribution records with the provider state and refreshes from the store (S13-02)", async () => {
     const record = {
       id: "20000000-0000-4000-8000-00000000000d1",

@@ -103,6 +103,34 @@ public interface ReleaseAccess {
     Optional<String> effectiveRingCodeOf(UUID releaseId);
 
     /**
+     * The distribution-served twin of the effective ring (S13-06,
+     * issue #66): the SAME resolution over the registry probe — the
+     * staged rollout's policy consult reads the ring on org-grain
+     * routes and background threads that bind no release-owning
+     * scope, exactly the standing of every {@code distribution*Of}
+     * read on this port.
+     */
+    Optional<String> distributionEffectiveRingCodeOf(UUID releaseId);
+
+    /**
+     * The distribution-served target set (S13-06, issue #66): the
+     * staged rollout's cohort resolution reads the release's frozen
+     * target tenant set — registry-probed, the caller's own standing
+     * the guard (the staged surfaces verify the plan's organization
+     * before any of this reads). Frozen at creation, so the answer is
+     * stable for a release's whole life.
+     */
+    Set<UUID> distributionTargetTenantIdsOf(UUID releaseId);
+
+    /**
+     * The distribution-served targeted groups (S13-06, issue #66):
+     * every tester group every target selected, tenant-addressed —
+     * the staged arms' group mapping walks this set, registry-probed
+     * like the target set.
+     */
+    List<ReleaseTargetGroup> distributionTargetGroupsOf(UUID releaseId);
+
+    /**
      * The release's frozen artifact selection (S13-01, issue #61): one
      * slot per platform, the id and platform the distribution
      * dispatcher addresses its records by. Empty for an unknown
@@ -171,6 +199,33 @@ public interface ReleaseAccess {
      * construction not the release's owning scope.
      */
     Optional<ReleaseFacts> telemetryFactsOf(UUID releaseId, UUID reporterTenantId);
+
+    /**
+     * Carries an ACTIVE release across PRD 17's ROLLED_BACK edge
+     * (S13-06, issue #66, AC4 — the orchestrated rollback's
+     * release-side half): the same transition ceremony the operator
+     * route runs — the CAS, the mandatory reason, the timeline row,
+     * the {@code RELEASE_TRANSITIONED} audit and event — invoked by
+     * the distribution module's one-action rollback so the release
+     * state, the channel records, and the staged plan land as one
+     * governed act. The direct-download cutoff follows the state (the
+     * {@code RolledBackCutoffPolicy} seam, S9-02); artifacts are
+     * never touched (INV-008).
+     *
+     * <p>Refuses exactly like the route: a release not sitting on
+     * ACTIVE answers the precise illegal-crossing conflict (a
+     * PROMOTED or terminal release keeps its own state), an unknown
+     * or out-of-scope release the concealed miss.
+     *
+     * @param organizationId the organization the caller established
+     *                       standing over (the release's own guard)
+     * @param releaseId      the release the rollback pulls
+     * @param actorId        the operator running the rollback (the
+     *                       timeline row names them)
+     * @param reason         the mandatory rollback reason (FR-024 —
+     *                       the pulled release says why)
+     */
+    void rollbackActiveRelease(UUID organizationId, UUID releaseId, UUID actorId, String reason);
 
     /**
      * The release facts the approval engine acts on: the owning

@@ -95,6 +95,15 @@ public class PlayRolloutService {
 
     private static final String CHANNEL = "play";
 
+    /**
+     * The view's observe-persist attempts before the precise 409
+     * translation (the #65 reviewer's follow-up): the observation is
+     * idempotent, so a lost version race retries on the winner's row;
+     * two losses in a row is real contention, answered as the
+     * control path's own conflict.
+     */
+    private static final int VIEW_PERSIST_ATTEMPTS = 3;
+
     /** The advance action: the curve widens to a strictly greater percentage (AC1). */
     public static final String ACTION_ADVANCE = "ADVANCE";
 
@@ -114,6 +123,7 @@ public class PlayRolloutService {
     private final ReleaseAccess releases;
     private final EnvironmentAccess environments;
     private final ReleaseRolloutPolicyGate policyGate;
+    private final com.shipperdog.api.distribution.internal.service.StagedRolloutReader stagedRollouts;
     private final GooglePlayDeveloperApiClient play;
     private final AdapterCallSandbox sandbox;
     private final AuditLogger audit;
@@ -127,6 +137,7 @@ public class PlayRolloutService {
             ReleaseAccess releases,
             EnvironmentAccess environments,
             ReleaseRolloutPolicyGate policyGate,
+            com.shipperdog.api.distribution.internal.service.StagedRolloutReader stagedRollouts,
             GooglePlayDeveloperApiClient play,
             AdapterCallSandbox sandbox,
             AuditLogger audit,
@@ -138,6 +149,7 @@ public class PlayRolloutService {
         this.releases = releases;
         this.environments = environments;
         this.policyGate = policyGate;
+        this.stagedRollouts = stagedRollouts;
         this.play = play;
         this.sandbox = sandbox;
         this.audit = audit;
@@ -172,7 +184,7 @@ public class PlayRolloutService {
         if (rollouts.findByReleaseIdAndChannel(event.releaseId(), CHANNEL).isPresent()) {
             return;
         }
-        int intended = configuredInitialPercentOf(event.releaseId());
+        int intended = stagedInitialPercentOf(event.releaseId(), configuredInitialPercentOf(event.releaseId()));
         boolean fullList = intended >= 100;
         ChannelRolloutEntity state = new ChannelRolloutEntity(
                 event.releaseId(),
@@ -221,6 +233,117 @@ public class PlayRolloutService {
         }
     }
 
+    /**
+     * The staged plan's initial percentage (S13-06, #66, AC3): a
+     * release running a staged TENANT rollout starts its play curve
+     * at the plan's serving-stage coverage — the cohort's share of
+     * the target population (a PERCENT stage's own number), never
+     * the channel config's — so the store side and the platform side
+     * widen together. A release with no running staged plan keeps the
+     * configured answer.
+     */
+    private int stagedInitialPercentOf(UUID releaseId, int configured) {
+        return stagedRollouts
+                .narrowingStandingOf(releaseId)
+                .map(standing -> {
+                    int targets =
+                            releases.distributionTargetTenantIdsOf(releaseId).size();
+                    if (targets == 0) {
+                        return configured;
+                    }
+                    long share = Math.round(standing.reachedTenantIds().size() * 100.0d / targets);
+                    return (int) Math.min(100, Math.max(1, share));
+                })
+                .orElse(configured);
+    }
+
+    // -------------------------------------------------------------------------
+    // The staged tenant rollout's arms (S13-06, issue #66)
+    // -------------------------------------------------------------------------
+
+    /**
+     * The staged engine's widening arm (S13-06, AC3): a staged stage's
+     * cumulative tenant coverage applied to the play curve as its
+     * user-fraction equivalent — the store's own widening mechanism,
+     * driven by the plan's own axis. The policy gate is NOT consulted
+     * here: the staged engine owns the one consult (one evaluation,
+     * one evidence trail) before any channel arm applies. The arm
+     * never overrides the store side's own standing: a curve the
+     * operator halted stays halted (the honest answer, recorded), and
+     * a concurrent control's version race answers the arm's
+     * concurrent-control verdict, never a throw — the staged
+     * advancement's platform state is not the curve's to veto and
+     * vice versa.
+     *
+     * @return the arm's outcome vocabulary: advanced, already-at-or-
+     *         beyond, curve-halted, curve-complete, no-store-curve,
+     *         concurrent-control
+     */
+    @Transactional
+    public String widenForStagedRollout(UUID organizationId, UUID releaseId, int toPercent, UUID actorId) {
+        ChannelRolloutEntity state = rollouts.findByReleaseIdAndChannelAndOrganizationId(
+                        releaseId, CHANNEL, organizationId)
+                .orElse(null);
+        if (state == null) {
+            // A testing-track or full-list play release carries no
+            // curve: the plan's widening is the platform-side cohort
+            // alone on this channel.
+            return "no-store-curve";
+        }
+        if (state.getStatus() == ChannelRolloutEntity.Status.COMPLETE) {
+            return "curve-complete";
+        }
+        if (state.getStatus() != ChannelRolloutEntity.Status.ROLLING) {
+            return "curve-halted";
+        }
+        if (toPercent <= state.getIntendedPercent()) {
+            return "already-at-or-beyond";
+        }
+        try {
+            int from = state.getIntendedPercent();
+            ProviderObservation echo = applyToProvider(state, "inProgress", toPercent / 100.0d);
+            state.intend(toPercent);
+            state.observe(echo.percent());
+            rollouts.saveAndFlush(state);
+            stepAndAudit(state, ChannelRolloutStepEntity.Action.ADVANCE, from, toPercent, actorId);
+            return "advanced";
+        } catch (org.springframework.dao.OptimisticLockingFailureException e) {
+            return "concurrent-control";
+        }
+    }
+
+    /**
+     * The orchestrated rollback's play arm (S13-06, AC4): HALT the
+     * production curve — always allowed, never gated (stopping
+     * distribution is never a policy question), tolerant by design:
+     * no curve, an already-halted curve, or a concurrent control each
+     * answer their honest verdict, never a throw — the rollback's
+     * other arms are not the curve's to veto.
+     */
+    @Transactional
+    public String haltForStagedRollback(UUID organizationId, UUID releaseId, UUID actorId) {
+        ChannelRolloutEntity state = rollouts.findByReleaseIdAndChannelAndOrganizationId(
+                        releaseId, CHANNEL, organizationId)
+                .orElse(null);
+        if (state == null) {
+            return "no-store-curve";
+        }
+        if (state.getStatus() != ChannelRolloutEntity.Status.ROLLING) {
+            return "already-halted";
+        }
+        try {
+            int from = state.getIntendedPercent();
+            ProviderObservation echo = applyToProvider(state, "halted", from / 100.0d);
+            state.move(ChannelRolloutEntity.Status.HALTED);
+            state.observe(echo.percent());
+            rollouts.saveAndFlush(state);
+            stepAndAudit(state, ChannelRolloutStepEntity.Action.HALT, from, from, actorId);
+            return "halted";
+        } catch (org.springframework.dao.OptimisticLockingFailureException e) {
+            return "concurrent-control";
+        }
+    }
+
     // -------------------------------------------------------------------------
     // The view: the curve's state for the dashboard (AC2/AC5)
     // -------------------------------------------------------------------------
@@ -233,41 +356,64 @@ public class PlayRolloutService {
      * line reports is a fact of the record, not of the read), and a
      * provider-observed completion moves the curve to COMPLETE.
      *
+     * <p><strong>The view-path optimistic-conflict translation</strong>
+     * (the #65 reviewer's follow-up, landed by S13-06): the
+     * observation's persist can lose the version race to a concurrent
+     * control action — a dashboard READ must never answer a generic
+     * 500 for losing that race. The view retries the observe-persist
+     * on a fresh row (the observation is idempotent — the provider's
+     * answer overwrites forward) and, should the contention persist,
+     * answers the control path's own precise 409
+     * {@code DISTRIBUTION_ROLLOUT_CONFLICT} — the conflict is real,
+     * the shape is the platform's, and the operator reloads.
+     *
      * @throws DistributionException DISTRIBUTION_ROLLOUT_NOT_FOUND for
      *                               the concealed miss (no rollout, or
      *                               a foreign organization's)
      */
     @Transactional
     public RolloutView view(UUID organizationId, UUID releaseId) {
-        ChannelRolloutEntity state = rolloutOf(organizationId, releaseId);
-        String[] reference = referenceOf(state.getExternalId());
-        GooglePlayCredentials credential = credentialOf(state);
-        long versionCode = Long.parseLong(reference[1]);
-        AdapterCallSandbox.Result<ProviderObservation> observed = sandbox.run(
-                CHANNEL, "rollout-view", attempt -> observe(credential, reference[2], reference[0], versionCode));
-        if (observed.failure() != null) {
-            throw problemOf(observed.failure());
+        for (int attempt = 0; attempt < VIEW_PERSIST_ATTEMPTS; attempt++) {
+            ChannelRolloutEntity state = rolloutOf(organizationId, releaseId);
+            String[] reference = referenceOf(state.getExternalId());
+            GooglePlayCredentials credential = credentialOf(state);
+            long versionCode = Long.parseLong(reference[1]);
+            AdapterCallSandbox.Result<ProviderObservation> observed = sandbox.run(
+                    CHANNEL, "rollout-view", attemptNo -> observe(credential, reference[2], reference[0], versionCode));
+            if (observed.failure() != null) {
+                throw problemOf(observed.failure());
+            }
+            ProviderObservation answer = observed.answer();
+            if (answer == null) {
+                throw new DistributionException(
+                        DistributionException.Code.DISTRIBUTION_ROLLOUT_NOT_FOUND,
+                        "the production track no longer carries the release's track release on the store side");
+            }
+            Integer previous = state.getObservedPercent();
+            state.observe(answer.percent());
+            if ("completed".equals(answer.status())) {
+                state.move(ChannelRolloutEntity.Status.COMPLETE);
+            }
+            try {
+                rollouts.saveAndFlush(state);
+            } catch (org.springframework.dao.OptimisticLockingFailureException e) {
+                // A concurrent control won the version race: re-read
+                // the winner's row and re-apply THIS observation on
+                // top of it (the #65 follow-up's catch-and-retry).
+                continue;
+            }
+            boolean drift = answer.percent() != null && answer.percent() != state.getIntendedPercent();
+            if (drift && (previous == null || previous != answer.percent())) {
+                // The drift's FIRST observation is the report (the audit
+                // line AC5 names); steady-state drift is the standing the
+                // dashboard renders, never a new audit line per read.
+                auditDrift(organizationId, state, answer);
+            }
+            return viewOf(state, answer, drift);
         }
-        ProviderObservation answer = observed.answer();
-        if (answer == null) {
-            throw new DistributionException(
-                    DistributionException.Code.DISTRIBUTION_ROLLOUT_NOT_FOUND,
-                    "the production track no longer carries the release's track release on the store side");
-        }
-        Integer previous = state.getObservedPercent();
-        state.observe(answer.percent());
-        if ("completed".equals(answer.status())) {
-            state.move(ChannelRolloutEntity.Status.COMPLETE);
-        }
-        rollouts.save(state);
-        boolean drift = answer.percent() != null && answer.percent() != state.getIntendedPercent();
-        if (drift && (previous == null || previous != answer.percent())) {
-            // The drift's FIRST observation is the report (the audit
-            // line AC5 names); steady-state drift is the standing the
-            // dashboard renders, never a new audit line per read.
-            auditDrift(organizationId, state, answer);
-        }
-        return viewOf(state, answer, drift);
+        throw new DistributionException(
+                DistributionException.Code.DISTRIBUTION_ROLLOUT_CONFLICT,
+                "the rollout changed concurrently; reload and retry");
     }
 
     // -------------------------------------------------------------------------

@@ -89,12 +89,16 @@ class DistributionSchemaIntegrationTest {
                         "distributed_at",
                         "created_at",
                         "updated_at");
-        // The lifecycle reuses V1's own distribution_status vocabulary.
+        // The lifecycle reuses V1's own distribution_status vocabulary,
+        // plus the rolled-back state the orchestrated rollback writes
+        // (V48, S13-06): the record keeps its external id and history —
+        // the state says the channel arm was pulled, never that the
+        // distribution never happened.
         String enumValues = jdbc.queryForObject(
                 "SELECT string_agg(enumlabel, ',' ORDER BY enumsortorder) FROM pg_enum e"
                         + " JOIN pg_type t ON t.oid = e.enumtypid WHERE t.typname = 'distribution_status'",
                 String.class);
-        assertThat(enumValues).isEqualTo("PENDING,DISTRIBUTING,DISTRIBUTED,FAILED");
+        assertThat(enumValues).isEqualTo("PENDING,DISTRIBUTING,DISTRIBUTED,FAILED,ROLLED_BACK");
     }
 
     @Test
@@ -198,6 +202,64 @@ class DistributionSchemaIntegrationTest {
         assertThat(columnsOf("channel_rollout_steps"))
                 .containsExactlyInAnyOrder(
                         "id", "rollout_id", "action", "from_percent", "to_percent", "actor_id", "occurred_at");
+    }
+
+    @Test
+    void stagedRolloutTablesHoldThePlanItsCohortsAndItsTimeline() {
+        // V48 (S13-06): the staged TENANT rollout -- ONE plan per release
+        // (the mode and standing under the optimistic stamp), the ordered
+        // stages with their denormalized cohort sizes, the deterministic
+        // cohort rows (membership IS the row, the seeded rank carried for
+        // reproducibility), and the append-only timeline. The record
+        // vocabulary gains ROLLED_BACK.
+        assertThat(columnsOf("staged_rollout_plans"))
+                .containsExactlyInAnyOrder(
+                        "id",
+                        "organization_id",
+                        "release_id",
+                        "application_id",
+                        "version_id",
+                        "mode",
+                        "status",
+                        "current_stage",
+                        "version",
+                        "created_by",
+                        "created_at",
+                        "updated_at");
+        Integer planGrain = jdbc.queryForObject(
+                "SELECT count(*) FROM pg_constraint WHERE conname = 'uq_staged_rollout_plans_release'", Integer.class);
+        assertThat(planGrain).isEqualTo(1);
+        assertThat(columnsOf("staged_rollout_stages"))
+                .containsExactlyInAnyOrder(
+                        "id",
+                        "plan_id",
+                        "position",
+                        "kind",
+                        "percent",
+                        "cohort_size",
+                        "status",
+                        "reached_at",
+                        "created_at",
+                        "updated_at");
+        Integer stageGrain = jdbc.queryForObject(
+                "SELECT count(*) FROM pg_constraint WHERE conname = 'uq_staged_rollout_stages_plan_position'",
+                Integer.class);
+        assertThat(stageGrain).isEqualTo(1);
+        assertThat(columnsOf("staged_rollout_cohorts"))
+                .containsExactlyInAnyOrder("id", "stage_id", "tenant_id", "rank", "created_at", "updated_at");
+        Integer cohortGrain = jdbc.queryForObject(
+                "SELECT count(*) FROM pg_constraint WHERE conname = 'uq_staged_rollout_cohorts_stage_tenant'",
+                Integer.class);
+        assertThat(cohortGrain).isEqualTo(1);
+        assertThat(columnsOf("staged_rollout_events"))
+                .containsExactlyInAnyOrder(
+                        "id", "plan_id", "action", "stage_position", "channel", "detail", "actor_id", "occurred_at");
+        // The record vocabulary's new terminal state (the rollback's own).
+        String enumValues = jdbc.queryForObject(
+                "SELECT string_agg(enumlabel, ',' ORDER BY enumsortorder) FROM pg_enum e"
+                        + " JOIN pg_type t ON t.oid = e.enumtypid WHERE t.typname = 'distribution_status'",
+                String.class);
+        assertThat(enumValues).isEqualTo("PENDING,DISTRIBUTING,DISTRIBUTED,FAILED,ROLLED_BACK");
     }
 
     @Test

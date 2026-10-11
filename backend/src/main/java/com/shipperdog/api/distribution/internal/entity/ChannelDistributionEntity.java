@@ -34,12 +34,20 @@ import org.hibernate.type.SqlTypes;
 @Table(name = "channel_distributions")
 public class ChannelDistributionEntity {
 
-    /** The record's lifecycle, reused from V1's {@code distribution_status} vocabulary. */
+    /**
+     * The record's lifecycle, reused from V1's {@code
+     * distribution_status} vocabulary plus the rolled-back state the
+     * orchestrated rollback writes (S13-06, V48): a ROLLED_BACK record
+     * keeps its external id and history — the state says the channel
+     * arm was pulled, never that the distribution never happened
+     * (INV-006's character).
+     */
     public enum Status {
         PENDING,
         DISTRIBUTING,
         DISTRIBUTED,
-        FAILED
+        FAILED,
+        ROLLED_BACK
     }
 
     @Id
@@ -206,6 +214,17 @@ public class ChannelDistributionEntity {
         if (this.status == Status.DISTRIBUTED && this.distributedAt == null) {
             this.distributedAt = at;
         }
+    }
+
+    /**
+     * The orchestrated rollback pulls the record (S13-06, #66, AC4):
+     * the state moves to ROLLED_BACK — the external id, failure code,
+     * and history stay (the record of what the channel DID), only the
+     * standing moves. Not an adapter report: the rollback is the
+     * platform's own act, so it does not ride the report path.
+     */
+    public void markRolledBack() {
+        this.status = Status.ROLLED_BACK;
     }
 
     /** The adapter report as the record stores it (verbatim; the framework adds only bookkeeping). */

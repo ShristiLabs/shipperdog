@@ -167,6 +167,25 @@ public class AppStoreConnectClient {
         post(credential, "/v1/betaGroups/" + groupId + "/relationships/builds", relationshipBody(TYPE_BUILDS, buildId));
     }
 
+    /**
+     * Removes one build from one beta group (the staged rollout's
+     * revert arm, S13-06, issue #66, AC4): the orchestrated rollback's
+     * TestFlight half — the release's build leaves the mapped groups,
+     * idempotent on ASC's side (a group already without the build
+     * answers success).
+     */
+    public void removeBuildFromGroup(AppleCredentials credential, String groupId, String buildId) {
+        exchange(
+                credential,
+                () -> http.method(org.springframework.http.HttpMethod.DELETE)
+                        .uri("/v1/betaGroups/" + groupId + "/relationships/builds")
+                        .headers(headers -> headers.setBearerAuth(signer.tokenOf(credential)))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .body(relationshipBody(TYPE_BUILDS, buildId))
+                        .retrieve()
+                        .body(JsonNode.class));
+    }
+
     /** The builds currently assigned to a beta group (the drift half of reconciliation, AC5). */
     public List<String> buildIdsOfGroup(AppleCredentials credential, String groupId) {
         List<String> builds = new ArrayList<>();

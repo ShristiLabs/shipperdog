@@ -456,5 +456,40 @@ public enum AuditEventType {
      * the re-apply of intent is ALWAYS an explicit operator action,
      * never a silent correction.
      */
-    DISTRIBUTION_ROLLOUT_DRIFT
+    DISTRIBUTION_ROLLOUT_DRIFT,
+    /**
+     * One staged TENANT rollout plan authored (S13-06, issue #66,
+     * AC1): the release, the advancement mode, and the ordered stages
+     * with their resolved cohort sizes -- the deterministic selection
+     * (seeded by the release id) is inspectable on the plan's own
+     * view before any advancement runs.
+     */
+    STAGED_ROLLOUT_PLANNED,
+    /**
+     * One staged rollout stage executed across the channels (S13-06,
+     * issue #66, AC2/AC3): the release, the stage's position and
+     * cumulative coverage, the newly reached tenants, the channel
+     * arms' outcomes, and the actor (the commencement's STARTED and
+     * every later stage's approval-driven ADVANCE land here; the
+     * timeline table carries the same facts as the first-class read).
+     */
+    STAGED_ROLLOUT_ADVANCED,
+    /**
+     * A staged rollout advancement refused (S13-06, issue #66, AC2):
+     * the failing gate or policy rule's reference and evidence, or
+     * the failed dispatch records that own the refusal under the
+     * dispatch-failure rollback ownership doctrine -- the block is
+     * loud, never a silent stall.
+     */
+    STAGED_ROLLOUT_BLOCKED,
+    /**
+     * The orchestrated rollback (S13-06, issue #66, AC4): ONE action
+     * pulled the staged rollout -- the release crossed to ROLLED_BACK
+     * (direct downloads cut by the state), the TestFlight group
+     * assignments reverted, the Play rollout halted, the Apple phased
+     * curve halted where one ran, the channel records moved to the
+     * rolled-back state, and the artifacts stayed untouched
+     * (INV-008). The mandatory reason rides the line (FR-024).
+     */
+    STAGED_ROLLOUT_ROLLED_BACK
 }

@@ -157,6 +157,8 @@ references. Wiring ([distribution.md](distribution.md)):
 | `DISTRIBUTION_GOOGLE-PLAY__READ_TIMEOUT` | the Google Play client (S13-04) | default `PT60S`; the AAB media upload rides it, so size the timeout to the artifact sizes a dispatch carries (the sandbox's own wall applies above it: `DISTRIBUTION_ADAPTERS__PLAY__TIMEOUT`) |
 | `DISTRIBUTION_RECONCILIATION__ENABLED` | the reconciliation pass (S13-02) | `false` (default — a self-hosted stack never wakes up dialing Apple) or `true` (production with store connectors in service: the pass refreshes PENDING/DISTRIBUTING store records through the adapters' status answers) |
 | `DISTRIBUTION_RECONCILIATION__FIXED_DELAY` | the reconciliation pass | cadence between passes; default `PT15M` |
+| `DISTRIBUTION_STAGED_ROLLOUT__ADVANCEMENT__ENABLED` | the staged tenant rollout advancement pass (S13-06) | `false` (default — an unattended pass that widens production rollouts is a deployment's own decision) or `true` (the AUTOMATIC mode's unattended cadence: every RUNNING AUTOMATIC plan gets one policy-gated advancement attempt per pass; the ADVANCE action on the staged rollout route serves the same engine everywhere, and CHECKPOINT plans are never advanced unattended) |
+| `DISTRIBUTION_STAGED_ROLLOUT__ADVANCEMENT__FIXED_DELAY` | the staged rollout advancement pass | cadence between passes; default `PT5M` |
 
 The App Store production channel's phased release (S13-03) is an
 ENVIRONMENT CONFIGURATION key, not a process env var: set

@@ -468,3 +468,96 @@ export function listPlayTracks(
     `/distribution/play/tracks?organizationId=${organizationId}&applicationId=${applicationId}`,
   );
 }
+
+/** The release's staged TENANT rollout (S13-06, AC1/AC3): the plan's
+ * mode and standing, every stage with its resolved cohort, the
+ * per-tenant progress, and the append-only timeline. */
+export interface StagedRolloutView {
+  releaseId: string;
+  mode: "AUTOMATIC" | "CHECKPOINT";
+  status: "PLANNED" | "RUNNING" | "COMPLETE" | "ROLLED_BACK";
+  currentStage: number | null;
+  stages: StagedRolloutStageView[];
+  tenantProgress: StagedRolloutTenantProgress[];
+  timeline: StagedRolloutEventView[];
+}
+
+/** One stage (AC1): its shape, its resolved cohort (inspectable before
+ * advancement), and its standing. */
+export interface StagedRolloutStageView {
+  position: number;
+  kind: "PERCENT" | "EXPLICIT";
+  percent: number | null;
+  cohortSize: number;
+  status: "PENDING" | "REACHED" | "ROLLED_BACK";
+  reachedAt: string | null;
+  cohort: string[];
+}
+
+/** One target tenant's progress (AC3): the stage that reached it, or
+ * null while not yet reached. */
+export interface StagedRolloutTenantProgress {
+  tenantId: string;
+  reachedAtStage: number | null;
+  reachedAt: string | null;
+}
+
+/** One timeline row (the append-only ledger beside the audit trail). */
+export interface StagedRolloutEventView {
+  action:
+    | "PLANNED"
+    | "STARTED"
+    | "STAGE_APPROVED"
+    | "STAGE_ADVANCED"
+    | "STAGE_BLOCKED"
+    | "CHANNEL_APPLIED"
+    | "COMPLETED"
+    | "ROLLED_BACK";
+  stagePosition: number | null;
+  channel: string | null;
+  detail: string | null;
+  actorId: string | null;
+  occurredAt: string;
+}
+
+/** One authoring stage: a percentage of the target population, or an
+ * explicit tenant list (exactly one of the two shapes). */
+export interface StagedRolloutStageInput {
+  percent?: number;
+  tenants?: string[];
+}
+
+/** Authors the release's staged rollout plan (S13-06, AC1): the
+ * deterministic seeded selection resolves every stage's cohort at
+ * write time. */
+export function putStagedRollout(
+  organizationId: string,
+  releaseId: string,
+  mode: "AUTOMATIC" | "CHECKPOINT",
+  stages: StagedRolloutStageInput[],
+): Promise<StagedRolloutView> {
+  return apiFetch(`/distribution/releases/${releaseId}/staged-rollout?organizationId=${organizationId}`, {
+    method: "PUT",
+    body: { mode, stages },
+  });
+}
+
+/** The release's staged rollout for the dashboard. */
+export function getStagedRollout(organizationId: string, releaseId: string): Promise<StagedRolloutView> {
+  return apiFetch(`/distribution/releases/${releaseId}/staged-rollout?organizationId=${organizationId}`);
+}
+
+/** One staged rollout action (S13-06, AC2/AC4): ADVANCE — the
+ * checkpoint stage approval or the gated automatic widening — or
+ * ROLLBACK, the one-action orchestrated pull (reason mandatory). */
+export function controlStagedRollout(
+  organizationId: string,
+  releaseId: string,
+  action: "ADVANCE" | "ROLLBACK",
+  reason?: string,
+): Promise<StagedRolloutView> {
+  return apiFetch(`/distribution/releases/${releaseId}/staged-rollout?organizationId=${organizationId}`, {
+    method: "POST",
+    body: reason === undefined ? { action } : { action, reason },
+  });
+}

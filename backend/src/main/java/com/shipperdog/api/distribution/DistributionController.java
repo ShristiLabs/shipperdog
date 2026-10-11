@@ -58,6 +58,7 @@ public class DistributionController {
     private final PlayGroupService playGroups;
     private final PlayReleaseNotesService playReleaseNotes;
     private final com.shipperdog.api.distribution.internal.google.PlayRolloutService playRollout;
+    private final com.shipperdog.api.distribution.internal.service.StagedTenantRolloutService stagedRollouts;
 
     public DistributionController(
             DistributionAdapterRegistry registry,
@@ -68,7 +69,8 @@ public class DistributionController {
             AppStorePhasedReleaseService appStorePhasedRelease,
             PlayGroupService playGroups,
             PlayReleaseNotesService playReleaseNotes,
-            com.shipperdog.api.distribution.internal.google.PlayRolloutService playRollout) {
+            com.shipperdog.api.distribution.internal.google.PlayRolloutService playRollout,
+            com.shipperdog.api.distribution.internal.service.StagedTenantRolloutService stagedRollouts) {
         this.registry = registry;
         this.credentials = credentials;
         this.dispatch = dispatch;
@@ -78,6 +80,7 @@ public class DistributionController {
         this.playGroups = playGroups;
         this.playReleaseNotes = playReleaseNotes;
         this.playRollout = playRollout;
+        this.stagedRollouts = stagedRollouts;
     }
 
     /** The channel catalog: every registered adapter with its capabilities and credential providers. */
@@ -456,6 +459,70 @@ public class DistributionController {
         playReleaseNotes.delete(notesId, organizationId, requireUserId(principal));
     }
 
+    // -------------------------------------------------------------------------
+    // The staged TENANT rollout (S13-06, #66)
+    // -------------------------------------------------------------------------
+
+    /**
+     * The release's staged rollout plan (S13-06, AC1/AC3): the mode,
+     * the standing, every stage with its resolved cohort (inspectable
+     * before any advancement), the per-tenant progress, and the
+     * append-only timeline — the release dashboard's staged answer.
+     */
+    @GetMapping("/releases/{releaseId}/staged-rollout")
+    @PreAuthorize("hasPermission(#organizationId, 'organization', 'org:distribution:read')")
+    com.shipperdog.api.distribution.internal.service.StagedTenantRolloutService.StagedRolloutView stagedRolloutView(
+            @PathVariable UUID releaseId, @RequestParam UUID organizationId) {
+        return stagedRollouts.view(organizationId, releaseId);
+    }
+
+    /**
+     * Authors the release's staged rollout plan (S13-06, AC1): the
+     * advancement mode and the ordered stages — each a percentage of
+     * the target population or an explicit tenant list — resolved
+     * through the deterministic seeded selection at write time. The
+     * release must sit before its ACTIVE crossing; the final stage
+     * must reach every target tenant.
+     */
+    @PutMapping("/releases/{releaseId}/staged-rollout")
+    @PreAuthorize("hasPermission(#organizationId, 'organization', 'org:distribution:manage')")
+    com.shipperdog.api.distribution.internal.service.StagedTenantRolloutService.StagedRolloutView putStagedRollout(
+            @AuthenticationPrincipal Object principal,
+            @PathVariable UUID releaseId,
+            @RequestParam UUID organizationId,
+            @RequestBody StagedRolloutPlanRequest request) {
+        return stagedRollouts.author(
+                organizationId,
+                releaseId,
+                requireUserId(principal),
+                request.mode(),
+                request.stages() == null
+                        ? List.of()
+                        : request.stages().stream()
+                                .map(stage ->
+                                        new com.shipperdog.api.distribution.internal.service.StagedTenantRolloutService
+                                                .StageRequest(stage.percent(), stage.tenants()))
+                                .toList());
+    }
+
+    /**
+     * One staged rollout action (S13-06, AC2/AC4): ADVANCE — the
+     * checkpoint stage approval or the gated automatic widening (the
+     * policy engine's denial and the dispatch-failure ownership rule
+     * both answer the precise 409) — or ROLLBACK, the one-action
+     * orchestrated pull (reason mandatory).
+     */
+    @PostMapping("/releases/{releaseId}/staged-rollout")
+    @PreAuthorize("hasPermission(#organizationId, 'organization', 'org:distribution:manage')")
+    com.shipperdog.api.distribution.internal.service.StagedTenantRolloutService.StagedRolloutView controlStagedRollout(
+            @AuthenticationPrincipal Object principal,
+            @PathVariable UUID releaseId,
+            @RequestParam UUID organizationId,
+            @RequestBody StagedRolloutActionRequest request) {
+        return stagedRollouts.control(
+                organizationId, releaseId, requireUserId(principal), request.action(), request.reason());
+    }
+
     private static UUID requireUserId(Object principal) {
         if (principal instanceof org.springframework.security.oauth2.jwt.Jwt jwt) {
             return UUID.fromString(jwt.getSubject());
@@ -505,6 +572,25 @@ public class DistributionController {
      * when no same-named external one exists).
      */
     record TestFlightGroupLinkRequest(UUID organizationId, UUID applicationId, UUID groupId, Boolean createOnDemand) {}
+
+    /**
+     * The staged plan authoring body (S13-06, AC1): the advancement
+     * mode — AUTOMATIC (the policy engine decides between stages) or
+     * CHECKPOINT (a Release Manager approves each stage) — and the
+     * ordered stages, each a percentage of the target population or
+     * an explicit tenant list (exactly one of the two shapes).
+     */
+    record StagedRolloutPlanRequest(String mode, List<StagedRolloutStageRequest> stages) {}
+
+    /** One staged plan stage: a percentage, or an explicit tenant list. */
+    record StagedRolloutStageRequest(Integer percent, List<UUID> tenants) {}
+
+    /**
+     * The staged rollout action body (S13-06, AC2/AC4): ADVANCE or
+     * ROLLBACK; the reason is mandatory on ROLLBACK (the pulled
+     * release says why, FR-024).
+     */
+    record StagedRolloutActionRequest(String action, String reason) {}
 
     /**
      * The metadata authoring write's body (S13-03, AC1): the owning

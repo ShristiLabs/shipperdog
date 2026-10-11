@@ -229,9 +229,13 @@ never re-enters the machine, and its artifacts cannot be fixed in
 place: the artifact set froze the moment the release was created
 (INV-004). The fix path is a NEW version (carrying corrected
 artifacts) and a new release of it — the failure row and its reason
-stay as permanent history. Rollback of the direct channel is the same
-posture: `ROLLED_BACK` is terminal in M2 (store-channel rollback
-orchestration is S13-06).
+stay as permanent history. Rollback is the same posture:
+`ROLLED_BACK` is terminal, and since S13-06 the ONE-action
+orchestrated rollback lands it — the staged rollout surface pulls
+the release across this edge (direct downloads cut, TestFlight
+assignments reverted, Play halted, channel records rolled back)
+while the artifacts stay untouched (see
+[distribution](distribution.md)).
 
 ### History — `GET /api/v1/releases/{releaseId}/history?applicationId=…`
 
