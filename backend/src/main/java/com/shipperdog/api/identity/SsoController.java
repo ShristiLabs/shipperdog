@@ -1,6 +1,7 @@
 package com.shipperdog.api.identity;
 
 import com.shipperdog.api.identity.internal.AuthException;
+import com.shipperdog.api.identity.internal.service.SamlLoginService;
 import com.shipperdog.api.identity.internal.service.SsoLoginService;
 import com.shipperdog.api.identity.internal.service.TokenService;
 import java.net.URI;
@@ -15,26 +16,31 @@ import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 /**
- * The OIDC single sign-on flow's anonymous endpoints (S14-01, issue
- * #67): the console's SSO probe, the backend-driven authorization
- * redirect, the provider callback, the one-time session-code exchange,
- * and the OIDC Back-Channel Logout receiver. All are matched by the
- * identity security chain's permitAll and carry no method security by
- * design -- the flow's own one-time state and cryptographic
- * verification ARE the authority (EndpointSecurityAnnotationTest's
- * anonymous allowlist).
+ * The SSO flow's anonymous endpoints (S14-01 issue #67, SAML joined
+ * S14-02 issue #68): the console's SSO probe, the backend-driven
+ * authorization redirect (dispatched by the organization's configured
+ * provider kind -- OIDC authorization-code or SAML AuthnRequest), the
+ * OIDC provider callback, the one-time session-code exchange shared
+ * by every provider kind, and the OIDC Back-Channel Logout receiver.
+ * All are matched by the identity security chain's permitAll and
+ * carry no method security by design -- the flows' own one-time state
+ * and cryptographic verification ARE the authority
+ * (EndpointSecurityAnnotationTest's anonymous allowlist).
  *
- * <p>The configuration surface lives on {@link SsoConfigController};
- * this controller is the flow alone.
+ * <p>The SAML-specific routes (SP metadata, the ACS) live on
+ * {@link SamlController}; the configuration surface lives on
+ * {@link SsoConfigController}.
  */
 @RestController
 @RequestMapping("/api/v1/auth/sso")
 public class SsoController {
 
     private final SsoLoginService sso;
+    private final SamlLoginService saml;
 
-    SsoController(SsoLoginService sso) {
+    SsoController(SsoLoginService sso, SamlLoginService saml) {
         this.sso = sso;
+        this.saml = saml;
     }
 
     /**
@@ -43,27 +49,31 @@ public class SsoController {
      */
     @GetMapping("/options")
     SsoOptionsResponse options(@RequestParam UUID organizationId) {
-        if (!sso.ssoOffered(organizationId)) {
-            throw new AuthException(
-                    AuthException.Code.NOT_FOUND, "single sign-on is not configured for this organization");
-        }
-        return new SsoOptionsResponse(organizationId, "OIDC");
+        String providerType = sso.providerTypeOf(organizationId)
+                .orElseThrow(() -> new AuthException(
+                        AuthException.Code.NOT_FOUND, "single sign-on is not configured for this organization"));
+        return new SsoOptionsResponse(organizationId, providerType);
     }
 
     /**
-     * Starts the flow: 302 to the provider's authorization endpoint
-     * with state, nonce, and the S256 PKCE challenge.
+     * Starts the flow: 302 to the provider's authorization surface --
+     * the OIDC provider's authorization endpoint (state, nonce, S256
+     * PKCE challenge) or the SAML IdP's Redirect-binding SSO location
+     * (DEFLATE+b64 AuthnRequest, RelayState, optional SP signature),
+     * whichever kind the organization configured.
      */
     @GetMapping("/authorize")
     ResponseEntity<Void> authorize(@RequestParam UUID organizationId) {
-        String location = sso.beginAuthorization(organizationId);
+        String location = "SAML".equals(sso.providerTypeOf(organizationId).orElse(null))
+                ? saml.beginAuthorization(organizationId)
+                : sso.beginAuthorization(organizationId);
         return ResponseEntity.status(HttpStatus.FOUND)
                 .location(URI.create(location))
                 .build();
     }
 
     /**
-     * The provider's redirect back. Always a 302 to the console: the
+     * The OIDC provider's redirect back. Always a 302 to the console: the
      * one-time session code on success, the uniform {@code error=sso}
      * on every failure (the distinct reason lives on the audit line).
      */
@@ -80,7 +90,8 @@ public class SsoController {
 
     /**
      * Exchanges the one-time session code for the session pair -- the
-     * same shape {@code POST /api/v1/auth/login} answers with.
+     * same shape {@code POST /api/v1/auth/login} answers with, for
+     * every provider kind.
      */
     @PostMapping("/exchange")
     TokenResponse exchange(@RequestBody ExchangeRequest request) {
@@ -100,7 +111,7 @@ public class SsoController {
         return ResponseEntity.noContent().build();
     }
 
-    /** The console probe's answer: this organization offers OIDC SSO. */
+    /** The console probe's answer: this organization's SSO provider kind. */
     public record SsoOptionsResponse(UUID organizationId, String providerType) {}
 
     /** Session-code exchange request. */

@@ -52,7 +52,9 @@ class OidcIdTokenVerifierTest {
                     Duration.ofSeconds(60),
                     Duration.ofMinutes(10),
                     Duration.ofMinutes(10),
-                    Duration.ofSeconds(60)));
+                    Duration.ofSeconds(60),
+                    "",
+                    ""));
 
     OidcIdTokenVerifierTest() throws Exception {
         rsaKey = new RSAKeyGenerator(2048)

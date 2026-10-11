@@ -65,11 +65,12 @@ shipperdog:
     password-reset-ttl: ${AUTH_PASSWORD_RESET_TTL:PT30M}
     invitation-ttl: ${AUTH_INVITATION_TTL:P3D}
   sso:
-    # The OIDC relying party's deployment posture (S14-01): where this
-    # API's own callback lives (the redirect_uri registered with every
-    # identity provider) and where the console expects its SSO landing
-    # route. Production points both at its real origins; the defaults
-    # are the local development ports.
+    # The SSO deployment posture (S14-01 OIDC, S14-02 SAML): where this
+    # API's own callbacks live (the OIDC redirect_uri registered with
+    # every identity provider; the per-organization SAML SP entityID
+    # and ACS derive from the same base) and where the console expects
+    # its SSO landing route. Production points both at its real
+    # origins; the defaults are the local development ports.
     redirect-base-uri: ${SSO_REDIRECT_BASE_URI:http://localhost:8080}
     console-callback-uri: ${SSO_CONSOLE_CALLBACK_URI:http://localhost:5173/sso/callback}
     authorization-request-ttl: ${SSO_AUTHORIZATION_REQUEST_TTL:PT10M}
@@ -77,6 +78,14 @@ shipperdog:
     discovery-cache-ttl: ${SSO_DISCOVERY_CACHE_TTL:PT10M}
     jwks-cache-ttl: ${SSO_JWKS_CACHE_TTL:PT10M}
     clock-skew: ${SSO_CLOCK_SKEW:PT1M}
+    # The optional SAML SP signing pair (S14-02): a PKCS#8 PEM private
+    # key and its X.509 certificate, supplied by the deployment
+    # environment and never committed. Blank (the default) is the
+    # unsigned posture -- unsigned AuthnRequests and an SP metadata
+    # document without a signing KeyDescriptor, which Entra, Okta, and
+    # Google Workspace all accept.
+    saml-sp-signing-key: ${SSO_SAML_SP_SIGNING_KEY:}
+    saml-sp-signing-cert: ${SSO_SAML_SP_SIGNING_CERT:}
   artifact:
     # Object storage (issue #20, S5-01, FR-007/PRD 24, ADR-0003):
     # binaries live in object storage under the PRD 24 layout,

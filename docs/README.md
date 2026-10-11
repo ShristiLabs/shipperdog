@@ -16,7 +16,9 @@ Current contents:
   policy, seed fixture, and the forward-only rollback strategy (S1-02).
 - [Authentication](authentication.md) — identity module endpoints, token
   semantics (rotation, family revocation, PATs), lockout and reset
-  behavior, AUTH_* configuration (S1-03).
+  behavior, AUTH_* configuration (S1-03), and organization-scoped
+  single sign-on — OIDC (S14-01) and SAML (S14-02) over one shared
+  identity-resolution layer.
 - [Authorization](authorization.md) — RBAC permission catalog and role
   matrix, the single enforcement point, deny-by-default and opaque
   denials, role-assignment endpoints and guards (S1-05); the layered
@@ -167,6 +169,7 @@ Current contents:
 - [ADR-0006: Portal and console sessions stay in localStorage for M1, hardened by CSP](adr/ADR-0006-portal-session-token-storage.md)
 - [ADR-0007: The domain-event bus ships in-process over a transactional outbox; the broker is a swap behind one port](adr/ADR-0007-event-bus-transport.md)
 - [ADR-0008: Credential material lives behind a secret-store port — GCP Secret Manager in production, an AES-256-GCM envelope store as the self-hostable default](adr/ADR-0008-credential-secret-storage.md)
+- [ADR-0009: SAML Response validation is a scoped in-house layer over Apache Santuario's XML-DSig — never a hand-rolled signature path, never a full SAML object framework](adr/ADR-0009-saml-validation-stack.md)
 - [Distribution: channel adapters and credential delegation](distribution.md) —
   the adapter SPI (S13-01): the one interface every delivery channel
   implements as a bean (capabilities, `distribute`/`status`, the

@@ -66,7 +66,8 @@ integrate the framework. Current vocabulary: identity
 `TOKEN_REVOKED`, `TOKEN_REUSE_DETECTED`, `PAT_CREATED`,
 `PAT_REVOKED`, and since S14-01 the SSO vocabulary
 (`SSO_LOGIN_SUCCESS`, `SSO_LOGIN_FAILURE` — carrying the distinct
-refusal reason the browser's uniform redirect never reveals,
+refusal reason the browser's uniform redirect never reveals; SAML
+refusals carry `saml_*` reasons since S14-02,
 `SSO_IDENTITY_LINKED`, `SSO_USER_JIT_PROVISIONED`, `SSO_ROLE_MAPPED`,
 `SSO_ACCOUNT_LOCKED`, `SSO_LOGOUT` — see
 [authentication](authentication.md)),

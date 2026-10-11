@@ -1,6 +1,7 @@
 package com.shipperdog.api.identity.internal.repository;
 
 import com.shipperdog.api.identity.internal.entity.OrganizationIdpConfigEntity;
+import java.util.Collection;
 import java.util.Optional;
 import java.util.UUID;
 import org.springframework.data.jpa.repository.JpaRepository;
@@ -11,4 +12,12 @@ public interface OrganizationIdpConfigRepository extends JpaRepository<Organizat
 
     Optional<OrganizationIdpConfigEntity> findFirstByIssuerUrlAndProviderTypeAndEnabledTrue(
             String issuerUrl, String providerType);
+
+    /**
+     * The SAML mandate's password-login gate (S14-02): does ANY of
+     * these organizations carry an ENABLED configuration that makes
+     * SSO the only credential? Platform administrators never reach
+     * this query (their break-glass exemption).
+     */
+    boolean existsByOrganizationIdInAndEnforceSsoLoginTrueAndEnabledTrue(Collection<UUID> organizationIds);
 }

@@ -1209,10 +1209,14 @@ final class IsolationEndpointRegistry {
                 // the probe answers a uniform miss (no org data), the
                 // redirect and callback carry only flow state -- the
                 // flow's own verification is the authority, like the
-                // anonymous download proxy below.
+                // anonymous download proxy below. The SAML SP metadata
+                // document (S14-02) is public registry material: it
+                // reveals the org's own SSO shape to anyone the org
+                // handed its entityID to and nothing cross-tenant.
                 "GET /api/v1/auth/sso/options",
                 "GET /api/v1/auth/sso/authorize",
-                "GET /api/v1/auth/sso/callback");
+                "GET /api/v1/auth/sso/callback",
+                "GET /api/v1/auth/sso/saml/{organizationId}/metadata");
     }
 
     private IsolationEndpointRegistry() {}

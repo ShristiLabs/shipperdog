@@ -49,6 +49,7 @@ public class AuthService {
     private final OrganizationAccess organizations;
     private final TesterAccounts testerAccounts;
     private final TransactionTemplate transactions;
+    private final SsoConfigService idpConfigs;
 
     AuthService(
             UserRepository users,
@@ -59,7 +60,8 @@ public class AuthService {
             AuditEventPublisher audit,
             OrganizationAccess organizations,
             TesterAccounts testerAccounts,
-            TransactionTemplate transactions) {
+            TransactionTemplate transactions,
+            SsoConfigService idpConfigs) {
         this.users = users;
         this.passwordEncoder = passwordEncoder;
         this.clock = clock;
@@ -69,6 +71,7 @@ public class AuthService {
         this.organizations = organizations;
         this.testerAccounts = testerAccounts;
         this.transactions = transactions;
+        this.idpConfigs = idpConfigs;
     }
 
     /**
@@ -144,6 +147,15 @@ public class AuthService {
                 audit(AuditEventType.LOGIN_FAILURE, user.getId(), block.auditReason());
                 throw invalidCredentials();
             });
+        }
+        if (!user.isPlatformAdmin() && idpConfigs.passwordLoginBlockedFor(user.getId())) {
+            // S14-02: an organization that enforces SSO-only login
+            // disables the password credential for its members -- the
+            // SAML mandate. Platform administrators keep their
+            // break-glass local login (never-lock-operators-out), and
+            // the response stays the uniform generic 401.
+            audit(AuditEventType.LOGIN_FAILURE, user.getId(), "sso_enforced");
+            throw invalidCredentials();
         }
 
         return transactions.execute(status -> {
