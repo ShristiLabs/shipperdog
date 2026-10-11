@@ -90,12 +90,21 @@ public class ArtifactDownloadService {
     /** The S5-05 format rule: AAB is Play-only, the direct channel serves APK. */
     private static final String AAB_FORMAT = "AAB";
 
+    /** The TestFlight channel's reference id (the distribution registry's vocabulary, S13-02). */
+    private static final String TESTFLIGHT_CHANNEL_ID = "testflight";
+
+    /** The TestFlight install handoff: the S8-04 route-table row's own deep link. */
+    private static final String TESTFLIGHT_DEEP_LINK = "itms-beta://";
+
     private final ArtifactScopedRepository artifacts;
     private final ArtifactStore store;
     private final ArtifactStorageProperties storageProperties;
     private final ArtifactDownloadProperties downloadProperties;
     private final DownloadTokenCodec tokens;
     private final ObjectProvider<AuthorizationService> authorization;
+    private final org.springframework.beans.factory.ObjectProvider<
+                    com.shipperdog.api.distribution.ChannelDistributionRoutes>
+            storeChannels;
     private final TenantScopeExecutor scopeExecutor;
     private final VersionAccess versions;
     private final AuditEventPublisher audit;
@@ -111,6 +120,8 @@ public class ArtifactDownloadService {
             ArtifactDownloadProperties downloadProperties,
             DownloadTokenCodec tokens,
             ObjectProvider<AuthorizationService> authorization,
+            org.springframework.beans.factory.ObjectProvider<com.shipperdog.api.distribution.ChannelDistributionRoutes>
+                    storeChannels,
             TenantScopeExecutor scopeExecutor,
             VersionAccess versions,
             AuditEventPublisher audit,
@@ -125,6 +136,7 @@ public class ArtifactDownloadService {
         this.downloadProperties = downloadProperties;
         this.tokens = tokens;
         this.authorization = authorization;
+        this.storeChannels = storeChannels;
         this.scopeExecutor = scopeExecutor;
         this.versions = versions;
         this.audit = audit;
@@ -203,11 +215,43 @@ public class ArtifactDownloadService {
             if (artifact.getPlatform() == ArtifactEntity.Platform.ANDROID && AAB_FORMAT.equals(artifact.getFormat())) {
                 throw new ConcealedResourceAccessDeniedException("artifact");
             }
-            Route route = DownloadChannelRouting.route(artifact.getPlatform().name(), Channel.DIRECT)
+            // The channel that owns this install (S13-02, #62 — the
+            // S8-04 row activating): a build a store connector
+            // distributed rides the STORE's mechanics (TestFlight's
+            // itms-beta deep link); everything else rides the direct
+            // signed-URL tier. The engine's decision governs either
+            // way — the channel owns installation mechanics only
+            // (PRD 19's constraint note).
+            com.shipperdog.api.distribution.ChannelDistributionRoutes routes = storeChannels.getIfAvailable();
+            String storeChannel =
+                    routes == null ? null : routes.storeChannelOf(artifactId).orElse(null);
+            Channel channel = TESTFLIGHT_CHANNEL_ID.equals(storeChannel) ? Channel.TESTFLIGHT : Channel.DIRECT;
+            Route route = DownloadChannelRouting.route(artifact.getPlatform().name(), channel)
                     .orElseThrow(() -> new IllegalStateException(
-                            "no download route for " + artifact.getPlatform() + " on channel " + Channel.DIRECT));
+                            "no download route for " + artifact.getPlatform() + " on channel " + channel));
             Duration ttl = downloadProperties.urlTtl();
             Instant expiresAt = Instant.now(clock).plus(ttl);
+            if (channel == Channel.TESTFLIGHT) {
+                // The store owns this install's mechanics: the answer
+                // is the deep link (the S8-04 row's itms-beta://), no
+                // platform URL mints, no download counters or events —
+                // Apple's tier delivers the bytes; ShipperDog's
+                // evidence keeps the decision and the handoff.
+                trace.application(ownership.applicationId());
+                trace.version(versionId);
+                trace.artifact(artifactId);
+                auditIssued(actorId, ownership, artifact, route, ttl);
+                return new DownloadIssuanceView(
+                        artifactId,
+                        versionId,
+                        artifact.getPlatform().name(),
+                        route.channel().name(),
+                        route.behavior().name(),
+                        TESTFLIGHT_DEEP_LINK,
+                        expiresAt,
+                        artifact.getFileName(),
+                        artifact.getSize());
+            }
             String url = storageProperties.emulatorMode()
                     ? "/api/v1/downloads/"
                             + tokens.mint(new DownloadTokenCodec.Grant(

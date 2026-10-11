@@ -31,6 +31,7 @@
  * live view.
  */
 import ArrowBackIcon from "@mui/icons-material/ArrowBack";
+import RefreshIcon from "@mui/icons-material/Refresh";
 import CompareArrowsIcon from "@mui/icons-material/CompareArrows";
 import DownloadIcon from "@mui/icons-material/Download";
 import {
@@ -82,6 +83,11 @@ import {
   type ReleaseGate,
   type ReleaseGates,
 } from "../api/gates";
+import {
+  listDistributionRecords,
+  refreshDistributionRecord,
+  type DistributionRecord,
+} from "../api/distribution";
 import { getApplicationVersion } from "../api/versions";
 import {
   decideReleaseApproval,
@@ -580,6 +586,7 @@ export default function ReleaseDetailPage() {
             ))}
           </Alert>
         ) : null}
+        <ChannelDistributions releaseId={release.id} />
       </Paper>
 
       <Paper variant="outlined" sx={{ padding: 2 }} data-testid="timeline-section">
@@ -839,6 +846,146 @@ interface PrecheckDialogProps {
 /** The one-screen answer to "why can't I promote" (issue #44's
  * technical note: one evaluation function, three surfaces — this is
  * the SAME evaluation the promote act runs, served as a read): the
+ * verdict, the complete blocker list byte-for-byte as the 409's
+ * errors member, the target ring's gate states with their evidence
+ * links, the approval leg's standing with its waited-on list, and the
+ * widened eligibility rows with their exclusion reasons. Nothing is
+ * written and no approval round is opened. */
+interface ChannelDistributionsProps {
+  releaseId: string;
+}
+
+/** The channel-distribution block (S13-02, #62, AC4): the adapter-driven
+ * records of this release with the provider's own lifecycle word (Apple's
+ * beta-review states) beside the platform status, and the explicit
+ * refresh from the store -- the beta-review answer a Release Manager
+ * watches while TestFlight walks a build. */
+function ChannelDistributions({ releaseId }: ChannelDistributionsProps) {
+  const { user } = useAuth();
+  const orgId = user?.orgId ?? null;
+  const toast = useToast();
+  const queryClient = useQueryClient();
+
+  const records = useQuery({
+    queryKey: ["release-distribution-records", orgId, releaseId],
+    queryFn: () => listDistributionRecords(orgId as string, releaseId),
+    enabled: orgId !== null,
+    retry: false,
+    refetchInterval: REFRESH_MS,
+  });
+
+  const refresh = useMutation({
+    mutationFn: (record: DistributionRecord) =>
+      refreshDistributionRecord(orgId as string, record.id),
+    onSuccess: async (record: DistributionRecord) => {
+      toast.showSuccess(
+        `Refreshed from ${record.channel}: ${record.providerStatus ?? record.status}`,
+      );
+      await queryClient.invalidateQueries({
+        queryKey: ["release-distribution-records", orgId, releaseId],
+      });
+    },
+    onError: (error) => {
+      toast.showError(error);
+    },
+  });
+
+  const rows = records.data?.items ?? [];
+  if (rows.length === 0) {
+    // A release the platform's own tier serves (Direct) still has a
+    // record; the honest empty is a release not yet dispatched or a
+    // caller without the org read -- either way the block stays quiet.
+    return null;
+  }
+
+  return (
+    <Box sx={{ marginTop: 2 }} data-testid="channel-distributions">
+      <Divider sx={{ marginBottom: 1 }} />
+      <Stack
+        direction="row"
+        spacing={1}
+        sx={{ alignItems: "center", marginBottom: 1 }}
+      >
+        <Typography variant="subtitle2">Channel distributions</Typography>
+        <Tooltip title="The provider's own state (beta review, processing) refreshes on demand from the store">
+          <Typography component="span" variant="caption" color="text.secondary">
+            provider states are store-side facts
+          </Typography>
+        </Tooltip>
+      </Stack>
+      <Stack spacing={0.5}>
+        {rows.map((record) => (
+          <Stack
+            key={record.id}
+            direction="row"
+            spacing={1}
+            sx={{ alignItems: "center", flexWrap: "wrap" }}
+            data-testid={`channel-distribution-${record.channel}`}
+          >
+            <Chip
+              size="small"
+              variant="outlined"
+              label={record.channel}
+              sx={{ textTransform: "capitalize" }}
+            />
+            <Chip
+              size="small"
+              color={
+                record.status === "DISTRIBUTED"
+                  ? "success"
+                  : record.status === "FAILED"
+                    ? "error"
+                    : record.status === "DISTRIBUTING"
+                      ? "info"
+                      : "default"
+              }
+              label={record.status}
+            />
+            {record.providerStatus ? (
+              <Tooltip
+                title={
+                  record.providerStatusAt
+                    ? `observed ${new Date(record.providerStatusAt).toLocaleString()}`
+                    : record.providerStatus
+                }
+              >
+                <Chip
+                  size="small"
+                  variant="outlined"
+                  color="warning"
+                  label={record.providerStatus}
+                />
+              </Tooltip>
+            ) : null}
+            {record.externalId ? (
+              <Typography variant="caption" color="text.secondary">
+                {record.externalId}
+              </Typography>
+            ) : null}
+            {record.failureCode ? (
+              <Typography variant="caption" color="error">
+                {record.failureCode}
+              </Typography>
+            ) : null}
+            <Button
+              size="small"
+              startIcon={<RefreshIcon />}
+              disabled={refresh.isPending}
+              onClick={() => refresh.mutate(record)}
+              data-testid={`distribution-refresh-${record.channel}`}
+            >
+              Refresh
+            </Button>
+          </Stack>
+        ))}
+      </Stack>
+    </Box>
+  );
+}
+
+/** The one-screen answer to "why can't I promote" (issue #44's
+ * technical note: one evaluation function, three surfaces — this is the
+ * SAME evaluation the promote act runs, served as a read): the
  * verdict, the complete blocker list byte-for-byte as the 409's
  * errors member, the target ring's gate states with their evidence
  * links, the approval leg's standing with its waited-on list, and the

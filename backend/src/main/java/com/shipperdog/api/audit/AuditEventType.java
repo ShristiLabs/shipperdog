@@ -392,5 +392,22 @@ public enum AuditEventType {
      * credential material is deliberately absent (the reference-only
      * doctrine of the whole chain).
      */
-    DISTRIBUTION_DISPATCHED
+    DISTRIBUTION_DISPATCHED,
+    /**
+     * One tester-group link synced against its provider group
+     * (S13-02, issue #62, AC2/AC5): the channel, the link's ids, and
+     * the sync's verdict -- memberships pushed, provider-side drift
+     * observed (members Apple has that ShipperDog does not, builds
+     * unassigned). Drift is REPORTED, never force-removed (the safe
+     * re-sync doctrine).
+     */
+    DISTRIBUTION_GROUP_SYNCED,
+    /**
+     * One distribution record refreshed from its provider (S13-02,
+     * issue #62, AC4/AC5): the record, the channel, and the
+     * provider-side outcome the adapter's status observation reported
+     * -- the release dashboard's explicit refresh and the
+     * reconciliation pass's cadence both land here.
+     */
+    DISTRIBUTION_RECORD_REFRESHED
 }

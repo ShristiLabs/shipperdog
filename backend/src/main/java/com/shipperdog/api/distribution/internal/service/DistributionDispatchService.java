@@ -89,6 +89,7 @@ public class DistributionDispatchService {
     private final DistributionAdapterRegistry registry;
     private final DistributionCredentialService credentials;
     private final ChannelDistributionRepository records;
+    private final com.shipperdog.api.distribution.internal.repository.ChannelGroupLinkRepository groupLinks;
     private final ChannelSecretStore secrets;
     private final ReleaseAccess releases;
     private final EnvironmentAccess environments;
@@ -104,6 +105,7 @@ public class DistributionDispatchService {
             DistributionAdapterRegistry registry,
             DistributionCredentialService credentials,
             ChannelDistributionRepository records,
+            com.shipperdog.api.distribution.internal.repository.ChannelGroupLinkRepository groupLinks,
             ChannelSecretStore secrets,
             ReleaseAccess releases,
             EnvironmentAccess environments,
@@ -116,6 +118,7 @@ public class DistributionDispatchService {
         this.registry = registry;
         this.credentials = credentials;
         this.records = records;
+        this.groupLinks = groupLinks;
         this.secrets = secrets;
         this.releases = releases;
         this.environments = environments;
@@ -211,7 +214,8 @@ public class DistributionDispatchService {
                         new ChannelDistributionEntity.AdapterReport(
                                 ChannelDistributionEntity.Status.valueOf(outcome.status()),
                                 outcome.externalId(),
-                                outcome.failureCode()),
+                                outcome.failureCode(),
+                                outcome.providerStatus()),
                         sandbox.calls(),
                         now);
                 allDistributed &= AdapterOutcome.DISTRIBUTED.equals(outcome.status());
@@ -232,8 +236,6 @@ public class DistributionDispatchService {
         int attempt = 1;
         AdapterException lastFailure = null;
         while (attempt <= sandbox.totalAttempts()) {
-            String traceId = currentTraceId();
-            String spanId = currentSpanId();
             DistributionCommand command = new DistributionCommand(
                     seed.releaseId(),
                     seed.releaseRef(),
@@ -246,10 +248,16 @@ public class DistributionDispatchService {
                     seed.channel(),
                     seed.artifacts(),
                     seed.targetTenantIds(),
+                    seed.targetGroups(),
                     seed.channelConfig(),
-                    seed.credential(),
-                    traceId,
-                    spanId,
+                    new DistributionCommand.ResolvedCredential(
+                            seed.credential() == null ? null : seed.credential().provider(),
+                            seed.credential() == null ? null : seed.credential().name(),
+                            seed.credential() == null ? null : seed.credential().secretReference(),
+                            seed.credential() == null ? null : seed.credential().material(),
+                            seed.credential() == null ? null : seed.credential().metadata()),
+                    currentTraceId(),
+                    currentSpanId(),
                     attempt,
                     seed.initiatedAt());
             Observation observation = Observation.createNotStarted(MetricNames.ADAPTER_CALL, observations)
@@ -378,7 +386,10 @@ public class DistributionDispatchService {
                             slot.platform(),
                             facts == null ? null : facts.format(),
                             facts == null ? null : facts.fileName(),
-                            facts == null ? 0L : facts.size());
+                            facts == null ? 0L : facts.size(),
+                            facts == null ? null : facts.buildNumber(),
+                            facts == null ? null : facts.bundleId(),
+                            facts == null ? null : facts.versionName());
                 })
                 .toList();
 
@@ -387,6 +398,26 @@ public class DistributionDispatchService {
             return null;
         }
         Set<UUID> targets = releases.targetTenantIdsOf(event.releaseId());
+        // The targeted tester groups with the channel's resolved links
+        // (S13-02): the framework resolves the mapping so the adapter
+        // never reads platform tables — groups without a link carry a
+        // null external id and the adapter reports the gap loudly.
+        List<ReleaseAccess.ReleaseTargetGroup> targeted = releases.targetGroupsOf(event.releaseId());
+        Map<UUID, String> linksOfGroup = groupLinks
+                .findByChannelAndGroupIdIn(
+                        channel,
+                        targeted.stream()
+                                .map(ReleaseAccess.ReleaseTargetGroup::groupId)
+                                .toList())
+                .stream()
+                .collect(java.util.stream.Collectors.toMap(
+                        com.shipperdog.api.distribution.internal.entity.ChannelGroupLinkEntity::getGroupId,
+                        com.shipperdog.api.distribution.internal.entity.ChannelGroupLinkEntity::getExternalGroupId,
+                        (a, b) -> a));
+        List<DistributionCommand.TargetGroup> targetGroups = targeted.stream()
+                .map(group -> new DistributionCommand.TargetGroup(
+                        group.groupId(), group.tenantId(), linksOfGroup.get(group.groupId())))
+                .toList();
         return new DistributionCommand(
                 event.releaseId(),
                 event.releaseRef(),
@@ -399,6 +430,7 @@ public class DistributionDispatchService {
                 channel,
                 artifacts,
                 targets,
+                targetGroups,
                 channelConfig,
                 credential,
                 currentTraceId(),
@@ -433,7 +465,11 @@ public class DistributionDispatchService {
                         return null;
                     }
                     return new DistributionCommand.ResolvedCredential(
-                            account.getProvider(), account.getName(), account.getSecretReference(), material);
+                            account.getProvider(),
+                            account.getName(),
+                            account.getSecretReference(),
+                            material,
+                            account.getMetadata());
                 })
                 .orElse(null);
     }
@@ -476,21 +512,211 @@ public class DistributionDispatchService {
     @Transactional(readOnly = true)
     public List<RecordView> recordsOf(UUID organizationId, UUID releaseId) {
         return records.findByReleaseIdAndOrganizationIdOrderByChannelAsc(releaseId, organizationId).stream()
-                .map(row -> new RecordView(
-                        row.getId(),
-                        row.getReleaseId(),
-                        row.getArtifactId(),
-                        row.getChannel(),
-                        row.getStatus().name(),
-                        row.getExternalId(),
-                        row.getFailureCode(),
-                        row.getAttempts(),
-                        row.getLastAttemptAt(),
-                        row.getDistributedAt(),
-                        row.getCreatedAt(),
-                        row.getUpdatedAt()))
+                .map(DistributionDispatchService::viewOf)
                 .toList();
     }
+
+    /**
+     * One record's refresh from its provider (S13-02, #62, AC4/AC5):
+     * the release dashboard's explicit refresh and the reconciliation
+     * pass's cadence both land here — the channel's adapter answers
+     * the provider-side status under the same sandbox, the record
+     * takes the report verbatim (status, external id, provider status
+     * word), and the refresh is audited. An adapter failure is the
+     * honest answer, never a row mutation: the record keeps its
+     * standing until a provider answer changes it.
+     *
+     * @throws DistributionException DISTRIBUTION_RECORD_NOT_FOUND for
+     *                               the concealed miss (unknown or
+     *                               foreign record)
+     */
+    @Transactional
+    public RecordView refresh(UUID organizationId, UUID recordId, UUID actorId) {
+        ChannelDistributionEntity row = records.findById(recordId)
+                .filter(existing -> existing.getOrganizationId().equals(organizationId))
+                .orElseThrow(() -> new DistributionException(
+                        DistributionException.Code.DISTRIBUTION_RECORD_NOT_FOUND, "unknown distribution record"));
+        DistributionChannelAdapter adapter = registry.byChannelId(row.getChannel())
+                .orElseThrow(() -> new DistributionException(
+                        DistributionException.Code.CHANNEL_UNKNOWN, "the record's channel is not registered"));
+        // The non-seam-served facts read (S13-02): the refresh runs on
+        // organization-grain routes and background threads whose bound
+        // scope is not the release's owning scope -- the record's own
+        // organization check is this read's guard.
+        UUID applicationId = releases.distributionFactsOf(row.getReleaseId())
+                .map(ReleaseAccess.ReleaseFacts::applicationId)
+                .orElse(null);
+        UUID environmentId = releases.distributionFactsOf(row.getReleaseId())
+                .map(ReleaseAccess.ReleaseFacts::environmentId)
+                .orElse(null);
+        String provider = adapter.credentialProviders().stream().findFirst().orElse(null);
+        DistributionCommand.ResolvedCredential credential = provider == null
+                ? null
+                : credentials
+                        .resolve(row.getOrganizationId(), applicationId, environmentId, provider)
+                        .map(account -> {
+                            SecretMaterial material = secrets.resolve(account.getSecretReference())
+                                    .orElseGet(() -> new SecretMaterial(""));
+                            return new DistributionCommand.ResolvedCredential(
+                                    account.getProvider(),
+                                    account.getName(),
+                                    account.getSecretReference(),
+                                    material,
+                                    account.getMetadata());
+                        })
+                        .orElse(null);
+        if (credential == null) {
+            // The dispatch doctrine, held at the refresh: a provider
+            // with no resolvable credential is the chain's own miss,
+            // answered as the chain's own problem -- never a provider
+            // call, never an NPE (the reviewer's finding).
+            throw new DistributionException(
+                    DistributionException.Code.DISTRIBUTION_CREDENTIAL_NOT_FOUND,
+                    "no credential is bound on the delegation chain for this record's channel and scope");
+        }
+        RefreshResult refresh = sandboxedStatus(adapter, row, credential);
+        Map<String, String> detail = new LinkedHashMap<>();
+        detail.put("channel", row.getChannel());
+        detail.put("recordId", row.getId().toString());
+        detail.put(
+                "outcome",
+                refresh.outcome() == null
+                        ? taxonomyOf(refresh.failure())
+                        : refresh.outcome().status());
+        detail.put(
+                "providerStatus",
+                refresh.outcome() == null || refresh.outcome().providerStatus() == null
+                        ? ""
+                        : refresh.outcome().providerStatus());
+        AuditEvent.Builder auditLine = AuditEvent.builder(AuditEventType.DISTRIBUTION_RECORD_REFRESHED)
+                .orgId(organizationId)
+                .applicationId(applicationId)
+                .detail(detail)
+                .success(refresh.outcome() != null);
+        if (actorId != null) {
+            auditLine.userId(actorId);
+        }
+        audit.record(auditLine.build());
+        if (refresh.outcome() == null) {
+            // The provider's honest failure: the record keeps its
+            // standing, the refresh answers the taxonomy's problem.
+            AdapterException failure = refresh.failure();
+            throw new DistributionException(
+                    taxonomyCodeOf(failure),
+                    failure.getMessage() == null ? "the provider refresh failed" : failure.getMessage());
+        }
+        row.report(
+                new ChannelDistributionEntity.AdapterReport(
+                        ChannelDistributionEntity.Status.valueOf(
+                                refresh.outcome().status()),
+                        refresh.outcome().externalId(),
+                        refresh.outcome().failureCode(),
+                        refresh.outcome().providerStatus()),
+                refresh.calls(),
+                Instant.now(clock));
+        records.save(row);
+        return viewOf(row);
+    }
+
+    /** The refresh-eligible records (the reconciliation pass's input): store channels with an external id, non-terminal or stale. */
+    @Transactional(readOnly = true)
+    public List<ChannelDistributionEntity> refreshableRecords(int limit) {
+        return records.findByStatusInAndExternalIdIsNotNull(
+                        java.util.List.of(
+                                ChannelDistributionEntity.Status.PENDING,
+                                ChannelDistributionEntity.Status.DISTRIBUTING),
+                        org.springframework.data.domain.PageRequest.of(0, limit))
+                .getContent();
+    }
+
+    /** The taxonomy's problem code for a refresh failure (the same closed mapping the records carry). */
+    private static DistributionException.Code taxonomyCodeOf(AdapterException failure) {
+        return switch (failure.category()) {
+            case TIMEOUT -> DistributionException.Code.ADAPTER_TIMEOUT;
+            case RATE_LIMITED -> DistributionException.Code.ADAPTER_RATE_LIMITED;
+            case AUTHENTICATION -> DistributionException.Code.ADAPTER_AUTHENTICATION_FAILED;
+            case TRANSIENT, PERMANENT -> DistributionException.Code.ADAPTER_FAILED;
+        };
+    }
+
+    /** The status poll under the same sandbox the dispatch runs in (one wall, one taxonomy, one timer). */
+    private RefreshResult sandboxedStatus(
+            DistributionChannelAdapter adapter,
+            ChannelDistributionEntity row,
+            DistributionCommand.ResolvedCredential credential) {
+        DistributionProperties.AdapterSandbox sandbox = properties.sandboxOf(adapter.channelId());
+        int attempt = 1;
+        AdapterException lastFailure = null;
+        while (attempt <= sandbox.totalAttempts()) {
+            Observation observation = Observation.createNotStarted(MetricNames.ADAPTER_CALL, observations)
+                    .lowCardinalityKeyValue("channel", adapter.channelId())
+                    .lowCardinalityKeyValue("attempt", String.valueOf(attempt))
+                    .lowCardinalityKeyValue("operation", "status");
+            Future<AdapterOutcome> call = null;
+            try {
+                observation.start();
+                call = adapterCalls.submit(
+                        () -> adapter.status(row.getArtifactId(), row.getChannel(), row.getExternalId(), credential));
+                AdapterOutcome outcome = call.get(sandbox.timeout().toMillis(), TimeUnit.MILLISECONDS);
+                observation.lowCardinalityKeyValue("outcome", "ok");
+                observation.stop();
+                return new RefreshResult(outcome, null, attempt);
+            } catch (TimeoutException e) {
+                if (call != null) {
+                    call.cancel(true);
+                }
+                lastFailure = new AdapterException(
+                        AdapterException.Category.TIMEOUT,
+                        adapter.channelId(),
+                        "the status call exceeded its " + sandbox.timeout().toMillis() + " ms timeout");
+            } catch (java.util.concurrent.ExecutionException e) {
+                Throwable cause = e.getCause();
+                lastFailure = cause instanceof AdapterException adapterFailure
+                        ? adapterFailure
+                        : new AdapterException(
+                                AdapterException.Category.PERMANENT,
+                                adapter.channelId(),
+                                "the status call failed: " + cause.getClass().getSimpleName());
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                observation.lowCardinalityKeyValue("outcome", "interrupted");
+                observation.stop();
+                throw new IllegalStateException("adapter refresh interrupted", e);
+            } catch (java.util.concurrent.RejectedExecutionException e) {
+                lastFailure = new AdapterException(
+                        AdapterException.Category.TRANSIENT, adapter.channelId(), "the adapter pool refused the call");
+            }
+            observation.lowCardinalityKeyValue("outcome", taxonomyOf(lastFailure));
+            observation.stop();
+            if (!retryable(lastFailure.category()) || attempt == sandbox.totalAttempts()) {
+                return new RefreshResult(null, lastFailure, attempt);
+            }
+            attempt++;
+            sleep(sandbox.retryBackoff());
+        }
+        return new RefreshResult(null, lastFailure, attempt);
+    }
+
+    private static RecordView viewOf(ChannelDistributionEntity row) {
+        return new RecordView(
+                row.getId(),
+                row.getReleaseId(),
+                row.getArtifactId(),
+                row.getChannel(),
+                row.getStatus().name(),
+                row.getExternalId(),
+                row.getFailureCode(),
+                row.getProviderStatus(),
+                row.getProviderStatusAt(),
+                row.getAttempts(),
+                row.getLastAttemptAt(),
+                row.getDistributedAt(),
+                row.getCreatedAt(),
+                row.getUpdatedAt());
+    }
+
+    /** The sandbox's answer for a status poll (the outcome, the failure, and the calls consumed). */
+    private record RefreshResult(AdapterOutcome outcome, AdapterException failure, int calls) {}
 
     /** One distribution record's served view (the adapter's report plus the framework's bookkeeping). */
     public record RecordView(
@@ -501,6 +727,8 @@ public class DistributionDispatchService {
             String status,
             String externalId,
             String failureCode,
+            String providerStatus,
+            Instant providerStatusAt,
             int attempts,
             Instant lastAttemptAt,
             Instant distributedAt,

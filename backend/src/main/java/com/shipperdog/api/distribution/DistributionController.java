@@ -2,6 +2,7 @@ package com.shipperdog.api.distribution;
 
 import com.shipperdog.api.config.ListQuery;
 import com.shipperdog.api.config.PageResponse;
+import com.shipperdog.api.distribution.internal.apple.TestFlightGroupService;
 import com.shipperdog.api.distribution.internal.registry.DistributionAdapterRegistry;
 import com.shipperdog.api.distribution.internal.service.DistributionCredentialService;
 import com.shipperdog.api.distribution.internal.service.DistributionCredentialService.BindingCommand;
@@ -47,14 +48,17 @@ public class DistributionController {
     private final DistributionAdapterRegistry registry;
     private final DistributionCredentialService credentials;
     private final DistributionDispatchService dispatch;
+    private final com.shipperdog.api.distribution.internal.apple.TestFlightGroupService testFlightGroups;
 
     public DistributionController(
             DistributionAdapterRegistry registry,
             DistributionCredentialService credentials,
-            DistributionDispatchService dispatch) {
+            DistributionDispatchService dispatch,
+            com.shipperdog.api.distribution.internal.apple.TestFlightGroupService testFlightGroups) {
         this.registry = registry;
         this.credentials = credentials;
         this.dispatch = dispatch;
+        this.testFlightGroups = testFlightGroups;
     }
 
     /** The channel catalog: every registered adapter with its capabilities and credential providers. */
@@ -162,6 +166,68 @@ public class DistributionController {
         return PageResponse.of(page, query.offset() + query.limit() < all.size(), query.offset() + query.limit());
     }
 
+    /**
+     * One record's refresh from its provider (S13-02, AC4): the
+     * release dashboard's beta-review answer — the adapter's status
+     * observation lands on the record (status, external id, the
+     * provider's own state word) and the refreshed view answers.
+     */
+    @PostMapping("/records/{recordId}/refresh")
+    @PreAuthorize("hasPermission(#organizationId, 'organization', 'org:distribution:manage')")
+    RecordView refreshRecord(
+            @AuthenticationPrincipal Object principal, @PathVariable UUID recordId, @RequestParam UUID organizationId) {
+        return dispatch.refresh(organizationId, recordId, requireUserId(principal));
+    }
+
+    /** The organization's TestFlight group links (S13-02, AC2: the mapping view). */
+    @GetMapping("/testflight/groups")
+    @PreAuthorize("hasPermission(#organizationId, 'organization', 'org:distribution:read')")
+    PageResponse<TestFlightGroupService.LinkView> testFlightGroups(
+            @RequestParam UUID organizationId,
+            @RequestParam(required = false) String limit,
+            @RequestParam(required = false) String cursor) {
+        ListQuery query = ListQuery.of(limit, cursor);
+        List<TestFlightGroupService.LinkView> all = testFlightGroups.list(organizationId);
+        List<TestFlightGroupService.LinkView> page = all.subList(
+                (int) Math.min(query.offset(), all.size()), (int) Math.min(query.offset() + query.limit(), all.size()));
+        return PageResponse.of(page, query.offset() + query.limit() < all.size(), query.offset() + query.limit());
+    }
+
+    /**
+     * Links one tester group to an ASC beta group (AC2): an existing
+     * same-named external group wins, the create-on-demand option
+     * mints one, and the link lands with its first idempotent
+     * membership push.
+     */
+    @PutMapping("/testflight/groups")
+    @PreAuthorize("hasPermission(#request.organizationId(), 'organization', 'org:distribution:manage')")
+    TestFlightGroupService.LinkView putTestFlightGroup(
+            @AuthenticationPrincipal Object principal, @RequestBody TestFlightGroupLinkRequest request) {
+        return testFlightGroups.link(
+                request.organizationId(),
+                request.applicationId(),
+                request.groupId(),
+                Boolean.TRUE.equals(request.createOnDemand()),
+                requireUserId(principal));
+    }
+
+    /** The idempotent re-sync of one link (AC5): pushes membership, reports drift, removes nothing provider-side. */
+    @PostMapping("/testflight/groups/{linkId}/sync")
+    @PreAuthorize("hasPermission(#organizationId, 'organization', 'org:distribution:manage')")
+    TestFlightGroupService.SyncView syncTestFlightGroup(
+            @AuthenticationPrincipal Object principal, @PathVariable UUID linkId, @RequestParam UUID organizationId) {
+        return testFlightGroups.sync(linkId, organizationId, requireUserId(principal));
+    }
+
+    /** Removes one link (the ShipperDog side only; the ASC group stays). */
+    @DeleteMapping("/testflight/groups/{linkId}")
+    @ResponseStatus(HttpStatus.NO_CONTENT)
+    @PreAuthorize("hasPermission(#organizationId, 'organization', 'org:distribution:manage')")
+    void deleteTestFlightGroup(
+            @AuthenticationPrincipal Object principal, @PathVariable UUID linkId, @RequestParam UUID organizationId) {
+        testFlightGroups.unlink(linkId, organizationId, requireUserId(principal));
+    }
+
     private static UUID requireUserId(Object principal) {
         if (principal instanceof org.springframework.security.oauth2.jwt.Jwt jwt) {
             return UUID.fromString(jwt.getSubject());
@@ -203,4 +269,12 @@ public class DistributionController {
 
     /** The verify probe's answer: resolved, nothing else. */
     record VerifyView(boolean resolved) {}
+
+    /**
+     * The group-link write's body (S13-02): the organization, the
+     * application whose ASC app the group belongs to, the tester
+     * group, and the create-on-demand option (mint the beta group
+     * when no same-named external one exists).
+     */
+    record TestFlightGroupLinkRequest(UUID organizationId, UUID applicationId, UUID groupId, Boolean createOnDemand) {}
 }

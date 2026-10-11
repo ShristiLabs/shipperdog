@@ -65,6 +65,16 @@ public class ChannelDistributionEntity {
     /** The failure taxonomy code when status is FAILED (the ADAPTER_* family); null otherwise. */
     private String failureCode;
 
+    /**
+     * The provider's own lifecycle word for the artifact (V44, S13-02,
+     * AC4: Apple's beta-review states), verbatim from the connector's
+     * status observation; null until one exists (Direct answers none).
+     */
+    private String providerStatus;
+
+    /** The moment the provider status was observed; null with {@link #providerStatus}. */
+    private Instant providerStatusAt;
+
     /** How many sandboxed attempts the record has consumed (retries increment it). */
     private int attempts;
 
@@ -131,6 +141,14 @@ public class ChannelDistributionEntity {
         return failureCode;
     }
 
+    public String getProviderStatus() {
+        return providerStatus;
+    }
+
+    public Instant getProviderStatusAt() {
+        return providerStatusAt;
+    }
+
     public int getAttempts() {
         return attempts;
     }
@@ -162,17 +180,21 @@ public class ChannelDistributionEntity {
         this.failureCode = report.failureCode();
         this.attempts += sandboxCalls;
         this.lastAttemptAt = at;
+        if (report.providerStatus() != null) {
+            this.providerStatus = report.providerStatus();
+            this.providerStatusAt = at;
+        }
         if (this.status == Status.DISTRIBUTED && this.distributedAt == null) {
             this.distributedAt = at;
         }
     }
 
     /** The adapter report as the record stores it (verbatim; the framework adds only bookkeeping). */
-    public record AdapterReport(Status status, String externalId, String failureCode) {
+    public record AdapterReport(Status status, String externalId, String failureCode, String providerStatus) {
 
         /** The failed report of an exhausted sandbox (the taxonomy code the record keeps). */
         public static AdapterReport failed(String failureCode) {
-            return new AdapterReport(Status.FAILED, null, failureCode);
+            return new AdapterReport(Status.FAILED, null, failureCode, null);
         }
     }
 }

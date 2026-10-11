@@ -2,11 +2,11 @@
 
 The distribution adapter framework (issue #61, S13-01, FR-019, PRD
 P6/19/25): every delivery channel — the platform's own Direct
-download tier today; Apple TestFlight (#62–#63) and Google Play
-(#64–#65) next; MDMs later — sits behind ONE interface, so a new store
-plugs into distribution without a core change, and store credentials
-live behind secret references the platform holds instead of secret
-material.
+download tier; Apple TestFlight since #62 (submission and phased
+release follow in #63); Google Play (#64–#65) and MDMs later — sits
+behind ONE interface, so a new store plugs into distribution without
+a core change, and store credentials live behind secret references
+the platform holds instead of secret material.
 
 - The SPI and its contract: `DistributionChannelAdapter` (below)
 - The credential delegation chain (PRD 25): [Credential
@@ -16,6 +16,8 @@ material.
 - The dispatch lifecycle and its records: [Dispatch](#dispatch)
 - The sandbox (timeouts, retries, the failure taxonomy): [Adapter
   sandbox](#adapter-sandbox)
+- The first store connector — Apple TestFlight (#62): [The TestFlight
+  connector](#the-testflight-connector)
 - How to add a channel: [Adding an adapter](#adding-an-adapter)
 
 ## The SPI
@@ -29,8 +31,8 @@ interface every channel implements as a Spring bean:
 | `displayName()` / `description()` | Catalog facts the console renders. |
 | `capabilities()` | The declared surface: `BUILD_UPLOAD`, `BUILD_STATUS`, `TESTER_GROUP_SYNC`, `SUBMISSION`, `ROLLOUT_CONTROL`, `DIRECT_ISSUANCE` (`AdapterCapability`). Data for operators, never a dispatch branch. |
 | `credentialProviders()` | The provider vocabulary the channel's dispatches resolve the delegation chain for (`apple`, `google-play`). Empty means the channel needs no store account (Direct). |
-| `distribute(command)` | Deliver the command's artifact slots to its targets. Sandbox-walled (see below); reports one `AdapterOutcome` per slot: the record's status, the provider's external id (store reconciliation's key), and on failure the taxonomy code. |
-| `status(artifactId, channel, externalId)` | The provider-side status of one distributed artifact — the reconciliation half the #62–#65 store polls ride. |
+| `distribute(command)` | Deliver the command's artifact slots to its targets. Sandbox-walled (see below); reports one `AdapterOutcome` per slot: the record's status, the provider's external id (store reconciliation's key), and on failure the taxonomy code. Since #62 the outcome also carries the provider's own lifecycle word (`providerStatus`, Apple's beta-review states) verbatim for the release dashboard. |
+| `status(artifactId, channel, externalId, credential)` | The provider-side status of one distributed artifact — the reconciliation half the #62–#65 store polls ride. Since #62 the refresh-resolved credential rides the call (null when the channel declared no providers — Direct has none to poll). |
 
 The `DistributionCommand` is complete and self-contained: the release's
 identity and owning dimensions, the environment it targets (code and
@@ -189,6 +191,116 @@ The taxonomy (`AdapterException.Category` → public code → retry):
 
 The codes ride distribution records as `failure_code` and are
 registered in the public [error code registry](error-codes.md).
+
+## The TestFlight connector
+
+The first store connector on the SPI (issue #62, S13-02, FR-020,
+PRD 19/25): the `testflight` channel — the App Store Connect API
+conversation behind a release's ACTIVE crossing. Build upload stays
+with CI or Xcode Cloud (the PRD's "build upload where applicable"):
+the connector distributes EXISTING ASC builds, binding each ShipperDog
+artifact to its ASC peer by the binary's own extracted facts (bundle
+id and build number) and assigning it to the mapped TestFlight beta
+groups.
+
+### The API key (AC1)
+
+Apple's triple rides the delegation chain exactly as PRD 25 shapes
+it: the .p8 key is the binding's secret material (the store's
+reference, never a column), and the issuer id and key id ride the
+binding's non-secret metadata — `{"issuerId": "...", "keyId":
+"..."}` beside the material, exactly what the App Store Connect
+console hands an operator. The connector signs an ES256 JWS per
+Apple's model (header `kid`, payload `iss`/`iat`/`exp`/`aud=asc`,
+expiry at most twenty minutes) with the JDK's own JCA — no JWT
+library — and caches one live token per (issuer, key id, key)
+triple, refreshing a minute before expiry. A rotated key is a
+different triple: its first call mints fresh and the superseded entry
+is never answered again. An incomplete or malformed triple (missing
+ids, control characters, wrong key format) is a configuration fault —
+PERMANENT, never retried, never dialed.
+
+### Group mapping and sync (AC2, AC5)
+
+ShipperDog tester groups ↔ ASC beta groups link through
+`channel_group_links` (V44): one row per (channel, tester group),
+scoped to the application whose ASC app the link binds against — the
+sync resolves the credential chain AT that scope, so an app-level
+apple binding serves the sync exactly as it serves the dispatch.
+
+| Route | Purpose |
+|---|---|
+| `GET /api/v1/distribution/testflight/groups?organizationId=` | The organization's links. |
+| `PUT /api/v1/distribution/testflight/groups` | Link `{organizationId, applicationId, groupId, createOnDemand}`: an existing same-named external group wins; `createOnDemand` mints one; the link lands with its first membership push. |
+| `POST /api/v1/distribution/testflight/groups/{linkId}/sync?organizationId=` | The idempotent re-sync: pushes membership, reports drift. |
+| `DELETE /api/v1/distribution/testflight/groups/{linkId}?organizationId=` | Remove the link (the ShipperDog side only — an ASC group is never deleted). |
+
+The sync's doctrine is **never-remove**: membership pushes are
+additive (a second run adds nothing — idempotent), and provider-side
+drift — testers Apple has that ShipperDog does not, builds manually
+unassigned from the group — is REPORTED in the sync's answer and the
+`DISTRIBUTION_GROUP_SYNCED` audit, never force-removed. An operator's
+manual ASC work is evidence, not garbage; the safe re-sync's answer
+is the report a Release Manager acts on. Unmatched external testers
+are reported, not force-linked (the story's own note).
+
+### Dispatch (AC3)
+
+An ACTIVE crossing on an environment bound to `testflight` runs the
+adapter under the sandbox: resolve the ASC app by bundle id, resolve
+each iOS artifact's build by its extracted build number, assign the
+build to every target group whose link the framework resolved (the
+adapter never reads platform tables — the command carries the target
+groups with their resolved links). The record lands DISTRIBUTING with
+the ASC build id as `external_id` (Apple owns the next step), and a
+release whose target groups carry no links fails its records loudly
+with `TESTFLIGHT_GROUPS_UNMAPPED` — the mapping surface's gap, never
+a silent skip. Non-iOS slots fail `TESTFLIGHT_IOS_ONLY`; a build
+absent from ASC fails `TESTFLIGHT_BUILD_NOT_FOUND`.
+
+### Beta review and reconciliation (AC4, AC5)
+
+The record carries the provider's own lifecycle word:
+`provider_status`/`provider_status_at` (V44) hold Apple's beta-review
+state verbatim (`WAITING_FOR_BETA_REVIEW`, `IN_BETA_REVIEW`,
+`READY_FOR_BETA_TESTING`, `BETA_REJECTED`, `EXPIRED`, ...), written
+by the dispatch's first observation and every refresh.
+
+- **The explicit refresh** — `POST
+  /api/v1/distribution/records/{recordId}/refresh?organizationId=` —
+  runs the adapter's status answer under the same sandbox and applies
+  it verbatim: the release dashboard's beta-review answer (the
+  console's distribution block renders the word beside the platform
+  status). `READY_FOR_BETA_TESTING`/`IN_BETA_TESTING` moves the
+  record DISTRIBUTED; the review words hold DISTRIBUTING; rejected
+  and expired fail their honest codes.
+- **The scheduled pass** — `shipperdog.distribution.reconciliation.
+  enabled` (default **false**: a self-hosted stack never wakes up
+  dialing Apple; the production opt-in is on the [deployment
+  wiring](deployment.md)) — refreshes every PENDING/DISTRIBUTING
+  store record with an external id on a fixed delay, one record's
+  provider fault never the pass's.
+
+### Rate limits (AC6)
+
+Apple's 429 answers map to the sandbox's RATE_LIMITED category —
+retried with the sandbox's backoff, and counted in the
+`shipperdog.adapter.ratelimit` counter (tagged `channel`) the moment
+the provider throttles, whether the retry lands or the exhaustion
+fails the record with `ADAPTER_RATE_LIMITED`.
+
+### The portal's install handoff
+
+The download tier asks the distribution module through the
+`ChannelDistributionRoutes` port: an artifact with a live
+DISTRIBUTING/DISTRIBUTED record on a store channel routes through
+THAT channel's mechanics. For TestFlight/iOS that is the S8-04
+route-table row — `DEEP_LINK_TESTFLIGHT`, the `itms-beta://` deep
+link — with no platform URL minted, no download counter, and no
+platform download event: Apple's tier delivers the bytes while the
+engine's DOWNLOAD decision still governs who may ask (PRD 19's
+constraint — ShipperDog owns authorization and evidence, the channel
+owns installation mechanics).
 
 ## Adding an adapter
 

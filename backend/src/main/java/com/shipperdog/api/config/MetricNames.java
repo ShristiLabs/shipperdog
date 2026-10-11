@@ -136,6 +136,17 @@ public final class MetricNames {
     public static final String ADAPTER_CALL = "shipperdog.adapter.call.duration";
 
     /**
+     * Counter of every provider rate-limit refusal a store connector
+     * observed (issue #62, S13-02, AC6 — the quota telemetry beside
+     * the sandbox's RATE_LIMITED backoff), tagged {@code channel}: a
+     * connector's 429 family counts here the moment the provider
+     * throttles it, whether the sandbox's retry lands the attempt or
+     * the exhaustion fails the record — the operator's throttling
+     * signal from the provider's side of the wire.
+     */
+    public static final String ADAPTER_RATE_LIMIT = "shipperdog.adapter.ratelimit";
+
+    /**
      * Counter of every inbound webhook delivery a receiver answered
      * (issue #54, S12-04, FR-022), tagged {@code
      * provider=github|jenkins|gitlab|appstore|google-play} and

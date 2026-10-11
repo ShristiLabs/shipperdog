@@ -96,7 +96,11 @@ class AdapterSandboxIntegrationTest {
         }
 
         @Override
-        public AdapterOutcome status(UUID artifactId, String channel, String externalId) {
+        public AdapterOutcome status(
+                UUID artifactId,
+                String channel,
+                String externalId,
+                com.shipperdog.api.distribution.DistributionCommand.ResolvedCredential credential) {
             return new AdapterOutcome(artifactId, AdapterOutcome.FAILED, null, "never", null);
         }
     }

@@ -806,6 +806,52 @@ paths:
             '*/*':
               schema:
                 $ref: "#/components/schemas/ConfigSnapshotView"
+  /api/v1/distribution/testflight/groups:
+    get:
+      tags:
+      - distribution-controller
+      operationId: testFlightGroups
+      parameters:
+      - name: organizationId
+        in: query
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - name: limit
+        in: query
+        required: false
+        schema:
+          type: string
+      - name: cursor
+        in: query
+        required: false
+        schema:
+          type: string
+      responses:
+        "200":
+          description: OK
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/PageResponseLinkView"
+    put:
+      tags:
+      - distribution-controller
+      operationId: putTestFlightGroup
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/TestFlightGroupLinkRequest"
+        required: true
+      responses:
+        "200":
+          description: OK
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/LinkView"
   /api/v1/distribution/credentials:
     get:
       tags:
@@ -2519,6 +2565,56 @@ paths:
             '*/*':
               schema:
                 $ref: "#/components/schemas/VerifyView"
+  /api/v1/distribution/testflight/groups/{linkId}/sync:
+    post:
+      tags:
+      - distribution-controller
+      operationId: syncTestFlightGroup
+      parameters:
+      - name: linkId
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - name: organizationId
+        in: query
+        required: true
+        schema:
+          type: string
+          format: uuid
+      responses:
+        "200":
+          description: OK
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/SyncView"
+  /api/v1/distribution/records/{recordId}/refresh:
+    post:
+      tags:
+      - distribution-controller
+      operationId: refreshRecord
+      parameters:
+      - name: recordId
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - name: organizationId
+        in: query
+        required: true
+        schema:
+          type: string
+          format: uuid
+      responses:
+        "200":
+          description: OK
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/RecordView"
   /api/v1/distribution/credentials/{credentialId}/verify:
     post:
       tags:
@@ -4660,6 +4756,8 @@ paths:
           - DISTRIBUTION_CREDENTIAL_DELETED
           - DISTRIBUTION_CREDENTIAL_VERIFIED
           - DISTRIBUTION_DISPATCHED
+          - DISTRIBUTION_GROUP_SYNCED
+          - DISTRIBUTION_RECORD_REFRESHED
       - name: applicationId
         in: query
         required: false
@@ -4977,6 +5075,27 @@ paths:
           format: uuid
       - name: userId
         in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      responses:
+        "204":
+          description: No Content
+  /api/v1/distribution/testflight/groups/{linkId}:
+    delete:
+      tags:
+      - distribution-controller
+      operationId: deleteTestFlightGroup
+      parameters:
+      - name: linkId
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - name: organizationId
+        in: query
         required: true
         schema:
           type: string
@@ -5391,8 +5510,6 @@ components:
     JsonNode:
       type: object
       properties:
-        container:
-          type: boolean
         floatingPointNumber:
           type: boolean
         nodeType:
@@ -5437,6 +5554,8 @@ components:
         boolean:
           type: boolean
         binary:
+          type: boolean
+        container:
           type: boolean
         empty:
           type: boolean
@@ -5628,6 +5747,52 @@ components:
           type: string
           format: uuid
         createdAt:
+          type: string
+          format: date-time
+    TestFlightGroupLinkRequest:
+      type: object
+      properties:
+        organizationId:
+          type: string
+          format: uuid
+        applicationId:
+          type: string
+          format: uuid
+        groupId:
+          type: string
+          format: uuid
+        createOnDemand:
+          type: boolean
+    LinkView:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        organizationId:
+          type: string
+          format: uuid
+        tenantId:
+          type: string
+          format: uuid
+        groupId:
+          type: string
+          format: uuid
+        groupName:
+          type: string
+        channel:
+          type: string
+        externalGroupId:
+          type: string
+        externalGroupName:
+          type: string
+        lastSyncedAt:
+          type: string
+          format: date-time
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
           type: string
           format: date-time
     StoreAccountView:
@@ -6483,6 +6648,63 @@ components:
         resolved:
           type: boolean
         verifiedAt:
+          type: string
+          format: date-time
+    SyncView:
+      type: object
+      properties:
+        link:
+          $ref: "#/components/schemas/LinkView"
+        pushedEmails:
+          type: array
+          items:
+            type: string
+        driftTesterEmails:
+          type: array
+          items:
+            type: string
+        driftBuildIds:
+          type: array
+          items:
+            type: string
+    RecordView:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        releaseId:
+          type: string
+          format: uuid
+        artifactId:
+          type: string
+          format: uuid
+        channel:
+          type: string
+        status:
+          type: string
+        externalId:
+          type: string
+        failureCode:
+          type: string
+        providerStatus:
+          type: string
+        providerStatusAt:
+          type: string
+          format: date-time
+        attempts:
+          type: integer
+          format: int32
+        lastAttemptAt:
+          type: string
+          format: date-time
+        distributedAt:
+          type: string
+          format: date-time
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
           type: string
           format: date-time
     InspectRequest:
@@ -8060,6 +8282,15 @@ components:
             $ref: "#/components/schemas/ConfigVersionView"
         next_cursor:
           type: string
+    PageResponseLinkView:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/LinkView"
+        next_cursor:
+          type: string
     PageResponseRecordView:
       type: object
       properties:
@@ -8069,41 +8300,6 @@ components:
             $ref: "#/components/schemas/RecordView"
         next_cursor:
           type: string
-    RecordView:
-      type: object
-      properties:
-        id:
-          type: string
-          format: uuid
-        releaseId:
-          type: string
-          format: uuid
-        artifactId:
-          type: string
-          format: uuid
-        channel:
-          type: string
-        status:
-          type: string
-        externalId:
-          type: string
-        failureCode:
-          type: string
-        attempts:
-          type: integer
-          format: int32
-        lastAttemptAt:
-          type: string
-          format: date-time
-        distributedAt:
-          type: string
-          format: date-time
-        createdAt:
-          type: string
-          format: date-time
-        updatedAt:
-          type: string
-          format: date-time
     PageResponseStoreAccountView:
       type: object
       properties:
@@ -8397,6 +8593,8 @@ components:
           - DISTRIBUTION_CREDENTIAL_DELETED
           - DISTRIBUTION_CREDENTIAL_VERIFIED
           - DISTRIBUTION_DISPATCHED
+          - DISTRIBUTION_GROUP_SYNCED
+          - DISTRIBUTION_RECORD_REFRESHED
         occurredAt:
           type: string
           format: date-time

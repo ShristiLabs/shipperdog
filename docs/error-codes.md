@@ -344,9 +344,11 @@ problem codes should a dispatch surface ever expose them over HTTP.
 
 | Code | HTTP | Detail |
 |---|---|---|
-| `DISTRIBUTION_CREDENTIAL_NOT_FOUND` | 404 | Resource not found. (the addressed credential binding — unknown or of another organization; concealed across organizations) |
-| `DISTRIBUTION_RECORD_NOT_FOUND` | 404 | Resource not found. (reserved; the records read answers the honest empty page for an unknown release inside the caller's organization — no existence signal) |
+| `DISTRIBUTION_CREDENTIAL_NOT_FOUND` | 404 | Resource not found. (the addressed credential binding — unknown or of another organization; concealed across organizations; since S13-02 also the refresh route's answer when the record's channel has no resolvable credential on the chain) |
+| `DISTRIBUTION_RECORD_NOT_FOUND` | 404 | Resource not found. (the addressed distribution record of the refresh route — unknown or of another organization, concealed; the records read answers the honest empty page for an unknown release inside the caller's organization — no existence signal) |
 | `DISTRIBUTION_CREDENTIAL_LEVEL_INVALID` | 400 | The credential level is invalid. (an environment-level binding must name its application — the chain's levels are organization, application, application+environment, PRD 25) |
+| `DISTRIBUTION_GROUP_LINK_INVALID` | 400 | The group link request is invalid. (S13-02: an unknown application, tester group, or bundle id; a provider group that does not exist and was not asked to be created; a sync whose scope has no apple credential — the message names the fault's fact, never a foreign row) |
+| `DISTRIBUTION_GROUP_LINK_NOT_FOUND` | 404 | Resource not found. (the addressed tester-group link of the TestFlight mapping surface — concealed across organizations) |
 | `ADAPTER_FAILED` | 502 | The distribution channel failed. (the taxonomy's terminal answer for TRANSIENT/PERMANENT categories — the per-adapter retries are exhausted or the fault was final; any adapter throw outside the taxonomy lands here) |
 | `ADAPTER_RATE_LIMITED` | 503 | The distribution channel is rate limited. (the provider throttled every attempt) |
 | `ADAPTER_TIMEOUT` | 504 | The distribution channel timed out. (the per-adapter wall cut every attempt — `shipperdog.distribution.adapters.<channel>.timeout`) |
@@ -354,6 +356,16 @@ problem codes should a dispatch surface ever expose them over HTTP.
 | `CHANNEL_UNKNOWN` | 400 | The distribution channel is not registered. (an environment binds a channel id no adapter claims; the dispatch records it loudly as a FAILED record's `failure_code`) |
 
 Record-only failure codes (not HTTP): `CREDENTIAL_UNRESOLVED` (the
-adapter's declared provider has no binding anywhere on the chain) and
+adapter's declared provider has no binding anywhere on the chain),
 `DIRECT_FORMAT_REFUSED` (the direct channel's format rule — AAB is
-Play-only, FR-006).
+Play-only, FR-006), and the TestFlight connector's per-slot codes
+(S13-02, on `channel_distributions.failure_code`):
+`TESTFLIGHT_GROUPS_UNMAPPED` (the release targets no tester groups, or
+none carry a channel link — the mapping surface's gap, recorded
+loudly, never a silent skip), `TESTFLIGHT_BUILD_NOT_FOUND` (no ASC
+build matches the artifact's own build number, or the artifact carries
+no extracted identity — CI or Xcode Cloud must upload the build before
+promotion), `TESTFLIGHT_IOS_ONLY` (a non-iOS slot on Apple's channel),
+`TESTFLIGHT_BUILD_REJECTED` (Apple's beta review rejected the build),
+and `TESTFLIGHT_BUILD_EXPIRED` (the build expired or was removed from
+TestFlight).

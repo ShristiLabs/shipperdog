@@ -1099,7 +1099,17 @@ final class IsolationEndpointRegistry {
                         200,
                         404,
                         side -> "/api/v1/distribution/records?organizationId=" + UUID.randomUUID() + "&releaseId="
-                                + UUID.randomUUID()));
+                                + UUID.randomUUID()),
+                // The TestFlight group-mapping view (S13-02, the same
+                // org-addressed configuration standing): the honest
+                // EMPTY page for the seeded world -- the org guard is
+                // the leak-proofing, like the records read above.
+                surface(
+                        "/api/v1/distribution/testflight/groups",
+                        side -> "/api/v1/distribution/testflight/groups?organizationId=" + side.organizationId(),
+                        200,
+                        404,
+                        side -> "/api/v1/distribution/testflight/groups?organizationId=" + UUID.randomUUID()));
     }
 
     /**
