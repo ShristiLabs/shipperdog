@@ -4,6 +4,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 import com.shipperdog.api.audit.AuditEventType;
 import com.shipperdog.api.identity.AuditCapture;
+import com.shipperdog.ssofixture.MockSamlIdp;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.UUID;
@@ -25,12 +26,13 @@ import org.testcontainers.utility.DockerImageName;
 import tools.jackson.databind.JsonNode;
 
 /**
- * The OIDC configuration surface for issue #67 (S14-01): the typed
- * write's validation, the read's shape (the secret reference echoes,
- * the material never does), secret rotation through the platform's
- * store (the replaced reference's material is discarded), and the
- * permission gates -- anonymous 401, and the concealed 404 for a
- * foreign organization's configuration.
+ * The SSO configuration surface for issues #67/#68 (S14-01/S14-02):
+ * the typed write's validation (OIDC and SAML rows alike), the read's
+ * shape (the secret reference and SAML certificate fingerprints echo,
+ * the material and metadata XML never do), secret rotation through the
+ * platform's store (the replaced reference's material is discarded),
+ * and the permission gates -- anonymous 401, and the concealed 404 for
+ * a foreign organization's configuration.
  */
 @SpringBootTest(
         webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT,
@@ -109,7 +111,8 @@ class SsoConfigIntegrationTest {
                 .isEqualTo(400);
         assertThat(statusOfPut(devToken, orgId, body("https://login.example.com/?q=1", null)))
                 .isEqualTo(400);
-        assertThat(statusOfPut(devToken, orgId, with(body("https://login.example.com", null), "providerType", "SAML")))
+        assertThat(statusOfPut(devToken, orgId, with(body("https://login.example.com", null), "providerType", "CAS")))
+                .as("an unknown provider kind is refused (OIDC and SAML are the vocabulary)")
                 .isEqualTo(400);
         assertThat(statusOfPut(devToken, orgId, with(body("https://login.example.com", null), "scopes", "email")))
                 .isEqualTo(400);
@@ -204,6 +207,84 @@ class SsoConfigIntegrationTest {
     }
 
     // ------------------------------------------------------------------
+    // SAML rows (S14-02, issue #68)
+    // ------------------------------------------------------------------
+
+    @Test
+    void samlWritePinsMetadataAndSignaturePolicyAtWriteTime() throws Exception {
+        String devToken = devToken();
+        UUID orgId = createOrganization(devToken, "SAML Config");
+        MockSamlIdp idp = new MockSamlIdp();
+
+        JsonNode stored = putConfig(devToken, orgId, samlBody(idp.metadataXml()), 200);
+        assertThat(stored.get("providerType").asText()).isEqualTo("SAML");
+        assertThat(stored.get("issuerUrl").asText())
+                .as("the SAML row's issuer is the ingested entityID")
+                .isEqualTo(entityIdOf(idp.metadataXml()));
+        assertThat(stored.get("samlWantAssertionsSigned").asBoolean())
+                .as("assertion signatures are required by default")
+                .isTrue();
+        assertThat(stored.get("samlWantResponseSigned").asBoolean()).isFalse();
+        assertThat(stored.get("enforceSsoLogin").asBoolean()).isFalse();
+        assertThat(stored.get("samlCertificateFingerprints"))
+                .as("the pinned certificate's SHA-256 fingerprint echoes; the XML never does")
+                .hasSize(1);
+        assertThat(stored.get("samlCertificateFingerprints").get(0).asText()).matches("[0-9a-f]{64}");
+        assertThat(stored.has("idpMetadataXml"))
+                .as("the metadata XML never echoes")
+                .isFalse();
+
+        Map<String, Object> row = jdbc.queryForMap(
+                "SELECT saml_idp_entity_id, saml_want_assertions_signed, saml_want_response_signed, "
+                        + "enforce_sso_login FROM organization_idp_configs WHERE organization_id = ?",
+                orgId);
+        assertThat(row.get("saml_idp_entity_id")).isEqualTo(entityIdOf(idp.metadataXml()));
+        assertThat(row.get("saml_want_assertions_signed")).isEqualTo(Boolean.TRUE);
+        assertThat(row.get("saml_want_response_signed")).isEqualTo(Boolean.FALSE);
+        assertThat(row.get("enforce_sso_login")).isEqualTo(Boolean.FALSE);
+    }
+
+    @Test
+    void samlInvalidWritesAreRefused() throws Exception {
+        String devToken = devToken();
+        UUID orgId = createOrganization(devToken, "SAML Invalid");
+        MockSamlIdp idp = new MockSamlIdp();
+        String metadata = idp.metadataXml();
+
+        Map<String, Object> missingMetadata = samlBody(metadata);
+        missingMetadata.remove("idpMetadataXml");
+        assertThat(statusOfPut(devToken, orgId, missingMetadata))
+                .as("a SAML row without metadata is refused")
+                .isEqualTo(400);
+        assertThat(statusOfPut(devToken, orgId, samlBody("<not-saml/>")))
+                .as("garbage metadata is refused")
+                .isEqualTo(400);
+        assertThat(statusOfPut(
+                        devToken,
+                        orgId,
+                        samlBody(metadata.replace(
+                                "urn:oasis:names:tc:SAML:2.0:bindings:HTTP-Redirect",
+                                "urn:oasis:names:tc:SAML:2.0:bindings:SOAP"))))
+                .as("metadata without an HTTP-Redirect SSO endpoint is refused")
+                .isEqualTo(400);
+        assertThat(statusOfPut(
+                        devToken,
+                        orgId,
+                        samlBody(metadata.replaceAll("(?s)<md:KeyDescriptor.*?</md:KeyDescriptor>", ""))))
+                .as("metadata without a signing certificate leaves nothing to pin")
+                .isEqualTo(400);
+        assertThat(statusOfPut(
+                        devToken,
+                        orgId,
+                        with(with(samlBody(metadata), "wantAssertionsSigned", false), "wantResponseSigned", false)))
+                .as("an unsigned-assertion AND unsigned-response policy is refused")
+                .isEqualTo(400);
+        assertThat(statusOfPut(devToken, orgId, with(samlBody(metadata), "inactiveClaimName", "sd_inactive")))
+                .as("the OIDC-only inactive claim has no SAML meaning")
+                .isEqualTo(400);
+    }
+
+    // ------------------------------------------------------------------
     // Helpers
     // ------------------------------------------------------------------
 
@@ -215,6 +296,20 @@ class SsoConfigIntegrationTest {
         body.put("clientId", "shipperdog-console");
         body.put("clientSecret", clientSecret == null ? "secret-one" : clientSecret);
         return body;
+    }
+
+    /** A valid SAML base body: metadata plus the default strict policy. */
+    private static Map<String, Object> samlBody(String metadataXml) {
+        Map<String, Object> body = new HashMap<>();
+        body.put("providerType", "SAML");
+        body.put("idpMetadataXml", metadataXml);
+        body.put("provisioningMode", "INVITED_ONLY");
+        return body;
+    }
+
+    private static String entityIdOf(String metadataXml) {
+        int start = metadataXml.indexOf("entityID=\"") + "entityID=\"".length();
+        return metadataXml.substring(start, metadataXml.indexOf('"', start));
     }
 
     private static Map<String, Object> with(Map<String, Object> body, String field, Object value) {

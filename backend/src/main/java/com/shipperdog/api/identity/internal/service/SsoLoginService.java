@@ -13,7 +13,6 @@ import com.shipperdog.api.identity.internal.entity.OrganizationIdpConfigEntity;
 import com.shipperdog.api.identity.internal.entity.SsoAuthorizationRequestEntity;
 import com.shipperdog.api.identity.internal.entity.SsoSessionCodeEntity;
 import com.shipperdog.api.identity.internal.entity.UserEntity;
-import com.shipperdog.api.identity.internal.entity.UserIdpIdentityEntity;
 import com.shipperdog.api.identity.internal.oidc.OidcIdTokenVerifier;
 import com.shipperdog.api.identity.internal.oidc.OidcProviderClient;
 import com.shipperdog.api.identity.internal.repository.OrganizationIdpConfigRepository;
@@ -21,18 +20,13 @@ import com.shipperdog.api.identity.internal.repository.SsoAuthorizationRequestRe
 import com.shipperdog.api.identity.internal.repository.SsoSessionCodeRepository;
 import com.shipperdog.api.identity.internal.repository.UserIdpIdentityRepository;
 import com.shipperdog.api.identity.internal.repository.UserRepository;
-import com.shipperdog.api.organization.OrgRole;
-import com.shipperdog.api.organization.OrganizationAccess;
-import com.shipperdog.api.organization.OrganizationException;
 import java.net.URI;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.time.Clock;
 import java.time.Instant;
-import java.util.ArrayList;
 import java.util.Base64;
-import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
@@ -41,20 +35,15 @@ import org.springframework.transaction.annotation.Transactional;
 
 /**
  * The OIDC single sign-on flow (S14-01, issue #67): backend-driven
- * authorization-code + PKCE redirects, ID-token verification, identity
- * linking, provisioning, group-claim role mapping, IdP-inactive
- * lockout, and the one-time session code that hands the console its
- * tokens. Sessions mint through {@link TokenService#issueForLogin} --
- * an SSO login IS a local session (same claims, same refresh rotation,
- * same revocation surfaces), never a parallel token shape.
- *
- * <p>Provisioning policy: INVITED_ONLY links only subjects whose
- * verified email matches an existing member; JIT additionally
- * provisions a password-less account (least-privilege default role)
- * and admits existing non-member accounts with that same role.
- * Platform administrators never authenticate through SSO -- local
- * login is their break-glass (the story's never-lock-operators-out
- * rule).
+ * authorization-code + PKCE redirects, ID-token verification, and the
+ * one-time session code that hands the console its tokens. Since
+ * S14-02 the identity resolution -- linking, provisioning, group-claim
+ * mapping, IdP-inactive lockout -- lives in the provider-neutral
+ * {@link SsoAccountResolver} shared with the SAML flow; this service
+ * is the OIDC frontend alone. Sessions mint through
+ * {@link TokenService#issueForLogin} -- an SSO login IS a local
+ * session (same claims, same refresh rotation, same revocation
+ * surfaces), never a parallel token shape.
  *
  * <p>Every leg audits: SSO_LOGIN_SUCCESS / SSO_LOGIN_FAILURE carry the
  * reason that the uniform browser redirect never reveals;
@@ -66,30 +55,13 @@ public class SsoLoginService {
 
     private static final org.slf4j.Logger log = org.slf4j.LoggerFactory.getLogger(SsoLoginService.class);
 
-    /**
-     * Role privilege rank for mapping resolution: when several mapped
-     * groups match, the most privileged wins (an explicit escalation
-     * beats an implicit floor). ORG_ADMIN tops; the tail order among
-     * the specialist roles is arbitrary but fixed.
-     */
-    private static final List<OrgRole> ROLE_RANK = List.of(
-            OrgRole.VIEWER,
-            OrgRole.ORG_MEMBER,
-            OrgRole.DEVELOPER,
-            OrgRole.QA_ENGINEER,
-            OrgRole.APP_OWNER,
-            OrgRole.RELEASE_MANAGER,
-            OrgRole.SECURITY_REVIEWER,
-            OrgRole.COMPLIANCE_REVIEWER,
-            OrgRole.ORG_ADMIN);
-
     private final SsoConfigService configService;
+    private final SsoAccountResolver resolver;
     private final OrganizationIdpConfigRepository configs;
     private final SsoAuthorizationRequestRepository authorizationRequests;
     private final SsoSessionCodeRepository sessionCodes;
     private final UserIdpIdentityRepository identities;
     private final UserRepository users;
-    private final OrganizationAccess organizations;
     private final OidcProviderClient provider;
     private final OidcIdTokenVerifier verifier;
     private final ChannelSecrets secrets;
@@ -100,12 +72,12 @@ public class SsoLoginService {
 
     SsoLoginService(
             SsoConfigService configService,
+            SsoAccountResolver resolver,
             OrganizationIdpConfigRepository configs,
             SsoAuthorizationRequestRepository authorizationRequests,
             SsoSessionCodeRepository sessionCodes,
             UserIdpIdentityRepository identities,
             UserRepository users,
-            OrganizationAccess organizations,
             OidcProviderClient provider,
             OidcIdTokenVerifier verifier,
             ChannelSecrets secrets,
@@ -114,12 +86,12 @@ public class SsoLoginService {
             SsoProperties properties,
             Clock clock) {
         this.configService = configService;
+        this.resolver = resolver;
         this.configs = configs;
         this.authorizationRequests = authorizationRequests;
         this.sessionCodes = sessionCodes;
         this.identities = identities;
         this.users = users;
-        this.organizations = organizations;
         this.provider = provider;
         this.verifier = verifier;
         this.secrets = secrets;
@@ -136,11 +108,18 @@ public class SsoLoginService {
     /**
      * Whether the organization offers SSO (the console login's probe).
      * Uniform miss for unknown, unconfigured, and disabled alike: the
-     * anonymous caller learns nothing beyond "no".
+     * anonymous caller learns nothing beyond "no". Any provider kind
+     * counts (OIDC since S14-01, SAML since S14-02).
      */
     @Transactional(readOnly = true)
     public boolean ssoOffered(UUID organizationId) {
-        return configService.enabledConfig(organizationId).isPresent();
+        return configService.enabledProviderConfig(organizationId).isPresent();
+    }
+
+    /** The provider kind the organization's enabled SSO configuration uses. */
+    @Transactional(readOnly = true)
+    public Optional<String> providerTypeOf(UUID organizationId) {
+        return configService.enabledProviderConfig(organizationId).map(OrganizationIdpConfigEntity::getProviderType);
     }
 
     /** The redirect URI registered with every identity provider. */
@@ -158,7 +137,7 @@ public class SsoLoginService {
     @Transactional
     public String beginAuthorization(UUID organizationId) {
         OrganizationIdpConfigEntity config =
-                configService.enabledConfig(organizationId).orElseThrow(this::ssoOff);
+                configService.enabledOidcConfig(organizationId).orElseThrow(this::ssoOff);
         OidcProviderClient.OidcEndpoints endpoints;
         try {
             endpoints = provider.endpointsFor(config.getIssuerUrl());
@@ -214,16 +193,16 @@ public class SsoLoginService {
     public String handleCallback(String code, String state, String error) {
         try {
             if (error != null && !error.isBlank()) {
-                throw refused(null, null, "provider_error");
+                throw oidcRefusal(null, null, "provider_error");
             }
             if (code == null || code.isBlank() || state == null || state.isBlank()) {
-                throw refused(null, null, "invalid_callback");
+                throw oidcRefusal(null, null, "invalid_callback");
             }
             SsoAuthorizationRequestEntity request = authorizationRequests
                     .findByStateHash(SecureTokens.sha256Hex(state))
                     .orElse(null);
             if (request == null) {
-                throw refused(null, null, "unknown_state");
+                throw oidcRefusal(null, null, "unknown_state");
             }
             // Atomic single-use consume: a racing replay loses here. A
             // lost update re-reads the row to keep the audit's reason
@@ -233,16 +212,16 @@ public class SsoLoginService {
                         .findByStateHash(request.getStateHash())
                         .map(consumed -> consumed.getConsumedAt() != null)
                         .orElse(true);
-                throw refused(null, request.getOrganizationId(), replayed ? "unknown_state" : "expired_state");
+                throw oidcRefusal(null, request.getOrganizationId(), replayed ? "unknown_state" : "expired_state");
             }
             UUID organizationId = request.getOrganizationId();
             OrganizationIdpConfigEntity config = configService
-                    .enabledConfig(organizationId)
-                    .orElseThrow(() -> refused(null, organizationId, "sso_disabled"));
+                    .enabledOidcConfig(organizationId)
+                    .orElseThrow(() -> oidcRefusal(null, organizationId, "sso_disabled"));
             String clientSecret = secrets.resolve(config.getClientSecretRef())
                     .filter(SecretMaterial::present)
                     .map(SecretMaterial::value)
-                    .orElseThrow(() -> refused(null, organizationId, "secret_unresolvable"));
+                    .orElseThrow(() -> oidcRefusal(null, organizationId, "secret_unresolvable"));
             OidcProviderClient.OidcEndpoints endpoints = provider.endpointsFor(config.getIssuerUrl());
             OidcProviderClient.TokenResponse exchanged = provider.exchangeCode(
                     endpoints, config.getClientId(), clientSecret, code, request.getCodeVerifier(), callbackUri());
@@ -256,27 +235,26 @@ public class SsoLoginService {
                     config.getGroupClaimName(),
                     config.getInactiveClaimName());
             if (claims == null) {
-                throw refused(null, organizationId, "token_verification");
+                throw oidcRefusal(null, organizationId, "token_verification");
             }
-            UserEntity user = resolveAccount(organizationId, config, claims);
-            String sessionCode = SecureTokens.randomToken();
-            sessionCodes.save(new SsoSessionCodeEntity(
-                    SecureTokens.sha256Hex(sessionCode),
-                    user.getId(),
+            UserEntity user = resolver.resolve(
                     organizationId,
-                    Instant.now(clock).plus(properties.sessionCodeTtl())));
-            audit.publish(new AuditEvent(
-                    AuditEventType.SSO_LOGIN_SUCCESS,
-                    Instant.now(clock),
-                    user.getId(),
-                    organizationId,
-                    null,
-                    true,
-                    Map.of(
-                            "issuer", config.getIssuerUrl(),
-                            "subject", claims.subject(),
-                            "provisioningMode", config.getProvisioningMode().name())));
+                    config,
+                    new SsoAccountResolver.ExternalIdentity(
+                            claims.subject(),
+                            claims.email(),
+                            claims.emailVerified(),
+                            claims.name(),
+                            claims.groups(),
+                            claims.inactive()),
+                    config.getIssuerUrl());
+            String sessionCode = resolver.issueSessionCode(user, organizationId);
+            resolver.auditLoginSuccess(user, organizationId, config, config.getIssuerUrl(), claims.subject());
             return consoleRedirect("code=" + urlEncode(sessionCode));
+        } catch (SsoRefusalException refusal) {
+            // The resolver already published the audit line with the
+            // distinct reason; the browser gets the uniform redirect.
+            return consoleRedirect("error=sso");
         } catch (CallbackRefusal refusal) {
             return consoleRedirect("error=sso");
         } catch (RuntimeException e) {
@@ -395,7 +373,7 @@ public class SsoLoginService {
         } catch (java.text.ParseException e) {
             throw invalidRequest("logout token is malformed");
         }
-        Optional<UserIdpIdentityEntity> link =
+        Optional<com.shipperdog.api.identity.internal.entity.UserIdpIdentityEntity> link =
                 identities.findByOrganizationIdAndSubject(config.get().getOrganizationId(), subject);
         if (link.isEmpty()) {
             return;
@@ -416,252 +394,6 @@ public class SsoLoginService {
     }
 
     // ------------------------------------------------------------------
-    // Identity resolution: linking, provisioning, mapping, lockout
-    // ------------------------------------------------------------------
-
-    /**
-     * Resolves the ShipperDog account for a verified corporate
-     * assertion, applying the organization's provisioning policy,
-     * group-claim role mapping, and the IdP-inactive lockout.
-     */
-    private UserEntity resolveAccount(
-            UUID organizationId, OrganizationIdpConfigEntity config, OidcIdTokenVerifier.VerifiedClaims claims) {
-        String deactivated = organizations
-                .statusOf(organizationId)
-                .filter("DEACTIVATED"::equals)
-                .orElse(null);
-        if (deactivated != null) {
-            throw refused(null, organizationId, "organization_deactivated");
-        }
-        if (claims.inactive()) {
-            lockForInactivity(organizationId, config, claims);
-            throw refused(null, organizationId, "idp_inactive");
-        }
-        Optional<UserIdpIdentityEntity> existingLink =
-                identities.findByOrganizationIdAndSubject(organizationId, claims.subject());
-        if (existingLink.isPresent()) {
-            UserEntity linked = users.findById(existingLink.get().getUserId()).orElse(null);
-            if (linked == null) {
-                throw refused(null, organizationId, "linked_user_gone");
-            }
-            requireLoginAllowed(linked, organizationId);
-            applyRoleMapping(organizationId, config, linked, claims);
-            return linked;
-        }
-        if (claims.email() == null || claims.email().isBlank()) {
-            throw refused(null, organizationId, "no_email");
-        }
-        if (config.isRequireVerifiedEmail() && !Boolean.TRUE.equals(claims.emailVerified())) {
-            throw refused(null, organizationId, "unverified_email");
-        }
-        String email = AuthService.normalizeEmail(claims.email());
-        Optional<UserEntity> byEmail = users.findByEmail(email);
-        if (byEmail.isPresent()) {
-            UserEntity user = byEmail.get();
-            if (user.isPlatformAdmin()) {
-                // Break-glass: platform administrators authenticate
-                // locally, never through an organization's provider.
-                throw refused(user.getId(), organizationId, "platform_admin_breakglass");
-            }
-            requireLoginAllowed(user, organizationId);
-            boolean member = organizations.activeOrganizationRoles(user.getId()).containsKey(organizationId);
-            if (!member && config.getProvisioningMode() == OrganizationIdpConfigEntity.ProvisioningMode.INVITED_ONLY) {
-                throw refused(user.getId(), organizationId, "not_invited");
-            }
-            if (!member) {
-                try {
-                    organizations.addMember(
-                            organizationId,
-                            user.getId(),
-                            mappedOrDefault(organizationId, config, claims),
-                            user.getId());
-                } catch (OrganizationException e) {
-                    throw refused(user.getId(), organizationId, "provisioning_refused");
-                }
-            }
-            applyRoleMapping(organizationId, config, user, claims);
-            link(organizationId, config, user, claims, UserIdpIdentityEntity.LinkKind.EMAIL);
-            return user;
-        }
-        if (config.getProvisioningMode() == OrganizationIdpConfigEntity.ProvisioningMode.INVITED_ONLY) {
-            throw refused(null, organizationId, "not_invited");
-        }
-        int atSign = email.indexOf('@');
-        UserEntity provisioned = new UserEntity(
-                email,
-                null,
-                claims.name() == null || claims.name().isBlank()
-                        ? email.substring(0, atSign > 0 ? atSign : email.length())
-                        : claims.name());
-        users.save(provisioned);
-        try {
-            organizations.addMember(
-                    organizationId,
-                    provisioned.getId(),
-                    mappedOrDefault(organizationId, config, claims),
-                    provisioned.getId());
-        } catch (OrganizationException e) {
-            throw refused(provisioned.getId(), organizationId, "provisioning_refused");
-        }
-        link(organizationId, config, provisioned, claims, UserIdpIdentityEntity.LinkKind.JIT);
-        audit.publish(new AuditEvent(
-                AuditEventType.SSO_USER_JIT_PROVISIONED,
-                Instant.now(clock),
-                provisioned.getId(),
-                organizationId,
-                null,
-                true,
-                Map.of(
-                        "subject", claims.subject(),
-                        "issuer", config.getIssuerUrl(),
-                        "role", mappedOrDefault(organizationId, config, claims).name())));
-        applyRoleMapping(organizationId, config, provisioned, claims);
-        return provisioned;
-    }
-
-    /** Status gates every resolved account passes (uniform refusal). */
-    private void requireLoginAllowed(UserEntity user, UUID organizationId) {
-        if (user.getStatus() == UserEntity.Status.DISABLED) {
-            throw refused(user.getId(), organizationId, "account_disabled");
-        }
-        if (user.getStatus() == UserEntity.Status.LOCKED) {
-            throw refused(user.getId(), organizationId, "account_locked");
-        }
-    }
-
-    /**
-     * The IdP-inactive lockout (AC: offboarding follows the IdP): the
-     * account crosses to LOCKED and every refresh family is revoked
-     * (reason {@code idp_inactive}) -- pre-existing sessions die at
-     * their next stateful touch, exactly like a tester deactivation.
-     */
-    private void lockForInactivity(
-            UUID organizationId, OrganizationIdpConfigEntity config, OidcIdTokenVerifier.VerifiedClaims claims) {
-        identities
-                .findByOrganizationIdAndSubject(organizationId, claims.subject())
-                .ifPresent(link -> users.findById(link.getUserId()).ifPresent(user -> {
-                    user.setStatus(UserEntity.Status.LOCKED);
-                    users.save(user);
-                    tokens.revokeRefreshTokens(user.getId(), "idp_inactive");
-                    audit.publish(new AuditEvent(
-                            AuditEventType.SSO_ACCOUNT_LOCKED,
-                            Instant.now(clock),
-                            user.getId(),
-                            organizationId,
-                            null,
-                            true,
-                            Map.of("issuer", config.getIssuerUrl(), "subject", claims.subject())));
-                }));
-    }
-
-    /** Records the subject<->user link and its audit line. */
-    private void link(
-            UUID organizationId,
-            OrganizationIdpConfigEntity config,
-            UserEntity user,
-            OidcIdTokenVerifier.VerifiedClaims claims,
-            UserIdpIdentityEntity.LinkKind kind) {
-        identities.save(new UserIdpIdentityEntity(
-                user.getId(),
-                organizationId,
-                config.getIssuerUrl(),
-                claims.subject(),
-                AuthService.normalizeEmail(claims.email()),
-                kind));
-        audit.publish(new AuditEvent(
-                AuditEventType.SSO_IDENTITY_LINKED,
-                Instant.now(clock),
-                user.getId(),
-                organizationId,
-                null,
-                true,
-                Map.of("subject", claims.subject(), "linkKind", kind.name(), "issuer", config.getIssuerUrl())));
-    }
-
-    /**
-     * Group-claim mapping: the most privileged mapped group the token
-     * carries wins; no mapped group leaves the membership untouched
-     * (absence never demotes). A refused apply (the last-ORG_ADMIN
-     * guard) skips the change and records the refusal -- a mapping
-     * never blocks a login.
-     */
-    private void applyRoleMapping(
-            UUID organizationId,
-            OrganizationIdpConfigEntity config,
-            UserEntity user,
-            OidcIdTokenVerifier.VerifiedClaims claims) {
-        if (config.getGroupClaimName() == null || claims.groups().isEmpty()) {
-            return;
-        }
-        Map<String, OrgRole> mappings = configService.mappingsOf(config);
-        OrgRole mapped = null;
-        for (String group : claims.groups()) {
-            OrgRole candidate = mappings.get(group);
-            if (candidate != null && (mapped == null || rank(candidate) > rank(mapped))) {
-                mapped = candidate;
-            }
-        }
-        if (mapped == null) {
-            return;
-        }
-        OrgRole current = organizations.activeOrganizationRoles(user.getId()).get(organizationId);
-        if (current == mapped) {
-            return;
-        }
-        try {
-            organizations.updateMemberRole(organizationId, user.getId(), mapped, user.getId());
-            audit.publish(new AuditEvent(
-                    AuditEventType.SSO_ROLE_MAPPED,
-                    Instant.now(clock),
-                    user.getId(),
-                    organizationId,
-                    null,
-                    true,
-                    Map.of(
-                            "group", firstMatchedGroup(mappings, claims.groups()),
-                            "role.before", current == null ? "" : current.name(),
-                            "role.after", mapped.name())));
-        } catch (OrganizationException e) {
-            audit.publish(new AuditEvent(
-                    AuditEventType.SSO_ROLE_MAPPED,
-                    Instant.now(clock),
-                    user.getId(),
-                    organizationId,
-                    null,
-                    false,
-                    Map.of("group", firstMatchedGroup(mappings, claims.groups()), "reason", "role_change_refused")));
-        }
-    }
-
-    /** The JIT admission role: the mapped role when present, else the configured default. */
-    private OrgRole mappedOrDefault(
-            UUID organizationId, OrganizationIdpConfigEntity config, OidcIdTokenVerifier.VerifiedClaims claims) {
-        Map<String, OrgRole> mappings = configService.mappingsOf(config);
-        OrgRole mapped = null;
-        for (String group : claims.groups()) {
-            OrgRole candidate = mappings.get(group);
-            if (candidate != null && (mapped == null || rank(candidate) > rank(mapped))) {
-                mapped = candidate;
-            }
-        }
-        if (mapped != null) {
-            return mapped;
-        }
-        return config.getJitDefaultRole() == null ? OrgRole.VIEWER : config.getJitDefaultRole();
-    }
-
-    private static String firstMatchedGroup(Map<String, OrgRole> mappings, List<String> groups) {
-        List<String> matched = new ArrayList<>(groups);
-        matched.retainAll(mappings.keySet());
-        return matched.isEmpty() ? "" : matched.getFirst();
-    }
-
-    private static int rank(OrgRole role) {
-        int index = ROLE_RANK.indexOf(role);
-        return index < 0 ? 0 : index;
-    }
-
-    // ------------------------------------------------------------------
     // Small helpers
     // ------------------------------------------------------------------
 
@@ -676,7 +408,7 @@ public class SsoLoginService {
         }
     }
 
-    private static String urlEncode(String value) {
+    static String urlEncode(String value) {
         return java.net.URLEncoder.encode(value, StandardCharsets.UTF_8);
     }
 
@@ -694,11 +426,11 @@ public class SsoLoginService {
     }
 
     /**
-     * The callback's uniform refusal: audits SSO_LOGIN_FAILURE with the
-     * distinct reason (the only place it exists -- the browser gets the
-     * bare {@code error=sso} redirect) and unwinds as the redirect.
+     * The callback's OIDC-local refusal: audits SSO_LOGIN_FAILURE with
+     * the distinct reason (the browser gets the bare {@code error=sso}
+     * redirect) and unwinds as the redirect carrier.
      */
-    private CallbackRefusal refused(UUID userId, UUID organizationId, String reason) {
+    private CallbackRefusal oidcRefusal(UUID userId, UUID organizationId, String reason) {
         audit.publish(new AuditEvent(
                 AuditEventType.SSO_LOGIN_FAILURE,
                 Instant.now(clock),

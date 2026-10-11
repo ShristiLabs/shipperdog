@@ -37,6 +37,12 @@
          the IPA parser never hand-rolls bplist decoding and the test
          fixtures generate real binary plists programmatically. -->
     <dd-plist.version>1.29</dd-plist.version>
+    <!-- Apache Santuario xmlsec (issue #68, S14-02): the proven OSS
+         XML-DSig implementation (Apache-2.0, maintained) behind the
+         SAML Response/Assertion signature verification. The SAML object
+         layer is deliberately in-house and scoped (ADR-0009); the
+         signature path must never be. -->
+    <xmlsec.version>4.0.4</xmlsec.version>
     <!-- Vulnerability remediation (issue #39, S8-05): the CI OSV scan
          gate found known CVEs in the Spring Boot 4.1.1-managed
          versions — Tomcat embed 11.0.24 (three CRITICALs) and Jackson
@@ -89,6 +95,16 @@
       <artifactId>bcprov-jdk18on</artifactId>
       <version>${bouncycastle.version}</version>
       <scope>runtime</scope>
+    </dependency>
+    <!-- bcpkix (test-only, issue #68): the SSO fixture's mock SAML IdP
+         builds its self-signed IdP certificate through the X509v3
+         certificate builder; the JDK has no public cert-generation
+         API, and production code never touches this artifact. -->
+    <dependency>
+      <groupId>org.bouncycastle</groupId>
+      <artifactId>bcpkix-jdk18on</artifactId>
+      <version>${bouncycastle.version}</version>
+      <scope>test</scope>
     </dependency>
     <dependency>
       <groupId>org.springframework.boot</groupId>
@@ -198,6 +214,17 @@
       <groupId>com.googlecode.plist</groupId>
       <artifactId>dd-plist</artifactId>
       <version>${dd-plist.version}</version>
+    </dependency>
+    <!-- XML-DSig for SAML Response/Assertion verification (issue #68,
+         S14-02, PRD 25): Santuario provides the enveloped-signature
+         validation (c14n, transforms, digest, RSA/ECDSA); the SAML
+         semantics around it (cert pinning to the ingested IdP
+         metadata, single-reference ID coverage, algorithm pinning)
+         are ours and strict (ADR-0009). -->
+    <dependency>
+      <groupId>org.apache.santuario</groupId>
+      <artifactId>xmlsec</artifactId>
+      <version>${xmlsec.version}</version>
     </dependency>
     <dependency>
       <groupId>org.flywaydb</groupId>

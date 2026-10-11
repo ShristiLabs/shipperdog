@@ -1,8 +1,9 @@
-/** SSO landing route (S14-01): the API's OIDC callback redirects here
- * with a one-time session code; this page exchanges it for the token
- * pair and enters the console. A failure redirect carries only
- * error=sso -- the distinct reason lives on the backend's audit line,
- * never in the URL. */
+/** SSO landing route (S14-01, S14-02): the API's provider callbacks
+ * (the OIDC callback and the SAML ACS alike) redirect here with a
+ * one-time session code; this page exchanges it for the token pair
+ * and enters the console. A failure redirect carries only error=sso --
+ * the distinct reason lives on the backend's audit line, never in the
+ * URL. */
 import { Alert, Box, Button, Card, CardContent, Stack, Typography } from "@mui/material";
 import LoginIcon from "@mui/icons-material/Login";
 import { useEffect, useRef, useState } from "react";

@@ -128,8 +128,10 @@ and `.env.example`):
 | `AUTH_LOCKOUT_DURATION` | Lockout duration | `PT15M` |
 | `AUTH_PASSWORD_RESET_TTL` | Password-reset token lifetime | `PT30M` |
 | `AUTH_INVITATION_TTL` | Registration invitation lifetime | `P3D` |
-| `SSO_REDIRECT_BASE_URI` | OIDC relying-party callback base (S14-01) | `http://localhost:8080` |
-| `SSO_CONSOLE_CALLBACK_URI` | Console SSO landing route | `http://localhost:5173/sso/callback` |
+| `SSO_REDIRECT_BASE_URI` | SSO callback base — the OIDC `redirect_uri` and the per-org SAML SP entityID/ACS derive from it (S14-01/S14-02) | `http://localhost:8080` |
+| `SSO_CONSOLE_CALLBACK_URI` | Console SSO landing route (every provider kind) | `http://localhost:5173/sso/callback` |
+| `SSO_SAML_SP_SIGNING_KEY` | Optional SAML SP signing key (PKCS#8 PEM; empty = unsigned AuthnRequests) | empty |
+| `SSO_SAML_SP_SIGNING_CERT` | Optional SAML SP signing certificate (PEM; must pair with the key) | empty |
 | `MANAGEMENT_ENDPOINTS_EXPOSE` | Actuator endpoints exposed | `health,info` (compose: `health,info,prometheus`) |
 | `MANAGEMENT_HEALTH_SHOW_DETAILS` | Health detail visibility | `never` |
 | `MANAGEMENT_SERVER_PORT` | Internal management port (compose sets `8081`) | unset = API port |

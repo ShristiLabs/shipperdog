@@ -62,12 +62,20 @@ public class IdentitySecurityConfig {
                         // the provider callback. Anonymous by design --
                         // the flow's one-time state and the ID token's
                         // cryptographic verification are the authority,
-                        // and every failure leg is uniform.
+                        // and every failure leg is uniform. The SAML
+                        // flow's legs (S14-02) share the doctrine: the
+                        // per-organization SP metadata document is
+                        // public registry material, and the ACS is the
+                        // signed-response receiver whose validation
+                        // against pinned IdP metadata IS the authority.
                         .requestMatchers(
                                 HttpMethod.GET,
                                 "/api/v1/auth/sso/options",
                                 "/api/v1/auth/sso/authorize",
-                                "/api/v1/auth/sso/callback")
+                                "/api/v1/auth/sso/callback",
+                                "/api/v1/auth/sso/saml/*/metadata")
+                        .permitAll()
+                        .requestMatchers(HttpMethod.POST, "/api/v1/auth/sso/saml/*/acs")
                         .permitAll()
                         // The emulator-mode download proxy (issue #38, S8-04): the
                         // HMAC token in the path IS the credential — an engine ALLOW

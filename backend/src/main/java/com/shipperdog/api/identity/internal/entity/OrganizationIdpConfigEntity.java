@@ -83,6 +83,28 @@ public class OrganizationIdpConfigEntity {
 
     private boolean enabled;
 
+    // ----- SAML columns (S14-02, V50); NULL/unused on OIDC rows -----
+
+    /** Raw IdP metadata XML (EntityDescriptor) as uploaded; audit source of truth. */
+    @Column(columnDefinition = "text")
+    private String samlMetadataXml;
+
+    /** The parsed IdP entityID: assertion Issuer, audience, and recipient pin on it. */
+    private String samlIdpEntityId;
+
+    /** Whether the Assertion must carry its own enveloped signature (default true). */
+    private boolean samlWantAssertionsSigned;
+
+    /** Whether the Response must be signed on top (Workspace shape; default false). */
+    private boolean samlWantResponseSigned;
+
+    /**
+     * The SAML mandate: password login is refused for this organization's
+     * members (platform administrators keep their break-glass local
+     * login). Enforced only while the configuration is enabled.
+     */
+    private boolean enforceSsoLogin;
+
     private Instant createdAt;
 
     private Instant updatedAt;
@@ -102,7 +124,12 @@ public class OrganizationIdpConfigEntity {
             OrgRole jitDefaultRole,
             boolean requireVerifiedEmail,
             String roleMappings,
-            boolean enabled) {
+            boolean enabled,
+            String samlMetadataXml,
+            String samlIdpEntityId,
+            boolean samlWantAssertionsSigned,
+            boolean samlWantResponseSigned,
+            boolean enforceSsoLogin) {
         this.organizationId = organizationId;
         this.providerType = providerType;
         this.issuerUrl = issuerUrl;
@@ -116,6 +143,11 @@ public class OrganizationIdpConfigEntity {
         this.requireVerifiedEmail = requireVerifiedEmail;
         this.roleMappings = roleMappings;
         this.enabled = enabled;
+        this.samlMetadataXml = samlMetadataXml;
+        this.samlIdpEntityId = samlIdpEntityId;
+        this.samlWantAssertionsSigned = samlWantAssertionsSigned;
+        this.samlWantResponseSigned = samlWantResponseSigned;
+        this.enforceSsoLogin = enforceSsoLogin;
     }
 
     @PrePersist
@@ -228,6 +260,46 @@ public class OrganizationIdpConfigEntity {
 
     public void setEnabled(boolean enabled) {
         this.enabled = enabled;
+    }
+
+    public String getSamlMetadataXml() {
+        return samlMetadataXml;
+    }
+
+    public void setSamlMetadataXml(String samlMetadataXml) {
+        this.samlMetadataXml = samlMetadataXml;
+    }
+
+    public String getSamlIdpEntityId() {
+        return samlIdpEntityId;
+    }
+
+    public void setSamlIdpEntityId(String samlIdpEntityId) {
+        this.samlIdpEntityId = samlIdpEntityId;
+    }
+
+    public boolean isSamlWantAssertionsSigned() {
+        return samlWantAssertionsSigned;
+    }
+
+    public void setSamlWantAssertionsSigned(boolean samlWantAssertionsSigned) {
+        this.samlWantAssertionsSigned = samlWantAssertionsSigned;
+    }
+
+    public boolean isSamlWantResponseSigned() {
+        return samlWantResponseSigned;
+    }
+
+    public void setSamlWantResponseSigned(boolean samlWantResponseSigned) {
+        this.samlWantResponseSigned = samlWantResponseSigned;
+    }
+
+    public boolean isEnforceSsoLogin() {
+        return enforceSsoLogin;
+    }
+
+    public void setEnforceSsoLogin(boolean enforceSsoLogin) {
+        this.enforceSsoLogin = enforceSsoLogin;
     }
 
     public Instant getCreatedAt() {

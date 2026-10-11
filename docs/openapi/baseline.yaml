@@ -1472,44 +1472,6 @@ paths:
             '*/*':
               schema:
                 $ref: "#/components/schemas/WebhookReceiptView"
-  /mock-idp/token:
-    post:
-      tags:
-      - mock-oidc-provider
-      operationId: token
-      requestBody:
-        content:
-          application/x-www-form-urlencoded:
-            schema:
-              type: object
-              properties:
-                grant_type:
-                  type: string
-                code:
-                  type: string
-                redirect_uri:
-                  type: string
-                client_id:
-                  type: string
-                client_secret:
-                  type: string
-                code_verifier:
-                  type: string
-              required:
-              - client_id
-              - client_secret
-              - code
-              - code_verifier
-              - grant_type
-              - redirect_uri
-      responses:
-        "200":
-          description: OK
-          content:
-            '*/*':
-              schema:
-                type: object
-                additionalProperties: {}
   /api/v1/testers:
     get:
       tags:
@@ -3094,6 +3056,31 @@ paths:
             '*/*':
               schema:
                 $ref: "#/components/schemas/CreatedPatResponse"
+  /api/v1/auth/sso/saml/{organizationId}/acs:
+    post:
+      tags:
+      - saml-controller
+      operationId: acs
+      parameters:
+      - name: organizationId
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - name: SAMLResponse
+        in: query
+        required: false
+        schema:
+          type: string
+      - name: RelayState
+        in: query
+        required: false
+        schema:
+          type: string
+      responses:
+        "200":
+          description: OK
   /api/v1/auth/sso/logout:
     post:
       tags:
@@ -3901,81 +3888,6 @@ paths:
             '*/*':
               schema:
                 $ref: "#/components/schemas/ApplicationView"
-  /mock-idp/jwks:
-    get:
-      tags:
-      - mock-oidc-provider
-      operationId: jwks
-      responses:
-        "200":
-          description: OK
-          content:
-            '*/*':
-              schema:
-                type: object
-                additionalProperties: {}
-  /mock-idp/authorize:
-    get:
-      tags:
-      - mock-oidc-provider
-      operationId: authorize_1
-      parameters:
-      - name: client_id
-        in: query
-        required: true
-        schema:
-          type: string
-      - name: redirect_uri
-        in: query
-        required: true
-        schema:
-          type: string
-      - name: response_type
-        in: query
-        required: true
-        schema:
-          type: string
-      - name: scope
-        in: query
-        required: true
-        schema:
-          type: string
-      - name: state
-        in: query
-        required: true
-        schema:
-          type: string
-      - name: nonce
-        in: query
-        required: true
-        schema:
-          type: string
-      - name: code_challenge
-        in: query
-        required: true
-        schema:
-          type: string
-      - name: code_challenge_method
-        in: query
-        required: true
-        schema:
-          type: string
-      responses:
-        "200":
-          description: OK
-  /mock-idp/.well-known/openid-configuration:
-    get:
-      tags:
-      - mock-oidc-provider
-      operationId: discovery
-      responses:
-        "200":
-          description: OK
-          content:
-            '*/*':
-              schema:
-                type: object
-                additionalProperties: {}
   /api/v1/testers/{id}:
     get:
       tags:
@@ -5128,6 +5040,25 @@ paths:
             '*/*':
               schema:
                 $ref: "#/components/schemas/CatalogView"
+  /api/v1/auth/sso/saml/{organizationId}/metadata:
+    get:
+      tags:
+      - saml-controller
+      operationId: metadata
+      parameters:
+      - name: organizationId
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      responses:
+        "200":
+          description: OK
+          content:
+            application/samlmetadata+xml:
+              schema:
+                type: string
   /api/v1/auth/sso/options:
     get:
       tags:
@@ -5175,7 +5106,7 @@ paths:
     get:
       tags:
       - sso-controller
-      operationId: authorize_2
+      operationId: authorize_1
       parameters:
       - name: organizationId
         in: query
@@ -6197,6 +6128,14 @@ components:
             type: string
         enabled:
           type: boolean
+        idpMetadataXml:
+          type: string
+        wantAssertionsSigned:
+          type: boolean
+        wantResponseSigned:
+          type: boolean
+        enforceSsoLogin:
+          type: boolean
     SsoConfig:
       type: object
       properties:
@@ -6225,6 +6164,16 @@ components:
           additionalProperties:
             type: string
         enabled:
+          type: boolean
+        samlCertificateFingerprints:
+          type: array
+          items:
+            type: string
+        samlWantAssertionsSigned:
+          type: boolean
+        samlWantResponseSigned:
+          type: boolean
+        enforceSsoLogin:
           type: boolean
         updatedAt:
           type: string
@@ -6600,7 +6549,13 @@ components:
       properties:
         string:
           type: boolean
+        binary:
+          type: boolean
+        pojo:
+          type: boolean
         valueNode:
+          type: boolean
+        missingNode:
           type: boolean
         nodeType:
           type: string
@@ -6614,10 +6569,6 @@ components:
           - OBJECT
           - POJO
           - STRING
-        missingNode:
-          type: boolean
-        pojo:
-          type: boolean
         integralNumber:
           type: boolean
         short:
@@ -6636,8 +6587,6 @@ components:
           type: boolean
           deprecated: true
         boolean:
-          type: boolean
-        binary:
           type: boolean
         number:
           type: boolean

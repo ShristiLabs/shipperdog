@@ -53,7 +53,13 @@ class EndpointSecurityAnnotationTest {
             "com.shipperdog.api.identity.SsoController.authorize",
             "com.shipperdog.api.identity.SsoController.callback",
             "com.shipperdog.api.identity.SsoController.exchange",
-            "com.shipperdog.api.identity.SsoController.backChannelLogout");
+            "com.shipperdog.api.identity.SsoController.backChannelLogout",
+            // The SAML SP's anonymous legs (S14-02): the public SP
+            // metadata document and the POST-binding ACS both flows
+            // land on -- one-time request state and the pinned-metadata
+            // XML-DSig verification are the authority.
+            "com.shipperdog.api.identity.SamlController.metadata",
+            "com.shipperdog.api.identity.SamlController.acs");
 
     private static final Pattern MAPPING_ANNOTATION =
             Pattern.compile("org\\.springframework\\.web\\.bind\\.annotation\\.[A-Za-z]+Mapping");

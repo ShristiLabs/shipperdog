@@ -23,8 +23,8 @@ export interface CurrentUser {
   authenticatedVia: string;
 }
 
-/** Whether an organization offers OIDC SSO (S14-01): 200 when the
- * console should offer the button; ApiError 404 otherwise. */
+/** Whether an organization offers SSO (S14-01 OIDC, S14-02 SAML): 200
+ * when the console should offer the button; ApiError 404 otherwise. */
 export async function ssoOptionsRequest(organizationId: string): Promise<void> {
   const response = await fetch(
     "/api/v1/auth/sso/options?organizationId=" + encodeURIComponent(organizationId),
