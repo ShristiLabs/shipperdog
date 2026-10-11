@@ -2,6 +2,8 @@ package com.shipperdog.api.distribution;
 
 import com.shipperdog.api.config.ListQuery;
 import com.shipperdog.api.config.PageResponse;
+import com.shipperdog.api.distribution.internal.apple.AppStorePhasedReleaseService;
+import com.shipperdog.api.distribution.internal.apple.AppStoreSubmissionMetadataService;
 import com.shipperdog.api.distribution.internal.apple.TestFlightGroupService;
 import com.shipperdog.api.distribution.internal.registry.DistributionAdapterRegistry;
 import com.shipperdog.api.distribution.internal.service.DistributionCredentialService;
@@ -49,16 +51,22 @@ public class DistributionController {
     private final DistributionCredentialService credentials;
     private final DistributionDispatchService dispatch;
     private final com.shipperdog.api.distribution.internal.apple.TestFlightGroupService testFlightGroups;
+    private final AppStoreSubmissionMetadataService appStoreMetadata;
+    private final AppStorePhasedReleaseService appStorePhasedRelease;
 
     public DistributionController(
             DistributionAdapterRegistry registry,
             DistributionCredentialService credentials,
             DistributionDispatchService dispatch,
-            com.shipperdog.api.distribution.internal.apple.TestFlightGroupService testFlightGroups) {
+            com.shipperdog.api.distribution.internal.apple.TestFlightGroupService testFlightGroups,
+            AppStoreSubmissionMetadataService appStoreMetadata,
+            AppStorePhasedReleaseService appStorePhasedRelease) {
         this.registry = registry;
         this.credentials = credentials;
         this.dispatch = dispatch;
         this.testFlightGroups = testFlightGroups;
+        this.appStoreMetadata = appStoreMetadata;
+        this.appStorePhasedRelease = appStorePhasedRelease;
     }
 
     /** The channel catalog: every registered adapter with its capabilities and credential providers. */
@@ -228,6 +236,84 @@ public class DistributionController {
         testFlightGroups.unlink(linkId, organizationId, requireUserId(principal));
     }
 
+    // -------------------------------------------------------------------------
+    // The App Store production channel (S13-03, #63)
+    // -------------------------------------------------------------------------
+
+    /** The organization's authored App Store listing metadata (AC1's authoring view). */
+    @GetMapping("/appstore/metadata")
+    @PreAuthorize("hasPermission(#organizationId, 'organization', 'org:distribution:read')")
+    PageResponse<AppStoreSubmissionMetadataService.MetadataView> appStoreMetadata(
+            @RequestParam UUID organizationId,
+            @RequestParam(required = false) String limit,
+            @RequestParam(required = false) String cursor) {
+        ListQuery query = ListQuery.of(limit, cursor);
+        List<AppStoreSubmissionMetadataService.MetadataView> all = appStoreMetadata.list(organizationId);
+        List<AppStoreSubmissionMetadataService.MetadataView> page = all.subList(
+                (int) Math.min(query.offset(), all.size()), (int) Math.min(query.offset() + query.limit(), all.size()));
+        return PageResponse.of(page, query.offset() + query.limit() < all.size(), query.offset() + query.limit());
+    }
+
+    /**
+     * Authors (or rotates) one locale's listing metadata (AC1): the
+     * authoring surface the release manifest freezes at APPROVED and
+     * the submission sends — a second write to the same locale
+     * replaces the row whole.
+     */
+    @PutMapping("/appstore/metadata")
+    @PreAuthorize("hasPermission(#request.organizationId(), 'organization', 'org:distribution:manage')")
+    AppStoreSubmissionMetadataService.MetadataView putAppStoreMetadata(
+            @AuthenticationPrincipal Object principal, @RequestBody AppStoreMetadataRequest request) {
+        return appStoreMetadata.put(
+                new AppStoreSubmissionMetadataService.MetadataCommand(
+                        request.organizationId(),
+                        request.applicationId(),
+                        request.locale(),
+                        request.description(),
+                        request.keywords(),
+                        request.screenshotRefs(),
+                        request.releaseNotes()),
+                requireUserId(principal));
+    }
+
+    /** Removes one authored locale (the authoring surface; a frozen manifest block keeps its copy). */
+    @DeleteMapping("/appstore/metadata/{metadataId}")
+    @ResponseStatus(HttpStatus.NO_CONTENT)
+    @PreAuthorize("hasPermission(#organizationId, 'organization', 'org:distribution:manage')")
+    void deleteAppStoreMetadata(
+            @AuthenticationPrincipal Object principal,
+            @PathVariable UUID metadataId,
+            @RequestParam UUID organizationId) {
+        appStoreMetadata.delete(metadataId, organizationId, requireUserId(principal));
+    }
+
+    /**
+     * The release's phased-release curve (AC3): the provider's curve
+     * state, current day, and availability percentage for the release
+     * dashboard.
+     */
+    @GetMapping("/appstore/releases/{releaseId}/phased-release")
+    @PreAuthorize("hasPermission(#organizationId, 'organization', 'org:distribution:read')")
+    AppStorePhasedReleaseService.PhasedReleaseView appStorePhasedRelease(
+            @PathVariable UUID releaseId, @RequestParam UUID organizationId) {
+        return appStorePhasedRelease.view(organizationId, releaseId);
+    }
+
+    /**
+     * One release action on the curve (AC3): pause, resume, or halt —
+     * halt completes the curve immediately (Apple's release-to-all;
+     * the documented rollback posture of the production channel).
+     */
+    @PostMapping("/appstore/releases/{releaseId}/phased-release")
+    @PreAuthorize("hasPermission(#organizationId, 'organization', 'org:distribution:manage')")
+    AppStorePhasedReleaseService.PhasedReleaseView controlAppStorePhasedRelease(
+            @AuthenticationPrincipal Object principal,
+            @PathVariable UUID releaseId,
+            @RequestParam UUID organizationId,
+            @RequestBody PhasedReleaseActionRequest request) {
+        return appStorePhasedRelease.control(organizationId, releaseId, request.action(), requireUserId(principal));
+    }
+
     private static UUID requireUserId(Object principal) {
         if (principal instanceof org.springframework.security.oauth2.jwt.Jwt jwt) {
             return UUID.fromString(jwt.getSubject());
@@ -277,4 +363,22 @@ public class DistributionController {
      * when no same-named external one exists).
      */
     record TestFlightGroupLinkRequest(UUID organizationId, UUID applicationId, UUID groupId, Boolean createOnDemand) {}
+
+    /**
+     * The metadata authoring write's body (S13-03, AC1): the owning
+     * dimensions and the locale's listing facts. Screenshot references
+     * are manifest pins — ASC-side assets upload through ASC's own
+     * surfaces.
+     */
+    record AppStoreMetadataRequest(
+            UUID organizationId,
+            UUID applicationId,
+            String locale,
+            String description,
+            String keywords,
+            List<String> screenshotRefs,
+            String releaseNotes) {}
+
+    /** The phased-release control's body (S13-03, AC3): PAUSE, RESUME, or HALT. */
+    record PhasedReleaseActionRequest(String action) {}
 }

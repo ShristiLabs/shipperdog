@@ -148,6 +148,7 @@ public class ReleaseManifestService {
     private final VersionAccess versions;
     private final ArtifactAccess artifacts;
     private final EnvironmentAccess environments;
+    private final com.shipperdog.api.distribution.ChannelSubmissionAccess storeSubmissions;
     private final TenantScopeExecutor scopeExecutor;
     private final AuditEventPublisher audit;
     private final ObjectProvider<ReleaseApprovalSource> approvalSources;
@@ -163,6 +164,7 @@ public class ReleaseManifestService {
             VersionAccess versions,
             ArtifactAccess artifacts,
             EnvironmentAccess environments,
+            com.shipperdog.api.distribution.ChannelSubmissionAccess storeSubmissions,
             TenantScopeExecutor scopeExecutor,
             AuditEventPublisher audit,
             ObjectProvider<ReleaseApprovalSource> approvalSources) {
@@ -176,6 +178,7 @@ public class ReleaseManifestService {
         this.versions = versions;
         this.artifacts = artifacts;
         this.environments = environments;
+        this.storeSubmissions = storeSubmissions;
         this.scopeExecutor = scopeExecutor;
         this.audit = audit;
         this.approvalSources = approvalSources;
@@ -332,6 +335,41 @@ public class ReleaseManifestService {
                 .flatMap(source -> source.approvalTypesOf(release.getId()).stream())
                 .toList();
 
+        // The store-submission block (PRD 16's WHAT WAS SENT, S13-03,
+        // issue #63, AC1): when the release's environment binds a
+        // SUBMISSION-capable channel, the authored listing metadata
+        // deep-copies here through the distribution module's port —
+        // with the phased-release decision the environment's resolved
+        // configuration had in force (the same snapshot the
+        // configuration block froze, one source, one moment). The
+        // dispatch at the ACTIVE crossing sends THIS block; a channel
+        // that submits nothing keeps the honest null.
+        ReleaseManifestDocument.StoreSubmission storeSubmission = null;
+        if (release.getEnvironmentId() != null) {
+            String submissionChannel = environments
+                    .distributionChannelNameOf(release.getEnvironmentId())
+                    .filter(name -> name != null && !name.isBlank())
+                    .orElse(null);
+            if (submissionChannel != null) {
+                boolean phasedRelease = configuration.featureFlags() != null
+                        && Boolean.parseBoolean(configuration.featureFlags().getOrDefault("phased-release", "false"));
+                storeSubmission = storeSubmissions
+                        .snapshotOf(release.getApplicationId(), submissionChannel)
+                        .map(snapshot -> new ReleaseManifestDocument.StoreSubmission(
+                                submissionChannel,
+                                phasedRelease,
+                                snapshot.locales().stream()
+                                        .map(locale -> new ReleaseManifestDocument.SubmissionLocale(
+                                                locale.locale(),
+                                                locale.description(),
+                                                locale.keywords(),
+                                                locale.screenshotRefs(),
+                                                locale.releaseNotes()))
+                                        .toList()))
+                        .orElse(null);
+            }
+        }
+
         return new ReleaseManifestDocument(
                 new Release(
                         release.getId(),
@@ -347,7 +385,8 @@ public class ReleaseManifestService {
                 environmentCode,
                 new Rollout(null),
                 configuration,
-                new Approval(List.copyOf(requiredApprovals)));
+                new Approval(List.copyOf(requiredApprovals)),
+                storeSubmission);
     }
 
     // -------------------------------------------------------------------------

@@ -171,7 +171,9 @@ Current contents:
   the adapter SPI (S13-01): the one interface every delivery channel
   implements as a bean (capabilities, `distribute`/`status`, the
   failure taxonomy), the credential-delegation chain (org -> app ->
-  app+environment, first-defined-wins per provider, PRD 25), the two
+  app+environment, first-defined-wins per provider, PRD 25), the
+  store connectors (TestFlight #62, the App Store's production
+  submission + phased release #63), the two
   secret stores behind one port (ADR-0008), the ACTIVE-crossing
   dispatch and its distribution records (external ids for store
   reconciliation), the per-adapter sandbox (timeout, bounded

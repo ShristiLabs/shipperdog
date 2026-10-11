@@ -473,6 +473,92 @@ afterEach(() => {
 });
 
 describe("ReleaseDetailPage", () => {
+  
+  it("renders the App Store phased release curve with its release actions (S13-03)", async () => {
+    const record = {
+      id: "60000000-0000-4000-8000-000000000001",
+      releaseId: RELEASE_ID,
+      artifactId: "70000000-0000-4000-8000-000000000001",
+      channel: "appstore",
+      status: "DISTRIBUTED",
+      externalId: "version-1001",
+      failureCode: null,
+      failureDetail: null,
+      providerStatus: "READY_FOR_SALE",
+      providerStatusAt: "2026-10-04T12:00:00Z",
+      attempts: 1,
+      lastAttemptAt: "2026-10-04T12:00:00Z",
+      distributedAt: null,
+      createdAt: "2026-10-04T11:00:00Z",
+      updatedAt: "2026-10-04T12:00:00Z",
+    };
+    const curve = {
+      versionId: "version-1001",
+      versionState: "READY_FOR_SALE",
+      phasedReleaseState: "ACTIVE",
+      currentDay: 3,
+      totalDays: 7,
+      percentage: 5,
+      observedAt: "2026-10-06T12:00:00Z",
+    };
+    renderDetail(DETAIL_DRAFT, [
+      {
+        method: "GET",
+        url: `/api/v1/distribution/records`,
+        status: 200,
+        body: { items: [record] },
+      },
+      {
+        method: "GET",
+        url: `/api/v1/distribution/appstore/releases/${RELEASE_ID}/phased-release`,
+        status: 200,
+        // The sequenced answers: the walking curve first, the paused
+        // curve on the post-action refetch.
+        // The sequenced answers: the walking curve, the paused curve
+        // after pause, the completed curve after halt (each action's
+        // invalidation refetches).
+        sequence: [
+          { status: 200, body: curve },
+          { status: 200, body: { ...curve, phasedReleaseState: "PAUSED" } },
+          {
+            status: 200,
+            body: { ...curve, phasedReleaseState: "COMPLETE", currentDay: 7, percentage: 100 },
+          },
+        ],
+      },
+      {
+        method: "POST",
+        url: `/api/v1/distribution/appstore/releases/${RELEASE_ID}/phased-release`,
+        status: 200,
+        body: { ...curve, phasedReleaseState: "PAUSED" },
+      },
+      {
+        method: "POST",
+        url: `/api/v1/distribution/appstore/releases/${RELEASE_ID}/phased-release`,
+        status: 200,
+        body: { ...curve, phasedReleaseState: "COMPLETE", currentDay: 7, percentage: 100 },
+      },
+    ]);
+
+    // The curve block: Apple's own state word, the day of the fixed
+    // 7-day curve, and the availability percentage.
+    const block = await screen.findByTestId("phased-release");
+    expect(block).toHaveTextContent("ACTIVE");
+    expect(block).toHaveTextContent("Day 3 of 7");
+    expect(block).toHaveTextContent("5%");
+
+    // Pause is a release action; resume arms once the curve holds.
+    await userEvent.click(screen.getByTestId("phased-release-pause"));
+    await waitFor(() => expect(screen.getByTestId("phased-release")).toHaveTextContent("PAUSED"));
+    expect(screen.getByTestId("phased-release-resume")).not.toBeDisabled();
+
+    // Halt is the documented rollback posture: the curve completes at
+    // once (release to all users), and the block says so.
+    await userEvent.click(screen.getByTestId("phased-release-halt"));
+    await waitFor(() => expect(screen.getByTestId("phased-release")).toHaveTextContent("COMPLETE"));
+    expect(screen.getByTestId("phased-release")).toHaveTextContent("100%");
+  });
+
   it("renders the channel-distribution records with the provider state and refreshes from the store (S13-02)", async () => {
     const record = {
       id: "20000000-0000-4000-8000-00000000000d1",

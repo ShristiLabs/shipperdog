@@ -79,6 +79,26 @@ public class DistributionException extends RuntimeException {
         /** The addressed group link's miss (concealed across organizations, S13-02). */
         DISTRIBUTION_GROUP_LINK_NOT_FOUND(
                 HttpStatus.NOT_FOUND, "DISTRIBUTION_GROUP_LINK_NOT_FOUND", "Resource not found."),
+        /** The addressed submission-metadata row's miss (concealed across organizations, S13-03). */
+        DISTRIBUTION_METADATA_NOT_FOUND(HttpStatus.NOT_FOUND, "DISTRIBUTION_METADATA_NOT_FOUND", "Resource not found."),
+        /**
+         * The addressed release carries no phased release on the store
+         * side (S13-03, AC3): the release's channel never enabled one,
+         * or the curve has none to read — a read answers this honestly
+         * rather than an invented curve, a control answers it rather
+         * than a fabricated provider call.
+         */
+        DISTRIBUTION_PHASED_RELEASE_NOT_FOUND(
+                HttpStatus.NOT_FOUND, "DISTRIBUTION_PHASED_RELEASE_NOT_FOUND", "Resource not found."),
+        /**
+         * The phased-release control's shape fault (S13-03, AC3): an
+         * action outside the pause/resume/halt vocabulary, or an
+         * action the curve's current state does not accept.
+         */
+        DISTRIBUTION_PHASED_RELEASE_ACTION_INVALID(
+                HttpStatus.BAD_REQUEST,
+                "DISTRIBUTION_PHASED_RELEASE_ACTION_INVALID",
+                "The phased release action is invalid."),
         FORBIDDEN(HttpStatus.FORBIDDEN, "FORBIDDEN", "Access denied.");
 
         final HttpStatus httpStatus;
@@ -113,8 +133,17 @@ public class DistributionException extends RuntimeException {
         return code;
     }
 
-    /** The RFC 7807 envelope for this failure (issue #8). */
+    /**
+     * The RFC 7807 envelope for this failure (issue #8). The detail is
+     * the exception's own message when it carries one — the provider's
+     * actionable words a refused submission must surface (S13-03,
+     * AC4) — and the code's stable vocabulary otherwise.
+     */
     public ProblemDetail problem() {
-        return ApiProblems.of(code.httpStatus, code.code, code.httpStatus.getReasonPhrase(), code.detail);
+        return ApiProblems.of(
+                code.httpStatus,
+                code.code,
+                code.httpStatus.getReasonPhrase(),
+                getMessage() == null || getMessage().isBlank() ? code.detail : getMessage());
     }
 }

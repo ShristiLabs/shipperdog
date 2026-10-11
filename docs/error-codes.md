@@ -349,7 +349,10 @@ problem codes should a dispatch surface ever expose them over HTTP.
 | `DISTRIBUTION_CREDENTIAL_LEVEL_INVALID` | 400 | The credential level is invalid. (an environment-level binding must name its application — the chain's levels are organization, application, application+environment, PRD 25) |
 | `DISTRIBUTION_GROUP_LINK_INVALID` | 400 | The group link request is invalid. (S13-02: an unknown application, tester group, or bundle id; a provider group that does not exist and was not asked to be created; a sync whose scope has no apple credential — the message names the fault's fact, never a foreign row) |
 | `DISTRIBUTION_GROUP_LINK_NOT_FOUND` | 404 | Resource not found. (the addressed tester-group link of the TestFlight mapping surface — concealed across organizations) |
-| `ADAPTER_FAILED` | 502 | The distribution channel failed. (the taxonomy's terminal answer for TRANSIENT/PERMANENT categories — the per-adapter retries are exhausted or the fault was final; any adapter throw outside the taxonomy lands here) |
+| `DISTRIBUTION_METADATA_NOT_FOUND` | 404 | Resource not found. (the addressed store-submission metadata row of the authoring surface — concealed across organizations, S13-03) |
+| `DISTRIBUTION_PHASED_RELEASE_NOT_FOUND` | 404 | Resource not found. (the addressed release carries no phased release on the store side — its channel never enabled one; the curve surfaces answer this honestly rather than an invented curve, S13-03) |
+| `DISTRIBUTION_PHASED_RELEASE_ACTION_INVALID` | 400 | The phased release action is invalid. (an action outside the PAUSE/RESUME/HALT vocabulary, S13-03) |
+| `ADAPTER_FAILED` | 502 | The distribution channel failed. (the taxonomy's terminal answer for TRANSIENT/PERMANENT categories — the per-adapter retries are exhausted or the fault was final; any adapter throw outside the taxonomy lands here; since S13-03 also the problem a REFUSED production submission answers on the transition route — the store refused, the release cannot go ACTIVE, and the detail carries the provider's own words) |
 | `ADAPTER_RATE_LIMITED` | 503 | The distribution channel is rate limited. (the provider throttled every attempt) |
 | `ADAPTER_TIMEOUT` | 504 | The distribution channel timed out. (the per-adapter wall cut every attempt — `shipperdog.distribution.adapters.<channel>.timeout`) |
 | `ADAPTER_AUTHENTICATION_FAILED` | 502 | The channel credentials were rejected. (never retried — retrying a bad credential is a lockout generator; the detail never carries material) |
@@ -368,4 +371,21 @@ no extracted identity — CI or Xcode Cloud must upload the build before
 promotion), `TESTFLIGHT_IOS_ONLY` (a non-iOS slot on Apple's channel),
 `TESTFLIGHT_BUILD_REJECTED` (Apple's beta review rejected the build),
 and `TESTFLIGHT_BUILD_EXPIRED` (the build expired or was removed from
-TestFlight).
+TestFlight); the App Store production connector's per-slot codes
+(S13-03, same grain): `APPSTORE_IOS_ONLY` (a non-iOS slot on the App
+Store channel), `APPSTORE_VERSION_FACTS_MISSING` (the artifact carries
+no extracted bundle id or marketing version string to address its ASC
+version by), `APPSTORE_METADATA_MISSING` (no store-submission metadata
+was frozen — author per-locale metadata before approval),
+`APPSTORE_APP_NOT_FOUND` (no ASC app matches the artifact's bundle
+id), `APPSTORE_VERSION_REJECTED` (Apple's App Review rejected the
+version), and `APPSTORE_VERSION_REMOVED` (the version was removed
+from the App Store).
+
+Since S13-03 the distribution record also carries
+`channel_distributions.failure_detail`: the actionable, human-facing
+reason beside the taxonomy code — the provider's own words for a
+refused submission ("You must provide a value for the key ...") or a
+review rejection, truncated to 512 characters. The taxonomy code
+stays the closed vocabulary; the detail is the reason a Release
+Manager acts on.

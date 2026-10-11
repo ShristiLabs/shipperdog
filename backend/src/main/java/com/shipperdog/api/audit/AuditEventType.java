@@ -409,5 +409,36 @@ public enum AuditEventType {
      * -- the release dashboard's explicit refresh and the
      * reconciliation pass's cadence both land here.
      */
-    DISTRIBUTION_RECORD_REFRESHED
+    DISTRIBUTION_RECORD_REFRESHED,
+    /**
+     * One store-submission metadata locale authored or rotated
+     * (S13-03, issue #63, AC1): the channel, application, and locale,
+     * and whether the write created or rotated the row. The fields
+     * themselves stay off the audit line (the rows are the source);
+     * the manifest's frozen block is the submission's copy of record.
+     */
+    DISTRIBUTION_METADATA_SAVED,
+    /**
+     * One store-submission metadata locale removed from the authoring
+     * surface (S13-03, issue #63, AC1): the channel, application, and
+     * locale. A release already APPROVED keeps its frozen block -- the
+     * manifest is the submission's source of truth, never the rows.
+     */
+    DISTRIBUTION_METADATA_REMOVED,
+    /**
+     * One phased-release action driven from the platform (S13-03,
+     * issue #63, AC3): the release, the channel, the action (pause,
+     * resume, halt), and the provider's resulting curve state -- the
+     * release dashboard's rollout answer beside the audit trail a
+     * Compliance Reviewer reads.
+     */
+    DISTRIBUTION_PHASED_RELEASE_CONTROLLED,
+    /**
+     * One mapped store status event applied to the platform's records
+     * (S13-03, issue #63, AC2): the provider, the provider's own event
+     * type, the bundle id, and how many distribution records the event
+     * triggered a refresh for -- the webhook leg of the review-state
+     * sync (the polling reconciliation pass is the other leg).
+     */
+    STORE_EVENT_APPLIED
 }

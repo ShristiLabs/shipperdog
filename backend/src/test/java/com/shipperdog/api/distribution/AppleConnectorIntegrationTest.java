@@ -375,8 +375,7 @@ class AppleConnectorIntegrationTest {
         // The throttled walk: the first provider call answers Apple's
         // 429, the sandbox retries with backoff, the retry lands, the
         // record walks on -- and the quota telemetry counted the hit.
-        double before = meters.counter(
-                        com.shipperdog.api.config.MetricNames.ADAPTER_RATE_LIMIT, "channel", "testflight")
+        double before = meters.counter(com.shipperdog.api.config.MetricNames.ADAPTER_RATE_LIMIT, "provider", "apple")
                 .count();
         ASC.throttleNextCall();
         UUID release = releaseWalkedToActiveWithBuild(environment, 43);
@@ -384,7 +383,7 @@ class AppleConnectorIntegrationTest {
         assertThat(row.get("status").asString()).isEqualTo("DISTRIBUTING");
         assertThat(row.get("externalId").asString()).startsWith("build-");
         assertThat(row.get("attempts").asInt()).isEqualTo(2);
-        double after = meters.counter(com.shipperdog.api.config.MetricNames.ADAPTER_RATE_LIMIT, "channel", "testflight")
+        double after = meters.counter(com.shipperdog.api.config.MetricNames.ADAPTER_RATE_LIMIT, "provider", "apple")
                 .count();
         assertThat(after - before).isGreaterThanOrEqualTo(1.0);
     }
@@ -444,8 +443,7 @@ class AppleConnectorIntegrationTest {
     void exhaustedRateLimitsFailTheRecordWithTheTaxonomyCodeAndCountEveryHit() {
         linkPilot();
         UUID environment = testflightEnvironment();
-        double before = meters.counter(
-                        com.shipperdog.api.config.MetricNames.ADAPTER_RATE_LIMIT, "channel", "testflight")
+        double before = meters.counter(com.shipperdog.api.config.MetricNames.ADAPTER_RATE_LIMIT, "provider", "apple")
                 .count();
         // Every sandbox attempt's first provider call answers 429: the
         // exhaustion is the record's honest verdict, and every hit
@@ -456,7 +454,7 @@ class AppleConnectorIntegrationTest {
         assertThat(row.get("status").asString()).isEqualTo("FAILED");
         assertThat(row.get("failureCode").asString()).isEqualTo("ADAPTER_RATE_LIMITED");
         assertThat(row.get("attempts").asInt()).isEqualTo(3);
-        double after = meters.counter(com.shipperdog.api.config.MetricNames.ADAPTER_RATE_LIMIT, "channel", "testflight")
+        double after = meters.counter(com.shipperdog.api.config.MetricNames.ADAPTER_RATE_LIMIT, "provider", "apple")
                 .count();
         assertThat(after - before).isGreaterThanOrEqualTo(3.0);
     }

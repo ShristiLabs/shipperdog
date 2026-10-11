@@ -17,7 +17,8 @@ import org.springframework.web.bind.annotation.RestControllerAdvice;
  * this module's concealed misses render identically here.
  */
 @Order(0)
-@RestControllerAdvice(assignableTypes = DistributionController.class)
+@RestControllerAdvice(
+        assignableTypes = {DistributionController.class, com.shipperdog.api.release.ReleaseController.class})
 public class DistributionExceptionHandler {
 
     @ExceptionHandler(DistributionException.class)

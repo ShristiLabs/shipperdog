@@ -41,10 +41,14 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 import {
   bindStoreAccount,
+  deleteAppStoreMetadata,
   deleteStoreAccount,
+  listAppStoreMetadata,
   listChannels,
   listStoreAccounts,
+  putAppStoreMetadata,
   verifyStoreAccount,
+  type AppStoreMetadata,
   type StoreAccount,
 } from "../api/distribution";
 import { listEnvironments } from "../api/environments";
@@ -66,6 +70,244 @@ interface Draft {
 
 function emptyDraft(): Draft {
   return { level: "organization", provider: "", name: "", applicationId: "", environmentId: "", material: "" };
+}
+
+
+/** One authored locale's draft (S13-03, AC1): the minimal field set
+ * the story scopes — description, keywords, screenshot references
+ * (manifest pins; ASC-side assets upload through ASC's own surfaces),
+ * and the release notes the submission sends. */
+interface MetadataDraft {
+  applicationId: string;
+  locale: string;
+  description: string;
+  keywords: string;
+  screenshotRefs: string;
+  releaseNotes: string;
+}
+
+function emptyMetadataDraft(): MetadataDraft {
+  return { applicationId: "", locale: "en-US", description: "", keywords: "", screenshotRefs: "", releaseNotes: "" };
+}
+
+/** The App Store listing metadata section (S13-03, AC1): the
+ * per-locale authoring surface the release manifest freezes at
+ * APPROVED — what a production submission sends is what the manifest
+ * froze, so author before approval; a later edit cannot change a
+ * frozen release's submission. */
+function AppStoreMetadataSection() {
+  const { user } = useAuth();
+  const orgId = user?.orgId ?? null;
+  const toast = useToast();
+  const queryClient = useQueryClient();
+  const [open, setOpen] = useState(false);
+  const [draft, setDraft] = useState<MetadataDraft>(emptyMetadataDraft());
+
+  const metadata = useQuery({
+    queryKey: ["appstore-metadata", orgId],
+    queryFn: () => listAppStoreMetadata(orgId as string),
+    enabled: orgId !== null,
+  });
+
+  const applications = useQuery({
+    queryKey: ["distribution-applications", orgId],
+    queryFn: () => listApplications({ organizationId: orgId as string, limit: 100 }),
+    enabled: orgId !== null && open,
+  });
+
+  const save = useMutation({
+    mutationFn: () =>
+      putAppStoreMetadata({
+        organizationId: orgId as string,
+        applicationId: draft.applicationId,
+        locale: draft.locale.trim(),
+        description: draft.description.trim(),
+        keywords: draft.keywords.trim().length > 0 ? draft.keywords.trim() : null,
+        screenshotRefs:
+          draft.screenshotRefs
+            .split("\n")
+            .map((ref) => ref.trim())
+            .filter((ref) => ref.length > 0),
+        releaseNotes: draft.releaseNotes.trim().length > 0 ? draft.releaseNotes.trim() : null,
+      }),
+    onSuccess: (row: AppStoreMetadata) => {
+      toast.showSuccess(`Saved the ${row.locale} listing metadata`);
+      setOpen(false);
+      setDraft(emptyMetadataDraft());
+      queryClient.invalidateQueries({ queryKey: ["appstore-metadata", orgId] });
+    },
+    onError: (error: Error) => toast.showError(error.message),
+  });
+
+  const remove = useMutation({
+    mutationFn: (row: AppStoreMetadata) => deleteAppStoreMetadata(orgId as string, row.id),
+    onSuccess: (_result, row: AppStoreMetadata) => {
+      toast.showSuccess(`Removed the ${row.locale} listing metadata`);
+      queryClient.invalidateQueries({ queryKey: ["appstore-metadata", orgId] });
+    },
+    onError: (error: Error) => toast.showError(error.message),
+  });
+
+  if (orgId === null) {
+    return null;
+  }
+  const draftIncomplete =
+    draft.applicationId === "" || draft.locale.trim().length === 0 || draft.description.trim().length === 0;
+
+  return (
+    <>
+      <Stack direction="row" sx={{ justifyContent: "space-between", alignItems: "center" }}>
+        <Box>
+          <Typography variant="h6">App Store listing metadata</Typography>
+          <Typography variant="body2" color="text.secondary">
+            The per-locale listing facts a production submission sends; the release manifest freezes them at
+            approval, so author before promoting.
+          </Typography>
+        </Box>
+        <Button
+          variant="outlined"
+          startIcon={<AddIcon />}
+          onClick={() => setOpen(true)}
+          data-testid="add-metadata-button"
+        >
+          Add locale
+        </Button>
+      </Stack>
+
+      {metadata.isPending ? <LinearProgress /> : null}
+      {metadata.isError ? <Alert severity="error">The listing metadata could not be loaded.</Alert> : null}
+      {metadata.data ? (
+        <Paper elevation={2} data-testid="appstore-metadata">
+          <Table size="small">
+            <TableHead>
+              <TableRow>
+                <TableCell>Application</TableCell>
+                <TableCell>Locale</TableCell>
+                <TableCell>Description</TableCell>
+                <TableCell>Keywords</TableCell>
+                <TableCell>Release notes</TableCell>
+                <TableCell align="right">Actions</TableCell>
+              </TableRow>
+            </TableHead>
+            <TableBody>
+              {metadata.data.items.length === 0 ? (
+                <TableRow>
+                  <TableCell colSpan={6}>
+                    <Typography variant="body2" color="text.secondary">
+                      No listing metadata authored. A production promotion without a frozen locale fails its
+                      submission with the actionable reason.
+                    </Typography>
+                  </TableCell>
+                </TableRow>
+              ) : null}
+              {metadata.data.items.map((row) => (
+                <TableRow key={row.id} data-testid={`metadata-${row.locale}`}>
+                  <TableCell>
+                    <Typography variant="caption" sx={{ wordBreak: "break-all" }}>
+                      {row.applicationId}
+                    </Typography>
+                  </TableCell>
+                  <TableCell>
+                    <Chip label={row.locale} size="small" variant="outlined" />
+                  </TableCell>
+                  <TableCell>
+                    <Typography variant="body2" sx={{ maxWidth: 360 }}>
+                      {row.description}
+                    </Typography>
+                  </TableCell>
+                  <TableCell>{row.keywords ?? "-"}</TableCell>
+                  <TableCell>{row.releaseNotes ?? "-"}</TableCell>
+                  <TableCell align="right">
+                    <Button
+                      size="small"
+                      color="error"
+                      startIcon={<DeleteIcon />}
+                      onClick={() => remove.mutate(row)}
+                      disabled={remove.isPending}
+                      aria-label={`remove ${row.locale} metadata`}
+                    >
+                      Remove
+                    </Button>
+                  </TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        </Paper>
+      ) : null}
+
+      <Dialog open={open} onClose={() => setOpen(false)} fullWidth maxWidth="sm">
+        <DialogTitle>App Store listing metadata</DialogTitle>
+        <DialogContent>
+          <Stack spacing={2} sx={{ marginTop: 1 }}>
+            <TextField
+              select
+              label="Application"
+              value={draft.applicationId}
+              onChange={(event) => setDraft({ ...draft, applicationId: event.target.value })}
+              fullWidth
+            >
+              {(applications.data?.items ?? []).map((application) => (
+                <MenuItem key={application.id} value={application.id}>
+                  {application.name}
+                </MenuItem>
+              ))}
+            </TextField>
+            <TextField
+              label="Locale"
+              value={draft.locale}
+              onChange={(event) => setDraft({ ...draft, locale: event.target.value })}
+              helperText="The store locale, e.g. en-US or de-DE"
+              fullWidth
+            />
+            <TextField
+              label="Description"
+              value={draft.description}
+              onChange={(event) => setDraft({ ...draft, description: event.target.value })}
+              multiline
+              minRows={3}
+              fullWidth
+            />
+            <TextField
+              label="Keywords"
+              value={draft.keywords}
+              onChange={(event) => setDraft({ ...draft, keywords: event.target.value })}
+              helperText="Comma-separated; Apple caps at 100 characters"
+              fullWidth
+            />
+            <TextField
+              label="Screenshot references"
+              value={draft.screenshotRefs}
+              onChange={(event) => setDraft({ ...draft, screenshotRefs: event.target.value })}
+              multiline
+              minRows={2}
+              helperText="One reference per line; the manifest pins them, ASC-side assets upload through ASC"
+              fullWidth
+            />
+            <TextField
+              label="Release notes (what's new)"
+              value={draft.releaseNotes}
+              onChange={(event) => setDraft({ ...draft, releaseNotes: event.target.value })}
+              multiline
+              minRows={2}
+              fullWidth
+            />
+          </Stack>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setOpen(false)}>Cancel</Button>
+          <Button
+            variant="contained"
+            disabled={draftIncomplete || save.isPending}
+            onClick={() => save.mutate()}
+            data-testid="save-metadata-button"
+          >
+            Save
+          </Button>
+        </DialogActions>
+      </Dialog>
+    </>
+  );
 }
 
 export default function ChannelsPage() {
@@ -304,6 +546,8 @@ export default function ChannelsPage() {
           </Table>
         </Paper>
       ) : null}
+
+      <AppStoreMetadataSection />
 
       <Dialog open={dialogOpen} onClose={() => setDialogOpen(false)} fullWidth maxWidth="sm">
         <DialogTitle>Bind store account</DialogTitle>

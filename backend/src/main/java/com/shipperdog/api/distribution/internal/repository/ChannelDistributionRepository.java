@@ -18,6 +18,14 @@ public interface ChannelDistributionRepository extends JpaRepository<ChannelDist
     /** One release's records, channel-ordered for the stable view. */
     List<ChannelDistributionEntity> findByReleaseIdOrderByChannelAsc(UUID releaseId);
 
+    /**
+     * One release's records through one channel (S13-03, #63): the
+     * phased-release surface's resolution of the release's store-side
+     * submission record inside the organization.
+     */
+    List<ChannelDistributionEntity> findByReleaseIdAndOrganizationIdAndChannelOrderByCreatedAtAsc(
+            UUID releaseId, UUID organizationId, String channel);
+
     /** The exact record of one release artifact through one channel (the dispatch's idempotency grain). */
     Optional<ChannelDistributionEntity> findByReleaseIdAndArtifactIdAndChannel(
             UUID releaseId, UUID artifactId, String channel);

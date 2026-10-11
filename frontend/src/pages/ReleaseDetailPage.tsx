@@ -84,9 +84,12 @@ import {
   type ReleaseGates,
 } from "../api/gates";
 import {
+  controlPhasedRelease,
+  getPhasedRelease,
   listDistributionRecords,
   refreshDistributionRecord,
   type DistributionRecord,
+  type PhasedReleaseView,
 } from "../api/distribution";
 import { getApplicationVersion } from "../api/versions";
 import {
@@ -587,6 +590,7 @@ export default function ReleaseDetailPage() {
           </Alert>
         ) : null}
         <ChannelDistributions releaseId={release.id} />
+        <PhasedReleaseCurve releaseId={release.id} />
       </Paper>
 
       <Paper variant="outlined" sx={{ padding: 2 }} data-testid="timeline-section">
@@ -978,6 +982,107 @@ function ChannelDistributions({ releaseId }: ChannelDistributionsProps) {
             </Button>
           </Stack>
         ))}
+      </Stack>
+    </Box>
+  );
+}
+
+
+/** The phased-release curve block (S13-03, AC3): the production App
+ * Store channel's rollout answer -- Apple's own curve state, the
+ * current day of the fixed 7-day availability curve with its
+ * percentage, and the pause/resume/halt release actions. Halt is the
+ * documented rollback posture: it completes the curve immediately
+ * (Apple offers no binary rollback), so its button says what it does. */
+function PhasedReleaseCurve({ releaseId }: { releaseId: string }) {
+  const { user } = useAuth();
+  const orgId = user?.orgId ?? null;
+  const toast = useToast();
+  const queryClient = useQueryClient();
+
+  const curve = useQuery({
+    queryKey: ["phased-release", orgId, releaseId],
+    queryFn: () => getPhasedRelease(orgId as string, releaseId),
+    enabled: orgId !== null,
+    retry: false,
+    refetchInterval: REFRESH_MS,
+  });
+
+  const control = useMutation({
+    mutationFn: (action: "PAUSE" | "RESUME" | "HALT") =>
+      controlPhasedRelease(orgId as string, releaseId, action),
+    onSuccess: async (view: PhasedReleaseView) => {
+      toast.showSuccess(`Phased release: ${view.phasedReleaseState} (day ${view.currentDay})`);
+      await queryClient.invalidateQueries({ queryKey: ["phased-release", orgId, releaseId] });
+    },
+    onError: (error) => {
+      toast.showError(error);
+    },
+  });
+
+  if (curve.error || !curve.data) {
+    // A release the appstore channel never served (or a curve the
+    // store carries none of) keeps this block quiet.
+    return null;
+  }
+  const view = curve.data;
+  return (
+    <Box sx={{ marginTop: 2 }} data-testid="phased-release">
+      <Divider sx={{ marginBottom: 1 }} />
+      <Stack
+        direction="row"
+        spacing={1}
+        sx={{ alignItems: "center", marginBottom: 1 }}
+      >
+        <Typography variant="subtitle2">Phased release (App Store)</Typography>
+        <Chip
+          size="small"
+          variant="outlined"
+          color={view.phasedReleaseState === "COMPLETE" ? "success" : view.phasedReleaseState === "PAUSED" ? "warning" : "info"}
+          label={view.phasedReleaseState ?? "unknown"}
+        />
+        {view.versionState ? (
+          <Typography variant="caption" color="text.secondary">
+            version {view.versionState}
+          </Typography>
+        ) : null}
+      </Stack>
+      <Stack spacing={1} sx={{ maxWidth: 480 }}>
+        <Typography variant="caption" color="text.secondary">
+          Day {view.currentDay} of {view.totalDays} — {view.percentage}% of users can update
+        </Typography>
+        <LinearProgress
+          variant="determinate"
+          value={view.percentage}
+          data-testid="phased-release-progress"
+        />
+        <Stack direction="row" spacing={1}>
+          <Button
+            size="small"
+            disabled={control.isPending || view.phasedReleaseState !== "ACTIVE"}
+            onClick={() => control.mutate("PAUSE")}
+            data-testid="phased-release-pause"
+          >
+            Pause
+          </Button>
+          <Button
+            size="small"
+            disabled={control.isPending || view.phasedReleaseState !== "PAUSED"}
+            onClick={() => control.mutate("RESUME")}
+            data-testid="phased-release-resume"
+          >
+            Resume
+          </Button>
+          <Button
+            size="small"
+            color="warning"
+            disabled={control.isPending || view.phasedReleaseState === "COMPLETE"}
+            onClick={() => control.mutate("HALT")}
+            data-testid="phased-release-halt"
+          >
+            Halt (release to all)
+          </Button>
+        </Stack>
       </Stack>
     </Box>
   );

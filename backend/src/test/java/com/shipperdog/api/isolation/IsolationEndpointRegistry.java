@@ -1109,7 +1109,28 @@ final class IsolationEndpointRegistry {
                         side -> "/api/v1/distribution/testflight/groups?organizationId=" + side.organizationId(),
                         200,
                         404,
-                        side -> "/api/v1/distribution/testflight/groups?organizationId=" + UUID.randomUUID()));
+                        side -> "/api/v1/distribution/testflight/groups?organizationId=" + UUID.randomUUID()),
+                // The App Store submission-metadata view (S13-03, the
+                // same org-addressed shape): the honest EMPTY page for
+                // the seeded world, the org guard the leak-proofing.
+                surface(
+                        "/api/v1/distribution/appstore/metadata",
+                        side -> "/api/v1/distribution/appstore/metadata?organizationId=" + side.organizationId(),
+                        200,
+                        404,
+                        side -> "/api/v1/distribution/appstore/metadata?organizationId=" + UUID.randomUUID()),
+                // The phased-release curve read (S13-03): a release the
+                // seeded world never created answers the record miss
+                // (404) in the owning org, identically concealed for a
+                // foreign org and a foreign release alike.
+                surface(
+                        "/api/v1/distribution/appstore/releases/{releaseId}/phased-release",
+                        side -> "/api/v1/distribution/appstore/releases/" + UUID.randomUUID()
+                                + "/phased-release?organizationId=" + side.organizationId(),
+                        404,
+                        404,
+                        side -> "/api/v1/distribution/appstore/releases/" + UUID.randomUUID()
+                                + "/phased-release?organizationId=" + UUID.randomUUID()));
     }
 
     /**

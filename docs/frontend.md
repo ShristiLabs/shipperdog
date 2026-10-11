@@ -75,9 +75,15 @@ frontend/src/
                 (PRD 17 state-vocabulary mirrors; S9-05; the detail
                 page's distribution section carries the S13-02
                 channel-distribution block — provider status words
-                and the per-record store refresh),
+                and the per-record store refresh — and, since S13-03,
+                the App Store phased-release block: the curve's state,
+                day, and percentage with the pause/resume/halt release
+                actions),
                 ChannelsPage (the S13-01 channel catalog +
-                credential-delegation console)
+                credential-delegation console; since S13-03 also the
+                App Store listing-metadata authoring section —
+                per-locale facts the release manifest freezes at
+                approval)
   test/         harness.tsx (providers + fetch router), setup.ts
 frontend/e2e/   console-verify.mjs, applications-verify.mjs,
                 releases-verify.mjs + apk-fixture.mjs (Playwright
