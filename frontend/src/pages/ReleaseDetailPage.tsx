@@ -86,13 +86,16 @@ import {
 import {
   controlPhasedRelease,
   controlPlayRollout,
+  controlStagedRollout,
   getPhasedRelease,
   getPlayRollout,
+  getStagedRollout,
   listDistributionRecords,
   refreshDistributionRecord,
   type DistributionRecord,
   type PhasedReleaseView,
   type PlayRolloutView,
+  type StagedRolloutView,
 } from "../api/distribution";
 import { getApplicationVersion } from "../api/versions";
 import {
@@ -595,6 +598,7 @@ export default function ReleaseDetailPage() {
         <ChannelDistributions releaseId={release.id} />
         <PhasedReleaseCurve releaseId={release.id} />
         <PlayRolloutCurve releaseId={release.id} />
+        <StagedTenantRollout releaseId={release.id} />
       </Paper>
 
       <Paper variant="outlined" sx={{ padding: 2 }} data-testid="timeline-section">
@@ -849,6 +853,145 @@ interface PrecheckDialogProps {
   failed: boolean;
   tenantNameById: Map<string, string>;
   onClose: () => void;
+}
+
+/** The staged TENANT rollout block (S13-06, AC1/AC2/AC3/AC4): the
+ * release's widening plan over its target tenants — the stages with
+ * their resolved cohorts, the per-tenant progress (Acme reached,
+ * Contoso not yet), the append-only timeline beside the audit trail,
+ * and the release actions: ADVANCE (the checkpoint stage approval or
+ * the gated automatic widening — a blocked advance renders the rule's
+ * evidence) and ROLLBACK, the one-action orchestrated pull. */
+function StagedTenantRollout({ releaseId }: { releaseId: string }) {
+  const { user } = useAuth();
+  const orgId = user?.orgId ?? null;
+  const toast = useToast();
+  const queryClient = useQueryClient();
+  const [rollbackReason, setRollbackReason] = useState("");
+
+  const staged = useQuery({
+    queryKey: ["staged-rollout", orgId, releaseId],
+    queryFn: () => getStagedRollout(orgId as string, releaseId),
+    enabled: orgId !== null,
+    retry: false,
+    refetchInterval: REFRESH_MS,
+  });
+
+  const control = useMutation({
+    mutationFn: (input: { action: "ADVANCE" | "ROLLBACK"; reason?: string }) =>
+      controlStagedRollout(orgId as string, releaseId, input.action, input.reason),
+    onSuccess: async (view: StagedRolloutView) => {
+      toast.showSuccess(`Staged rollout: ${view.status.toLowerCase()} at stage ${view.currentStage ?? "-"}`);
+      setRollbackReason("");
+      await queryClient.invalidateQueries({ queryKey: ["staged-rollout", orgId, releaseId] });
+      await queryClient.invalidateQueries({ queryKey: ["release", orgId, releaseId] });
+    },
+    onError: (error) => {
+      toast.showError(error);
+    },
+  });
+
+  if (staged.error || !staged.data) {
+    // A release never staged keeps this block quiet.
+    return null;
+  }
+  const view = staged.data;
+  const reached = view.tenantProgress.filter((tenant) => tenant.reachedAtStage !== null).length;
+  const total = view.tenantProgress.length;
+  const progress = total === 0 ? 0 : Math.round((reached * 100) / total);
+  return (
+    <Box sx={{ marginTop: 2 }} data-testid="staged-rollout">
+      <Divider sx={{ marginBottom: 1 }} />
+      <Stack
+        direction="row"
+        spacing={1}
+        sx={{ alignItems: "center", marginBottom: 1 }}
+      >
+        <Typography variant="subtitle2">Staged tenant rollout</Typography>
+        <Chip
+          size="small"
+          variant="outlined"
+          color={
+            view.status === "COMPLETE"
+              ? "success"
+              : view.status === "ROLLED_BACK"
+                ? "error"
+                : view.status === "RUNNING"
+                  ? "info"
+                  : "default"
+          }
+          label={view.status.toLowerCase()}
+        />
+        <Chip
+          size="small"
+          variant="outlined"
+          label={view.mode === "AUTOMATIC" ? "automatic (policy-gated)" : "checkpoint (RM approval)"}
+        />
+        <Typography variant="caption" color="text.secondary">
+          {reached} of {total} tenants reached
+          {view.currentStage !== null ? ` — stage ${view.currentStage}` : ""}
+        </Typography>
+      </Stack>
+      <Stack spacing={1} sx={{ maxWidth: 480 }}>
+        <LinearProgress variant="determinate" value={progress} data-testid="staged-rollout-progress" />
+        {view.stages.map((stage) => (
+          <Typography variant="caption" color="text.secondary" key={stage.position}>
+            Stage {stage.position}:{" "}
+            {stage.kind === "PERCENT" ? `${stage.percent}% of tenants` : "explicit cohort"} —{" "}
+            {stage.cohortSize} tenant{stage.cohortSize === 1 ? "" : "s"} — {stage.status.toLowerCase()}
+            {stage.reachedAt !== null
+              ? ` at ${stage.reachedAt.slice(0, 19).replace("T", " ")}`
+              : ""}
+          </Typography>
+        ))}
+        <Stack direction="row" spacing={1} sx={{ alignItems: "center" }}>
+          <Button
+            size="small"
+            disabled={
+              control.isPending ||
+              view.status !== "RUNNING" ||
+              view.currentStage === view.stages.length
+            }
+            onClick={() => control.mutate({ action: "ADVANCE" })}
+            data-testid="staged-rollout-advance"
+          >
+            {view.mode === "CHECKPOINT" ? "Approve and advance" : "Advance"}
+          </Button>
+          <TextField
+            size="small"
+            label="rollback reason"
+            value={rollbackReason}
+            onChange={(event) => setRollbackReason(event.target.value)}
+            sx={{ flex: 1 }}
+            slotProps={{ htmlInput: { "data-testid": "staged-rollout-reason-input" } }}
+          />
+          <Button
+            size="small"
+            color="error"
+            disabled={
+              control.isPending ||
+              (view.status !== "RUNNING" && view.status !== "COMPLETE") ||
+              rollbackReason.trim() === ""
+            }
+            onClick={() => control.mutate({ action: "ROLLBACK", reason: rollbackReason.trim() })}
+            data-testid="staged-rollout-rollback"
+          >
+            Roll back
+          </Button>
+        </Stack>
+        <Stack spacing={0.5} data-testid="staged-rollout-timeline">
+          {view.timeline.map((event, index) => (
+            <Typography variant="caption" color="text.secondary" key={index}>
+              {event.occurredAt.slice(0, 19).replace("T", " ")} — {event.action.toLowerCase()}
+              {event.stagePosition !== null ? ` (stage ${event.stagePosition})` : ""}
+              {event.channel !== null ? ` [${event.channel}]` : ""}
+              {event.detail !== null ? ` ${event.detail}` : ""}
+            </Typography>
+          ))}
+        </Stack>
+      </Stack>
+    </Box>
+  );
 }
 
 /** The one-screen answer to "why can't I promote" (issue #44's

@@ -106,6 +106,8 @@ public class DistributionDispatchService {
     private final com.shipperdog.api.artifact.ArtifactStore artifactStorage;
     private final AdapterCallSandbox sandbox;
     private final SubmissionFailureRecorder submissionFailures;
+    private final com.shipperdog.api.distribution.internal.service.StagedRolloutReader stagedRollouts;
+    private final com.shipperdog.api.distribution.internal.service.StagedTenantRolloutService stagedTenantRollouts;
     private final AuditLogger audit;
     private final org.springframework.context.ApplicationEventPublisher events;
     private final Tracer tracer;
@@ -124,6 +126,8 @@ public class DistributionDispatchService {
             com.shipperdog.api.artifact.ArtifactStore artifactStorage,
             AdapterCallSandbox sandbox,
             SubmissionFailureRecorder submissionFailures,
+            com.shipperdog.api.distribution.internal.service.StagedRolloutReader stagedRollouts,
+            com.shipperdog.api.distribution.internal.service.StagedTenantRolloutService stagedTenantRollouts,
             AuditLogger audit,
             org.springframework.context.ApplicationEventPublisher events,
             Tracer tracer,
@@ -140,6 +144,8 @@ public class DistributionDispatchService {
         this.artifactStorage = artifactStorage;
         this.sandbox = sandbox;
         this.submissionFailures = submissionFailures;
+        this.stagedRollouts = stagedRollouts;
+        this.stagedTenantRollouts = stagedTenantRollouts;
         this.audit = audit;
         this.events = events;
         this.tracer = tracer;
@@ -163,6 +169,13 @@ public class DistributionDispatchService {
     @Transactional
     void onReleaseTransitioned(ReleaseTransitionedEvent event) {
         if ("ACTIVE".equals(event.toStatus())) {
+            // The staged rollout's commencement (S13-06, #66): a PLANNED
+            // plan starts BEFORE the command builds, so the dispatch's
+            // target narrowing (below) reads the RUNNING standing and
+            // the release's first distribution serves exactly the first
+            // cohort. Inside the crossing's transaction: the plan starts
+            // with the distribution it shapes or not at all.
+            stagedTenantRollouts.commenceIfPlanned(event.releaseId(), event.organizationId());
             dispatch(event);
             return;
         }
@@ -440,6 +453,24 @@ public class DistributionDispatchService {
         // never reads platform tables — groups without a link carry a
         // null external id and the adapter reports the gap loudly.
         List<ReleaseAccess.ReleaseTargetGroup> targeted = releases.targetGroupsOf(event.releaseId());
+        // The staged rollout's narrowing (S13-06, #66, AC3): a release
+        // RUNNING a staged plan serves the REACHED cohort only — the
+        // command carries the narrowed target set and group set, so
+        // the TestFlight dispatch assigns exactly the cohort's groups.
+        // The direct channel's narrowing rides the download gate (the
+        // StagedRolloutAvailability seam); the play curve's rides the
+        // rollout service's staged hook. A release with no RUNNING
+        // plan dispatches to every target, byte-identical to before.
+        Optional<StagedRolloutReader.Standing> narrowing = stagedRollouts.narrowingStandingOf(event.releaseId());
+        if (narrowing.isPresent()) {
+            Set<UUID> reached = narrowing.get().reachedTenantIds();
+            Set<UUID> narrowed = new java.util.LinkedHashSet<>(targets);
+            narrowed.retainAll(reached);
+            targets = narrowed;
+            targeted = targeted.stream()
+                    .filter(group -> reached.contains(group.tenantId()))
+                    .toList();
+        }
         Map<UUID, String> linksOfGroup = groupLinks
                 .findByChannelAndGroupIdIn(
                         channel,

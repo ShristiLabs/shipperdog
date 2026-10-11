@@ -164,9 +164,14 @@ committing transaction, the manifest-freeze precedent — and:
 FAILED records with the taxonomy code and audits the dispatch; the
 release still went ACTIVE, because its platform-side availability (the
 authorization engine's decisions) is not the store's to take away.
-Rollback orchestration is S13-06; when the #62–#65 connectors'
-latencies demand it, the sandbox call moves off the crossing's
-transaction onto the bus — the listener and records stay.
+Since S13-06 the failed dispatch's consequence is OWNED by the staged
+rollout surface: FAILED records block every staged advancement
+loudly (the dispatch-failure rollback ownership doctrine, the #61
+promise) and the orchestrated rollback pulls them with everything
+else — see [the staged tenant rollout](#the-staged-tenant-rollout-and-orchestrated-rollback-s13-06).
+When the #62–#65 connectors' latencies demand it, the sandbox call
+moves off the crossing's transaction onto the bus — the listener and
+records stay.
 
 The record lifecycle is V1's own `distribution_status` vocabulary —
 PENDING, DISTRIBUTING, DISTRIBUTED, FAILED — reused as the new table's
@@ -710,6 +715,157 @@ retried with the sandbox's backoff, counted in the
 `google-play` (Google throttles the project's quota, not the calling
 channel), whether the retry lands or the exhaustion fails the record
 with `ADAPTER_RATE_LIMITED`.
+
+## The staged tenant rollout and orchestrated rollback (S13-06)
+
+The E13 capstone (issue #66, FR-018, PRD §37/§16/§17): ShipperDog's
+own rings axis — a release widens across its target TENANT
+population in controlled stages (pilot tenants → 10% → 50% → 100%),
+each stage executing across every channel the release dispatches on,
+with ONE action that rolls the whole thing back. This is the TENANT
+axis, deliberately distinct from the store-side curves — Play's
+user-fraction (#65) and Apple's phased-release days (#63) — and the
+staged engine drives those curves as its per-channel arms where they
+exist.
+
+### The plan and the deterministic cohorts (AC1)
+
+A plan is authored while the release sits before its ACTIVE crossing
+(one plan per release, the 409 on a second): the advancement mode —
+`AUTOMATIC` (the policy engine decides between stages) or
+`CHECKPOINT` (a Release Manager's explicit stage approval) — and the
+ordered stages, each a percentage of the target population or an
+explicit tenant list. The final stage must reach every target
+tenant; every stage must contain everything the previous stage
+reached (the plan only widens).
+
+**The cohort algorithm (the story's technical note, documented):**
+the release's target tenants are ordered by
+SHA-256(releaseId ‖ tenantId) compared as unsigned 256-bit values
+ascending, tenant-id tie-broken. A PERCENT stage of p over N targets
+selects the first ceil(p·N/100) tenants of that one order; pure
+percent stages are therefore cumulative prefixes by construction.
+The selection is a pure function of (releaseId, target set, stage
+shapes): re-authoring the same plan resolves the same cohorts, a
+retry re-lands the same rows, and only an explicit re-planning
+changes membership. Every cohort row carries its seeded rank, so the
+stored resolution is reproducible, not just inspectable.
+
+| Route | Purpose |
+|---|---|
+| `GET /api/v1/distribution/releases/{releaseId}/staged-rollout?organizationId=` | The plan: mode, standing, stages with resolved cohorts, per-tenant progress, and the timeline. |
+| `PUT /api/v1/distribution/releases/{releaseId}/staged-rollout?organizationId=` | Author: `{mode, stages: [{percent} \| {tenants}]}` — resolved through the seeded selection at write time. |
+| `POST /api/v1/distribution/releases/{releaseId}/staged-rollout?organizationId=` | `{action: ADVANCE \| ROLLBACK, reason?}` — reason mandatory on ROLLBACK. |
+
+### The commencement and the narrowing (AC3)
+
+The release's ACTIVE crossing STARTS the plan inside the dispatch's
+own transaction — stage 1 REACHED, the plan RUNNING — BEFORE the
+dispatch builds its command, so the release's first distribution
+serves exactly the first cohort. The dispatch NARROWS its target set
+and group set to the reached cohort; a release with no plan
+dispatches to every target, byte-identical to before. The DIRECT
+channel's narrowing rides the download path (`StagedRolloutAvailability`):
+a granted download whose tester sits outside the reached cohort is
+the concealed version miss until a wider stage reaches them — the
+gate narrows granted downloads, it never widens or authorizes one.
+
+Each later stage's ADVANCE executes the channel arms for the newly
+reached delta:
+
+- **testflight** — the release's build assigned to the delta
+  tenants' mapped beta groups (the same ASC call the dispatch runs,
+  driven by the plan); on rollback, REMOVED from every reached group.
+- **play** — the store curve driven to the stage's cumulative
+  coverage: the curve's FIRST write lands at the staged coverage (the
+  `play-rollout-percent` config yields to the plan), each ADVANCE
+  widens the user-fraction, and the rollback HALTs it. A manually
+  halted curve is never silently overridden (the arm records
+  `curve-halted`).
+- **appstore** — Apple's own day-based curve is the store's axis,
+  not the plan's (recorded `not-applicable` on advance); the rollback
+  HALTs the phased curve where one runs.
+- **direct** — the platform's own reached set (the arm records the
+  availability widening; the cut is the state's).
+
+Every arm's outcome lands on the plan's append-only timeline
+(`staged_rollout_events`, the `channel_rollout_steps` precedent). An
+arm's failure is recorded loudly and never vetoes the platform's
+stage — the store-side standing surfaces as drift on the channel's
+own view, the #65 doctrine.
+
+### The advancement engine (AC2)
+
+An ADVANCE of an AUTOMATIC plan consults the SAME declarative policy
+engine the promotion precheck runs (S10-06) — the ring's BLOCK/HOLD
+rules answer the widening question with the rule's evidence in the
+409 `DISTRIBUTION_STAGED_ROLLOUT_BLOCKED`, and the refusal's
+evaluation evidence commits in the consult's own transaction (the
+#45 discipline — the STAGE_BLOCKED timeline row and audit line
+survive the rollback). A CHECKPOINT advance IS the Release Manager's
+stage approval — the actor on the STAGE_APPROVED row. The
+unattended cadence of the automatic mode is the opt-in scheduled
+pass (`shipperdog.distribution.staged-rollout.advancement.enabled`,
+default false — the reconciliation precedent; a CHECKPOINT plan is
+never advanced unattended).
+
+**The dispatch-failure rollback ownership (the #61 promise, landed
+here):** dispatch failures never fail the ACTIVE crossing (FAILED
+records + audited — unchanged since #61), and THIS surface owns the
+refusal: FAILED dispatch records on the release's channels block
+every advancement — loudly, with the failure codes in the 409 and on
+the timeline — until the dispatch is resolved. A failed channel arm
+is never widened past silently.
+
+### The orchestrated rollback (AC4)
+
+ONE action, reason mandatory (FR-024):
+
+1. The release crosses ACTIVE → ROLLED_BACK through the release
+   module's port (the same CAS, timeline row, audit, and event the
+   operator route runs) — direct downloads cut by the state (the
+   `RolledBackCutoffPolicy` seam; the version and artifacts stay
+   readable, INV-006/007).
+2. The TestFlight assignments REVERT (the build leaves the mapped
+   groups), the Play rollout HALTs, the Apple phased curve HALTs
+   where one runs — each arm best-effort BY DESIGN with its outcome
+   recorded (the rollback's other arms are not one channel's fault
+   to veto).
+3. Every channel distribution record moves to the ROLLED_BACK state
+   (the vocabulary's new terminal value, V48 — the record keeps its
+   external id and history: the state says the arm was pulled, never
+   that the distribution never happened).
+4. The plan's reached stages pull to ROLLED_BACK; the plan goes
+   ROLLED_BACK with the reason on its timeline.
+
+Artifacts are untouched (INV-008) — the rollback serves nothing, it
+deletes nothing. The store-side truth stands: Apple offers no binary
+rollback (HALT is their stop), Play's halt freezes the fraction, and
+the platform's own tiers are cut by the state.
+
+### The manifest and the completion record (AC6)
+
+The APPROVED crossing freezes the plan into the manifest's rollout
+block (`rollout.staged` — mode and ordered stages with their resolved
+cohorts, deep-copied values through the distribution module's port,
+the store-submission precedent): the immutable copy of WHAT WAS
+PLANNED. The rollout's own append-only ledger records the reached
+stages through the COMPLETED event (`reached=1,2,…` with each
+stage's row carrying its moment) — the manifest never rewrites
+history; the freeze answers the plan question, the ledger answers
+the journey.
+
+### The rollback drill
+
+The rehearsal is automated — `StagedTenantRolloutIntegrationTest` is
+the game-day drill: author a plan, commence at ACTIVE, advance
+through the channels, roll back with one action, and verify every
+arm's outcome (the release state, the reverted groups on the mock
+ASC store, the halted curve, the records, the untouched artifacts).
+The console's staged-rollout card renders the same timeline the
+drill asserts, so the manual drill is the card's own steps: ADVANCE
+through the stages of a canary release, watch the per-tenant
+progress, ROLLBACK with a reason, and read the timeline.
 
 ## Adding an adapter
 

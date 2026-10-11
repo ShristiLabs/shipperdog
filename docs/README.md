@@ -174,7 +174,10 @@ Current contents:
   app+environment, first-defined-wins per provider, PRD 25), the
   store connectors (TestFlight #62, the App Store's production
   submission + phased release #63, Google Play's testing tracks
-  #64), the two
+  #64 and production staged rollout #65), the staged TENANT
+  rollout and orchestrated rollback (S13-06, #66: deterministic
+  seeded cohorts, gated/checkpointed advancement, per-channel
+  arms, one-action rollback), the two
   secret stores behind one port (ADR-0008), the ACTIVE-crossing
   dispatch and its distribution records (external ids for store
   reconciliation), the per-adapter sandbox (timeout, bounded

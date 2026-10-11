@@ -635,6 +635,24 @@ public class ReleaseService implements ReleaseAccess, VersionDistributionContrib
     @Transactional(readOnly = true)
     public Optional<String> effectiveRingCodeOf(UUID releaseId) {
         ReleaseEntity release = releases.findScoped(releaseId).orElse(null);
+        return effectiveRingCodeOf(release);
+    }
+
+    /**
+     * The distribution-served twin (S13-06, issue #66): the same
+     * effective-ring resolution over the REGISTRY probe — the staged
+     * rollout's org-grain routes and background threads bind no
+     * release-owning scope, exactly the standing of every
+     * {@code distribution*Of} read on this port.
+     */
+    @Override
+    @Transactional(readOnly = true)
+    public Optional<String> distributionEffectiveRingCodeOf(UUID releaseId) {
+        return effectiveRingCodeOf(registry.probeById(releaseId).orElse(null));
+    }
+
+    /** The effective-ring resolution over one resolved release row (null-safe). */
+    private Optional<String> effectiveRingCodeOf(ReleaseEntity release) {
         if (release == null) {
             return Optional.empty();
         }
@@ -658,6 +676,39 @@ public class ReleaseService implements ReleaseAccess, VersionDistributionContrib
             }
         }
         return Optional.empty();
+    }
+
+    /**
+     * The distribution-served target set (S13-06, issue #66): the
+     * staged rollout's cohort resolution reads the release's frozen
+     * target set on org-grain routes — registry-probed like every
+     * {@code distribution*Of} read, the caller's own standing the
+     * guard. The staged surfaces verify the plan's organization before
+     * any of this reads.
+     */
+    @Override
+    @Transactional(readOnly = true)
+    public Set<UUID> distributionTargetTenantIdsOf(UUID releaseId) {
+        return registry.probeById(releaseId)
+                .map(release -> new LinkedHashSet<>(targets.findByReleaseIdOrderByTenantIdAsc(release.getId()).stream()
+                        .map(ReleaseTargetEntity::getTenantId)
+                        .toList()))
+                .orElseGet(LinkedHashSet::new);
+    }
+
+    /**
+     * The distribution-served targeted groups (S13-06, issue #66): the
+     * staged arms' group mapping over the release's frozen target
+     * groups, registry-probed like every {@code distribution*Of} read.
+     */
+    @Override
+    @Transactional(readOnly = true)
+    public List<ReleaseTargetGroup> distributionTargetGroupsOf(UUID releaseId) {
+        return registry.probeById(releaseId)
+                .map(release -> targetGroups.findByReleaseIdOrderByTenantIdAscGroupIdAsc(release.getId()).stream()
+                        .map(row -> new ReleaseTargetGroup(row.getTenantId(), row.getGroupId()))
+                        .toList())
+                .orElse(List.of());
     }
 
     /**
@@ -795,6 +846,39 @@ public class ReleaseService implements ReleaseAccess, VersionDistributionContrib
                     ring == null ? null : ring.getCode(),
                     release.getEnvironmentId());
         });
+    }
+
+    /**
+     * The orchestrated rollback's release-side half (S13-06, issue
+     * #66, AC4, PRD 17): the ACTIVE to ROLLED_BACK crossing through
+     * the SAME ceremony the operator route runs — CAS, mandatory
+     * reason, timeline row, audit, event — so the distribution
+     * module's one-action rollback lands the release state beside its
+     * channel arms as one governed act. Registry-served and
+     * organization-guarded exactly like {@link #distributionFactsOf}
+     * (the caller's standing over its own surfaces is the guard); a
+     * release not sitting on ACTIVE answers the route's own precise
+     * conflict, never a force.
+     */
+    @Override
+    @Transactional
+    public void rollbackActiveRelease(UUID organizationId, UUID releaseId, UUID actorId, String reason) {
+        ReleaseAccess.ReleaseFacts facts = registry.probeById(releaseId)
+                .filter(release -> release.getOrganizationId().equals(organizationId))
+                .map(release -> new ReleaseAccess.ReleaseFacts(
+                        release.getId(),
+                        release.releaseRef(),
+                        release.getApplicationId(),
+                        release.getVersionId(),
+                        release.getOrganizationId(),
+                        release.getTenantId(),
+                        release.getCreatedBy(),
+                        release.getStatus().name(),
+                        null,
+                        null,
+                        release.getEnvironmentId()))
+                .orElseThrow(() -> new ReleaseException(ReleaseException.Code.NOT_FOUND, "release not found"));
+        transition(actorId, facts.applicationId(), releaseId, ReleaseEntity.Status.ROLLED_BACK.name(), reason);
     }
 
     /**

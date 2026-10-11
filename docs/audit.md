@@ -308,6 +308,47 @@ flip, and the row itself is RETAINED with its revocation facts as
 the durable history),
 and
 platform (`ACCESS_DENIED`, S1-06),
+the distribution family — S13-01 through S13-06 (issues #61–#66, the
+vocabulary sync since #61): `DISTRIBUTION_CREDENTIAL_BOUND` /
+`DISTRIBUTION_CREDENTIAL_DELETED` (a store-account binding written or
+removed on the PRD 25 delegation chain — org, app, or app+env level,
+references only, never material), `DISTRIBUTION_CREDENTIAL_VERIFIED`
+(the resolution probe's `{resolved}` answer, never what the reference
+resolves to), `DISTRIBUTION_DISPATCHED` (one release crossing's
+dispatch through a channel: the channel, the outcome — distributed,
+failed, or a configuration fault's code — and the release ref;
+credential material deliberately absent), `DISTRIBUTION_GROUP_SYNCED`
+(a tester-group link's idempotent membership push with the
+provider-side drift REPORTED, never force-removed — the never-remove
+doctrine of #62, the Play split of #64), `DISTRIBUTION_RECORD_REFRESHED`
+(the explicit refresh or the reconciliation pass's provider-status
+observation, the provider's own lifecycle word in the detail),
+`DISTRIBUTION_METADATA_SAVED` / `DISTRIBUTION_METADATA_REMOVED` (the
+App Store submission-metadata authoring surface, #63),
+`DISTRIBUTION_PHASED_RELEASE_CONTROLLED` (one Apple phased-release
+action — pause, resume, halt — with the provider's resulting curve
+state, #63), `STORE_EVENT_APPLIED` (a verified store notification
+mapped and its records refreshed — the webhook leg of the
+review-state sync, #63), `DISTRIBUTION_ROLLOUT_CONTROLLED` (one Play
+staged-rollout action — start, advance, halt, resume, reapply — with
+the curve's from/to percentages and the actor, #65),
+`DISTRIBUTION_ROLLOUT_DRIFT` (the reconciliation's first observation
+of intended ≠ observed — the report; the re-apply of intent is always
+an explicit operator action, #65), and the staged TENANT rollout
+family of #66: `STAGED_ROLLOUT_PLANNED` (a plan authored with its
+mode and stage count — the deterministic cohorts are inspectable on
+the plan's own view), `STAGED_ROLLOUT_ADVANCED` (the commencement's
+STARTED and every stage's execution — the stage's delta, cumulative
+coverage, and channel arms' outcomes, with the actor on a checkpoint
+approval; the plan's completion records the reached-stages summary),
+`STAGED_ROLLOUT_BLOCKED` (a refused advancement — the policy rule's
+reference and evidence, or the failed dispatches' codes under the
+dispatch-failure rollback ownership doctrine; the refusal's evidence
+commits in its own transaction, the #45 discipline), and
+`STAGED_ROLLOUT_ROLLED_BACK` (the ONE-action orchestrated rollback —
+the mandatory reason, every channel arm's outcome, the release's
+ROLLED_BACK crossing, and the artifacts untouched, INV-008); see
+[distribution](distribution.md),
 the notification subscription family
 (`NOTIFICATION_SUBSCRIPTION_CREATED`/`UPDATED`/`DELETED`/`TESTED` —
 S12-01/S12-02, documented with its surface in

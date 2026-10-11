@@ -105,6 +105,9 @@ public class ArtifactDownloadService {
     private final org.springframework.beans.factory.ObjectProvider<
                     com.shipperdog.api.distribution.ChannelDistributionRoutes>
             storeChannels;
+    private final org.springframework.beans.factory.ObjectProvider<
+                    com.shipperdog.api.distribution.StagedRolloutAvailability>
+            stagedRollouts;
     private final TenantScopeExecutor scopeExecutor;
     private final VersionAccess versions;
     private final AuditEventPublisher audit;
@@ -122,6 +125,8 @@ public class ArtifactDownloadService {
             ObjectProvider<AuthorizationService> authorization,
             org.springframework.beans.factory.ObjectProvider<com.shipperdog.api.distribution.ChannelDistributionRoutes>
                     storeChannels,
+            org.springframework.beans.factory.ObjectProvider<com.shipperdog.api.distribution.StagedRolloutAvailability>
+                    stagedRollouts,
             TenantScopeExecutor scopeExecutor,
             VersionAccess versions,
             AuditEventPublisher audit,
@@ -137,6 +142,7 @@ public class ArtifactDownloadService {
         this.tokens = tokens;
         this.authorization = authorization;
         this.storeChannels = storeChannels;
+        this.stagedRollouts = stagedRollouts;
         this.scopeExecutor = scopeExecutor;
         this.versions = versions;
         this.audit = audit;
@@ -190,6 +196,18 @@ public class ArtifactDownloadService {
                     .decideForApi(AuthorizationContext.download(actorId, null, null, versionId, artifactId, null));
             if (!decision.allowed()) {
                 throw concealed(decision);
+            }
+            // The staged rollout's DIRECT arm (S13-06, #66, AC3): a
+            // granted download the staged plan has not reached its
+            // tenant for is the concealed VERSION miss — the engine
+            // allowed the ask (authorization is the engine's), the
+            // cohort narrows availability (the staged rollout's own).
+            // Byte-identical to every other version-grain denial, the
+            // concealment doctrine; a tester of a reached tenant
+            // passes untouched.
+            com.shipperdog.api.distribution.StagedRolloutAvailability staged = stagedRollouts.getIfAvailable();
+            if (staged != null && staged.blocksDownload(versionId, actorId)) {
+                throw new ConcealedResourceAccessDeniedException("version");
             }
             DownloadIssuanceView issued = issueAllowed(actorId, artifactId, versionId);
             sample.stop(generationTimer("issued"));

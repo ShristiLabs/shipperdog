@@ -78,10 +78,14 @@ frontend/src/
                 and the per-record store refresh — the S13-03 App
                 Store phased-release block: the curve's state, day,
                 and percentage with the pause/resume/halt release
-                actions; and, since S13-05, the Google Play rollout
+                actions; since S13-05, the Google Play rollout
                 curve: intended vs observed percentage with the
                 drift chip and the advance/halt/resume/re-apply
-                release actions),
+                release actions; and, since S13-06, the staged
+                TENANT rollout card: the plan's mode and standing,
+                the stages with their resolved cohorts, per-tenant
+                progress, the append-only timeline, and the
+                advance / one-action-rollback release actions),
                 ChannelsPage (the S13-01 channel catalog +
                 credential-delegation console; since S13-03 also the
                 App Store listing-metadata authoring section —

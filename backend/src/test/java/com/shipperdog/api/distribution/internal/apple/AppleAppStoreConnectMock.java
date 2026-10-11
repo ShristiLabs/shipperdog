@@ -160,6 +160,12 @@ public final class AppleAppStoreConnectMock {
     }
 
     /** Removes a build from a group (the manual un-assignment drift). */
+    /** The build ids a beta group currently carries (the staged arms' assertion half, S13-06). */
+    public java.util.Set<String> buildsOfGroup(String groupId) {
+        BetaGroupState group = groups.get(groupId);
+        return group == null ? java.util.Set.of() : java.util.Set.copyOf(group.builds);
+    }
+
     public void unassignBuild(String groupId, String buildId) {
         BetaGroupState group = groups.get(groupId);
         if (group != null) {
@@ -277,6 +283,8 @@ public final class AppleAppStoreConnectMock {
                 handleGroupBuilds(exchange, path);
             } else if ("POST".equals(method) && path.matches("/v1/betaGroups/[^/]+/relationships/builds")) {
                 handleAssignBuild(exchange, path, body);
+            } else if ("DELETE".equals(method) && path.matches("/v1/betaGroups/[^/]+/relationships/builds")) {
+                handleRemoveBuild(exchange, path, body);
             } else if ("GET".equals(method) && path.matches("/v1/betaGroups/[^/]+/betaTesters")) {
                 handleGroupTesters(exchange, path);
             } else if ("POST".equals(method) && path.matches("/v1/betaGroups/[^/]+/relationships/betaTesters")) {
@@ -412,6 +420,24 @@ public final class AppleAppStoreConnectMock {
             } else if (group != null) {
                 answer(exchange, 404, errors("NOT_FOUND", buildId));
                 return;
+            }
+        }
+        exchange.sendResponseHeaders(204, -1);
+    }
+
+    /**
+     * The staged rollout's revert arm (S13-06, #66, AC4): the build
+     * leaves the group — idempotent (a group already without the
+     * build answers success, ASC's own semantics).
+     */
+    private void handleRemoveBuild(HttpExchange exchange, String path, String body) throws IOException {
+        String groupId = groupIdOfPath(path);
+        BetaGroupState group = groups.get(groupId);
+        JsonNode request = MAPPER.readTree(body);
+        for (JsonNode item : request.path("data")) {
+            String buildId = item.path("id").asString();
+            if (group != null) {
+                group.builds.remove(buildId);
             }
         }
         exchange.sendResponseHeaders(204, -1);

@@ -149,6 +149,7 @@ public class ReleaseManifestService {
     private final ArtifactAccess artifacts;
     private final EnvironmentAccess environments;
     private final com.shipperdog.api.distribution.ChannelSubmissionAccess storeSubmissions;
+    private final ObjectProvider<com.shipperdog.api.distribution.StagedRolloutFacts> stagedRollouts;
     private final TenantScopeExecutor scopeExecutor;
     private final AuditEventPublisher audit;
     private final ObjectProvider<ReleaseApprovalSource> approvalSources;
@@ -165,6 +166,7 @@ public class ReleaseManifestService {
             ArtifactAccess artifacts,
             EnvironmentAccess environments,
             com.shipperdog.api.distribution.ChannelSubmissionAccess storeSubmissions,
+            ObjectProvider<com.shipperdog.api.distribution.StagedRolloutFacts> stagedRollouts,
             TenantScopeExecutor scopeExecutor,
             AuditEventPublisher audit,
             ObjectProvider<ReleaseApprovalSource> approvalSources) {
@@ -179,6 +181,7 @@ public class ReleaseManifestService {
         this.artifacts = artifacts;
         this.environments = environments;
         this.storeSubmissions = storeSubmissions;
+        this.stagedRollouts = stagedRollouts;
         this.scopeExecutor = scopeExecutor;
         this.audit = audit;
         this.approvalSources = approvalSources;
@@ -335,6 +338,24 @@ public class ReleaseManifestService {
                 .flatMap(source -> source.approvalTypesOf(release.getId()).stream())
                 .toList();
 
+        // The staged-rollout block (S13-06, issue #66, AC6, PRD 16):
+        // a release carrying a staged TENANT rollout plan freezes it
+        // here — the widening intent deep-copied through the
+        // distribution module's port (the storeSubmissions precedent),
+        // values only. The plan is the immutable copy of WHAT WAS
+        // PLANNED; the rollout's own append-only ledger records the
+        // reached stages through completion.
+        ReleaseManifestDocument.StagedRollout stagedRollout = stagedRollouts.stream()
+                .flatMap(facts -> facts.planOf(release.getId()).stream())
+                .findFirst()
+                .map(plan -> new ReleaseManifestDocument.StagedRollout(
+                        plan.mode(),
+                        plan.stages().stream()
+                                .map(stage -> new ReleaseManifestDocument.StagedStage(
+                                        stage.position(), stage.kind(), stage.percent(), stage.cohort()))
+                                .toList()))
+                .orElse(null);
+
         // The store-submission block (PRD 16's WHAT WAS SENT, S13-03,
         // issue #63, AC1): when the release's environment binds a
         // SUBMISSION-capable channel, the authored listing metadata
@@ -383,7 +404,7 @@ public class ReleaseManifestService {
                 List.copyOf(targetPins),
                 new Ring(ring.getCode(), ring.getName(), ring.getPosition()),
                 environmentCode,
-                new Rollout(null),
+                new Rollout(null, stagedRollout),
                 configuration,
                 new Approval(List.copyOf(requiredApprovals)),
                 storeSubmission);
@@ -645,14 +666,8 @@ public class ReleaseManifestService {
                         ringText(from.manifest().ring()), ringText(to.manifest().ring())),
                 fieldChangeOf(from.manifest().environment(), to.manifest().environment()),
                 fieldChangeOf(
-                        from.manifest().rollout() == null
-                                        || from.manifest().rollout().percentage() == null
-                                ? null
-                                : String.valueOf(from.manifest().rollout().percentage()),
-                        to.manifest().rollout() == null
-                                        || to.manifest().rollout().percentage() == null
-                                ? null
-                                : String.valueOf(to.manifest().rollout().percentage())),
+                        rolloutText(from.manifest().rollout()),
+                        rolloutText(to.manifest().rollout())),
                 List.copyOf(configurationChanges));
     }
 
@@ -669,6 +684,25 @@ public class ReleaseManifestService {
 
     private static String ringText(Ring ring) {
         return ring == null ? null : ring.code();
+    }
+
+    /** The rollout block's diff text: the percentage beside the staged plan's shape (both null-safe). */
+    private static String rolloutText(Rollout rollout) {
+        if (rollout == null) {
+            return null;
+        }
+        String percentage = rollout.percentage() == null ? null : String.valueOf(rollout.percentage());
+        if (rollout.staged() == null) {
+            return percentage;
+        }
+        String stages = rollout.staged().stages().stream()
+                .map(stage -> stage.position() + ":"
+                        + (stage.percent() == null ? "explicit" : stage.percent() + "%")
+                        + ":" + stage.cohort().size())
+                .reduce((a, b) -> a + "," + b)
+                .orElse("");
+        String staged = rollout.staged().mode() + "[" + stages + "]";
+        return percentage == null ? staged : percentage + " " + staged;
     }
 
     private static FieldChange fieldChangeOf(String from, String to) {

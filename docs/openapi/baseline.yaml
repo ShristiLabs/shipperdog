@@ -852,6 +852,91 @@ paths:
             '*/*':
               schema:
                 $ref: "#/components/schemas/LinkView"
+  /api/v1/distribution/releases/{releaseId}/staged-rollout:
+    get:
+      tags:
+      - distribution-controller
+      operationId: stagedRolloutView
+      parameters:
+      - name: releaseId
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - name: organizationId
+        in: query
+        required: true
+        schema:
+          type: string
+          format: uuid
+      responses:
+        "200":
+          description: OK
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/StagedRolloutView"
+    put:
+      tags:
+      - distribution-controller
+      operationId: putStagedRollout
+      parameters:
+      - name: releaseId
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - name: organizationId
+        in: query
+        required: true
+        schema:
+          type: string
+          format: uuid
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/StagedRolloutPlanRequest"
+        required: true
+      responses:
+        "200":
+          description: OK
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/StagedRolloutView"
+    post:
+      tags:
+      - distribution-controller
+      operationId: controlStagedRollout
+      parameters:
+      - name: releaseId
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - name: organizationId
+        in: query
+        required: true
+        schema:
+          type: string
+          format: uuid
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/StagedRolloutActionRequest"
+        required: true
+      responses:
+        "200":
+          description: OK
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/StagedRolloutView"
   /api/v1/distribution/play/release-notes:
     get:
       tags:
@@ -5062,6 +5147,10 @@ paths:
           - STORE_EVENT_APPLIED
           - DISTRIBUTION_ROLLOUT_CONTROLLED
           - DISTRIBUTION_ROLLOUT_DRIFT
+          - STAGED_ROLLOUT_PLANNED
+          - STAGED_ROLLOUT_ADVANCED
+          - STAGED_ROLLOUT_BLOCKED
+          - STAGED_ROLLOUT_ROLLED_BACK
       - name: applicationId
         in: query
         required: false
@@ -5877,13 +5966,27 @@ components:
     JsonNode:
       type: object
       properties:
-        missingNode:
+        string:
           type: boolean
         valueNode:
           type: boolean
+        nodeType:
+          type: string
+          enum:
+          - ARRAY
+          - BINARY
+          - BOOLEAN
+          - MISSING
+          - "NULL"
+          - NUMBER
+          - OBJECT
+          - POJO
+          - STRING
+        missingNode:
+          type: boolean
         pojo:
           type: boolean
-        number:
+        integralNumber:
           type: boolean
         short:
           type: boolean
@@ -5904,25 +6007,11 @@ components:
           type: boolean
         binary:
           type: boolean
-        nodeType:
-          type: string
-          enum:
-          - ARRAY
-          - BINARY
-          - BOOLEAN
-          - MISSING
-          - "NULL"
-          - NUMBER
-          - OBJECT
-          - POJO
-          - STRING
-        string:
-          type: boolean
-        integralNumber:
-          type: boolean
         floatingPointNumber:
           type: boolean
         container:
+          type: boolean
+        number:
           type: boolean
         empty:
           type: boolean
@@ -6160,6 +6249,105 @@ components:
           type: string
           format: date-time
         updatedAt:
+          type: string
+          format: date-time
+    StagedRolloutPlanRequest:
+      type: object
+      properties:
+        mode:
+          type: string
+        stages:
+          type: array
+          items:
+            $ref: "#/components/schemas/StagedRolloutStageRequest"
+    StagedRolloutStageRequest:
+      type: object
+      properties:
+        percent:
+          type: integer
+          format: int32
+        tenants:
+          type: array
+          items:
+            type: string
+            format: uuid
+    EventView:
+      type: object
+      properties:
+        action:
+          type: string
+        stagePosition:
+          type: integer
+          format: int32
+        channel:
+          type: string
+        detail:
+          type: string
+        actorId:
+          type: string
+          format: uuid
+        occurredAt:
+          type: string
+          format: date-time
+    StageView:
+      type: object
+      properties:
+        position:
+          type: integer
+          format: int32
+        kind:
+          type: string
+        percent:
+          type: integer
+          format: int32
+        cohortSize:
+          type: integer
+          format: int32
+        status:
+          type: string
+        reachedAt:
+          type: string
+          format: date-time
+        cohort:
+          type: array
+          items:
+            type: string
+            format: uuid
+    StagedRolloutView:
+      type: object
+      properties:
+        releaseId:
+          type: string
+          format: uuid
+        mode:
+          type: string
+        status:
+          type: string
+        currentStage:
+          type: integer
+          format: int32
+        stages:
+          type: array
+          items:
+            $ref: "#/components/schemas/StageView"
+        tenantProgress:
+          type: array
+          items:
+            $ref: "#/components/schemas/TenantProgressView"
+        timeline:
+          type: array
+          items:
+            $ref: "#/components/schemas/EventView"
+    TenantProgressView:
+      type: object
+      properties:
+        tenantId:
+          type: string
+          format: uuid
+        reachedAtStage:
+          type: integer
+          format: int32
+        reachedAt:
           type: string
           format: date-time
     PlayReleaseNotesRequest:
@@ -7138,6 +7326,13 @@ components:
           type: array
           items:
             type: string
+    StagedRolloutActionRequest:
+      type: object
+      properties:
+        action:
+          type: string
+        reason:
+          type: string
     RecordView:
       type: object
       properties:
@@ -9217,6 +9412,10 @@ components:
           - STORE_EVENT_APPLIED
           - DISTRIBUTION_ROLLOUT_CONTROLLED
           - DISTRIBUTION_ROLLOUT_DRIFT
+          - STAGED_ROLLOUT_PLANNED
+          - STAGED_ROLLOUT_ADVANCED
+          - STAGED_ROLLOUT_BLOCKED
+          - STAGED_ROLLOUT_ROLLED_BACK
         occurredAt:
           type: string
           format: date-time

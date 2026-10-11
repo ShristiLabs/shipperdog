@@ -1153,6 +1153,18 @@ final class IsolationEndpointRegistry {
                         404,
                         side -> "/api/v1/distribution/play/releases/" + UUID.randomUUID() + "/rollout?organizationId="
                                 + UUID.randomUUID()),
+                // The staged TENANT rollout view (S13-06): a release
+                // the seeded world never planned answers the plan
+                // miss (404) in the owning org, identically concealed
+                // for a foreign org and a foreign release.
+                surface(
+                        "/api/v1/distribution/releases/{releaseId}/staged-rollout",
+                        side -> "/api/v1/distribution/releases/" + UUID.randomUUID() + "/staged-rollout?organizationId="
+                                + side.organizationId(),
+                        404,
+                        404,
+                        side -> "/api/v1/distribution/releases/" + UUID.randomUUID() + "/staged-rollout?organizationId="
+                                + UUID.randomUUID()),
                 // The Play release-notes view (S13-04, the same
                 // org-addressed authoring standing): the honest EMPTY
                 // page, the org guard the leak-proofing.

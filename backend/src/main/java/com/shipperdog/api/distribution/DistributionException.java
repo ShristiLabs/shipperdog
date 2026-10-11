@@ -139,6 +139,63 @@ public class DistributionException extends RuntimeException {
                 HttpStatus.CONFLICT,
                 "DISTRIBUTION_ROLLOUT_CONFLICT",
                 "The rollout changed concurrently; reload and retry."),
+        /**
+         * The addressed release carries no staged tenant rollout plan
+         * (S13-06, #66): the release never authored one, or a foreign
+         * release — concealed. A read answers this honestly rather
+         * than an invented plan.
+         */
+        DISTRIBUTION_STAGED_ROLLOUT_NOT_FOUND(
+                HttpStatus.NOT_FOUND, "DISTRIBUTION_STAGED_ROLLOUT_NOT_FOUND", "Resource not found."),
+        /**
+         * The staged plan authoring's shape or target fault (S13-06,
+         * #66, AC1): an unknown mode, a stage list without a
+         * full-coverage final stage, a percentage outside 1..100, an
+         * explicit list naming a non-target tenant or shrinking the
+         * previous cohort, or authoring against a release already
+         * distributing. The message names the fault's fact, never a
+         * foreign row (concealment).
+         */
+        DISTRIBUTION_STAGED_ROLLOUT_PLAN_INVALID(
+                HttpStatus.BAD_REQUEST,
+                "DISTRIBUTION_STAGED_ROLLOUT_PLAN_INVALID",
+                "The staged rollout plan is" + " invalid."),
+        /**
+         * The staged rollout action's shape fault (S13-06, #66): an
+         * action outside the advance/rollback vocabulary, an advance
+         * the plan's current state does not accept (not started, the
+         * final stage reached), or a rollback without its mandatory
+         * reason.
+         */
+        DISTRIBUTION_STAGED_ROLLOUT_ACTION_INVALID(
+                HttpStatus.BAD_REQUEST,
+                "DISTRIBUTION_STAGED_ROLLOUT_ACTION_INVALID",
+                "The staged rollout action is invalid."),
+        /**
+         * A staged advancement refused (S13-06, #66, AC2): the
+         * policy engine's BLOCK/HOLD denial of the widening (the same
+         * composed refusal the promotion 409 renders), or — the
+         * dispatch-failure rollback ownership doctrine since #61 —
+         * FAILED dispatch records on the release's channels that own
+         * the refusal until they are resolved. The message carries
+         * the rule's reference and evidence or the failure codes.
+         */
+        DISTRIBUTION_STAGED_ROLLOUT_BLOCKED(
+                HttpStatus.CONFLICT,
+                "DISTRIBUTION_STAGED_ROLLOUT_BLOCKED",
+                "The staged rollout advancement is blocked."),
+        /**
+         * The staged plan's concurrent-edit or duplicate-authoring
+         * refusal (S13-06, #66): the plan row changed under the
+         * action (the optimistic {@code version} stamp) or the
+         * release already carries its one plan — the stale or second
+         * authoring answers the public 409 instead of
+         * last-write-winning.
+         */
+        DISTRIBUTION_STAGED_ROLLOUT_CONFLICT(
+                HttpStatus.CONFLICT,
+                "DISTRIBUTION_STAGED_ROLLOUT_CONFLICT",
+                "The staged rollout changed concurrently or is already planned; reload and retry."),
         FORBIDDEN(HttpStatus.FORBIDDEN, "FORBIDDEN", "Access denied.");
 
         final HttpStatus httpStatus;
