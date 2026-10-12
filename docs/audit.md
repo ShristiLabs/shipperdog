@@ -376,6 +376,15 @@ the notification subscription family
 (`NOTIFICATION_SUBSCRIPTION_CREATED`/`UPDATED`/`DELETED`/`TESTED` —
 S12-01/S12-02, documented with its surface in
 [notifications](notifications.md)),
+the SIEM export family — S14-05/issue #71 (PRD 27/38):
+`AUDIT_STREAM_EXPORT_CREATED`/`UPDATED`/`DELETED` (the compliance
+feed's routing authored, edited, or removed — the secret REFERENCES
+ride the detail map as `[REDACTED]` by the key-based scrubber:
+neither material nor the reference itself survives on a trail line),
+`AUDIT_STREAM_EXPORT_TESTED` (the synthetic envelope's synchronous
+outcome), and `AUDIT_STREAM_REPLAYED` (the dead-letter's return to
+the retry schedule, with the count); documented with its surface in
+[siem](siem.md),
 and the CI-integration receiver family — S12-03/issue #53 and
 S12-04/issue #54:
 `INBOUND_WEBHOOK_ACCEPTED`/`IGNORED`/`REJECTED`/`DUPLICATE`, one per
@@ -389,6 +398,19 @@ notification (App Store / Google Play) was mapped to a normalized
 internal event — provider, event, delivery id, and the store-side
 identifiers, thin by design because E13's connectors own the
 semantics ([webhooks](webhooks.md)).
+
+## Streaming to a SIEM (S14-05)
+
+Since issue #71 the trail is also a real-time compliance feed: every
+published event of an organization with at least one enabled audit
+stream export bridges onto the notification module's transactional
+outbox (`AUDIT_EVENT`) and rides the S12-01 delivery pipeline to the
+customer's SIEM — signed HTTPS collectors in real time, or periodic
+bucket batches with signed manifests. The bridge is org-gated
+(organizations without exports write no outbox rows) and preserves
+the redaction discipline: the exported envelope re-renders exactly
+what the trail holds, never more. The exported event schema is a
+versioned public API — [siem](siem.md).
 
 ## Persistence and transactional semantics
 

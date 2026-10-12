@@ -209,7 +209,14 @@ public final class RolePermissions {
             // S12-01 (issue #51): the notification routing — the
             // administrator owns who hears about what.
             Permission.ORG_NOTIFICATIONS_READ,
-            Permission.ORG_NOTIFICATIONS_MANAGE);
+            Permission.ORG_NOTIFICATIONS_MANAGE,
+            // S14-05 (issue #71): the SIEM audit-stream exports — the
+            // organization administrator ALONE (AC5: the surface
+            // ships security-relevant material off-platform under the
+            // organization's own secret references; no other role
+            // holds either permission).
+            Permission.ORG_AUDIT_STREAM_READ,
+            Permission.ORG_AUDIT_STREAM_MANAGE);
 
     private static final Set<Permission> APP_OWNER = Set.of(
             Permission.APP_APPLICATIONS_READ,

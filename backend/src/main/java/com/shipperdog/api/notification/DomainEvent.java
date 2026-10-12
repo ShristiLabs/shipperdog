@@ -60,6 +60,15 @@ public record DomainEvent(
         Objects.requireNonNull(name, "name");
         Objects.requireNonNull(organizationId, "organizationId");
         Objects.requireNonNull(occurredAt, "occurredAt");
-        payload = payload == null ? Map.of() : Map.copyOf(payload);
+        // Null-tolerant copy since S14-05 (issue #71): the SIEM
+        // envelope's frozen schema carries nullable members (the
+        // absent entity references render as JSON null), and
+        // Map.copyOf rejects null values. The copy stays immutable
+        // and insertion-ordered; consumers that need a fixed
+        // serialization order build their own canonical map (the
+        // webhook body and the export envelope both do).
+        payload = payload == null
+                ? Map.of()
+                : java.util.Collections.unmodifiableMap(new java.util.LinkedHashMap<>(payload));
     }
 }

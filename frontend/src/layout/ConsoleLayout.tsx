@@ -16,6 +16,7 @@ import TollIcon from "@mui/icons-material/Toll";
 import LogoutIcon from "@mui/icons-material/Logout";
 import RocketLaunchIcon from "@mui/icons-material/RocketLaunch";
 import AltRouteIcon from "@mui/icons-material/AltRoute";
+import StreamIcon from "@mui/icons-material/Stream";
 import {
   Alert,
   AppBar,
@@ -41,6 +42,7 @@ import { probePolicyRules } from "../api/policies";
 import { listRings } from "../api/rings";
 import { listChannels } from "../api/distribution";
 import { getSubscriptionProbe } from "../api/notifications";
+import { getAuditStreamProbe } from "../api/auditStreams";
 import { listApprovalWorkflows } from "../api/workflows";
 import { listTenants } from "../api/tenants";
 
@@ -114,6 +116,17 @@ export default function ConsoleLayout() {
   const channelsNav = usePermission(
     `distribution-channels:${orgId ?? "none"}`,
     () => listChannels(orgId as string),
+    orgId !== null,
+  );
+
+  // The SIEM audit-streams section (S14-05) probes the export listing
+  // its editor loads first: org:audit-stream:read holders (the
+  // organization administrator ALONE, the story's AC5) see the
+  // compliance-feed routing; every other persona is conceal-denied
+  // and the section hides. Writes stay server-enforced regardless.
+  const auditStreamsNav = usePermission(
+    `audit-streams:${orgId ?? "none"}`,
+    () => getAuditStreamProbe(orgId as string),
     orgId !== null,
   );
 
@@ -272,6 +285,21 @@ export default function ConsoleLayout() {
                   <AltRouteIcon />
                 </ListItemIcon>
                 <ListItemText primary="Distribution channels" />
+              </ListItemButton>
+            </List>
+          ) : null}
+          {orgId !== null && auditStreamsNav.allowed ? (
+            <List>
+              <ListItemButton
+                component={NavLink}
+                to="/audit-streams"
+                data-testid="nav-audit-streams"
+                sx={{ "&.active": { backgroundColor: "action.selected" } }}
+              >
+                <ListItemIcon>
+                  <StreamIcon />
+                </ListItemIcon>
+                <ListItemText primary="SIEM audit streams" />
               </ListItemButton>
             </List>
           ) : null}

@@ -177,9 +177,16 @@ class NotificationBusIntegrationTest {
         // consumer among them), which is the production coupling this
         // mapping must not depend on.
         NotificationOutboxRepository repository = org.mockito.Mockito.mock(NotificationOutboxRepository.class);
+        com.shipperdog.api.notification.internal.repository.AuditStreamExportRepository auditStreamExports =
+                org.mockito.Mockito.mock(
+                        com.shipperdog.api.notification.internal.repository.AuditStreamExportRepository.class);
         org.mockito.ArgumentCaptor<NotificationOutboxEntity> appended =
                 org.mockito.ArgumentCaptor.forClass(NotificationOutboxEntity.class);
-        OutboxRecorder recorder = new OutboxRecorder(repository, java.time.Clock.systemUTC());
+        // The audit-stream gate mock answers "no exports" -- this
+        // suite exercises the typed-event mapping, not the bridge.
+        org.mockito.Mockito.when(auditStreamExports.existsByOrganizationIdAndEnabledTrue(org.mockito.Mockito.any()))
+                .thenReturn(false);
+        OutboxRecorder recorder = new OutboxRecorder(repository, auditStreamExports, java.time.Clock.systemUTC());
         UUID actor = world.adminUserId;
         UUID release = world.releaseId;
 

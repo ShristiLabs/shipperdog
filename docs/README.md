@@ -76,6 +76,10 @@ Current contents:
   the invitation-accept entry, silent refresh with the narrowed
   /auth/me retry, session isolation from the console, and the honest
   empty home.
+- [SIEM export](siem.md) — the audit trail as a real-time compliance
+  feed: the versioned exported-event schema, the signed HTTPS
+  collectors, the bucket batches with signed manifests, and the
+  verification recipes (S14-05)
 - [Audit logging](audit.md) — append-only audit trail, transactional
   persistence, redaction, correlation ids, and the admin query API
   (S1-06).

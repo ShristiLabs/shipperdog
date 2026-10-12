@@ -3045,6 +3045,109 @@ paths:
             '*/*':
               schema:
                 $ref: "#/components/schemas/TestMessageView"
+  /api/v1/organizations/{organizationId}/audit-stream-exports:
+    get:
+      tags:
+      - audit-stream-controller
+      operationId: list_10
+      parameters:
+      - name: organizationId
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - name: limit
+        in: query
+        required: false
+        schema:
+          type: string
+      - name: cursor
+        in: query
+        required: false
+        schema:
+          type: string
+      responses:
+        "200":
+          description: OK
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/PageResponseExportView"
+    post:
+      tags:
+      - audit-stream-controller
+      operationId: create_9
+      parameters:
+      - name: organizationId
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateRequest"
+        required: true
+      responses:
+        "201":
+          description: Created
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/ExportView"
+  /api/v1/organizations/{organizationId}/audit-stream-exports/{exportId}/test:
+    post:
+      tags:
+      - audit-stream-controller
+      operationId: test_1
+      parameters:
+      - name: organizationId
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - name: exportId
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      responses:
+        "200":
+          description: OK
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/TestEventView"
+  /api/v1/organizations/{organizationId}/audit-stream-exports/{exportId}/replay:
+    post:
+      tags:
+      - audit-stream-controller
+      operationId: replay
+      parameters:
+      - name: organizationId
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - name: exportId
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      responses:
+        "200":
+          description: OK
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/ReplayView"
   /api/v1/organizations/{id}/scim-config/token:
     post:
       tags:
@@ -3087,7 +3190,7 @@ paths:
     get:
       tags:
       - gate-controller
-      operationId: list_10
+      operationId: list_11
       parameters:
       - name: organizationId
         in: query
@@ -3120,7 +3223,7 @@ paths:
     post:
       tags:
       - gate-controller
-      operationId: create_9
+      operationId: create_10
       requestBody:
         content:
           application/json:
@@ -3212,7 +3315,7 @@ paths:
     get:
       tags:
       - environment-controller
-      operationId: list_11
+      operationId: list_12
       parameters:
       - name: organizationId
         in: query
@@ -3240,7 +3343,7 @@ paths:
     post:
       tags:
       - environment-controller
-      operationId: create_10
+      operationId: create_11
       requestBody:
         content:
           application/json:
@@ -3856,7 +3959,7 @@ paths:
     get:
       tags:
       - workflow-controller
-      operationId: list_12
+      operationId: list_13
       parameters:
       - name: organizationId
         in: query
@@ -3884,7 +3987,7 @@ paths:
     post:
       tags:
       - workflow-controller
-      operationId: create_11
+      operationId: create_12
       requestBody:
         content:
           application/json:
@@ -3902,7 +4005,7 @@ paths:
     get:
       tags:
       - application-controller
-      operationId: list_13
+      operationId: list_14
       parameters:
       - name: organizationId
         in: query
@@ -3930,7 +4033,7 @@ paths:
     post:
       tags:
       - application-controller
-      operationId: create_12
+      operationId: create_13
       requestBody:
         content:
           application/json:
@@ -4003,7 +4106,7 @@ paths:
     get:
       tags:
       - version-controller
-      operationId: list_14
+      operationId: list_15
       parameters:
       - name: applicationId
         in: path
@@ -4041,7 +4144,7 @@ paths:
     post:
       tags:
       - version-controller
-      operationId: create_13
+      operationId: create_14
       parameters:
       - name: applicationId
         in: path
@@ -4147,7 +4250,7 @@ paths:
     get:
       tags:
       - abac-policy-controller
-      operationId: list_15
+      operationId: list_16
       parameters:
       - name: organizationId
         in: query
@@ -4175,7 +4278,7 @@ paths:
     post:
       tags:
       - abac-policy-controller
-      operationId: create_14
+      operationId: create_15
       requestBody:
         content:
           application/json:
@@ -4339,11 +4442,86 @@ paths:
             '*/*':
               schema:
                 $ref: "#/components/schemas/SubscriptionView"
+  /api/v1/organizations/{organizationId}/audit-stream-exports/{exportId}:
+    get:
+      tags:
+      - audit-stream-controller
+      operationId: get_10
+      parameters:
+      - name: organizationId
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - name: exportId
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      responses:
+        "200":
+          description: OK
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/ExportView"
+    delete:
+      tags:
+      - audit-stream-controller
+      operationId: delete_5
+      parameters:
+      - name: organizationId
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - name: exportId
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      responses:
+        "204":
+          description: No Content
+    patch:
+      tags:
+      - audit-stream-controller
+      operationId: update_11
+      parameters:
+      - name: organizationId
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - name: exportId
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateRequest"
+        required: true
+      responses:
+        "200":
+          description: OK
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/ExportView"
   /api/v1/environments/{environmentId}:
     get:
       tags:
       - environment-controller
-      operationId: get_10
+      operationId: get_11
       parameters:
       - name: environmentId
         in: path
@@ -4361,7 +4539,7 @@ paths:
     patch:
       tags:
       - environment-controller
-      operationId: update_11
+      operationId: update_12
       parameters:
       - name: environmentId
         in: path
@@ -4386,7 +4564,7 @@ paths:
     get:
       tags:
       - application-controller
-      operationId: get_11
+      operationId: get_12
       parameters:
       - name: id
         in: path
@@ -4404,7 +4582,7 @@ paths:
     patch:
       tags:
       - application-controller
-      operationId: update_12
+      operationId: update_13
       parameters:
       - name: id
         in: path
@@ -4472,7 +4650,7 @@ paths:
     get:
       tags:
       - tester-controller
-      operationId: get_12
+      operationId: get_13
       parameters:
       - name: id
         in: path
@@ -4669,7 +4847,7 @@ paths:
     get:
       tags:
       - authorization-grant-controller
-      operationId: get_13
+      operationId: get_14
       parameters:
       - name: id
         in: path
@@ -4791,7 +4969,7 @@ paths:
     get:
       tags:
       - tenant-applications-controller
-      operationId: list_16
+      operationId: list_17
       parameters:
       - name: id
         in: path
@@ -4820,7 +4998,7 @@ paths:
     get:
       tags:
       - release-controller
-      operationId: get_14
+      operationId: get_15
       parameters:
       - name: releaseId
         in: path
@@ -5081,7 +5259,7 @@ paths:
     get:
       tags:
       - feedback-controller
-      operationId: list_17
+      operationId: list_18
       parameters:
       - name: releaseId
         in: path
@@ -5137,7 +5315,7 @@ paths:
     get:
       tags:
       - feedback-controller
-      operationId: get_15
+      operationId: get_16
       parameters:
       - name: releaseId
         in: path
@@ -5316,6 +5494,81 @@ paths:
             '*/*':
               schema:
                 $ref: "#/components/schemas/OrgDashboardView"
+  /api/v1/organizations/{organizationId}/audit-stream-exports/{exportId}/deliveries:
+    get:
+      tags:
+      - audit-stream-controller
+      operationId: deliveries_1
+      parameters:
+      - name: organizationId
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - name: exportId
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - name: status
+        in: query
+        required: false
+        schema:
+          type: string
+      - name: limit
+        in: query
+        required: false
+        schema:
+          type: string
+      - name: cursor
+        in: query
+        required: false
+        schema:
+          type: string
+      responses:
+        "200":
+          description: OK
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/PageResponseDeliveryView"
+  /api/v1/organizations/{organizationId}/audit-stream-exports/{exportId}/batches:
+    get:
+      tags:
+      - audit-stream-controller
+      operationId: batches
+      parameters:
+      - name: organizationId
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - name: exportId
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - name: limit
+        in: query
+        required: false
+        schema:
+          type: string
+      - name: cursor
+        in: query
+        required: false
+        schema:
+          type: string
+      responses:
+        "200":
+          description: OK
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/PageResponseBatchView"
   /api/v1/organizations/{id}/members:
     get:
       tags:
@@ -5885,6 +6138,11 @@ paths:
           - ABAC_POLICY_DELETED
           - ABAC_POLICY_DENIED
           - ABAC_EVALUATION_FAULT
+          - AUDIT_STREAM_EXPORT_CREATED
+          - AUDIT_STREAM_EXPORT_UPDATED
+          - AUDIT_STREAM_EXPORT_DELETED
+          - AUDIT_STREAM_EXPORT_TESTED
+          - AUDIT_STREAM_REPLAYED
       - name: applicationId
         in: query
         required: false
@@ -5936,7 +6194,7 @@ paths:
     get:
       tags:
       - artifact-controller
-      operationId: get_16
+      operationId: get_17
       parameters:
       - name: artifactId
         in: path
@@ -5986,7 +6244,7 @@ paths:
     get:
       tags:
       - application-tenant-authorization-controller
-      operationId: list_18
+      operationId: list_19
       parameters:
       - name: id
         in: path
@@ -6015,7 +6273,7 @@ paths:
     get:
       tags:
       - version-controller
-      operationId: get_17
+      operationId: get_18
       parameters:
       - name: applicationId
         in: path
@@ -7291,6 +7549,10 @@ components:
     JsonNode:
       type: object
       properties:
+        string:
+          type: boolean
+        valueNode:
+          type: boolean
         nodeType:
           type: string
           enum:
@@ -7303,17 +7565,11 @@ components:
           - OBJECT
           - POJO
           - STRING
-        string:
-          type: boolean
-        integralNumber:
-          type: boolean
         missingNode:
-          type: boolean
-        valueNode:
           type: boolean
         pojo:
           type: boolean
-        number:
+        integralNumber:
           type: boolean
         short:
           type: boolean
@@ -7334,9 +7590,11 @@ components:
           type: boolean
         binary:
           type: boolean
-        container:
-          type: boolean
         floatingPointNumber:
+          type: boolean
+        number:
+          type: boolean
+        container:
           type: boolean
         empty:
           type: boolean
@@ -8317,6 +8575,85 @@ components:
         sentAt:
           type: string
           format: date-time
+    ExportView:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        organizationId:
+          type: string
+          format: uuid
+        kind:
+          type: string
+          enum:
+          - HTTPS
+          - BUCKET
+        format:
+          type: string
+          enum:
+          - SHIPPERDOG_JSON
+          - SPLUNK_HEC
+        eventTypes:
+          type: array
+          items:
+            type: string
+        destinationUrl:
+          type: string
+        bucketUri:
+          type: string
+        signingSecretRef:
+          type: string
+        authHeaderName:
+          type: string
+        authSecretRef:
+          type: string
+        enabled:
+          type: boolean
+        watermark:
+          type: string
+          format: date-time
+        batchSeq:
+          type: integer
+          format: int64
+        batchesWritten:
+          type: integer
+          format: int64
+        eventsExported:
+          type: integer
+          format: int64
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+    TestEventView:
+      type: object
+      properties:
+        delivered:
+          type: boolean
+        kind:
+          type: string
+          enum:
+          - HTTPS
+          - BUCKET
+        error:
+          type: string
+        sentAt:
+          type: string
+          format: date-time
+    ReplayView:
+      type: object
+      description: "The dead-letter replay's outcome: the export and how many deliveries\
+        \ returned to the retry schedule."
+      properties:
+        exportId:
+          type: string
+          format: uuid
+        replayed:
+          type: integer
+          format: int32
     TokenRequest:
       type: object
       properties:
@@ -10169,6 +10506,51 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/FailedGateView"
+    PageResponseExportView:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/ExportView"
+        next_cursor:
+          type: string
+    BatchView:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        seq:
+          type: integer
+          format: int64
+        watermarkFrom:
+          type: string
+          format: date-time
+        watermarkTo:
+          type: string
+          format: date-time
+        eventCount:
+          type: integer
+          format: int32
+        batchSha256:
+          type: string
+        objectUri:
+          type: string
+        manifestUri:
+          type: string
+        createdAt:
+          type: string
+          format: date-time
+    PageResponseBatchView:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/BatchView"
+        next_cursor:
+          type: string
     PageResponseDefinitionView:
       type: object
       properties:
@@ -10650,6 +11032,11 @@ components:
           - ABAC_POLICY_DELETED
           - ABAC_POLICY_DENIED
           - ABAC_EVALUATION_FAULT
+          - AUDIT_STREAM_EXPORT_CREATED
+          - AUDIT_STREAM_EXPORT_UPDATED
+          - AUDIT_STREAM_EXPORT_DELETED
+          - AUDIT_STREAM_EXPORT_TESTED
+          - AUDIT_STREAM_REPLAYED
         occurredAt:
           type: string
           format: date-time

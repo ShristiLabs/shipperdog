@@ -278,6 +278,7 @@ The tester onboarding surface (S6-01, issue #26), tester groups
 | `POLICY_HOLD_ALREADY_ACKNOWLEDGED` | 409 | The hold is already acknowledged; its decision stands. (S10-06/issue #45 AC2 — the acknowledge is a standing human decision for (release, rule, ring), not a one-shot token; a second actor's intent is a new hop's question) |
 | `ABAC_POLICY_NOT_FOUND` | 404 | Resource not found. (S14-04/issue #70; also the concealed-denial shape — a foreign organization's policy is indistinguishable from a missing one on every policy item route) |
 | `ABAC_POLICY_NAME_TAKEN` | 409 | A policy with this name already exists. (S14-04; V52's `uq_abac_policies_org_name` is the authority — the pre-check and the lost-race translation answer it identically) |
+| `ABAC_POLICY_CONFLICT` | 409 | The policy changed concurrently; reload and retry. (S14-05, the #70 review follow-up: a concurrent replace that wins the version history's uniqueness first answers 409 instead of an opaque 500) |
 
 ## Feedback (`FeedbackException.Code`)
 
@@ -438,3 +439,17 @@ scim-config` and its `/token` routes) DOES use this registry's
 envelope — it is a normal `/api/v1` route family answering the
 identity module's existing codes (the concealed `404` `NOT_FOUND`
 shapes and `INVALID_REQUEST` validations).
+
+
+## Audit stream — S14-05/issue #71 (`AuditStreamException.Code`)
+
+The SIEM export surface (org administrators only, AC5) — the
+configuration, the delivery log with its dead-letter, the replay,
+and the batch history. Documented with its surface in
+[siem](siem.md).
+
+| Code | HTTP | Detail |
+|---|---|---|
+| `AUDIT_STREAM_EXPORT_NOT_FOUND` | 404 | Resource not found. (Also the concealed-denial shape — a foreign organization's export is indistinguishable from a missing one on every export item route; the permission target conceals first) |
+| `AUDIT_STREAM_EXPORT_INVALID` | 422 | The export is invalid: an unknown kind or format, an unknown audit event type in the filter, a non-routable collector URL (the webhook SSRF policy), a non-`gs://` bucket URI (the `s3://` connector is the documented follow-up), a malformed secret reference, or a kind/destination shape violation — one 422 keyed by the offending member |
+| `AUDIT_STREAM_EXPORT_CONFLICT` | 409 | The export changed; reload and retry. (The optimistic `version` column — a rotated secret reference or replaced destination is never silently resurrected by a stale writer) |
