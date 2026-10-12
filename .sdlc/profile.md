@@ -78,6 +78,19 @@ see [docs/telemetry-sdk.md]):
   Zero external deps; the stripped static library must stay under
   200 KB (sdk-ci asserts it).
 
+Android companion app (from `companion/`, since S15-02 — see
+[docs/companion-spike.md]):
+
+- Kotlin/JVM + AGP (Gradle wrapper, JDK 21 in CI, 17+ locally; the
+  Android SDK at `ANDROID_HOME` — locally
+  `~/Library/Android/sdk`, preinstalled on CI runners).
+- test-cmd: `./gradlew --no-daemon :core:test` (the pure-JVM core's
+  suite; zero runtime deps, the sdk/android doctrine).
+- build-cmd: `./gradlew --no-daemon :app:assembleDebug
+  :demo:assembleDebug` (the companion APK + the demo install target).
+- Plain framework widgets, no androidx/compose (the spike's cost
+  bar); minSdk 26 (the REQUEST_INSTALL_PACKAGES consent design).
+
 ## Conventions
 
 - Conventional Commits (feat/fix/chore/docs/test/ci).
@@ -97,6 +110,7 @@ see [docs/telemetry-sdk.md]):
 | portal | portal/ | Tester portal: React 19 + TS strict + MUI 9 + React Query 5 + Router 7 on Vite 7, separate app on :5174 (S8-01) |
 | cli | cli/ | Go 1.26 developer CLI: login, artifact upload/list/view/revalidate, version list (S5-06); release create/list/get/transition/promote, release manifest (S9-06) |
 | sdk | sdk/ | Tester telemetry SDK (S15-01): `sdk/android` Kotlin/JVM core + Android adapter + sample (Gradle), `sdk/ios` Swift package + demo — zero runtime deps, < 200 KB per platform |
+| companion | companion/ | Android companion installer app spike (S15-02): `core` pure Kotlin/JVM + `app` + `demo` install target (AGP, plain widgets) — decision memo docs/companion-spike.md; no-go on productionization with revisit triggers |
 | infrastructure | infrastructure/ | local docker compose stack (API, console, portal, data, observability) + terraform Cloud Run deployment, smoke + security-header checks (S8-05) |
 | docs | docs/ | developer docs |
 | workflows | .github/workflows/ | GitHub Actions CI (backend-ci + frontend-ci incl. portal job + cli-ci) |
