@@ -36,6 +36,7 @@ import { useAuth } from "../auth/AuthContext";
 import { usePermission } from "../hooks/usePermission";
 import { getOrgDashboard } from "../api/dashboards";
 import { listApplications } from "../api/applications";
+import { probeAbacPolicies } from "../api/abac";
 import { probePolicyRules } from "../api/policies";
 import { listRings } from "../api/rings";
 import { listChannels } from "../api/distribution";
@@ -97,6 +98,13 @@ export default function ConsoleLayout() {
     () => probePolicyRules(orgId as string),
     orgId !== null,
   );
+
+  // The ABAC policies section (S14-04) probes the policy listing its
+  // editor loads first: org:abac-policies:read holders (the same
+  // governance roles as the release policies) see the attribute rule
+  // store; everyone else is conceal-denied and the section hides.
+  // Writes stay server-enforced regardless.
+  const abacNav = usePermission(`abac-policies:${orgId ?? "none"}`, () => probeAbacPolicies(orgId as string), orgId !== null);
 
   // The Distribution channels section (S13-01) probes the channel
   // catalog its editor loads first: org:distribution:read holders (the
@@ -294,6 +302,21 @@ export default function ConsoleLayout() {
                   <PolicyIcon />
                 </ListItemIcon>
                 <ListItemText primary="Release policies" />
+              </ListItemButton>
+            </List>
+          ) : null}
+          {orgId !== null && abacNav.allowed ? (
+            <List>
+              <ListItemButton
+                component={NavLink}
+                to="/abac-policies"
+                data-testid="nav-abac-policies"
+                sx={{ "&.active": { backgroundColor: "action.selected" } }}
+              >
+                <ListItemIcon>
+                  <PolicyIcon />
+                </ListItemIcon>
+                <ListItemText primary="Access policies" />
               </ListItemButton>
             </List>
           ) : null}

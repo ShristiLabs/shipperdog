@@ -177,6 +177,18 @@ verdict, every fired rule named — the summary beside the evaluation
 log's per-rule rows); and `RELEASE_POLICY_HOLD_ACKNOWLEDGED` (the
 explicit privileged decision to proceed past a fired HOLD rule — rule,
 ring, and the mandatory reason, with the actor),
+the ABAC policy family — S14-04/issue #70 (PRD 25/38):
+`ABAC_POLICY_CREATED` / `ABAC_POLICY_UPDATED` / `ABAC_POLICY_DELETED`
+(the attribute policies' authoring, audited in full with the version
+number — policy edits change what mechanically refuses an access
+decision); `ABAC_POLICY_DENIED` (the promotion consult's refusal:
+the winning rule, its version, and the evaluated attributes — the
+layered engine's ABAC denials ride its standing
+`AUTHORIZATION_DECISION` event instead, so no decision is audited
+twice); and `ABAC_EVALUATION_FAULT` (the fail-closed alert: an
+unresolvable attribute or a drifted condition answered with a
+denial, never a permit — the `shipperdog.abac.fail-closed` counter's
+audit twin),
 the feedback landing — S11-01/issue #46 (FR-027, PRD 8.13):
 `FEEDBACK_RECEIVED`, one event per committed submission, carrying the
 full server-attached context as entity references (`orgId`,

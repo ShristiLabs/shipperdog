@@ -34,6 +34,12 @@ package com.shipperdog.api.config;
  *       engine records the same meter tagged {@code engine=layered}
  *       (the RBAC leg carries no engine tag), so the SLO observes both
  *       engines as one metric family</li>
+ *   <li>{@link #ABAC_FAIL_CLOSED} — since S14-04 (issue #70): the
+ *       ABAC engine's fail-closed counter (an unresolvable attribute
+ *       or a storage-drifted condition answered with a denial, never
+ *       a permit) — sustained growth is the operator's alert that
+ *       policies reference attributes the decision contexts do not
+ *       carry</li>
  * </ul>
  */
 public final class MetricNames {
@@ -58,6 +64,16 @@ public final class MetricNames {
      * backstop for that window.
      */
     public static final String AUTHORIZATION_DECISION_CACHE = "shipperdog.authorization.decision.cache";
+
+    /**
+     * Counter of every ABAC evaluation that answered fail-closed on a
+     * fault (S14-04, issue #70, AC6): tagged {@code cause=attribute|
+     * condition} — an attribute the context could not resolve, or a
+     * stored condition the engine could not parse. The denial is the
+     * safe direction; this counter beside the ABAC_EVALUATION_FAULT
+     * audit line is the alert.
+     */
+    public static final String ABAC_FAIL_CLOSED = "shipperdog.abac.fail-closed";
 
     /**
      * Timer of every completed artifact upload (issue #20, S5-01, the

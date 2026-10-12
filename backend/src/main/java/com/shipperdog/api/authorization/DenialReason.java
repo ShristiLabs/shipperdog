@@ -41,6 +41,10 @@ public enum DenialReason {
     // Distribution layer
     DISTRIBUTION_BLOCKED,
 
+    // ABAC layer (S14-04, issue #70): an attribute policy denied —
+    // the deny-override refinement over the base layers.
+    ABAC_POLICY_DENIED,
+
     // The engine itself (a layer or resolution fault; fail-closed)
     ENGINE_FAULT
 }

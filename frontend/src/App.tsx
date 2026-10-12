@@ -3,6 +3,7 @@ import { AuthProvider } from "./auth/AuthContext";
 import { RequireAuth } from "./auth/RequireAuth";
 import { ToastProvider } from "./components/ToastContext";
 import ConsoleLayout from "./layout/ConsoleLayout";
+import AbacPoliciesPage from "./pages/AbacPoliciesPage";
 import ApprovalWorkflowsPage from "./pages/ApprovalWorkflowsPage";
 import ApplicationDetailPage from "./pages/ApplicationDetailPage";
 import ApplicationsPage from "./pages/ApplicationsPage";
@@ -48,6 +49,7 @@ export default function App() {
           <Route path="channels" element={<ChannelsPage />} />
             <Route path="notifications" element={<NotificationsPage />} />
             <Route path="release-policies" element={<ReleasePoliciesPage />} />
+            <Route path="abac-policies" element={<AbacPoliciesPage />} />
             <Route path="releases" element={<ReleasesPage />} />
             <Route path="releases/:applicationId" element={<ReleasesPage />} />
             <Route

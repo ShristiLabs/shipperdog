@@ -683,9 +683,14 @@ recorded evidence).
   decision); its ELIGIBILITY (the S10-04 widening seam — every moved
   tenant the ring would exclude, with the admission arithmetic's own
   reasons); and every registered `ReleasePromotionPolicy` — the
-  S10-06 seam, whose first registrant shipped with S10-06 (issue #45):
-  the declarative policy engine, whose refusals render keyed
-  `ReleasePolicyEngine` (see the Release policies section).
+  S10-06 seam, whose registrants are the declarative policy engine
+  of S10-06 (issue #45), whose refusals render keyed
+  `ReleasePolicyEngine` (see the Release policies section), and —
+  since S14-04 (issue #70) — the ABAC promotion consult
+  (`AbacPromotionPolicy`), whose attribute-policy refusals render
+  keyed `AbacPromotionPolicy` naming the rule, its version, and the
+  evaluated attributes (see the ABAC section of
+  [authorization](authorization.md)).
 - **The approval round the first attempt opens**: a promote against a
   policy-gated ring with no usable round IS PRD 51's
   PROMOTION_REQUESTED act — the attempt opens a round like any other,

@@ -49,6 +49,8 @@ import java.util.Set;
  *                       org:environments:read/manage (S9-04)
  *                       org:approval-workflows:read/manage (S10-01)
  *                       org:gate-definitions:read/manage (S10-03)
+ *                       org:release-policies:read/manage (S10-06)
+ *                       org:abac-policies:read/manage (S14-04)
  *                       tenant:authorization-grants:read/manage (S7-02,
  *                       through the owning-organization overlay)
  * DEVELOPER             app:artifacts:read          app:artifacts:upload
@@ -56,6 +58,8 @@ import java.util.Set;
  *                       org:environments:read       (S9-04)
  *                       org:approval-workflows:read (S10-01)
  *                       org:gate-definitions:read   (S10-03)
+ *                       org:release-policies:read   (S10-06)
+ *                       org:abac-policies:read      (S14-04)
  * QA_ENGINEER           app:applications:read       app:versions:read
  *                       app:releases:read           app:releases:approve-qa
  *                       app:tester-groups:manage    app:feedback:read
@@ -63,6 +67,8 @@ import java.util.Set;
  *                       org:environments:read       (S9-04)
  *                       org:approval-workflows:read (S10-01)
  *                       org:gate-definitions:read   (S10-03)
+ *                       org:release-policies:read   (S10-06)
+ *                       org:abac-policies:read      (S14-04)
  * RELEASE_MANAGER       app:applications:read       app:versions:read
  *                       app:artifacts:read          app:releases:read/manage
  *                       app:releases:approve-release (S10-01)
@@ -71,6 +77,8 @@ import java.util.Set;
  *                       org:environments:read/manage (S9-04)
  *                       org:approval-workflows:read/manage (S10-01)
  *                       org:gate-definitions:read/manage (S10-03)
+ *                       org:release-policies:read/manage (S10-06)
+ *                       org:abac-policies:read/manage (S14-04)
  * SECURITY_REVIEWER     app:applications:read       app:versions:read
  *                       app:releases:read           app:releases:approve-security
  *                       app:feedback:read (S11-01 — the restricted
@@ -83,15 +91,21 @@ import java.util.Set;
  *                       org:environments:read       (S9-04)
  *                       org:approval-workflows:read (S10-01)
  *                       org:gate-definitions:read   (S10-03)
+ *                       org:release-policies:read   (S10-06)
+ *                       org:abac-policies:read      (S14-04)
  * COMPLIANCE_REVIEWER   app:applications:read       app:versions:read
  *                       app:releases:read           app:releases:approve-compliance
  *                       org:environments:read       (S9-04)
  *                       org:approval-workflows:read (S10-01)
  *                       org:gate-definitions:read   (S10-03)
+ *                       org:release-policies:read   (S10-06)
+ *                       org:abac-policies:read      (S14-04)
  * VIEWER                app:applications:read       app:versions:read
  *                       app:releases:read           org:environments:read (S9-04)
  *                       org:approval-workflows:read (S10-01)
  *                       org:gate-definitions:read   (S10-03)
+ *                       org:release-policies:read   (S10-06)
+ *                       org:abac-policies:read      (S14-04)
  * TENANT_ADMIN          tenant:tenants:read         tenant:members:read
  *                       tenant:members:manage       tenant:applications:read
  *                       tenant:testers:read/manage (S6-03)
@@ -147,6 +161,11 @@ public final class RolePermissions {
             // of a fired HOLD (the gate-override standing).
             Permission.ORG_RELEASE_POLICIES_READ,
             Permission.ORG_RELEASE_POLICIES_MANAGE,
+            // S14-04 (issue #70): the ABAC attribute policies — the
+            // deny-override refinement rules over the authorization
+            // attribute vocabulary (the same governance authority).
+            Permission.ORG_ABAC_POLICIES_READ,
+            Permission.ORG_ABAC_POLICIES_MANAGE,
             Permission.APP_RELEASES_POLICY_ACKNOWLEDGE,
             Permission.APP_RELEASES_GATE_OVERRIDE,
             Permission.TENANT_TENANTS_READ,
@@ -230,6 +249,11 @@ public final class RolePermissions {
             // mechanically answer to (still the same persona).
             Permission.ORG_RELEASE_POLICIES_READ,
             Permission.ORG_RELEASE_POLICIES_MANAGE,
+            // S14-04 (issue #70): the ABAC attribute policies the
+            // organization's access decisions answer to (the same
+            // governance persona).
+            Permission.ORG_ABAC_POLICIES_READ,
+            Permission.ORG_ABAC_POLICIES_MANAGE,
             // S7-02 (issue #31): app owners administer tester grants
             // inside their organization's tenants through the
             // owning-organization overlay (PRD 26's tenant-admin /
@@ -267,6 +291,9 @@ public final class RolePermissions {
             // S10-06 (issue #45): the policy rules that ladder's
             // promotions answer to (read-only).
             Permission.ORG_RELEASE_POLICIES_READ,
+            // S14-04 (issue #70): the ABAC attribute policies
+            // (read-only standing-rule visibility).
+            Permission.ORG_ABAC_POLICIES_READ,
             // S12-01 (issue #51): the notification routing (read-only;
             // the delivery visibility their integrations answer to).
             Permission.ORG_NOTIFICATIONS_READ);
@@ -293,6 +320,9 @@ public final class RolePermissions {
             // S10-06 (issue #45): the rules that govern climbing
             // them (read-only).
             Permission.ORG_RELEASE_POLICIES_READ,
+            // S14-04 (issue #70): the ABAC attribute policies
+            // (read-only standing-rule visibility).
+            Permission.ORG_ABAC_POLICIES_READ,
             // S11-04 (issue #49): the release health numbers their
             // evidence feeds (read-only).
             Permission.APP_ANALYTICS_READ,
@@ -338,6 +368,11 @@ public final class RolePermissions {
             // HOLD acknowledge (the gate-override standing).
             Permission.ORG_RELEASE_POLICIES_READ,
             Permission.ORG_RELEASE_POLICIES_MANAGE,
+            // S14-04 (issue #70): the ABAC attribute policies — the
+            // deny-override rules the promotions this persona runs
+            // answer to (the PRD 25 example's own author).
+            Permission.ORG_ABAC_POLICIES_READ,
+            Permission.ORG_ABAC_POLICIES_MANAGE,
             Permission.APP_RELEASES_POLICY_ACKNOWLEDGE,
             // S11-02 (issue #47): the release manager triages the
             // reports whose open critical bugs can block their
@@ -387,6 +422,10 @@ public final class RolePermissions {
             // demand is a governance decision), but reads every
             // standing rule and its evaluation trail.
             Permission.ORG_RELEASE_POLICIES_READ,
+            // S14-04 (issue #70): the ABAC attribute policies — the
+            // story's own persona reads the attribute rules that
+            // narrow the high-stakes actions they review.
+            Permission.ORG_ABAC_POLICIES_READ,
             // S11-05 (issue #50): the organization dashboard — the
             // security persona's landing view of the Security steps
             // waiting on them.
@@ -412,6 +451,9 @@ public final class RolePermissions {
             // S10-06 (issue #45): the policy rules' evaluations are
             // theirs to audit the same way.
             Permission.ORG_RELEASE_POLICIES_READ,
+            // S14-04 (issue #70): the ABAC attribute policies
+            // (read-only standing-rule visibility, the audit persona).
+            Permission.ORG_ABAC_POLICIES_READ,
             // S11-05 (issue #50): the organization dashboard — the
             // compliance persona's landing view of the Compliance
             // steps waiting on them.
@@ -430,6 +472,9 @@ public final class RolePermissions {
             Permission.ORG_GATE_DEFINITIONS_READ,
             Permission.ORG_RINGS_READ,
             Permission.ORG_RELEASE_POLICIES_READ,
+            // S14-04 (issue #70): the ABAC attribute policies
+            // (read-only standing-rule visibility).
+            Permission.ORG_ABAC_POLICIES_READ,
             // S11-04 (issue #49): the dashboards' numbers are read-only
             // surface (S11-05 renders them for this persona too).
             Permission.APP_ANALYTICS_READ,

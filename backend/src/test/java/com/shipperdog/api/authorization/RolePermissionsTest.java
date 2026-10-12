@@ -82,6 +82,10 @@ class RolePermissionsTest {
                         // the same surface (a viewer sees the standing
                         // rules, never authors or acknowledges them).
                         Permission.ORG_RELEASE_POLICIES_READ,
+                        // S14-04 (issue #70): ABAC policy reads join
+                        // the read-only surface (a viewer sees the
+                        // attribute rules, never authors them).
+                        Permission.ORG_ABAC_POLICIES_READ,
                         // S11-04 (issue #49): the release analytics
                         // reads join the read-only surface (a viewer
                         // sees the dashboards' numbers, never repairs

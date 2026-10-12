@@ -93,7 +93,15 @@ frontend/src/
                 approval, rendered with application NAMES (the #64
                 join fix); since S13-04 the Google Play sections:
                 release-notes authoring, tester-track group links
-                with the add/remove sync, and the track-model read)
+                with the add/remove sync, and the track-model read),
+                AbacPoliciesPage (the S14-04 attribute-policy
+                editor: the organization's DENY/REQUIRE rules in
+                evaluation order with effect/action/version chips,
+                the JSON condition editor with the PRD 25 example as
+                a one-click template, the immutable version-history
+                dialog, and the inline rendering of the server's
+                field validation; nav section concealed without
+                org:abac-policies:read)
   test/         harness.tsx (providers + fetch router), setup.ts
 frontend/e2e/   console-verify.mjs, applications-verify.mjs,
                 releases-verify.mjs + apk-fixture.mjs (Playwright

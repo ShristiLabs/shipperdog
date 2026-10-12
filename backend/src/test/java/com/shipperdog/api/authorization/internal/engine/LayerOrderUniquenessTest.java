@@ -6,7 +6,9 @@ import static org.mockito.Mockito.mock;
 import com.shipperdog.api.application.ApplicationAccess;
 import com.shipperdog.api.authorization.AuthorizationDistributionPolicy;
 import com.shipperdog.api.authorization.AuthorizationEntitlement;
+import com.shipperdog.api.authorization.internal.abac.AbacPolicyEngine;
 import com.shipperdog.api.authorization.internal.cache.DecisionInputs;
+import com.shipperdog.api.environment.EnvironmentAccess;
 import com.shipperdog.api.identity.UserDirectory;
 import com.shipperdog.api.organization.OrganizationAccess;
 import com.shipperdog.api.tenant.TenantAccess;
@@ -34,6 +36,7 @@ class LayerOrderUniquenessTest {
             new VersionLayer(mockProvider()),
             new ArtifactLayer(),
             new DistributionLayer(mockPolicyProvider()),
+            new AbacLayer(mock(AbacPolicyEngine.class), mock(EnvironmentAccess.class)),
         };
         List<Integer> positions = new java.util.ArrayList<>();
         for (AuthorizationLayer layer : layers) {

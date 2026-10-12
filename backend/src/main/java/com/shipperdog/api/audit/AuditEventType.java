@@ -606,5 +606,42 @@ public enum AuditEventType {
      * HTTP answer carries none of it, so this line is the only place
      * the reason exists, exactly like the SSO refusal discipline.
      */
-    SCIM_REQUEST_REJECTED
+    SCIM_REQUEST_REJECTED,
+    /**
+     * One ABAC policy authored (S14-04, issue #70, PRD 25/38): the
+     * organization, the policy name, its version, effect, action,
+     * selectors, and the human condition summary -- every create and
+     * replace emits one, and the version history rows carry the same
+     * facts (AC4's versioned-and-audited contract).
+     */
+    ABAC_POLICY_CREATED,
+    /**
+     * One ABAC policy replaced with a new version (S14-04): the
+     * changed facts in the detail map beside the policy's identity
+     * and the new version number.
+     */
+    ABAC_POLICY_UPDATED,
+    /**
+     * One ABAC policy deleted (S14-04): the full deleted facts; the
+     * version history rows survive (the V34 evaluation-log precedent
+     * -- history outlives the rule it explains).
+     */
+    ABAC_POLICY_DELETED,
+    /**
+     * One request denied by an ABAC policy on a NON-layered surface
+     * (S14-04): the promotion consult's denial record -- which rule,
+     * which version, the evaluated attributes. The layered engine's
+     * own denials ride its standing AUTHORIZATION_DECISION event
+     * (failingLayer=ABAC) instead, so no decision is audited twice.
+     */
+    ABAC_POLICY_DENIED,
+    /**
+     * The ABAC engine answered fail-closed on a fault or an
+     * unresolvable attribute (S14-04, AC6): a stored condition the
+     * engine could not parse (storage drift) or an attribute the
+     * context could not resolve. The denial is the safe direction;
+     * this line and the shipperdog.abac fail-closed counter are the
+     * alert.
+     */
+    ABAC_EVALUATION_FAULT
 }

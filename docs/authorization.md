@@ -419,6 +419,132 @@ decision-input cache below. The admin inspection API
 decides for a SUPPLIED subject with reason codes and the evaluated
 chain — the self-scoped routes above never leak either.
 
+## The ABAC policy engine (S14-04)
+
+Since S14-04 (issue #70, PRD 25/33/38) the attribute-based refinement
+the PRD reserved sits beside everything above: organization-grain
+policies — authored as DATA over the shared typed condition format —
+that can only NARROW access. The composition is deny-override by
+construction: **RBAC stays the base layer** (the `@PreAuthorize`
+check decides who may enter a surface; the layered engine decides
+which resources a subject reaches), and ABAC refines WITHIN it — a
+policy refuses, or the base answer stands. There is no allow
+outcome and no code path that could synthesize one: a policy no
+grant backs authorizes nothing (tested).
+
+**The two evaluation hooks.** One engine, two consulters:
+
+- **The layered engine's `ABAC` layer** — the chain's final member
+  (position 800, after DISTRIBUTION) refines every resource decision
+  (LIST_APPLICATIONS, READ_ARTIFACT, DOWNLOAD). Organizations with
+  no enabled policy see the layer SKIPPED (one cached probe — the
+  fast path every policy-less organization takes); when policies
+  exist, only the ones governing the decision's action and matching
+  its selectors evaluate, and only the attributes they reference
+  resolve (the snapshot's lazy discipline, below).
+- **The promotion consult** — the release module's
+  `AbacPromotionPolicy` registrant of the S10-05 promotion seam
+  (beside the S10-06 declarative engine): every ring hop consults
+  the ABAC engine with the hop's release-grain attribute sources
+  (the targeted environment, the release, the ring being ENTERED),
+  so PRD 25's worked example — "Can promote IF user.role =
+  ReleaseManager AND application = Banking AND environment =
+  Production AND security.status = APPROVED" — authors as ONE
+  policy and enforces exactly. A refusal renders in the promote
+  409's `errors` member keyed `AbacPromotionPolicy`, naming the
+  rule, its version, and the evaluated attributes.
+
+**Policies as data.** Each policy (the `abac_policies` table, V52)
+carries: an EFFECT — `DENY` (the condition firing refuses) or
+`REQUIRE` (the condition must hold for every request the selectors
+match; both only narrow) — a governing ACTION selector, optional
+application/environment/ring selectors (null = any), the typed
+condition tree as jsonb, the evaluation position, and the enabled
+standing. The condition vocabulary (`AbacCondition`) is the SAME
+typed-JSON discipline S10-02's conditional steps and S10-06's
+release-policy rules use — combinators `allOf`/`anyOf` over named
+attribute atoms:
+
+| Atom | Resolves from |
+|---|---|
+| `subjectOrgRole` | the caller's role in the resource's owning organization (the live membership snapshot) |
+| `subjectPlatformAdmin` | the platform wildcard (`users.platform_admin`) |
+| `subjectLinkedTester` | an ACTIVE tester person record |
+| `applicationName` | the addressed application's registry name |
+| `applicationPlatform` | the request's pinned platform (IOS/ANDROID) |
+| `environmentName` | the release's targeted environment |
+| `ringCode` | the ring a promotion would ENTER |
+| `securityStatus` | the S10-03 security-class gates' standing — APPROVED (every security gate passes, overrides honored as recorded decisions), FAILED, PENDING, or NO_DATA |
+
+Release-grain atoms (environment, ring, security) ride the PROMOTE
+consult alone — the write surface refuses them on engine actions,
+and a platform atom on a LIST decision, at save (400 with the
+field-keyed `errors` the console editor renders inline). The
+`AbacCondition.parse` is the single validation authority: malformed
+constructs, unknown roles/platforms/statuses, depth and size caps
+(trees nest at most 6 levels and hold at most 64 nodes, combinators
+at most 16 children) all refuse before any write.
+
+**Versioned and audited (AC4).** Every create and replace appends
+one immutable `abac_policy_versions` row (the complete authored
+facts, the author, the moment — history survives the policy's
+deletion, the evaluation-log precedent) while the policy row holds
+the current standing and version counter. Every mutation emits
+`ABAC_POLICY_CREATED` / `ABAC_POLICY_UPDATED` / `ABAC_POLICY_DELETED`
+with the whole authored facts and changed pairs.
+
+**Decision explanations (AC3).** A denial's explanation — which
+rule fired, its version, and every evaluated attribute with its
+RESOLVED value — reaches exactly the sanctioned surfaces: the admin
+inspection API's chain (the `ABAC` layer's FAILED detail), the
+standing `AUTHORIZATION_DECISION` audit event on the layered path
+(`failingLayer=ABAC`, `reason=ABAC_POLICY_DENIED`), and the
+promotion consult's own `ABAC_POLICY_DENIED` audit line (no decision
+is audited twice — the layered path rides its standing event, the
+promotion path emits its own).
+
+**Latency (AC5).** Policies compile once per organization per TTL
+window into an in-memory cache (inputs only, never decisions — the
+S7-03 discipline), dropped write-through at every mutation so a
+saved policy evaluates on the very next decision
+(`shipperdog.abac.policy-cache-ttl`, 60s default, the cross-instance
+backstop). Attributes resolve lazily — only the ones the applicable
+policies reference — each at most once per decision through the
+modules' public ports (the `UserRolesSnapshot` discipline). The
+budget is measured, not assumed: the integration suite probes the
+decision path 200 times without and with authored policies and
+asserts the p95 delta stays under 10 ms.
+
+**Fail-closed, always (AC6).** An attribute the request's sources
+cannot resolve is never a guess: the condition answers UNRESOLVED
+and the engine DENIES — a REQUIRE fed by it refuses, a DENY fed by
+it refuses too, and the `shipperdog.abac.fail-closed` counter
+(cause `attribute`/`condition`) beside the `ABAC_EVALUATION_FAULT`
+audit line is the alert. A stored condition that cannot be parsed
+(storage drift the write surface makes impossible) denies the same
+way; an unexpected engine fault denies, never a 500 on a decision
+path.
+
+**Endpoints** (new permissions `org:abac-policies:read` and
+`org:abac-policies:manage`, held by the same governance personas as
+the release-policy rules — manage: ORG_ADMIN, APP_OWNER,
+RELEASE_MANAGER; read: every functional console role):
+
+| Method | Path | Permission | Result |
+|---|---|---|---|
+| POST | `/api/v1/abac-policies` | `org:abac-policies:manage` | `201` policy view (born v1 with its history row); `400 INVALID_REQUEST` with field-keyed errors (the condition parse, the action/attribute pairing, the selectors' references); `409 ABAC_POLICY_NAME_TAKEN`; honors `Idempotency-Key` |
+| GET | `/api/v1/abac-policies?organizationId=` | `org:abac-policies:read` | `200` the organization's policies in the defined evaluation order, cursor-paginated |
+| GET | `/api/v1/abac-policies/{policyId}?organizationId=` | `org:abac-policies:read` | `200` policy view; `404 ABAC_POLICY_NOT_FOUND` (the concealed shape — a foreign organization's policy is indistinguishable) |
+| GET | `/api/v1/abac-policies/{policyId}/versions?organizationId=` | `org:abac-policies:read` | `200` the immutable version history, newest first (rows survive deletion — the owning organization's loose-key reads stay valid) |
+| PUT | `/api/v1/abac-policies/{policyId}?organizationId=` | `org:abac-policies:manage` | `200` policy view at the new version with the history row appended; revalidated as a whole (a half-edited policy never reaches storage); honors `Idempotency-Key` |
+| DELETE | `/api/v1/abac-policies/{policyId}?organizationId=` | `org:abac-policies:manage` | `204`; the current row goes, the history stays, the act is audited; the next decision sees the policy gone |
+
+The console editor ships with the surface (frontend
+`/abac-policies`): the ordered list with effect/action/version
+chips, the JSON condition editor with the PRD 25 example as a
+one-click template, the version-history dialog, and the inline
+rendering of the server's field validation.
+
 ## Feedback authorization (S11-01)
 
 The feedback surface (issue #46, FR-027, PRD 8.13) splits along the
@@ -941,6 +1067,7 @@ catalog through the role-overlay contributor; S7-02's grants
 entitlement contributor (see
 [Authorization grants](#authorization-grants-s7-02)), S7-03 exposes
 the first-party decision API with the input cache against the
-latency SLO ([above](#the-decision-api-s7-03)), and S14-04's
-ABAC attributes widen `AuthorizationContext` — the structured-inputs
-seam S7-01 left open.
+latency SLO ([above](#the-decision-api-s7-03)), and since S14-04 the ABAC
+policy engine ([above](#the-abac-policy-engine-s14-04)) widens the
+decision inputs through its attribute snapshot — the structured
+inputs seam S7-01 left open, now built.
