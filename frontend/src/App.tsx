@@ -7,6 +7,7 @@ import AbacPoliciesPage from "./pages/AbacPoliciesPage";
 import ApprovalWorkflowsPage from "./pages/ApprovalWorkflowsPage";
 import ApplicationDetailPage from "./pages/ApplicationDetailPage";
 import ApplicationsPage from "./pages/ApplicationsPage";
+import AuditStreamsPage from "./pages/AuditStreamsPage";
 import DashboardPage from "./pages/DashboardPage";
 import LoginPage from "./pages/LoginPage";
 import SsoCallbackPage from "./pages/SsoCallbackPage";
@@ -50,6 +51,7 @@ export default function App() {
             <Route path="notifications" element={<NotificationsPage />} />
             <Route path="release-policies" element={<ReleasePoliciesPage />} />
             <Route path="abac-policies" element={<AbacPoliciesPage />} />
+            <Route path="audit-streams" element={<AuditStreamsPage />} />
             <Route path="releases" element={<ReleasesPage />} />
             <Route path="releases/:applicationId" element={<ReleasesPage />} />
             <Route

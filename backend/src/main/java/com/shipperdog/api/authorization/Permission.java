@@ -102,6 +102,16 @@ public enum Permission {
     // governance personas that own the rollout surfaces it rides.
     ORG_NOTIFICATIONS_READ("org:notifications:read"), // issue #51 (S12-01)
     ORG_NOTIFICATIONS_MANAGE("org:notifications:manage"), // issue #51 (S12-01)
+    // Issue #71 (S14-05): the SIEM audit-stream exports — the
+    // org-scoped routing of the immutable audit trail to a customer
+    // SIEM (HTTPS collector or bucket batch). Deliberately the
+    // organization administrator ALONE (the story's AC5): the export
+    // surface ships security-relevant material off-platform under
+    // the organization's own secret references — a narrower circle
+    // than every other governance surface, never granted to app
+    // owners or functional roles.
+    ORG_AUDIT_STREAM_READ("org:audit-stream:read"), // issue #71 (S14-05)
+    ORG_AUDIT_STREAM_MANAGE("org:audit-stream:manage"), // issue #71 (S14-05)
 
     // tenant scope
     TENANT_TENANTS_READ("tenant:tenants:read"),

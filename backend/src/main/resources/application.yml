@@ -205,6 +205,23 @@ shipperdog:
     # production deployment sets its real origin; the default is the
     # local compose stack's console.
     console-base-url: ${CONSOLE_BASE_URL:http://localhost:5173}
+    # The SIEM audit stream (issue #71, S14-05): the bucket batcher's
+    # cadence and per-pass bound. The HTTPS leg shares the relay and
+    # delivery knobs above -- the stream is the pipeline's passenger.
+    # Tests drive the batcher through the bean directly with the
+    # schedule disabled, the rollup-scheduler pattern.
+    audit-stream:
+      batch-enabled: ${NOTIFICATIONS_AUDIT_STREAM_BATCH_ENABLED:true}
+      batch-fixed-delay: ${NOTIFICATIONS_AUDIT_STREAM_BATCH_FIXED_DELAY:PT60S}
+      batch-max-rows: ${NOTIFICATIONS_AUDIT_STREAM_BATCH_MAX_ROWS:500}
+      # The bucket writer's storage target (the exported batches and
+      # manifests): a configured host talks to the compose GCS
+      # emulator; blank means production GCS through application
+      # default credentials -- the writer identity the customer
+      # grants bucket access to (docs/siem.md).
+      storage:
+        host: ${NOTIFICATIONS_AUDIT_STREAM_STORAGE_HOST:}
+        project-id: ${NOTIFICATIONS_AUDIT_STREAM_STORAGE_PROJECT:shipperdog-local}
   # The distribution adapter framework (issue #61, S13-01, FR-019,
   # PRD 19/25, ADR-0008): the secret store behind every credential
   # reference and the per-adapter sandbox. The store selection keeps

@@ -64,5 +64,20 @@ public enum DomainEventName {
      * the real delivery pipeline IS its publication; the relay never
      * re-fans a test out).
      */
-    NOTIFICATION_TEST_SENT
+    NOTIFICATION_TEST_SENT,
+    /**
+     * One immutable audit event of the enterprise trail, bridged onto
+     * the bus for the SIEM export (S14-05, issue #71, PRD 27/38): the
+     * outbox recorder's audit listener appends one row per published
+     * {@code AuditEvent} of an organization holding at least one
+     * enabled export -- the same transactional-outbox guarantee every
+     * wired transition rides. The payload IS the export envelope's
+     * facts (the versioned schema of docs/siem.md, without the
+     * event_id the dispatcher adds from the row's own id); the
+     * audit-stream dispatcher fans these out to the organization's
+     * HTTPS exports. Events without an organization context do not
+     * bridge (the export is org-scoped routing; there is no
+     * organization to route by).
+     */
+    AUDIT_EVENT
 }

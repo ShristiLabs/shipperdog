@@ -85,6 +85,21 @@ class WebhookDeliveryClient {
      * redirects, any 2xx is success) for every body shape.
      */
     Attempt deliver(String url, String secret, String eventName, byte[] body) {
+        return deliver(url, secret, eventName, body, Map.of());
+    }
+
+    /**
+     * The audit-stream leg's delivery (issue #71, S14-05): the same
+     * signed POST with additional collector auth headers -- the
+     * generic event collectors' header-auth (an {@code Authorization:
+     * Bearer} HEC token or a customer header), resolved from the
+     * export's secret-manager reference by the caller. The signature
+     * discipline is unchanged: HMAC over the exact body bytes beside
+     * the timestamp and event headers, extra headers ride along
+     * unsigned (they authenticate the SENDER to the collector; the
+     * signature authenticates ShipperDog to the RECEIVER).
+     */
+    Attempt deliver(String url, String secret, String eventName, byte[] body, Map<String, String> extraHeaders) {
         String timestamp = Long.toString(Instant.now(clock).getEpochSecond());
         String signature;
         try {
@@ -93,15 +108,16 @@ class WebhookDeliveryClient {
             return Attempt.failure("signing failed: " + e.getClass().getSimpleName());
         }
         try {
-            http.post()
+            var request = http.post()
                     .uri(URI.create(url))
                     .header(HttpHeaders.CONTENT_TYPE, MediaType.APPLICATION_JSON_VALUE)
                     .header(EVENT_HEADER, eventName)
                     .header(TIMESTAMP_HEADER, timestamp)
-                    .header(SIGNATURE_HEADER, signature)
-                    .body(body)
-                    .retrieve()
-                    .toBodilessEntity();
+                    .header(SIGNATURE_HEADER, signature);
+            for (Map.Entry<String, String> header : extraHeaders.entrySet()) {
+                request = request.header(header.getKey(), header.getValue());
+            }
+            request.body(body).retrieve().toBodilessEntity();
             return Attempt.success();
         } catch (RuntimeException e) {
             return Attempt.failure(describe(e));

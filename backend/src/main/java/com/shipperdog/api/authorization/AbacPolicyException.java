@@ -20,6 +20,15 @@ public final class AbacPolicyException extends RuntimeException {
         INVALID_REQUEST(HttpStatus.BAD_REQUEST, "INVALID_REQUEST", "The request is invalid."),
         NOT_FOUND(HttpStatus.NOT_FOUND, "ABAC_POLICY_NOT_FOUND", "Resource not found."),
         NAME_TAKEN(HttpStatus.CONFLICT, "ABAC_POLICY_NAME_TAKEN", "A policy with this name already exists."),
+        /**
+         * A concurrent replace of the same policy won the version
+         * history first (issue #70's review follow-up, folded in
+         * #71): the loser's flush trips the history's uniqueness and
+         * answers 409 -- reload and retry -- instead of an opaque
+         * 500. The rollback is safe either way (the safe direction
+         * the engine's fail-closed posture already guarantees).
+         */
+        CONFLICT(HttpStatus.CONFLICT, "ABAC_POLICY_CONFLICT", "The policy changed concurrently; reload and retry."),
         ORGANIZATION_NOT_FOUND(HttpStatus.NOT_FOUND, "ORGANIZATION_NOT_FOUND", "Resource not found.");
 
         private final HttpStatus httpStatus;

@@ -3,11 +3,13 @@ package com.shipperdog.api.notification.internal.bus;
 import com.shipperdog.api.artifact.ArtifactDownloadIssuedEvent;
 import com.shipperdog.api.artifact.ArtifactUploadedEvent;
 import com.shipperdog.api.artifact.ArtifactValidatedEvent;
+import com.shipperdog.api.audit.AuditEvent;
 import com.shipperdog.api.config.CorrelationIdFilter;
 import com.shipperdog.api.feedback.FeedbackMarkedCriticalEvent;
 import com.shipperdog.api.feedback.FeedbackReceivedEvent;
 import com.shipperdog.api.notification.DomainEventName;
 import com.shipperdog.api.notification.internal.entity.NotificationOutboxEntity;
+import com.shipperdog.api.notification.internal.repository.AuditStreamExportRepository;
 import com.shipperdog.api.notification.internal.repository.NotificationOutboxRepository;
 import com.shipperdog.api.release.ReleaseCreatedEvent;
 import com.shipperdog.api.release.ReleasePromotedEvent;
@@ -70,10 +72,12 @@ class OutboxRecorder {
     private static final Logger log = LoggerFactory.getLogger(OutboxRecorder.class);
 
     private final NotificationOutboxRepository outbox;
+    private final AuditStreamExportRepository auditStreamExports;
     private final Clock clock;
 
-    OutboxRecorder(NotificationOutboxRepository outbox, Clock clock) {
+    OutboxRecorder(NotificationOutboxRepository outbox, AuditStreamExportRepository auditStreamExports, Clock clock) {
         this.outbox = outbox;
+        this.auditStreamExports = auditStreamExports;
         this.clock = clock;
     }
 
@@ -280,6 +284,50 @@ class OutboxRecorder {
                 event.releaseId(),
                 payload,
                 event.occurredAt());
+    }
+
+    // The audit stream (S14-05, issue #71) -------------------------------------
+
+    /**
+     * The SIEM bridge (issue #71, S14-05, AC6): every published
+     * {@link AuditEvent} of an organization that holds at least one
+     * enabled export appends one {@code AUDIT_EVENT} outbox row in
+     * the SAME transaction the audit row itself commits under -- the
+     * trail and its bus event are never separable, exactly the
+     * guarantee every other wired transition rides. The event the
+     * publisher binding republished here is already enriched and
+     * redacted (docs/audit.md); the payload is the export envelope's
+     * facts (the versioned schema of docs/siem.md, minus the event
+     * id the dispatcher adds from the row's own).
+     *
+     * <p>The org gate ({@code existsByOrganizationIdAndEnabledTrue})
+     * keeps organizations that do not use the SIEM export from paying
+     * the outbox write at all -- and because the gate reads inside
+     * the committing transaction, an export created in this very
+     * transaction (the configuration event of its own creation, the
+     * insert landing before the audit call) streams from its first
+     * event. Audit events without an organization context do not
+     * bridge: the export is org-scoped routing, there is no
+     * organization to route by.
+     */
+    @TransactionalEventListener(phase = TransactionPhase.BEFORE_COMMIT, fallbackExecution = true)
+    void on(AuditEvent event) {
+        if (event.orgId() == null || !auditStreamExports.existsByOrganizationIdAndEnabledTrue(event.orgId())) {
+            return;
+        }
+        Instant now = Instant.now(clock);
+        outbox.save(new NotificationOutboxEntity(
+                DomainEventName.AUDIT_EVENT,
+                event.orgId(),
+                event.tenantId(),
+                event.applicationId(),
+                event.versionId(),
+                event.artifactId(),
+                null,
+                event.correlationId(),
+                com.shipperdog.api.notification.internal.service.SiemEventFormats.bridgePayload(event),
+                event.occurredAt(),
+                now));
     }
 
     // The append --------------------------------------------------------------

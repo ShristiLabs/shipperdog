@@ -101,7 +101,15 @@ frontend/src/
                 a one-click template, the immutable version-history
                 dialog, and the inline rendering of the server's
                 field validation; nav section concealed without
-                org:abac-policies:read)
+                org:abac-policies:read), AuditStreamsPage (the
+                S14-05 SIEM export console: the organization's HTTPS
+                collectors and bucket batches with kind/format/filter
+                chips and the bucket completeness rollup, the create/
+                edit dialog carrying secret-manager REFERENCES only,
+                the delivery ledger's dead-letter filter with the
+                replay action, the bucket batch history, and the
+                test-event outcome toast; nav section concealed
+                without org:audit-stream:read — org admins alone)
   test/         harness.tsx (providers + fetch router), setup.ts
 frontend/e2e/   console-verify.mjs, applications-verify.mjs,
                 releases-verify.mjs + apk-fixture.mjs (Playwright

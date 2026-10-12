@@ -643,5 +643,39 @@ public enum AuditEventType {
      * this line and the shipperdog.abac fail-closed counter are the
      * alert.
      */
-    ABAC_EVALUATION_FAULT
+    ABAC_EVALUATION_FAULT,
+    /**
+     * One SIEM audit-stream export configured (S14-05, issue #71,
+     * PRD 27/38, FR-024): the export's kind, destination, format,
+     * and filter -- routing the audit trail to a customer SIEM is
+     * itself a security-relevant act the trail records. The secret
+     * references ride the line as references only, never resolved
+     * material.
+     */
+    AUDIT_STREAM_EXPORT_CREATED,
+    /**
+     * One SIEM audit-stream export edited (S14-05): the changed
+     * facts (a destination swap, a filter change, a rotated secret
+     * reference, the enabled switch) beside the export's identity.
+     */
+    AUDIT_STREAM_EXPORT_UPDATED,
+    /**
+     * One SIEM audit-stream export deleted (S14-05): the full
+     * deleted facts; the delivery ledger and batch history rows
+     * survive (the ledger is history, not state).
+     */
+    AUDIT_STREAM_EXPORT_DELETED,
+    /**
+     * One SIEM export's test event sent (S14-05): the synchronous
+     * outcome of the synthetic envelope through the real pipeline
+     * -- the collector's answer, honestly reported in the response
+     * and the trail alike.
+     */
+    AUDIT_STREAM_EXPORT_TESTED,
+    /**
+     * One SIEM export's dead-letter replayed (S14-05): how many
+     * terminally failed deliveries returned to the retry schedule
+     * -- the operator's answer to a consumer outage (AC3).
+     */
+    AUDIT_STREAM_REPLAYED
 }

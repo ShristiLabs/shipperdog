@@ -49,8 +49,16 @@ import org.springframework.data.repository.history.RevisionRepository;
  */
 class TenantIsolationArchTest {
 
-    /** Pre-existing raw-EntityManager user: audit criteria over platform rows (issue #6). */
-    private static final String RAW_QUERY_ALLOWLIST = "com.shipperdog.api.audit.internal.service.AuditQueryService";
+    /**
+     * Pre-existing raw-EntityManager users: audit criteria over
+     * platform rows (issue #6), and since S14-05 the audit store's
+     * export feed -- the same criteria-API read side over the
+     * org-gated trail (the insert-only repository never grows
+     * derived finders, docs/audit.md).
+     */
+    private static final List<String> RAW_QUERY_ALLOWLIST = List.of(
+            "com.shipperdog.api.audit.internal.service.AuditQueryService",
+            "com.shipperdog.api.audit.internal.service.PersistentAuditEventFeed");
 
     private static final JavaClasses CLASSES = new ClassFileImporter()
             .withImportOption(new ImportOption.DoNotIncludeTests())
@@ -62,7 +70,9 @@ class TenantIsolationArchTest {
                 .that()
                 .resideOutsideOfPackage("..internal.repository..")
                 .and()
-                .doNotHaveFullyQualifiedName(RAW_QUERY_ALLOWLIST)
+                .doNotHaveFullyQualifiedName(RAW_QUERY_ALLOWLIST.get(0))
+                .and()
+                .doNotHaveFullyQualifiedName(RAW_QUERY_ALLOWLIST.get(1))
                 .should()
                 .dependOnClassesThat()
                 .belongToAnyOf(EntityManager.class, Session.class)

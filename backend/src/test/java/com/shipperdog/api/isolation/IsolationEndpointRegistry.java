@@ -337,6 +337,66 @@ final class IsolationEndpointRegistry {
                         200,
                         404,
                         side -> "/api/v1/organizations/" + UUID.randomUUID() + "/notification-deliveries"),
+                // The SIEM audit-stream export listing (S14-05, issue
+                // #71): organization-grain like the subscription
+                // listing — an empty page on the org admin's own side,
+                // the concealed miss for every other persona (the
+                // surface is org-admin-only by construction, AC5).
+                surface(
+                        "/api/v1/organizations/{organizationId}/audit-stream-exports",
+                        side -> "/api/v1/organizations/" + side.organizationId() + "/audit-stream-exports",
+                        200,
+                        404,
+                        side -> "/api/v1/organizations/" + UUID.randomUUID() + "/audit-stream-exports"),
+                // The SIEM export item route: the seeded world holds
+                // no export, so own and miss probes share the miss
+                // shape (the grant-item rationale); concealment of a
+                // REAL foreign export is pinned by the S14-05 suite.
+                surface(
+                        "/api/v1/organizations/{organizationId}/audit-stream-exports/{exportId}",
+                        side -> "/api/v1/organizations/"
+                                + side.organizationId()
+                                + "/audit-stream-exports/"
+                                + UUID.randomUUID(),
+                        404,
+                        404,
+                        side -> "/api/v1/organizations/"
+                                + UUID.randomUUID()
+                                + "/audit-stream-exports/"
+                                + UUID.randomUUID()),
+                // The SIEM export's delivery log (S14-05 AC3): the
+                // dead-letter's visibility, organization-grain like
+                // the notification log beside it.
+                surface(
+                        "/api/v1/organizations/{organizationId}/audit-stream-exports/{exportId}/deliveries",
+                        side -> "/api/v1/organizations/"
+                                + side.organizationId()
+                                + "/audit-stream-exports/"
+                                + UUID.randomUUID()
+                                + "/deliveries",
+                        200,
+                        404,
+                        side -> "/api/v1/organizations/"
+                                + UUID.randomUUID()
+                                + "/audit-stream-exports/"
+                                + UUID.randomUUID()
+                                + "/deliveries"),
+                // The SIEM bucket export's batch history (S14-05 AC2):
+                // the completeness ledger's read, same grain.
+                surface(
+                        "/api/v1/organizations/{organizationId}/audit-stream-exports/{exportId}/batches",
+                        side -> "/api/v1/organizations/"
+                                + side.organizationId()
+                                + "/audit-stream-exports/"
+                                + UUID.randomUUID()
+                                + "/batches",
+                        404,
+                        404,
+                        side -> "/api/v1/organizations/"
+                                + UUID.randomUUID()
+                                + "/audit-stream-exports/"
+                                + UUID.randomUUID()
+                                + "/batches"),
                 // The inbox: param-less and self-scoped, so "foreign"
                 // and "miss" are both the caller's OWN inbox — the
                 // portal-catalog rationale: the body answers the

@@ -265,21 +265,39 @@ public class AbacPolicyService {
                 validated.condition(),
                 validated.position(),
                 validated.enabled());
-        policies.flush();
-        versions.saveAndFlush(new AbacPolicyVersionEntity(
-                policy.getId(),
-                organizationId,
-                policy.getName(),
-                policy.getVersion(),
-                policy.getEffect(),
-                policy.getAction(),
-                policy.getApplicationId(),
-                policy.getEnvironmentId(),
-                policy.getRing(),
-                policy.getCondition(),
-                policy.getPosition(),
-                policy.isEnabled(),
-                actorId));
+        // Fold of #70's review follow-up: a concurrent replace of the
+        // same policy wins the version history's uniqueness first and
+        // the loser's flush trips it -- translate that race (and the
+        // concurrent rename's name index) to the public 409 here,
+        // inside the method, instead of the opaque 500 the raw
+        // violation rendered. The rollback is safe either way.
+        try {
+            policies.flush();
+            versions.saveAndFlush(new AbacPolicyVersionEntity(
+                    policy.getId(),
+                    organizationId,
+                    policy.getName(),
+                    policy.getVersion(),
+                    policy.getEffect(),
+                    policy.getAction(),
+                    policy.getApplicationId(),
+                    policy.getEnvironmentId(),
+                    policy.getRing(),
+                    policy.getCondition(),
+                    policy.getPosition(),
+                    policy.isEnabled(),
+                    actorId));
+        } catch (DataIntegrityViolationException e) {
+            String message = e.getMessage() == null ? "" : e.getMessage();
+            if (message.contains("uq_abac_policy_versions")) {
+                throw new AbacPolicyException(
+                        AbacPolicyException.Code.CONFLICT, "the policy changed concurrently; reload and retry");
+            }
+            if (message.contains("uq_abac_policies_org_name")) {
+                throw nameTaken();
+            }
+            throw e;
+        }
         auditPolicy(actorId, organizationId, AuditEventType.ABAC_POLICY_UPDATED, policy, changed);
         invalidateAtCommit(organizationId);
         return viewOf(policy);
