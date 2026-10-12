@@ -75,6 +75,22 @@ public class AuthorizationExceptionHandler {
                 .body(problem);
     }
 
+    /**
+     * ABAC policy-administration failures (S14-04, issue #70): the
+     * stable public codes of the policy surface, concealment included
+     * — a policy of another organization is indistinguishable from a
+     * missing one, and the 400's {@code errors} member carries the
+     * field-keyed validation messages the console editor renders
+     * inline.
+     */
+    @ExceptionHandler(AbacPolicyException.class)
+    ResponseEntity<ProblemDetail> abacPolicy(AbacPolicyException exception) {
+        ProblemDetail problem = exception.problem();
+        return ResponseEntity.status(problem.getStatus())
+                .contentType(MediaType.APPLICATION_PROBLEM_JSON)
+                .body(problem);
+    }
+
     @ExceptionHandler(AccessDeniedException.class)
     ResponseEntity<ProblemDetail> handle(AccessDeniedException exception) {
         return problem(ApiError.FORBIDDEN);

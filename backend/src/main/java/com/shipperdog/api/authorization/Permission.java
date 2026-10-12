@@ -81,6 +81,14 @@ public enum Permission {
     // personas as the chains, gates, and rings it composes with).
     ORG_RELEASE_POLICIES_READ("org:release-policies:read"),
     ORG_RELEASE_POLICIES_MANAGE("org:release-policies:manage"),
+    // Issue #70 (S14-04): the ABAC attribute policies — the
+    // deny-override refinement rules an organization authors over
+    // the subject/resource/environment attribute vocabulary (the
+    // same governance personas as the release policy rules: every
+    // functional console role reads the standing rules; the
+    // governance trio manages them).
+    ORG_ABAC_POLICIES_READ("org:abac-policies:read"), // issue #70 (S14-04)
+    ORG_ABAC_POLICIES_MANAGE("org:abac-policies:manage"), // issue #70 (S14-04)
     // Issue #50 (S11-05): the organization dashboard — the console's
     // landing read model (PRD 29: counts, per-application release
     // health, role-filtered pending actions). Read-only by

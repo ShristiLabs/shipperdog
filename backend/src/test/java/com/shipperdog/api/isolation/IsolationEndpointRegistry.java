@@ -833,6 +833,42 @@ final class IsolationEndpointRegistry {
                         side -> "/api/v1/releases/" + UUID.randomUUID() + "/policy-evaluations?applicationId="
                                 + UUID.randomUUID()),
 
+                // ABAC policies (S14-04) --------------------------------------------
+                // org:abac-policies:read is organization-grain (the RBAC
+                // matrix, the release-policies shape): the owning
+                // ORG_ADMIN lists (an empty page in the seeded world —
+                // no policy exists), the tenant persona conceals
+                // through the organization-grain permission check.
+                surface(
+                        "/api/v1/abac-policies",
+                        side -> "/api/v1/abac-policies?organizationId=" + side.organizationId(),
+                        200,
+                        404,
+                        side -> "/api/v1/abac-policies?organizationId=" + UUID.randomUUID()),
+                // The policy item route (S14-04): the seeded world
+                // holds no policy, so own and miss probes share the
+                // route's miss shape; concealment of a REAL foreign
+                // policy is pinned with live policies by the S14-04
+                // ABAC suite.
+                surface(
+                        "/api/v1/abac-policies/{policyId}",
+                        side -> "/api/v1/abac-policies/" + UUID.randomUUID() + "?organizationId="
+                                + side.organizationId(),
+                        404,
+                        404,
+                        side -> "/api/v1/abac-policies/" + UUID.randomUUID() + "?organizationId=" + UUID.randomUUID()),
+                // The policy version-history route (S14-04): the same
+                // miss-shape rationale — the loose-key history serves
+                // only the owning organization.
+                surface(
+                        "/api/v1/abac-policies/{policyId}/versions",
+                        side -> "/api/v1/abac-policies/" + UUID.randomUUID() + "/versions?organizationId="
+                                + side.organizationId(),
+                        404,
+                        404,
+                        side -> "/api/v1/abac-policies/" + UUID.randomUUID() + "/versions?organizationId="
+                                + UUID.randomUUID()),
+
                 // Feedback (S11-01) -------------------------------------------------
                 // app:feedback:read is organization-grain (the RBAC
                 // matrix): the seeded world holds no release, so own and

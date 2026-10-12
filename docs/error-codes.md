@@ -276,6 +276,8 @@ The tester onboarding surface (S6-01, issue #26), tester groups
 | `POLICY_RULE_NAME_TAKEN` | 409 | A policy rule with this name already exists for the organization. (S10-06/issue #45; V34's `uq_release_policy_rules_org_name` is the authority — the pre-check and the lost-race translation answer it identically, the ring-code precedent) |
 | `POLICY_RULE_IN_USE` | 409 | The rule is referenced by recorded policy holds; disable it instead of deleting it. (S10-06; the hold ledger is audit evidence — the evaluation log's loose name snapshots survive deletion by design, the living ledger's foreign keys do not) |
 | `POLICY_HOLD_ALREADY_ACKNOWLEDGED` | 409 | The hold is already acknowledged; its decision stands. (S10-06/issue #45 AC2 — the acknowledge is a standing human decision for (release, rule, ring), not a one-shot token; a second actor's intent is a new hop's question) |
+| `ABAC_POLICY_NOT_FOUND` | 404 | Resource not found. (S14-04/issue #70; also the concealed-denial shape — a foreign organization's policy is indistinguishable from a missing one on every policy item route) |
+| `ABAC_POLICY_NAME_TAKEN` | 409 | A policy with this name already exists. (S14-04; V52's `uq_abac_policies_org_name` is the authority — the pre-check and the lost-race translation answer it identically) |
 
 ## Feedback (`FeedbackException.Code`)
 

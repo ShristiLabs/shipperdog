@@ -128,9 +128,30 @@ class AuthorizationEngineIntegrationTest {
         assertThat(decision.hasNonNull("failingLayer")).isFalse();
         assertThat(layerNames(decision))
                 .containsExactly(
-                        "USER", "ORGANIZATION", "TENANT", "APPLICATION", "VERSION", "ARTIFACT", "DISTRIBUTION");
-        assertThat(decision.get("chain"))
-                .allSatisfy(layer -> assertThat(layer.get("status").asString()).isEqualTo("PASSED"));
+                        "USER",
+                        "ORGANIZATION",
+                        "TENANT",
+                        "APPLICATION",
+                        "VERSION",
+                        "ARTIFACT",
+                        "DISTRIBUTION",
+                        // Since S14-04 (issue #70) the ABAC refinement
+                        // layer closes the chain: SKIPPED for every
+                        // organization with no authored policy (the
+                        // fast path), PASSED when policies evaluate
+                        // and none denies.
+                        "ABAC");
+        assertThat(decision.get("chain")).allSatisfy(layer -> {
+            // Since S14-04 (issue #70) the ABAC refinement
+            // layer closes the chain — SKIPPED here (no
+            // authored policy, the fast path), PASSED when
+            // policies evaluate and none denies.
+            if ("ABAC".equals(layer.get("layer").asString())) {
+                assertThat(layer.get("status").asString()).isEqualTo("SKIPPED");
+            } else {
+                assertThat(layer.get("status").asString()).isEqualTo("PASSED");
+            }
+        });
 
         // The decision is audited (allow and deny alike, PRD 27): the
         // event carries the action, the outcome, the addressed ids,
@@ -181,6 +202,9 @@ class AuthorizationEngineIntegrationTest {
         assertThat(layerStatus(decision, "VERSION")).isEqualTo("FAILED");
         assertThat(layerStatus(decision, "ARTIFACT")).isEqualTo("SKIPPED");
         assertThat(layerStatus(decision, "DISTRIBUTION")).isEqualTo("SKIPPED");
+        // The ABAC refinement layer (S14-04): short-circuited like
+        // every layer after the first failure.
+        assertThat(layerStatus(decision, "ABAC")).isEqualTo("SKIPPED");
 
         // The denial audit carries the reason code and the chain.
         AuditEvent event = latestDecisionEvent();
@@ -353,7 +377,7 @@ class AuthorizationEngineIntegrationTest {
                 .containsEntry(
                         "chain",
                         "USER:PASSED,ORGANIZATION:PASSED,TENANT:PASSED,APPLICATION:SKIPPED,"
-                                + "VERSION:SKIPPED,ARTIFACT:SKIPPED,DISTRIBUTION:SKIPPED");
+                                + "VERSION:SKIPPED,ARTIFACT:SKIPPED,DISTRIBUTION:SKIPPED,ABAC:SKIPPED");
 
         // A foreign organization's administrator never learns the
         // tenant exists: the same concealed envelope a genuine miss

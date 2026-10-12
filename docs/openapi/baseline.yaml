@@ -1460,6 +1460,81 @@ paths:
             '*/*':
               schema:
                 $ref: "#/components/schemas/TagsView"
+  /api/v1/abac-policies/{policyId}:
+    get:
+      tags:
+      - abac-policy-controller
+      operationId: get_7
+      parameters:
+      - name: policyId
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - name: organizationId
+        in: query
+        required: true
+        schema:
+          type: string
+          format: uuid
+      responses:
+        "200":
+          description: OK
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/PolicyView"
+    put:
+      tags:
+      - abac-policy-controller
+      operationId: update_8
+      parameters:
+      - name: policyId
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - name: organizationId
+        in: query
+        required: true
+        schema:
+          type: string
+          format: uuid
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PolicyRequest"
+        required: true
+      responses:
+        "200":
+          description: OK
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/PolicyView"
+    delete:
+      tags:
+      - abac-policy-controller
+      operationId: delete_2
+      parameters:
+      - name: policyId
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - name: organizationId
+        in: query
+        required: true
+        schema:
+          type: string
+          format: uuid
+      responses:
+        "204":
+          description: No Content
   /webhooks/jenkins:
     post:
       tags:
@@ -4068,11 +4143,57 @@ paths:
             '*/*':
               schema:
                 $ref: "#/components/schemas/RollupReport"
+  /api/v1/abac-policies:
+    get:
+      tags:
+      - abac-policy-controller
+      operationId: list_15
+      parameters:
+      - name: organizationId
+        in: query
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - name: limit
+        in: query
+        required: false
+        schema:
+          type: string
+      - name: cursor
+        in: query
+        required: false
+        schema:
+          type: string
+      responses:
+        "200":
+          description: OK
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/PageResponsePolicyView"
+    post:
+      tags:
+      - abac-policy-controller
+      operationId: create_14
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PolicyRequest"
+        required: true
+      responses:
+        "201":
+          description: Created
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/PolicyView"
   /api/v1/rings/{ringId}:
     get:
       tags:
       - ring-controller
-      operationId: get_7
+      operationId: get_8
       parameters:
       - name: ringId
         in: path
@@ -4096,7 +4217,7 @@ paths:
     delete:
       tags:
       - ring-controller
-      operationId: delete_2
+      operationId: delete_3
       parameters:
       - name: ringId
         in: path
@@ -4116,7 +4237,7 @@ paths:
     patch:
       tags:
       - ring-controller
-      operationId: update_8
+      operationId: update_9
       parameters:
       - name: ringId
         in: path
@@ -4147,7 +4268,7 @@ paths:
     get:
       tags:
       - notification-controller
-      operationId: get_8
+      operationId: get_9
       parameters:
       - name: organizationId
         in: path
@@ -4171,7 +4292,7 @@ paths:
     delete:
       tags:
       - notification-controller
-      operationId: delete_3
+      operationId: delete_4
       parameters:
       - name: organizationId
         in: path
@@ -4191,7 +4312,7 @@ paths:
     patch:
       tags:
       - notification-controller
-      operationId: update_9
+      operationId: update_10
       parameters:
       - name: organizationId
         in: path
@@ -4222,7 +4343,7 @@ paths:
     get:
       tags:
       - environment-controller
-      operationId: get_9
+      operationId: get_10
       parameters:
       - name: environmentId
         in: path
@@ -4240,7 +4361,7 @@ paths:
     patch:
       tags:
       - environment-controller
-      operationId: update_10
+      operationId: update_11
       parameters:
       - name: environmentId
         in: path
@@ -4265,7 +4386,7 @@ paths:
     get:
       tags:
       - application-controller
-      operationId: get_10
+      operationId: get_11
       parameters:
       - name: id
         in: path
@@ -4283,7 +4404,7 @@ paths:
     patch:
       tags:
       - application-controller
-      operationId: update_11
+      operationId: update_12
       parameters:
       - name: id
         in: path
@@ -4351,7 +4472,7 @@ paths:
     get:
       tags:
       - tester-controller
-      operationId: get_11
+      operationId: get_12
       parameters:
       - name: id
         in: path
@@ -4548,7 +4669,7 @@ paths:
     get:
       tags:
       - authorization-grant-controller
-      operationId: get_12
+      operationId: get_13
       parameters:
       - name: id
         in: path
@@ -4670,7 +4791,7 @@ paths:
     get:
       tags:
       - tenant-applications-controller
-      operationId: list_15
+      operationId: list_16
       parameters:
       - name: id
         in: path
@@ -4699,7 +4820,7 @@ paths:
     get:
       tags:
       - release-controller
-      operationId: get_13
+      operationId: get_14
       parameters:
       - name: releaseId
         in: path
@@ -4960,7 +5081,7 @@ paths:
     get:
       tags:
       - feedback-controller
-      operationId: list_16
+      operationId: list_17
       parameters:
       - name: releaseId
         in: path
@@ -5016,7 +5137,7 @@ paths:
     get:
       tags:
       - feedback-controller
-      operationId: get_14
+      operationId: get_15
       parameters:
       - name: releaseId
         in: path
@@ -5759,6 +5880,11 @@ paths:
           - SCIM_USER_REACTIVATED
           - SCIM_GROUP_SYNCED
           - SCIM_REQUEST_REJECTED
+          - ABAC_POLICY_CREATED
+          - ABAC_POLICY_UPDATED
+          - ABAC_POLICY_DELETED
+          - ABAC_POLICY_DENIED
+          - ABAC_EVALUATION_FAULT
       - name: applicationId
         in: query
         required: false
@@ -5810,7 +5936,7 @@ paths:
     get:
       tags:
       - artifact-controller
-      operationId: get_15
+      operationId: get_16
       parameters:
       - name: artifactId
         in: path
@@ -5860,7 +5986,7 @@ paths:
     get:
       tags:
       - application-tenant-authorization-controller
-      operationId: list_17
+      operationId: list_18
       parameters:
       - name: id
         in: path
@@ -5889,7 +6015,7 @@ paths:
     get:
       tags:
       - version-controller
-      operationId: get_16
+      operationId: get_17
       parameters:
       - name: applicationId
         in: path
@@ -6020,6 +6146,41 @@ paths:
             '*/*':
               schema:
                 $ref: "#/components/schemas/PageResponseMetricPointView"
+  /api/v1/abac-policies/{policyId}/versions:
+    get:
+      tags:
+      - abac-policy-controller
+      operationId: history_2
+      parameters:
+      - name: policyId
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - name: organizationId
+        in: query
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - name: limit
+        in: query
+        required: false
+        schema:
+          type: string
+      - name: cursor
+        in: query
+        required: false
+        schema:
+          type: string
+      responses:
+        "200":
+          description: OK
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/PageResponseVersionView"
   /api/v1/tester-groups/{id}/members/{testerId}:
     delete:
       tags:
@@ -7130,8 +7291,6 @@ components:
     JsonNode:
       type: object
       properties:
-        container:
-          type: boolean
         nodeType:
           type: string
           enum:
@@ -7174,6 +7333,8 @@ components:
         boolean:
           type: boolean
         binary:
+          type: boolean
+        container:
           type: boolean
         floatingPointNumber:
           type: boolean
@@ -7388,6 +7549,80 @@ components:
           type: array
           items:
             type: string
+    PolicyRequest:
+      type: object
+      description: "The ABAC policy body: name, effect (DENY, REQUIRE), action (LIST_APPLICATIONS,\
+        \ READ_ARTIFACT, DOWNLOAD, PROMOTE), optional application/environment/ring\
+        \ selectors, the typed condition tree, the evaluation position, and the enabled\
+        \ standing."
+      properties:
+        organizationId:
+          type: string
+          format: uuid
+        name:
+          type: string
+        effect:
+          type: string
+        action:
+          type: string
+        applicationId:
+          type: string
+          format: uuid
+        environmentId:
+          type: string
+          format: uuid
+        ring:
+          type: string
+        condition:
+          type: object
+          additionalProperties: {}
+        position:
+          type: integer
+          format: int32
+        enabled:
+          type: boolean
+    PolicyView:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        organizationId:
+          type: string
+          format: uuid
+        name:
+          type: string
+        version:
+          type: integer
+          format: int32
+        effect:
+          type: string
+        action:
+          type: string
+        applicationId:
+          type: string
+          format: uuid
+        environmentId:
+          type: string
+          format: uuid
+        ring:
+          type: string
+        condition:
+          type: object
+          additionalProperties: {}
+        conditionSummary:
+          type: string
+        position:
+          type: integer
+          format: int32
+        enabled:
+          type: boolean
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
     WebhookReceiptView:
       type: object
       properties:
@@ -10410,6 +10645,11 @@ components:
           - SCIM_USER_REACTIVATED
           - SCIM_GROUP_SYNCED
           - SCIM_REQUEST_REJECTED
+          - ABAC_POLICY_CREATED
+          - ABAC_POLICY_UPDATED
+          - ABAC_POLICY_DELETED
+          - ABAC_POLICY_DENIED
+          - ABAC_EVALUATION_FAULT
         occurredAt:
           type: string
           format: date-time
@@ -10603,3 +10843,12 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/MetricValueView"
+    PageResponsePolicyView:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/PolicyView"
+        next_cursor:
+          type: string
