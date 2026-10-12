@@ -27,6 +27,15 @@ import java.util.Optional;
  *       are {@code app:applications:read} and
  *       {@code app:applications:write}; later modules (E4 onward) bind
  *       the rest as their surfaces arrive.</li>
+ *   <li>{@code analytics:} — a CAPABILITY scope, not an RBAC scope
+ *       (issue #72, S15-01): its one authority is the telemetry
+ *       token's ingest-only capability, minted exclusively onto the
+ *       stateless {@code sdt1.} credential by the analytics module's
+ *       authentication filter. No {@link RolePermissions} mapping
+ *       carries a capability scope (RolePermissionsTest enforces the
+ *       invariant) — the catalog entry exists so the annotation
+ *       checklist resolves the ingest route's {@code hasAuthority}
+ *       leg.</li>
  * </ul>
  *
  * <p>Values are never removed once an endpoint has required them; new
@@ -193,7 +202,16 @@ public enum Permission {
     // see the reports, and the SECURITY_ISSUE restricted visibility
     // keeps its own bar above both (the triage actions conceal those
     // rows exactly as the reads do).
-    APP_FEEDBACK_TRIAGE("app:feedback:triage");
+    APP_FEEDBACK_TRIAGE("app:feedback:triage"),
+    // Issue #72 (S15-01): the tester telemetry token's ONE authority —
+    // the ingest-only capability the analytics module's authentication
+    // filter mints onto every sdt1. credential. Cataloged so the
+    // annotation checklist (EndpointSecurityAnnotationTest) resolves
+    // the ingest route's hasAuthority leg, but deliberately NOT a role
+    // permission: no RolePermissions mapping carries it and no user
+    // authentication can hold it — the stateless HMAC token is its
+    // only issuance path, which is what makes the capability narrow.
+    ANALYTICS_TELEMETRY_INGEST("analytics:telemetry:ingest"); // issue #72 (S15-01)
 
     private final String code;
 

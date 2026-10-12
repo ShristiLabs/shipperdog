@@ -114,15 +114,26 @@ numbers. The receipt is `{rows, from, to}` (rows written or refreshed).
 
 ## The frozen SDK events contract (S15-01 implements this)
 
-`POST /api/v1/tenants/{tenantId}/analytics/events`
-(tenant:analytics:ingest — tenant administrators until S15-01's device
-authentication evolves the authority; the CONTRACT does not change):
+`POST /api/v1/tenants/{tenantId}/analytics/events` — two authorities
+since S15-01 (issue #72): the tenant administrator's
+`tenant:analytics:ingest` (the CI and operations path) and the
+tester telemetry SDK's token (`sdt1.…`, minted by the S8-04 download
+issuance — see [telemetry-sdk](telemetry-sdk.md)). The token carries
+exactly one authority (`analytics:telemetry:ingest`) and its
+bindings are enforced per batch: the path tenant and every event's
+release must be the token's own, a device-bound token accepts only
+its device, and any named device must be the downloading tester's
+own ACTIVE device — every misbinding the concealed 404 or the
+field-addressed refusal, never a landed row attributed to another
+reporter. The BODY contract changed only additively (the `eventId`
+member S15-01 froze in advance):
 
 ```json
 {
   "events": [
     {"type": "INSTALL", "result": "SUCCEEDED", "releaseId": "...",
-     "deviceId": "optional", "occurredAt": "2026-10-05T12:00:00Z"},
+     "deviceId": "optional", "eventId": "optional client UUID",
+     "occurredAt": "2026-10-05T12:00:00Z"},
     {"type": "SESSION", "releaseId": "...", "occurredAt": "...",
      "sessions": 100, "crashSessions": 2, "anrSessions": 1},
     {"type": "UNINSTALL", "releaseId": "...", "occurredAt": "..."},
@@ -142,11 +153,12 @@ counts whose sum stays inside the total; `occurredAt` may lag arbitrarily
 not lead by more than five minutes. Whole-batch validation: one invalid
 event lands nothing, and the field-keyed `errors` report names every
 offender. Rows are append-only — corrections are new events. Delivery
-is at-least-once with no dedup key in this contract: a retried batch
-lands twice, and while the rate metrics self-correct (a retry doubles
-numerator and denominator alike), the count metrics (`INSTALLATIONS`)
-do not — the optional client event id S15-01 may add is additive to
-this contract. The ingest
+is at-least-once: a batch WITHOUT client event ids may land twice on a
+retry (the rate metrics self-correct — a retry doubles numerator and
+denominator alike — the count metrics do not), while a batch WITH them
+lands at most once per (device, release, event id) — the V54 dedup
+index, and the receipt's additive `deduplicated` count says how many
+at-least-once duplicates were recognized and dropped. The ingest
 is audited as `ANALYTICS_EVENTS_INGESTED` with the batch's shape (counts
 by type, the release ref); device identifiers never reach the audit trail.
 

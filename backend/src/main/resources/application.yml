@@ -180,6 +180,18 @@ shipperdog:
       lookback: ${ANALYTICS_ROLLUP_LOOKBACK:PT24H}
     max-series-window: ${ANALYTICS_MAX_SERIES_WINDOW:P366D}
     max-hourly-span: ${ANALYTICS_MAX_HOURLY_SPAN:P31D}
+  # The tester telemetry SDK (issue #72, S15-01, PRD 37): the HMAC
+  # credential the S8-04 download issuance mints beside the signed
+  # URL and the frozen events contract's SDK authentication accepts.
+  # The TTL is the telemetry credential's lifetime (a beta test
+  # cycle's honest horizon — the binary's URL TTL is the download
+  # tier's own 15 minutes); the key's rotation is the break-glass
+  # revocation of every minted token. Local default is a dev-only
+  # value exactly like the JWT secret's local default; production
+  # supplies a real secret through the environment.
+  telemetry:
+    token-ttl: ${TELEMETRY_TOKEN_TTL:P90D}
+    token-key: ${TELEMETRY_TOKEN_KEY:shipperdog-local-telemetry-key}
   # The domain-event bus and notification service (issue #51, S12-01,
   # FR-023, PRD 51): the transactional-outbox relay's schedule and
   # ceilings, and the delivery retry policy every channel shares

@@ -69,19 +69,27 @@ export default function FeedbackDialog({
   builds = [],
   open,
   onClose,
+  initialDescription = "",
 }: {
   context: FeedbackContext;
   versionName: string;
   builds?: FeedbackBuildOption[];
   open: boolean;
   onClose: () => void;
+  /**
+   * The deep-link prefill (S15-01, issue #72): the embedded SDK's
+   * feedback handoff opens this dialog with the tester's crash
+   * context already in the description (a capped hint, never a full
+   * stack — the URL is not a log shipper).
+   */
+  initialDescription?: string;
 }) {
   const theme = useTheme();
   const fullScreen = useMediaQuery(theme.breakpoints.down("md"));
   const fileInput = useRef<HTMLInputElement>(null);
 
   const [type, setType] = useState<FeedbackType>("BUG");
-  const [description, setDescription] = useState("");
+  const [description, setDescription] = useState(initialDescription);
   const [deviceModel, setDeviceModel] = useState("");
   const [os, setOs] = useState(() => deriveOsFromUserAgent(navigator.userAgent));
   const [artifactId, setArtifactId] = useState("");

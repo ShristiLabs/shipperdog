@@ -1,6 +1,7 @@
 package com.shipperdog.api.analytics.internal.service;
 
 import com.shipperdog.api.analytics.AnalyticsException;
+import com.shipperdog.api.analytics.TelemetryTokenPrincipal;
 import com.shipperdog.api.analytics.internal.entity.AnalyticsEventEntity;
 import com.shipperdog.api.analytics.internal.entity.AnalyticsEventEntity.Result;
 import com.shipperdog.api.analytics.internal.entity.AnalyticsEventEntity.Type;
@@ -12,14 +13,19 @@ import com.shipperdog.api.device.DeviceAccess;
 import com.shipperdog.api.device.DeviceAccess.DeviceFacts;
 import com.shipperdog.api.release.ReleaseAccess;
 import com.shipperdog.api.release.ReleaseAccess.ReleaseFacts;
+import com.shipperdog.api.tester.TesterAccess;
 import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
+import java.util.Set;
 import java.util.UUID;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -32,13 +38,26 @@ import org.springframework.transaction.annotation.Transactional;
  * tenant (the feedback link's own discipline), and the type's shape
  * is checked in code beside V38's database checks.
  *
- * <p>M2 has no emitters: the authority ({@code
- * tenant:analytics:ingest}) is held by tenant administrators, so CI
- * and operations can exercise the pipeline end to end; S15-01's SDK
- * authentication evolves the authority without touching this
- * contract. The audit records the batch's shape only — counts by
- * type, the release ref — never device identifiers (the identifier
- * never leaving the device module is the standing privacy posture).
+ * <p><strong>The S15-01 authority evolution (issue #72):</strong> the
+ * SDK authenticates with the telemetry token the S8-04 download
+ * issuance minted — the batch's authority becomes the TOKEN's
+ * bindings, enforced here: the path tenant and every event's release
+ * must be the token's own (a mismatch is the concealed
+ * RELEASE_NOT_FOUND, byte-identical to the genuine miss — an
+ * attacker learns nothing), a device-bound token accepts only its
+ * device, and a named device must belong to the TOKEN's tester (the
+ * downloading tester — the "spoofing another tester" acceptance
+ * criterion: there is no client-supplied identity to forge, the
+ * token IS the reporter). Tenant administrators keep the console
+ * path unchanged (CI and operations); the CONTRACT body is
+ * byte-identical for both authorities except the one additive
+ * optional member S15-01 freezes in: the client {@code event_id},
+ * the dedup key that makes at-least-once delivery idempotent by
+ * (device, release, event id).
+ *
+ * <p>The audit records the batch's shape only — counts by type, the
+ * release ref — never device identifiers (the identifier never
+ * leaving the device module is the standing privacy posture).
  *
  * <p>Rows are append-only (corrections are new events); an event's
  * {@code occurredAt} may lag {@code receivedAt} arbitrarily — the
@@ -54,9 +73,18 @@ public class AnalyticsIngestService {
     /** The future skew tolerance: device clocks drift; anything beyond this is refused. */
     private static final Duration MAX_FUTURE_SKEW = Duration.ofMinutes(5);
 
+    /**
+     * The {@code Retry-After} hint a flush-time write collision answers
+     * with: advisory for the SDK (whose retry cadence is the host's next
+     * lifecycle moment), a bound for any other client.
+     */
+    private static final long CONTENTION_RETRY_AFTER_SECONDS = 5;
+
     private final ReleaseAccess releases;
 
     private final DeviceAccess devices;
+
+    private final TesterAccess testers;
 
     private final AnalyticsEventRepository events;
 
@@ -67,23 +95,43 @@ public class AnalyticsIngestService {
     AnalyticsIngestService(
             ReleaseAccess releases,
             DeviceAccess devices,
+            TesterAccess testers,
             AnalyticsEventRepository events,
             AuditEventPublisher audit,
             Clock clock) {
         this.releases = releases;
         this.devices = devices;
+        this.testers = testers;
         this.events = events;
         this.audit = audit;
         this.clock = clock;
     }
 
     /**
-     * Ingests one batch (the frozen contract): whole-batch validation,
-     * whole-batch write — a batch with one invalid event lands nothing
-     * and answers the field-keyed report.
+     * Ingests one batch (the frozen contract) under the console
+     * authority: whole-batch validation, whole-batch write — a batch
+     * with one invalid event lands nothing and answers the
+     * field-keyed report.
      */
     @Transactional
     public IngestReport ingest(UUID actorId, UUID tenantId, List<EventCommand> batch) {
+        return ingest(actorId, tenantId, null, batch);
+    }
+
+    /**
+     * Ingests one batch under either authority: the console path
+     * (tenant administrator) or the SDK path (a parsed telemetry
+     * token whose bindings are enforced below).
+     */
+    @Transactional
+    public IngestReport ingest(
+            UUID actorId, UUID tenantId, TelemetryTokenPrincipal telemetry, List<EventCommand> batch) {
+        // The token's tenant binding: a token of another tenant on
+        // this path is the concealed miss, byte-identical to the
+        // release resolution's own.
+        if (telemetry != null && !telemetry.tenantId().equals(tenantId)) {
+            throw miss();
+        }
         if (batch == null || batch.isEmpty()) {
             throw new AnalyticsException(
                     AnalyticsException.Code.INVALID_REQUEST,
@@ -99,8 +147,12 @@ public class AnalyticsIngestService {
 
         Instant receivedAt = Instant.now(clock);
         Instant futureBound = receivedAt.plus(MAX_FUTURE_SKEW);
+        // The token's tester record, resolved once (the downloading
+        // tester the device ownership check narrows to).
+        UUID tokenTesterId = telemetry == null
+                ? null
+                : testers.testerIdOfUser(telemetry.testerUserId()).orElse(null);
         List<AnalyticsEventEntity> rows = new ArrayList<>(batch.size());
-        Map<String, Integer> typeCounts = new LinkedHashMap<>();
         ReleaseFacts facts = null;
 
         for (EventCommand command : batch) {
@@ -112,6 +164,11 @@ public class AnalyticsIngestService {
             // agree.
             if (command.releaseId() == null) {
                 errors.put("release_id", "release_id is required");
+            } else if (telemetry != null && !telemetry.releaseId().equals(command.releaseId())) {
+                // The token's release binding: an event for any other
+                // release — including one this token's tenant IS
+                // targeted by — is the concealed miss, never a hint.
+                throw miss();
             } else if (facts == null) {
                 facts = resolveRelease(tenantId, command.releaseId());
             } else if (!facts.releaseId().equals(command.releaseId())) {
@@ -120,14 +177,15 @@ public class AnalyticsIngestService {
             Result result = validateResult(type, command.result(), errors);
             int[] sessionShape = validateSessions(type, command, errors);
             Instant occurredAt = validateOccurredAt(command.occurredAt(), futureBound, errors);
-            UUID deviceId = validateDevice(tenantId, command, errors);
+            UUID deviceId = validateDevice(tenantId, telemetry, tokenTesterId, command, errors);
+            UUID eventId = validateEventId(command.eventId(), errors);
             if (!errors.isEmpty()) {
                 throw new AnalyticsException(
                         AnalyticsException.Code.INVALID_REQUEST, "an event of the batch is invalid", errors);
             }
             UUID testerId = deviceId == null
-                    ? null
-                    : devices.factsOf(deviceId).map(DeviceFacts::testerId).orElse(null);
+                    ? tokenTesterId
+                    : devices.factsOf(deviceId).map(DeviceFacts::testerId).orElse(tokenTesterId);
             rows.add(new AnalyticsEventEntity(
                     facts.organizationId(),
                     tenantId,
@@ -142,15 +200,27 @@ public class AnalyticsIngestService {
                     sessionShape[1] < 0 ? null : sessionShape[1],
                     sessionShape[2] < 0 ? null : sessionShape[2],
                     occurredAt,
-                    receivedAt));
-            typeCounts.merge(type.name(), 1, Integer::sum);
+                    receivedAt,
+                    eventId));
         }
 
-        events.saveAll(rows);
+        int deduplicated = land(rows, facts);
+        // land() filters the duplicate rows OUT in place: what remains
+        // in rows is exactly what landed, and the audit's per-type
+        // counts are computed from those survivors — never the
+        // pre-dedup batch shape.
+        int landed = rows.size();
+        Map<String, Integer> typeCounts = new LinkedHashMap<>();
+        for (AnalyticsEventEntity row : rows) {
+            typeCounts.merge(row.eventType().name(), 1, Integer::sum);
+        }
 
         Map<String, String> detail = new LinkedHashMap<>();
         detail.put("releaseRef", facts.releaseRef());
-        detail.put("count", Integer.toString(rows.size()));
+        detail.put("count", Integer.toString(landed));
+        if (deduplicated > 0) {
+            detail.put("deduplicated", Integer.toString(deduplicated));
+        }
         typeCounts.forEach(
                 (type, count) -> detail.put(type.toLowerCase(java.util.Locale.ROOT), Integer.toString(count)));
         audit.publish(AuditEvent.builder(AuditEventType.ANALYTICS_EVENTS_INGESTED)
@@ -164,8 +234,78 @@ public class AnalyticsIngestService {
                 .detail(detail)
                 .build());
 
-        return new IngestReport(rows.size(), facts.releaseRef());
+        return new IngestReport(landed, facts.releaseRef(), deduplicated);
     }
+
+    /**
+     * Lands the batch once: the client-id dedup re-filter (the
+     * (device, release, event id) key of V54) ahead of the write. The
+     * unique index stays the race backstop — a concurrent batch that
+     * lands one of our keys between the probe and the flush aborts
+     * THIS transaction, and the violation is mapped honestly: 503
+     * with {@code Retry-After}, never an in-transaction retry (a
+     * constraint violation poisons the PostgreSQL transaction, so any
+     * re-probe inside it would fail with "current transaction is
+     * aborted" and surface a 500). The SDK's offline queue keeps 5xx
+     * batches and re-sends them — at-least-once delivery holds, and
+     * the retried batch's probe dedups the rows that raced it.
+     */
+    private int land(List<AnalyticsEventEntity> rows, ReleaseFacts facts) {
+        int deduplicated = dropLandedDuplicates(rows, facts.releaseId());
+        if (rows.isEmpty()) {
+            return deduplicated;
+        }
+        try {
+            events.saveAll(rows);
+            events.flush();
+        } catch (DataIntegrityViolationException race) {
+            throw new AnalyticsException(
+                    AnalyticsException.Code.INGEST_WRITE_CONTENTION,
+                    "a concurrent batch landed one of this batch's events",
+                    CONTENTION_RETRY_AFTER_SECONDS);
+        }
+        return deduplicated;
+    }
+
+    /**
+     * Removes every row whose (device, event id) key has already
+     * landed (the probe) or appears twice in this batch (intra-batch
+     * dedup) — returning how many were dropped.
+     */
+    private int dropLandedDuplicates(List<AnalyticsEventEntity> rows, UUID releaseId) {
+        boolean anyClientIds = rows.stream().anyMatch(row -> row.eventId() != null);
+        if (!anyClientIds) {
+            return 0;
+        }
+        List<UUID> ids = rows.stream()
+                .map(AnalyticsEventEntity::eventId)
+                .filter(Objects::nonNull)
+                .toList();
+        Set<ClientKey> landed = new HashSet<>();
+        for (Object[] pair : events.landedClientIds(releaseId, ids)) {
+            landed.add(new ClientKey((UUID) pair[0], (UUID) pair[1]));
+        }
+        Set<ClientKey> seenInBatch = new HashSet<>();
+        int before = rows.size();
+        rows.removeIf(row -> {
+            if (row.eventId() == null) {
+                return false;
+            }
+            ClientKey key = new ClientKey(row.deviceId(), row.eventId());
+            if (landed.contains(key) || !seenInBatch.add(key)) {
+                return true;
+            }
+            return false;
+        });
+        return before - rows.size();
+    }
+
+    /**
+     * The (device, event id) composite key — a record, so both UUIDs
+     * hash in full (never a 32-bit truncation), and device-null events
+     * share one device-less space, the index's sentinel semantics.
+     */
+    private record ClientKey(UUID deviceId, UUID eventId) {}
 
     private ReleaseFacts resolveRelease(UUID tenantId, UUID releaseId) {
         return releases.telemetryFactsOf(releaseId, tenantId).orElseThrow(AnalyticsIngestService::miss);
@@ -252,8 +392,33 @@ public class AnalyticsIngestService {
         return occurredAt;
     }
 
-    /** A named device must be the reporting tenant's own ACTIVE device (the feedback link's discipline). */
-    private UUID validateDevice(UUID tenantId, EventCommand command, Map<String, String> errors) {
+    /**
+     * A named device must be the reporting tenant's own ACTIVE device
+     * (the feedback link's discipline) — and under a telemetry token,
+     * one of the TOKEN's own: a device-bound token accepts only its
+     * device, and any named device must belong to the downloading
+     * tester (the spoofing refusal — another tester's device id in
+     * the batch is the same field-addressed refusal, never a landed
+     * row attributed to someone else). A token whose tester record no
+     * longer resolves (the tester deleted, the unbound 90-day token
+     * outliving them) names no tester — so it may name NO device
+     * either: the narrowing refuses rather than silently widening to
+     * the tenant's whole active fleet. Device-less events still land
+     * (there is no device identity to spoof; the attribution is
+     * simply absent).
+     */
+    private UUID validateDevice(
+            UUID tenantId,
+            TelemetryTokenPrincipal telemetry,
+            UUID tokenTesterId,
+            EventCommand command,
+            Map<String, String> errors) {
+        if (telemetry != null && telemetry.deviceId() != null) {
+            if (!telemetry.deviceId().equals(command.deviceId())) {
+                errors.put("device_id", "the device did not resolve for this tenant");
+                return command.deviceId();
+            }
+        }
         if (command.deviceId() == null) {
             return null;
         }
@@ -262,8 +427,26 @@ public class AnalyticsIngestService {
             // The concealed miss of the feedback link: unknown, foreign,
             // and parked are one answer.
             errors.put("device_id", "the device did not resolve for this tenant");
+        } else if (telemetry != null && (tokenTesterId == null || !tokenTesterId.equals(device.testerId()))) {
+            // The token's tester must resolve AND own the named device;
+            // an unresolvable tester record is the same field-addressed
+            // refusal, never a widening of the check.
+            errors.put("device_id", "the device did not resolve for this tenant");
         }
         return command.deviceId();
+    }
+
+    /** The optional client event id: a UUID when present, the dedup key's own member (V54). */
+    private static UUID validateEventId(String eventId, Map<String, String> errors) {
+        if (eventId == null || eventId.isBlank()) {
+            return null;
+        }
+        try {
+            return UUID.fromString(eventId.trim());
+        } catch (IllegalArgumentException e) {
+            errors.put("event_id", "event_id must be a UUID");
+            return null;
+        }
     }
 
     /** One event of the frozen contract, as the API receives it. */
@@ -272,11 +455,17 @@ public class AnalyticsIngestService {
             String result,
             UUID releaseId,
             UUID deviceId,
+            String eventId,
             Instant occurredAt,
             Integer sessions,
             Integer crashSessions,
             Integer anrSessions) {}
 
-    /** The batch's receipt: how many events landed, against which release ref. */
-    public record IngestReport(int ingested, String releaseRef) {}
+    /**
+     * The batch's receipt: how many events landed, against which
+     * release ref, and how many at-least-once duplicates were
+     * recognized and dropped (the additive S15-01 member — zero for
+     * every batch without client event ids).
+     */
+    public record IngestReport(int ingested, String releaseRef, int deduplicated) {}
 }

@@ -101,6 +101,7 @@ public class ArtifactDownloadService {
     private final ArtifactStorageProperties storageProperties;
     private final ArtifactDownloadProperties downloadProperties;
     private final DownloadTokenCodec tokens;
+    private final DownloadTelemetryService telemetry;
     private final ObjectProvider<AuthorizationService> authorization;
     private final org.springframework.beans.factory.ObjectProvider<
                     com.shipperdog.api.distribution.ChannelDistributionRoutes>
@@ -122,6 +123,7 @@ public class ArtifactDownloadService {
             ArtifactStorageProperties storageProperties,
             ArtifactDownloadProperties downloadProperties,
             DownloadTokenCodec tokens,
+            DownloadTelemetryService telemetry,
             ObjectProvider<AuthorizationService> authorization,
             org.springframework.beans.factory.ObjectProvider<com.shipperdog.api.distribution.ChannelDistributionRoutes>
                     storeChannels,
@@ -140,6 +142,7 @@ public class ArtifactDownloadService {
         this.storageProperties = storageProperties;
         this.downloadProperties = downloadProperties;
         this.tokens = tokens;
+        this.telemetry = telemetry;
         this.authorization = authorization;
         this.storeChannels = storeChannels;
         this.stagedRollouts = stagedRollouts;
@@ -156,8 +159,11 @@ public class ArtifactDownloadService {
     /**
      * The ALLOWED download issuance answer: the addressing the caller
      * supplied, the routed channel and behavior the portal renders
-     * guidance from, and the signed URL with its expiry — never the
-     * storage key, never a reason code on deny.
+     * guidance from, the signed URL with its expiry — never the
+     * storage key, never a reason code on deny — and, since S15-01,
+     * the telemetry block the embedded SDK consumes (absent when the
+     * reporter pairing does not resolve — additive evidence, never a
+     * download gate).
      */
     public record DownloadIssuanceView(
             UUID artifactId,
@@ -168,7 +174,27 @@ public class ArtifactDownloadService {
             String url,
             Instant expiresAt,
             String fileName,
-            long sizeBytes) {}
+            long sizeBytes,
+            TelemetryIssuance telemetry) {}
+
+    /**
+     * The tester telemetry SDK's pairing block (issue #72, S15-01):
+     * the opaque ingest token the download minted for (this tester,
+     * this tenant, this release, optionally this device), its expiry,
+     * and the addressing the SDK's configuration needs — the ids the
+     * deep-linked feedback handoff and the ingest URL build from.
+     * Nothing here is a secret beyond the token itself, and the token
+     * grants exactly one capability: posting THIS release's event
+     * batches to THIS tenant's events contract.
+     */
+    public record TelemetryIssuance(
+            String token,
+            Instant expiresAt,
+            UUID tenantId,
+            UUID applicationId,
+            UUID releaseId,
+            UUID versionId,
+            UUID deviceId) {}
 
     /**
      * Issues one tester download (FR-014's worked example end to end):
@@ -187,7 +213,8 @@ public class ArtifactDownloadService {
      * the artifact read's own two-grain rule, never a layer name.
      */
     @Transactional
-    public DownloadIssuanceView issue(UUID actorId, UUID artifactId, UUID versionId) {
+    public DownloadIssuanceView issue(
+            UUID actorId, UUID artifactId, UUID versionId, UUID tenantParam, UUID deviceParam) {
         Timer.Sample sample = Timer.start(meters);
         AuthorizationDecision decision;
         try {
@@ -209,7 +236,7 @@ public class ArtifactDownloadService {
             if (staged != null && staged.blocksDownload(versionId, actorId)) {
                 throw new ConcealedResourceAccessDeniedException("version");
             }
-            DownloadIssuanceView issued = issueAllowed(actorId, artifactId, versionId);
+            DownloadIssuanceView issued = issueAllowed(actorId, artifactId, versionId, tenantParam, deviceParam);
             sample.stop(generationTimer("issued"));
             return issued;
         } catch (ConcealedResourceAccessDeniedException | ArtifactException | VersionException e) {
@@ -218,7 +245,8 @@ public class ArtifactDownloadService {
         }
     }
 
-    private DownloadIssuanceView issueAllowed(UUID actorId, UUID artifactId, UUID versionId) {
+    private DownloadIssuanceView issueAllowed(
+            UUID actorId, UUID artifactId, UUID versionId, UUID tenantParam, UUID deviceParam) {
         VersionOwnership ownership = versions.ownershipOf(versionId).orElseThrow(() -> versionMissing());
         return inScope(ownership, actorId, () -> {
             ArtifactEntity artifact =
@@ -254,7 +282,11 @@ public class ArtifactDownloadService {
                 // is the deep link (the S8-04 row's itms-beta://), no
                 // platform URL mints, no download counters or events —
                 // Apple's tier delivers the bytes; ShipperDog's
-                // evidence keeps the decision and the handoff.
+                // evidence keeps the decision and the handoff. The
+                // telemetry block mints for the store channels too:
+                // the engine's ALLOW authorized this tester's install
+                // either way, and the SDK riding the store's binary
+                // reports through the same contract.
                 trace.application(ownership.applicationId());
                 trace.version(versionId);
                 trace.artifact(artifactId);
@@ -268,7 +300,10 @@ public class ArtifactDownloadService {
                         TESTFLIGHT_DEEP_LINK,
                         expiresAt,
                         artifact.getFileName(),
-                        artifact.getSize());
+                        artifact.getSize(),
+                        telemetry
+                                .telemetryOf(actorId, ownership, tenantParam, deviceParam)
+                                .orElse(null));
             }
             String url = storageProperties.emulatorMode()
                     ? "/api/v1/downloads/"
@@ -313,7 +348,10 @@ public class ArtifactDownloadService {
                     url,
                     expiresAt,
                     artifact.getFileName(),
-                    artifact.getSize());
+                    artifact.getSize(),
+                    telemetry
+                            .telemetryOf(actorId, ownership, tenantParam, deviceParam)
+                            .orElse(null));
         });
     }
 

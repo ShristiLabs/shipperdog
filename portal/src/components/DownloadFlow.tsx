@@ -12,6 +12,7 @@
 import { useState } from "react";
 import { useMutation } from "@tanstack/react-query";
 import DownloadIcon from "@mui/icons-material/Download";
+import ContentCopyIcon from "@mui/icons-material/ContentCopy";
 import {
   Button,
   CircularProgress,
@@ -20,6 +21,7 @@ import {
   DialogContent,
   DialogTitle,
   Stack,
+  Tooltip,
   Typography,
 } from "@mui/material";
 import { requestDownload, type DownloadIssuance } from "../api/downloads";
@@ -37,17 +39,19 @@ export default function DownloadFlow({
   artifactId,
   versionId,
   platform,
+  tenantId,
 }: {
   artifactId: string;
   versionId: string;
   platform: "IOS" | "ANDROID";
+  tenantId?: string;
 }) {
   const toast = useToast();
   const [issued, setIssued] = useState<DownloadIssuance | null>(null);
   const [denial, setDenial] = useState<ApiError | null>(null);
 
   const issuance = useMutation({
-    mutationFn: () => requestDownload(artifactId, versionId),
+    mutationFn: () => requestDownload(artifactId, versionId, tenantId),
     onSuccess: (answer) => setIssued(answer),
     onError: (error) => {
       if (error instanceof ApiError) {
@@ -109,6 +113,7 @@ export default function DownloadFlow({
                   {issued.fileName ?? "artifact"} · {formatBytes(issued.sizeBytes)} · link valid for about{" "}
                   {minutesLeft(issued.expiresAt)} min
                 </Typography>
+                {issued.telemetry ? telemetrySection(issued) : null}
               </Stack>
             </DialogContent>
             <DialogActions>
@@ -160,6 +165,65 @@ function guidanceTitle(behavior: DownloadIssuance["behavior"]): string {
     return "About direct iOS installs";
   }
   return "This build is distributed through TestFlight";
+}
+
+/**
+ * The telemetry pairing section (S15-01, issue #72): when the
+ * issuance carries the SDK's token, the guidance dialog surfaces it
+ * with a copy action — the handoff a test build's integrator pastes
+ * into the embedded SDK's configuration (docs/telemetry-sdk.md
+ * documents the pairing flows; the token is ingest-only and bound to
+ * this tester, tenant, and release).
+ */
+function telemetrySection(issued: DownloadIssuance) {
+  const telemetry = issued.telemetry;
+  if (!telemetry) {
+    return null;
+  }
+  return (
+    <Stack
+      spacing={0.5}
+      sx={{ borderTop: 1, borderColor: "divider", pt: 1.5 }}
+      data-testid="download-guidance-telemetry"
+    >
+      <Typography variant="subtitle2">This build carries the ShipperDog telemetry SDK</Typography>
+      <Typography variant="body2" color="text.secondary">
+        Its install and session reports attribute to you. Builds you integrate yourself paste this pairing
+        token into the SDK configuration:
+      </Typography>
+      <Stack direction="row" spacing={1} sx={{ alignItems: "center" }}>
+        <Typography
+          variant="body2"
+          sx={{
+            fontFamily: "monospace",
+            overflow: "hidden",
+            textOverflow: "ellipsis",
+            whiteSpace: "nowrap",
+            maxWidth: 320,
+          }}
+          data-testid="download-guidance-telemetry-token"
+        >
+          {telemetry.token}
+        </Typography>
+        <Tooltip title="Copy pairing token">
+          <Button
+            size="small"
+            startIcon={<ContentCopyIcon />}
+            onClick={() => {
+              void navigator.clipboard?.writeText(telemetry.token);
+            }}
+            data-testid="download-guidance-telemetry-copy"
+          >
+            Copy
+          </Button>
+        </Tooltip>
+      </Stack>
+      <Typography variant="caption" color="text.secondary">
+        Reports nothing but installs, sessions, and crash counts for this release — no personal data
+        (docs: telemetry-sdk).
+      </Typography>
+    </Stack>
+  );
 }
 
 function guidanceBody(behavior: DownloadIssuance["behavior"]) {

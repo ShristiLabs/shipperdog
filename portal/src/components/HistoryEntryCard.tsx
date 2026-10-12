@@ -21,12 +21,21 @@ export default function HistoryEntryCard({
   entry,
   tenantId,
   applicationId,
+  autoReport = false,
+  reportHint = "",
 }: {
   entry: HistoryEntry;
   tenantId: string;
   applicationId: string;
+  /**
+   * The deep-link handoff (S15-01, issue #72): the version page the
+   * embedded SDK's feedback link opens arrives with ?report=1 — the
+   * dialog opens itself, with the capped crash hint prefilled.
+   */
+  autoReport?: boolean;
+  reportHint?: string;
 }) {
-  const [reporting, setReporting] = useState(false);
+  const [reporting, setReporting] = useState(autoReport);
 
   return (
     <Card data-testid={`history-entry-${entry.versionId}`}>
@@ -82,6 +91,7 @@ export default function HistoryEntryCard({
             artifactId={slot.artifactId}
             versionId={entry.versionId}
             platform={slot.platform}
+            tenantId={tenantId}
           />
         ))}
         {/* S11-01 (issue #46): the app screen's report entry point —
@@ -102,6 +112,7 @@ export default function HistoryEntryCard({
         open={reporting}
         onClose={() => setReporting(false)}
         versionName={entry.versionName}
+        initialDescription={reportHint}
         context={{ tenantId, applicationId, versionId: entry.versionId }}
         builds={entry.platforms.map((slot) => ({
           artifactId: slot.artifactId,

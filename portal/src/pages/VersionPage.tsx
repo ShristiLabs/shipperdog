@@ -13,7 +13,7 @@ import ArrowBackIcon from "@mui/icons-material/ArrowBack";
 import BugReportIcon from "@mui/icons-material/BugReport";
 import { Box, Button, Card, CardContent, Chip, CircularProgress, Stack, Typography } from "@mui/material";
 import { useState } from "react";
-import { Link as RouterLink, useParams } from "react-router-dom";
+import { Link as RouterLink, useParams, useSearchParams } from "react-router-dom";
 import { ApiError } from "../api/problem";
 import { fetchVersionEntry, HISTORY_STALE_TIME_MS } from "../api/history";
 import FeedbackDialog from "../components/FeedbackDialog";
@@ -23,6 +23,13 @@ import NotFoundPage from "../components/NotFoundPage";
 export default function VersionPage() {
   const { tenantId = "", applicationId = "", versionId = "" } = useParams();
   const [reporting, setReporting] = useState(false);
+  // The S15-01 deep-link handoff (issue #72): the embedded SDK's
+  // feedback link arrives as ?report=1&hint=<capped crash summary> —
+  // the page opens its report dialog with the hint prefilled (the
+  // tester edits and submits; nothing posts itself).
+  const [searchParams] = useSearchParams();
+  const reportDeepLink = searchParams.get("report") === "1";
+  const reportHint = searchParams.get("hint") ?? "";
 
   const probe = useQuery({
     queryKey: ["history-entry", tenantId, applicationId, versionId],
@@ -110,7 +117,13 @@ export default function VersionPage() {
       ) : null}
 
       {probe.isSuccess && entry ? (
-        <HistoryEntryCard entry={entry} tenantId={tenantId} applicationId={applicationId} />
+        <HistoryEntryCard
+          entry={entry}
+          tenantId={tenantId}
+          applicationId={applicationId}
+          autoReport={reportDeepLink}
+          reportHint={reportHint}
+        />
       ) : null}
 
       {entry ? (

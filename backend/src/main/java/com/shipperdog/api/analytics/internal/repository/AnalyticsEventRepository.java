@@ -3,6 +3,7 @@ package com.shipperdog.api.analytics.internal.repository;
 import com.shipperdog.api.analytics.internal.entity.AnalyticsEventEntity;
 import com.shipperdog.api.analytics.internal.entity.AnalyticsEventEntity.Result;
 import com.shipperdog.api.analytics.internal.entity.AnalyticsEventEntity.Type;
+import java.util.Collection;
 import java.util.List;
 import java.util.UUID;
 import org.springframework.data.jpa.repository.JpaRepository;
@@ -39,4 +40,16 @@ public interface AnalyticsEventRepository extends JpaRepository<AnalyticsEventEn
             + "from AnalyticsEventEntity e "
             + "where e.releaseId = :releaseId and e.eventType = :eventType")
     List<Object[]> sessionArithmeticOf(@Param("releaseId") UUID releaseId, @Param("eventType") Type eventType);
+
+    /**
+     * The (device, event id) pairs already landed for the release's
+     * batch (S15-01, V54) — the dedup probe the ingest re-filters a
+     * batch through before any write, so at-least-once delivery lands
+     * at most once per (device, release, event id). A device-less
+     * event dedups against the null device (the unique index's
+     * sentinel semantics, mirrored here).
+     */
+    @Query("select e.deviceId, e.eventId from AnalyticsEventEntity e "
+            + "where e.releaseId = :releaseId and e.eventId in :eventIds")
+    List<Object[]> landedClientIds(@Param("releaseId") UUID releaseId, @Param("eventIds") Collection<UUID> eventIds);
 }

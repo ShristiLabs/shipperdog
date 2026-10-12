@@ -110,6 +110,12 @@ Current contents:
   the facts-to-rollups-to-reads pipeline, the frozen S15-01 SDK events
   contract, the rollup job and its backfill, and the gate/policy
   metric seams the pipeline registers on (S11-04)
+- [Tester telemetry SDK](telemetry-sdk.md) — the embedded SDK of
+  PRD §37 (S15-01): the Kotlin/Android and Swift/iOS libraries with
+  their ≤ 5-line integrations, the telemetry token the download
+  issuance mints (the events contract's SDK authority), offline
+  batching with (device, release, event id) dedup, chainable crash
+  context, the feedback deep link, and the size/battery budgets
 - [Dashboards](dashboards.md) — the console's landing surfaces (S11-05):
   the organization dashboard (counts, per-application release health
   with the BLOCKED/TESTING/HEALTHY derivation, role-filtered pending

@@ -63,6 +63,21 @@ CLI (from `cli/`, since S5-06 — see [docs/cli.md]):
 - Go 1.26; two direct deps (cobra, x/term) exact-pinned via go.mod +
   committed go.sum.
 
+Tester telemetry SDK (from `sdk/android` and `sdk/ios`, since S15-01 —
+see [docs/telemetry-sdk.md]):
+
+- Kotlin/Android (from `sdk/android`, Gradle wrapper, JDK 21+):
+  build-cmd/test-cmd: `./gradlew --no-daemon build` (core module's
+  JVM test suite; adapter + sample compile against the compileOnly
+  Robolectric android-all framework stub). Zero runtime deps; the
+  built jars must stay under 200 KB combined (sdk-ci asserts it).
+- iOS/Swift (from `sdk/`, Swift Package, Xcode toolchain):
+  test-cmd: `swift test`; iOS-path typecheck:
+  `xcrun -sdk iphonesimulator swiftc -typecheck -target
+  arm64-apple-ios18.0-simulator Sources/ShipperDogTelemetry/*.swift`.
+  Zero external deps; the stripped static library must stay under
+  200 KB (sdk-ci asserts it).
+
 ## Conventions
 
 - Conventional Commits (feat/fix/chore/docs/test/ci).
@@ -81,6 +96,7 @@ CLI (from `cli/`, since S5-06 — see [docs/cli.md]):
 | frontend | frontend/ | Admin console: React 19 + TS strict + MUI 9 + React Query 5 + Router 7 on Vite 7 (S2-04) |
 | portal | portal/ | Tester portal: React 19 + TS strict + MUI 9 + React Query 5 + Router 7 on Vite 7, separate app on :5174 (S8-01) |
 | cli | cli/ | Go 1.26 developer CLI: login, artifact upload/list/view/revalidate, version list (S5-06); release create/list/get/transition/promote, release manifest (S9-06) |
+| sdk | sdk/ | Tester telemetry SDK (S15-01): `sdk/android` Kotlin/JVM core + Android adapter + sample (Gradle), `sdk/ios` Swift package + demo — zero runtime deps, < 200 KB per platform |
 | infrastructure | infrastructure/ | local docker compose stack (API, console, portal, data, observability) + terraform Cloud Run deployment, smoke + security-header checks (S8-05) |
 | docs | docs/ | developer docs |
 | workflows | .github/workflows/ | GitHub Actions CI (backend-ci + frontend-ci incl. portal job + cli-ci) |

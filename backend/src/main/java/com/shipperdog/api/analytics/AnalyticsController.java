@@ -139,14 +139,21 @@ public class AnalyticsController {
      * with its type's shape (docs/analytics.md carries the worked
      * bodies). Rows are append-only; late {@code occurredAt} heals
      * through the job's lookback or the recompute trigger.
+     *
+     * <p>Two authorities since S15-01: the tenant administrator's
+     * {@code tenant:analytics:ingest} (the CI and operations path)
+     * and the SDK's telemetry token — the one authority that
+     * credential carries, its bindings enforced in the service.
      */
     @PostMapping("/api/v1/tenants/{tenantId}/analytics/events")
     @ResponseStatus(HttpStatus.CREATED)
-    @PreAuthorize("hasPermission(#tenantId, 'tenant', 'tenant:analytics:ingest')")
+    @PreAuthorize(
+            "hasAuthority('analytics:telemetry:ingest') or hasPermission(#tenantId, 'tenant', 'tenant:analytics:ingest')")
     AnalyticsIngestService.IngestReport ingestEvents(
             @AuthenticationPrincipal Object principal,
             @PathVariable UUID tenantId,
             @RequestBody AnalyticsEventBatchRequest request) {
+        TelemetryTokenPrincipal telemetry = principal instanceof TelemetryTokenPrincipal token ? token : null;
         List<EventCommand> batch = request.events() == null
                 ? List.of()
                 : request.events().stream()
@@ -155,12 +162,13 @@ public class AnalyticsController {
                                 event.result(),
                                 event.releaseId(),
                                 event.deviceId(),
+                                event.eventId(),
                                 parseInstant("occurred_at", event.occurredAt()),
                                 event.sessions(),
                                 event.crashSessions(),
                                 event.anrSessions()))
                         .toList();
-        return ingest.ingest(requireUserId(principal), tenantId, batch);
+        return ingest.ingest(requireUserId(principal), tenantId, telemetry, batch);
     }
 
     /**
@@ -219,6 +227,9 @@ public class AnalyticsController {
         if (principal instanceof AuthenticatedPrincipal patPrincipal) {
             return patPrincipal.userId();
         }
+        if (principal instanceof TelemetryTokenPrincipal telemetry) {
+            return telemetry.testerUserId();
+        }
         throw new AnalyticsException(AnalyticsException.Code.INVALID_REQUEST, "no authenticated principal");
     }
 
@@ -231,6 +242,7 @@ public class AnalyticsController {
             String result,
             UUID releaseId,
             UUID deviceId,
+            String eventId,
             String occurredAt,
             Integer sessions,
             Integer crashSessions,

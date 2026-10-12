@@ -33,14 +33,43 @@ export interface DownloadIssuance {
   expiresAt: string;
   fileName: string | null;
   sizeBytes: number;
+  /**
+   * The tester telemetry SDK's pairing block (S15-01, issue #72),
+   * present when the download's reporter pairing resolved: the
+   * ingest token for THIS tester, tenant, and release — the value a
+   * test build's embedded SDK configures. Absent on unpaired
+   * downloads (telemetry is additive evidence, never a download
+   * gate).
+   */
+  telemetry: TelemetryIssuance | null;
+}
+
+/** The telemetry block of a paired download (the SDK's configuration). */
+export interface TelemetryIssuance {
+  token: string;
+  expiresAt: string;
+  tenantId: string;
+  applicationId: string;
+  releaseId: string;
+  versionId: string;
+  deviceId: string | null;
 }
 
 /**
  * Requests one download issuance for the artifact a history slot
  * named (the slot's artifactId beside its versionId — the addressing
- * the decision already ran against server-side).
+ * the decision already ran against server-side). The tenantId is the
+ * portal's membership tenant: the telemetry token binds the
+ * downloading tester's reporting context to it (S15-01).
  */
-export async function requestDownload(artifactId: string, versionId: string): Promise<DownloadIssuance> {
+export async function requestDownload(
+  artifactId: string,
+  versionId: string,
+  tenantId?: string,
+): Promise<DownloadIssuance> {
   const params = new URLSearchParams({ version_id: versionId });
+  if (tenantId) {
+    params.set("tenant_id", tenantId);
+  }
   return apiFetch<DownloadIssuance>(`/artifacts/${artifactId}/download?${params.toString()}`);
 }

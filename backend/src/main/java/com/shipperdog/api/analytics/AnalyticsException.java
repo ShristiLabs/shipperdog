@@ -49,7 +49,20 @@ public class AnalyticsException extends RuntimeException {
          * event whose shape the type refuses.
          */
         ANALYTICS_REQUEST_REFUSED(
-                HttpStatus.UNPROCESSABLE_ENTITY, "ANALYTICS_REQUEST_REFUSED", "The analytics request is refused.");
+                HttpStatus.UNPROCESSABLE_ENTITY, "ANALYTICS_REQUEST_REFUSED", "The analytics request is refused."),
+        /**
+         * A flush-time collision with a concurrent batch on the V54
+         * dedup index (S15-01): the whole transaction aborts and the
+         * batch is retried by the SDK, whose offline queue keeps 5xx
+         * batches — at-least-once delivery holds, and the retried
+         * batch's probe dedups the rows that raced it. Never retried
+         * inside the aborted transaction; answers 503 with
+         * {@code Retry-After}.
+         */
+        INGEST_WRITE_CONTENTION(
+                HttpStatus.SERVICE_UNAVAILABLE,
+                "INGEST_WRITE_CONTENTION",
+                "The batch collided with a concurrent write; retry the batch.");
 
         final HttpStatus httpStatus;
         final String code;
@@ -66,19 +79,36 @@ public class AnalyticsException extends RuntimeException {
 
     private final Map<String, String> errors;
 
+    private final long retryAfterSeconds;
+
     public AnalyticsException(Code code, String message) {
-        this(code, message, Map.of());
+        this(code, message, Map.of(), 0);
     }
 
     /** A rejection carrying a field-to-message report for the {@code errors} member. */
     public AnalyticsException(Code code, String message, Map<String, String> errors) {
+        this(code, message, errors, 0);
+    }
+
+    /** A retryable failure carrying the {@code Retry-After} hint in seconds. */
+    public AnalyticsException(Code code, String message, long retryAfterSeconds) {
+        this(code, message, Map.of(), retryAfterSeconds);
+    }
+
+    private AnalyticsException(Code code, String message, Map<String, String> errors, long retryAfterSeconds) {
         super(message);
         this.code = code;
         this.errors = Map.copyOf(errors);
+        this.retryAfterSeconds = retryAfterSeconds;
     }
 
     public Code code() {
         return code;
+    }
+
+    /** The {@code Retry-After} hint in seconds; zero when the failure is not retryable. */
+    public long retryAfterSeconds() {
+        return retryAfterSeconds;
     }
 
     /** The RFC 7807 envelope for this failure (issue #8), with the {@code errors} member when present. */

@@ -201,6 +201,18 @@ public interface ReleaseAccess {
     Optional<ReleaseFacts> telemetryFactsOf(UUID releaseId, UUID reporterTenantId);
 
     /**
+     * The telemetry resolution on the download's own addressing
+     * (S15-01, issue #72): the release of (application, version)
+     * answered only when the reporting tenant is one of its targets —
+     * {@link #telemetryFactsOf}'s resolution keyed the way the S8-04
+     * issuance addresses the binary, so the token mint and the ingest
+     * probe resolve the SAME release for the same download. Empty for
+     * an unknown pair, a version without a release, and a release the
+     * tenant is not targeted by (the same concealment).
+     */
+    Optional<ReleaseFacts> telemetryFactsOfVersion(UUID applicationId, UUID versionId, UUID reporterTenantId);
+
+    /**
      * Carries an ACTIVE release across PRD 17's ROLLED_BACK edge
      * (S13-06, issue #66, AC4 — the orchestrated rollback's
      * release-side half): the same transition ceremony the operator
