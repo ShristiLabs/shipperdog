@@ -1,0 +1,41 @@
+# companion-ci (issue #73, S15-02): the Android companion app's gate —
+# the spike's own cost bar, deliberately cheap: the pure-JVM core's
+# full test suite plus the debug APKs of the app and the demo install
+# target (the sdk-ci precedent: one workflow, one component; no
+# emulator, no lint matrix, no device tests — the spike memo
+# documents what productionization would add). The Android SDK is
+# preinstalled on the runner with licenses accepted; AGP provisions
+# the missing platform pieces itself.
+name: companion-ci
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: companion (Kotlin/Android)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: companion
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+
+      - name: Test the core and assemble the APKs
+        run: ./gradlew --no-daemon :core:test :app:assembleDebug :demo:assembleDebug
+
+      - name: Prove the artifacts exist
+        run: |
+          test -s app/build/outputs/apk/debug/app-debug.apk
+          test -s demo/build/outputs/apk/debug/demo-debug.apk
+          ls -la app/build/outputs/apk/debug/ demo/build/outputs/apk/debug/

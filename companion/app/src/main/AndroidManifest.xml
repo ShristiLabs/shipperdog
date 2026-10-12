@@ -1,0 +1,43 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- The companion app's manifest (issue #73, S15-02): INTERNET is the
+     API surface's obvious need; REQUEST_INSTALL_PACKAGES is the
+     sideloading authority Android 8.0+ gates behind the per-app
+     "install unknown apps" consent (the tester grants it once, in
+     system settings — the app routes there itself when the check
+     fails; the policy constraints are the memo's own section).
+     Cleartext is enabled for the local compose stack's emulator
+     deployments (http://10.0.2.2:8080) — production would pin HTTPS
+     through a network security config instead. -->
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <uses-permission android:name="android.permission.INTERNET" />
+    <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
+
+    <application
+        android:label="@string/app_name"
+        android:theme="@android:style/Theme.Material.Light.DarkActionBar"
+        android:usesCleartextTraffic="true"
+        android:allowBackup="false">
+
+        <activity
+            android:name=".app.LoginActivity"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity>
+
+        <activity
+            android:name=".app.CatalogActivity"
+            android:exported="false" />
+
+        <!-- The PackageInstaller status callback: the commit's
+             PendingIntent targets this receiver explicitly (package
+             scoped), so it stays unexported — only this app's own
+             pending installs reach it. -->
+        <receiver
+            android:name=".app.InstallReceiver"
+            android:exported="false" />
+    </application>
+</manifest>

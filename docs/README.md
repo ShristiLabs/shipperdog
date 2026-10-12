@@ -116,6 +116,16 @@ Current contents:
   issuance mints (the events contract's SDK authority), offline
   batching with (device, release, event id) dedup, chainable crash
   context, the feedback deep link, and the size/battery budgets
+- [Companion app spike](companion-spike.md) — the S15-02 decision
+  memo for PRD §38's conditional Android companion installer app:
+  the working prototype in companion/ (catalog, PackageInstaller
+  flow, update tracking — verified against the live stack), the
+  Android platform constraints discovered (consent on every install,
+  no silent updates, Play policy), substrate decisions (portal
+  session auth; the SDK doctrine, not its code), platform gaps
+  productionization would close, the build-cost estimate, and the
+  explicit no-go-on-productionization-today verdict with concrete
+  revisit triggers
 - [Dashboards](dashboards.md) — the console's landing surfaces (S11-05):
   the organization dashboard (counts, per-application release health
   with the BLOCKED/TESTING/HEALTHY derivation, role-filtered pending
