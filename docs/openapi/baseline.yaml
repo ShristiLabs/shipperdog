@@ -6233,6 +6233,18 @@ paths:
         schema:
           type: string
           format: uuid
+      - name: tenant_id
+        in: query
+        required: false
+        schema:
+          type: string
+          format: uuid
+      - name: device_id
+        in: query
+        required: false
+        schema:
+          type: string
+          format: uuid
       responses:
         "200":
           description: OK
@@ -7549,9 +7561,7 @@ components:
     JsonNode:
       type: object
       properties:
-        string:
-          type: boolean
-        valueNode:
+        container:
           type: boolean
         nodeType:
           type: string
@@ -7565,11 +7575,17 @@ components:
           - OBJECT
           - POJO
           - STRING
+        string:
+          type: boolean
+        integralNumber:
+          type: boolean
         missingNode:
+          type: boolean
+        valueNode:
           type: boolean
         pojo:
           type: boolean
-        integralNumber:
+        number:
           type: boolean
         short:
           type: boolean
@@ -7591,10 +7607,6 @@ components:
         binary:
           type: boolean
         floatingPointNumber:
-          type: boolean
-        number:
-          type: boolean
-        container:
           type: boolean
         empty:
           type: boolean
@@ -7953,6 +7965,8 @@ components:
         deviceId:
           type: string
           format: uuid
+        eventId:
+          type: string
         occurredAt:
           type: string
         sessions:
@@ -7972,6 +7986,9 @@ components:
           format: int32
         releaseRef:
           type: string
+        deduplicated:
+          type: integer
+          format: int32
     LinkRequest:
       type: object
       properties:
@@ -11109,6 +11126,31 @@ components:
         sizeBytes:
           type: integer
           format: int64
+        telemetry:
+          $ref: "#/components/schemas/TelemetryIssuance"
+    TelemetryIssuance:
+      type: object
+      properties:
+        token:
+          type: string
+        expiresAt:
+          type: string
+          format: date-time
+        tenantId:
+          type: string
+          format: uuid
+        applicationId:
+          type: string
+          format: uuid
+        releaseId:
+          type: string
+          format: uuid
+        versionId:
+          type: string
+          format: uuid
+        deviceId:
+          type: string
+          format: uuid
     PageResponseWorkflowView:
       type: object
       properties:

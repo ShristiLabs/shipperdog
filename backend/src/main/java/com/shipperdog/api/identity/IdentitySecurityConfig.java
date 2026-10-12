@@ -1,10 +1,13 @@
 package com.shipperdog.api.identity;
 
+import com.shipperdog.api.analytics.TelemetryTokenAuthenticationFilter;
+import com.shipperdog.api.analytics.TelemetryTokenCodec;
 import com.shipperdog.api.config.ProblemJsonSecurityHandlers;
 import com.shipperdog.api.identity.internal.crypto.SecureTokens;
 import com.shipperdog.api.identity.internal.service.TokenService;
 import com.shipperdog.api.identity.internal.web.PatAuthenticationFilter;
 import java.util.List;
+import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.core.annotation.Order;
@@ -40,7 +43,11 @@ public class IdentitySecurityConfig {
     @Bean
     @Order(1)
     SecurityFilterChain apiSecurityFilterChain(
-            HttpSecurity http, JwtDecoder jwtDecoder, TokenService tokens, ProblemJsonSecurityHandlers problemHandlers)
+            HttpSecurity http,
+            JwtDecoder jwtDecoder,
+            TokenService tokens,
+            ProblemJsonSecurityHandlers problemHandlers,
+            ObjectProvider<TelemetryTokenAuthenticationFilter> telemetryTokens)
             throws Exception {
         PatAuthenticationFilter patFilter = new PatAuthenticationFilter(tokens);
         http.securityMatcher("/api/v1/**")
@@ -94,12 +101,26 @@ public class IdentitySecurityConfig {
                         .permitAll()
                         .anyRequest()
                         .authenticated())
-                .addFilterBefore(patFilter, BearerTokenAuthenticationFilter.class)
-                // The API-surface security headers (issue #39, S8-05):
-                // HSTS, no-referrer, empty Permissions-Policy, and a
-                // default-src 'none' CSP — the same posture the baseline
-                // chain applies below /api/v1 and the origins carry.
-                .headers(com.shipperdog.api.config.SecurityConfig.ApiSecurityHeaders::apply)
+                .addFilterBefore(patFilter, BearerTokenAuthenticationFilter.class);
+        // The tester telemetry SDK's ingest credential (issue
+        // #72, S15-01): the sdt1. prefix is authenticated by
+        // the analytics module's filter, minted by the S8-04
+        // download issuance — the PAT filter's exact doctrine,
+        // one authority (analytics:telemetry:ingest), nothing
+        // else honors it. ObjectProvider keeps identity
+        // decoupled from the analytics module's presence for
+        // sliced test contexts — and where the bean is absent
+        // there is no filter to add (a null registration would
+        // NPE when the chain builds).
+        TelemetryTokenAuthenticationFilter telemetryFilter = telemetryTokens.getIfAvailable();
+        if (telemetryFilter != null) {
+            http.addFilterBefore(telemetryFilter, BearerTokenAuthenticationFilter.class);
+        }
+        // The API-surface security headers (issue #39, S8-05):
+        // HSTS, no-referrer, empty Permissions-Policy, and a
+        // default-src 'none' CSP — the same posture the baseline
+        // chain applies below /api/v1 and the origins carry.
+        http.headers(com.shipperdog.api.config.SecurityConfig.ApiSecurityHeaders::apply)
                 .oauth2ResourceServer(oauth2 -> oauth2.bearerTokenResolver(patAwareBearerTokenResolver())
                         .jwt(jwt -> jwt.decoder(jwtDecoder).jwtAuthenticationConverter(accessTokenOnly())))
                 .exceptionHandling(handling ->
@@ -108,15 +129,18 @@ public class IdentitySecurityConfig {
     }
 
     /**
-     * Keeps the resource server away from personal access tokens: the
-     * {@code sdp_} prefix belongs to the PAT filter, and the default
-     * resolver must not attempt (and fail) JWT decoding for it.
+     * Keeps the resource server away from personal access tokens and
+     * telemetry tokens: the {@code sdp_} and {@code sdt1.} prefixes
+     * belong to their own filters, and the default resolver must not
+     * attempt (and fail) JWT decoding for them.
      */
     private static BearerTokenResolver patAwareBearerTokenResolver() {
         DefaultBearerTokenResolver delegate = new DefaultBearerTokenResolver();
         return request -> {
             String header = request.getHeader(HttpHeaders.AUTHORIZATION);
-            if (header != null && header.startsWith("Bearer " + SecureTokens.PAT_PREFIX)) {
+            if (header != null
+                    && (header.startsWith("Bearer " + SecureTokens.PAT_PREFIX)
+                            || header.startsWith("Bearer " + TelemetryTokenCodec.TOKEN_PREFIX))) {
                 return null;
             }
             return delegate.resolve(request);

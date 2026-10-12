@@ -203,6 +203,14 @@ its expiry, and the download facts — never the storage key.
   API-relative path the nginx `/api` proxy serves same-origin;
   production answers an absolute GCS V4 URL. No portal code sits on
   the fetch path.
+- **The telemetry pairing block (S15-01).** The issuance request
+  carries the page's tenant addressing, and a paired download's
+  answer carries the `telemetry` block — the ingest token a test
+  build's embedded SDK configures (bound to this tester, tenant, and
+  release; [telemetry-sdk](telemetry-sdk.md)). The guidance dialog
+  surfaces the token with a copy action; unpaired downloads render
+  the guidance unchanged (telemetry is additive evidence, never a
+  download gate). `TelemetryGuidance.test.tsx` pins both legs.
 - **Opaque denials.** A concealed denial (no grant, revoked version,
   nothing installable for the platform) renders the same problem
   envelope every portal surface shows — stable code, no layer hints —
@@ -235,6 +243,11 @@ up the centered card.
   proves it in tests. The submission contract is deliberately the one
   the S15-01 in-app SDK will POST from inside a shipped build: one
   API, two clients.
+- **The SDK's deep-link handoff (S15-01).** The version page honors
+  `?report=1&hint=<capped summary>`: the embedded SDK's feedback link
+  (see [telemetry-sdk](telemetry-sdk.md)) opens the report dialog
+  with the capped crash summary prefilled — the tester edits and
+  submits; nothing posts itself.
 - **Validation.** Client-side gates (non-empty description,
   extension/count fast-fails) refuse before any request; the server's
   own bounds stay the authority — its field-level rejections render

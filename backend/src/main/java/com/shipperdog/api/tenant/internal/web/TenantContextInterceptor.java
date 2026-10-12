@@ -98,6 +98,9 @@ public class TenantContextInterceptor implements HandlerInterceptor {
         if (principal instanceof AuthenticatedPrincipal patPrincipal) {
             return patPrincipal.userId();
         }
+        if (principal instanceof com.shipperdog.api.analytics.TelemetryTokenPrincipal telemetry) {
+            return telemetry.testerUserId();
+        }
         return null;
     }
 

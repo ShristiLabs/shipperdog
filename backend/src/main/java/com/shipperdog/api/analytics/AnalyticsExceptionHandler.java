@@ -1,6 +1,7 @@
 package com.shipperdog.api.analytics;
 
 import org.springframework.core.annotation.Order;
+import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.http.ProblemDetail;
 import org.springframework.http.ResponseEntity;
@@ -15,7 +16,8 @@ import org.springframework.web.bind.annotation.RestControllerAdvice;
  * and the dashboards of issue #50 (S11-05); permission denials conceal
  * as the authorization module's own not-found family (the permission
  * target of every route here is the application, the organization, or
- * the tenant).
+ * the tenant). Retryable failures (the ingest's write contention,
+ * S15-01) carry the {@code Retry-After} hint their exception holds.
  */
 @Order(0)
 @RestControllerAdvice(assignableTypes = {AnalyticsController.class, DashboardController.class})
@@ -23,8 +25,11 @@ public class AnalyticsExceptionHandler {
 
     @ExceptionHandler(AnalyticsException.class)
     ResponseEntity<ProblemDetail> handle(AnalyticsException exception) {
-        return ResponseEntity.status(exception.code().httpStatus)
-                .contentType(MediaType.APPLICATION_PROBLEM_JSON)
-                .body(exception.problem());
+        ResponseEntity.BodyBuilder response =
+                ResponseEntity.status(exception.code().httpStatus).contentType(MediaType.APPLICATION_PROBLEM_JSON);
+        if (exception.retryAfterSeconds() > 0) {
+            response.header(HttpHeaders.RETRY_AFTER, Long.toString(exception.retryAfterSeconds()));
+        }
+        return response.body(exception.problem());
     }
 }

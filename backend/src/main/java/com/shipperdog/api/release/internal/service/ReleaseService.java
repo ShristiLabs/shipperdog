@@ -812,6 +812,39 @@ public class ReleaseService implements ReleaseAccess, VersionDistributionContrib
                 });
     }
 
+    /**
+     * The telemetry resolution on the download's own addressing
+     * (S15-01, issue #72): the (application, version) probe under the
+     * same target-set refusal {@link #telemetryFactsOf} applies — the
+     * token mint and the ingest probe resolve the same release for
+     * the same download, and a release the reporter's tenant is not
+     * targeted by is the same empty answer (the concealment of every
+     * release-addressed resolution).
+     */
+    @Override
+    @Transactional(readOnly = true)
+    public Optional<ReleaseAccess.ReleaseFacts> telemetryFactsOfVersion(
+            UUID applicationId, UUID versionId, UUID reporterTenantId) {
+        return registry.findByApplicationIdAndVersionId(applicationId, versionId)
+                .filter(release -> targets.existsByReleaseIdAndTenantId(release.getId(), reporterTenantId))
+                .map(release -> {
+                    RingEntity ring =
+                            rings.findById(release.getStartingRingId()).orElse(null);
+                    return new ReleaseAccess.ReleaseFacts(
+                            release.getId(),
+                            release.releaseRef(),
+                            release.getApplicationId(),
+                            release.getVersionId(),
+                            release.getOrganizationId(),
+                            release.getTenantId(),
+                            release.getCreatedBy(),
+                            release.getStatus().name(),
+                            ring == null ? null : ring.getId(),
+                            ring == null ? null : ring.getCode(),
+                            release.getEnvironmentId());
+                });
+    }
+
     /** The code of a ring id (S10-01's definition views render the attachment as the API's vocabulary). */
     @Override
     @Transactional(readOnly = true)

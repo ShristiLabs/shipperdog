@@ -1,0 +1,74 @@
+# sdk-ci (issue #72, S15-01): the tester telemetry SDK's own gate —
+# the Kotlin/Android and iOS/Swift suites beside the repo's existing
+# per-component workflows (the cli-ci precedent: one workflow, one
+# component). The Kotlin job runs on the pure-JVM core's full test
+# suite and compiles the Android adapter and the docs-proven sample
+# against the real framework classes (the Robolectric android-all
+# stub — compileOnly, never packaged); the Swift job runs the
+# package's XCTest suite on macOS and typechecks the UIKit paths
+# against an iOS simulator target. Both jobs assert the size budget
+# (< 200 KB per platform, stripped) — the acceptance criterion is a
+# number the CI measures, not a claim the docs make.
+name: sdk-ci
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  kotlin:
+    name: telemetry-sdk (Kotlin/Android)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: sdk/android
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+
+      - name: Build, test, and assemble every module
+        run: ./gradlew --no-daemon build
+
+      - name: Assert the size budget (< 200 KB, the core + adapter)
+        run: |
+          CORE=$(stat -c%s telemetry/build/libs/telemetry.jar)
+          ADAPTER=$(stat -c%s telemetry-android/build/libs/telemetry-android.jar)
+          TOTAL=$((CORE + ADAPTER))
+          echo "core=${CORE}B adapter=${ADAPTER}B total=${TOTAL}B"
+          test "$TOTAL" -lt 204800
+
+  swift:
+    name: telemetry-sdk (iOS/Swift)
+    runs-on: macos-14
+    defaults:
+      run:
+        working-directory: sdk/ios
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Run the package's test suite
+        run: swift test
+
+      - name: Typecheck the UIKit paths against an iOS simulator target
+        run: |
+          xcrun -sdk iphonesimulator swiftc -typecheck \
+            -target arm64-apple-ios18.0-simulator \
+            Sources/ShipperDogTelemetry/*.swift
+
+      - name: Assert the size budget (< 200 KB, the stripped static library)
+        run: |
+          swift build -c release
+          mkdir -p /tmp/sd-size && cp .build/release/ShipperDogTelemetry.build/*.o /tmp/sd-size/
+          ar rcs /tmp/sd-size/libShipperDogTelemetry.a /tmp/sd-size/*.o
+          strip -x /tmp/sd-size/libShipperDogTelemetry.a
+          SIZE=$(stat -f%z /tmp/sd-size/libShipperDogTelemetry.a)
+          echo "stripped library=${SIZE}B"
+          test "$SIZE" -lt 204800

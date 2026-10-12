@@ -7,6 +7,7 @@ import com.shipperdog.api.tenant.TenantRole;
 import java.util.Arrays;
 import java.util.List;
 import java.util.Set;
+import java.util.stream.Stream;
 import org.junit.jupiter.api.Test;
 
 /**
@@ -45,7 +46,13 @@ class RolePermissionsTest {
         List<String> codes =
                 Arrays.stream(Permission.values()).map(Permission::code).toList();
         assertThat(codes).doesNotHaveDuplicates();
-        assertThat(codes).allSatisfy(code -> assertThat(code).matches("^(platform|org|tenant|app):[a-z-]+:[a-z-]+$"));
+        // The four RBAC scopes plus the one capability scope: `analytics:`
+        // (issue #72, S15-01) is the telemetry token's ingest-only
+        // authority — cataloged so the annotation checklist resolves the
+        // ingest route's hasAuthority leg, but a capability scope by
+        // definition NEVER reaches a role mapping (asserted below).
+        assertThat(codes)
+                .allSatisfy(code -> assertThat(code).matches("^(platform|org|tenant|app|analytics):[a-z-]+:[a-z-]+$"));
         for (Permission permission : Permission.values()) {
             assertThat(Permission.fromCode(permission.code()))
                     .as("fromCode round-trips %s", permission.code())
@@ -53,6 +60,23 @@ class RolePermissionsTest {
         }
         assertThat(Permission.fromCode("org:does:not:exist")).isEmpty();
         assertThat(Permission.fromCode("made:up")).isEmpty();
+    }
+
+    @Test
+    void capabilityScopedPermissionsAreNeverRoleGranted() {
+        // Issue #72 (S15-01): the `analytics:` scope is a capability
+        // scope, not an RBAC scope — its one authority rides exclusively
+        // on the stateless HMAC telemetry token the download issuance
+        // mints. If any role ever mapped it, the narrow-capability
+        // guarantee would be gone, so this invariant fails the build.
+        List<Permission> roleGranted = Stream.concat(
+                        Stream.of(OrgRole.values()).flatMap(role -> RolePermissions.of(role).stream()),
+                        Stream.of(TenantRole.values()).flatMap(role -> RolePermissions.of(role).stream()))
+                .filter(permission -> permission.scope().equals("analytics"))
+                .toList();
+        assertThat(roleGranted)
+                .as("no role may hold a capability-scoped permission")
+                .isEmpty();
     }
 
     @Test

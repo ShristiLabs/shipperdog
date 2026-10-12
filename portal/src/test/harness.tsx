@@ -151,6 +151,7 @@ export function seedDownload(
             expiresAt: new Date(Date.now() + 14 * 60_000).toISOString(),
             fileName: "banking.apk",
             sizeBytes: 4096,
+            telemetry: null,
             ...(issuance ?? {}),
           }
         : (issuance ?? {

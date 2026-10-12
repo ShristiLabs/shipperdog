@@ -16,6 +16,7 @@ subsequent story builds on.
 | `frontend/` | Admin console — React 19 + TypeScript + MUI (Vite; S2-04) |
 | `portal/` | Tester portal — React 19 + TypeScript + MUI, separate app (S8) |
 | `cli/` | Developer CLI — Go 1.26, artifact upload/inspect + login (S5-06) |
+| `sdk/` | Tester telemetry SDK — Kotlin/Android + Swift/iOS, zero deps, < 200 KB (S15-01, [docs/telemetry-sdk.md](docs/telemetry-sdk.md)) |
 | `infrastructure/` | Local docker compose stack, terraform (Cloud Run, S8-05), smoke + security-header checks, Grafana/Prometheus |
 | `docs/` | Developer documentation |
 | `.github/workflows/` | GitHub Actions CI + the manual deploy pipeline (S8-05) |

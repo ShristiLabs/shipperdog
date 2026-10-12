@@ -92,6 +92,14 @@ public class AnalyticsEventEntity {
 
     private Instant receivedAt;
 
+    /**
+     * The optional client event id (S15-01, V54): the dedup key with
+     * (device, release) that makes the contract's at-least-once
+     * delivery idempotent for emitters that carry one — null rows
+     * keep the original non-idempotent semantics byte-for-byte.
+     */
+    private UUID eventId;
+
     protected AnalyticsEventEntity() {}
 
     /**
@@ -115,7 +123,8 @@ public class AnalyticsEventEntity {
             Integer crashSessions,
             Integer anrSessions,
             Instant occurredAt,
-            Instant receivedAt) {
+            Instant receivedAt,
+            UUID eventId) {
         this.organizationId = organizationId;
         this.tenantId = tenantId;
         this.applicationId = applicationId;
@@ -130,6 +139,7 @@ public class AnalyticsEventEntity {
         this.anrSessions = anrSessions;
         this.occurredAt = occurredAt;
         this.receivedAt = receivedAt;
+        this.eventId = eventId;
     }
 
     public UUID getId() {
@@ -190,5 +200,9 @@ public class AnalyticsEventEntity {
 
     public Instant receivedAt() {
         return receivedAt;
+    }
+
+    public UUID eventId() {
+        return eventId;
     }
 }

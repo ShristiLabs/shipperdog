@@ -324,6 +324,7 @@ The release analytics surface behind `app:analytics:*` and
 | `APPLICATION_NOT_FOUND` | 404 | Resource not found. (the application a series addresses) |
 | `INVALID_REQUEST` | 400 | The request is invalid. (an unknown metric token, a malformed instant, an events batch whose shape the type refuses — whole-batch, one `errors` entry per offending field) |
 | `ANALYTICS_REQUEST_REFUSED` | 422 | The analytics request is refused. (a window outside the bounds — inverted, wider than the maximum, hourly grain over too long a span, or ending in the future; refused, never clamped) |
+| `INGEST_WRITE_CONTENTION` | 503 | The batch collided with a concurrent write; retry the batch. (S15-01: a flush-time collision with a concurrent batch on the V54 dedup index aborts the whole transaction — never retried inside it; answers with a `Retry-After` header the SDK treats as advisory and a custom integrator as a bound. See [telemetry-sdk](telemetry-sdk.md)) |
 
 ## Integration — S12-03/issue #53
 

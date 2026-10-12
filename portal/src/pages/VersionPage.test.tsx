@@ -46,6 +46,19 @@ afterEach(() => {
 });
 
 describe("VersionPage deep link", () => {
+  it("opens the report dialog prefilled when the SDK handoff arrives as ?report=1&hint=", async () => {
+    installFetchRouter([]);
+    seedHistoryProbe(200, [ENTRY]);
+    seedSession();
+    renderPortal(<App />, { route: `${VERSION_ROUTE}?report=1&hint=${encodeURIComponent("crash near checkout")}` });
+
+    // The S15-01 feedback handoff (issue #72): the dialog opened
+    // itself with the capped crash summary in the description —
+    // the tester edits and submits; nothing posts itself.
+    const description = await screen.findByTestId("feedback-description");
+    expect(description).toHaveValue("crash near checkout");
+    expect(screen.getByTestId("feedback-title")).toBeInTheDocument();
+  });
   it("renders the authorized version with its badge and platform rows", async () => {
     installFetchRouter([]);
     seedHistoryProbe(200, [ENTRY]);

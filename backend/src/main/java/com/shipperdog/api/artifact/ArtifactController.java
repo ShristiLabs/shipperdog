@@ -229,14 +229,26 @@ public class ArtifactController {
      * byte-identical to the genuine ones; no URL is ever minted on
      * deny (INV-005). The {@code version_id} query parameter is the
      * same body-addressed permission target shape as the read.
+     *
+     * <p>Since S15-01 the answer also carries the telemetry block
+     * for the tester telemetry SDK: the optional {@code tenant_id}
+     * names the reporting tenant the token binds (the portal's
+     * membership tenant — the version's owning tenant when absent),
+     * and the optional {@code device_id} pairs the token with one of
+     * the downloading tester's registered ACTIVE devices (the device
+     * registry's two-switches revocation applies to a paired token).
+     * Telemetry is additive evidence, never a download gate: the
+     * block is simply absent when the pairing does not resolve.
      */
     @GetMapping("/{artifactId}/download")
     @PreAuthorize("isAuthenticated()")
     DownloadIssuanceView download(
             @AuthenticationPrincipal Object principal,
             @PathVariable UUID artifactId,
-            @RequestParam("version_id") UUID versionId) {
-        return downloads.issue(requireUserId(principal), artifactId, versionId);
+            @RequestParam("version_id") UUID versionId,
+            @RequestParam(value = "tenant_id", required = false) UUID tenantId,
+            @RequestParam(value = "device_id", required = false) UUID deviceId) {
+        return downloads.issue(requireUserId(principal), artifactId, versionId, tenantId, deviceId);
     }
 
     private static String originalName(MultipartFile file) {
