@@ -66,6 +66,23 @@ public class SecurityConfig {
                                 // HMAC-bearing route above them.
                                 .requestMatchers(org.springframework.http.HttpMethod.POST, "/webhooks/**")
                                 .permitAll()
+                                // The SCIM 2.0 provisioning surface (S14-03,
+                                // issue #69, RFC 7644): /scim/v2/Users and
+                                // /scim/v2/Groups sit outside /api/v1 by the
+                                // same doctrine -- each request's
+                                // per-organization connector bearer token IS
+                                // the authentication (the token's SHA-256
+                                // hash lookup in the identity module is the
+                                // entire authority), and every missing,
+                                // malformed, unknown, or rotated-away token
+                                // answers the SAME 401 SCIM error. The three
+                                // discovery documents (ServiceProviderConfig,
+                                // ResourceTypes, Schemas) answer without a
+                                // credential: RFC 7643 capability metadata,
+                                // deployment-level facts only -- no
+                                // organization, user, or token state.
+                                .requestMatchers("/scim/v2/**")
+                                .permitAll()
                                 .anyRequest()
                                 .authenticated())
                 .formLogin(AbstractHttpConfigurer::disable)

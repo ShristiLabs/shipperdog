@@ -70,7 +70,12 @@ refusal reason the browser's uniform redirect never reveals; SAML
 refusals carry `saml_*` reasons since S14-02,
 `SSO_IDENTITY_LINKED`, `SSO_USER_JIT_PROVISIONED`, `SSO_ROLE_MAPPED`,
 `SSO_ACCOUNT_LOCKED`, `SSO_LOGOUT` — see
-[authentication](authentication.md)),
+[authentication](authentication.md)), and since S14-03 the SCIM
+provisioning vocabulary (`SCIM_CONFIGURED`, `SCIM_TOKEN_ROTATED`,
+`SCIM_USER_PROVISIONED`, `SCIM_USER_UPDATED`, `SCIM_USER_DEACTIVATED`,
+`SCIM_USER_REACTIVATED`, `SCIM_GROUP_SYNCED`, and
+`SCIM_REQUEST_REJECTED` — the distinct refusal reasons the uniform
+SCIM 401 never reveals; see [scim](scim.md)),
 organization (`ORGANIZATION_CREATED`, `ORGANIZATION_UPDATED`,
 `ORG_MEMBER_ADDED`, `ORG_IDP_CONFIGURED`, `ORG_MEMBER_ROLE_CHANGED`,
 `ORG_MEMBER_REMOVED`), tenant (`TENANT_CREATED`, `TENANT_UPDATED`,

@@ -81,6 +81,15 @@ public class UserEntity {
         return email;
     }
 
+    /**
+     * The address changes with an IdP-driven email change (S14-03):
+     * the caller owns the uniqueness check (a second account holding
+     * the address is a refusal before this runs).
+     */
+    public void setEmail(String email) {
+        this.email = email;
+    }
+
     public String getPasswordHash() {
         return passwordHash;
     }
@@ -91,6 +100,11 @@ public class UserEntity {
 
     public String getFullName() {
         return fullName;
+    }
+
+    /** The display name follows the IdP's assertion (S14-03). */
+    public void setFullName(String fullName) {
+        this.fullName = fullName;
     }
 
     public Status getStatus() {

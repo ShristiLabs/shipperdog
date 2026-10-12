@@ -8,7 +8,9 @@ import com.shipperdog.api.config.CursorPageable;
 import com.shipperdog.api.identity.SessionRevocation;
 import com.shipperdog.api.identity.UserDirectory;
 import com.shipperdog.api.tenant.TenantAccess;
+import com.shipperdog.api.tenant.TenantContext;
 import com.shipperdog.api.tenant.TenantException;
+import com.shipperdog.api.tenant.TenantProvisioning;
 import com.shipperdog.api.tenant.TenantRole;
 import com.shipperdog.api.tenant.internal.entity.TenantEntity;
 import com.shipperdog.api.tenant.internal.entity.TenantMemberEntity;
@@ -54,7 +56,7 @@ import org.springframework.transaction.annotation.Transactional;
  * sessions at the next token refresh, without deleting anything.
  */
 @Service
-public class TenantMemberService implements TenantAccess {
+public class TenantMemberService implements TenantAccess, TenantProvisioning {
 
     private final TenantRepository tenants;
     private final TenantMemberRepository members;
@@ -62,6 +64,7 @@ public class TenantMemberService implements TenantAccess {
     private final UserDirectory directory;
     private final SessionRevocation sessions;
     private final TenantMemberWriteAttempt writes;
+    private final TenantMemberProvisioningAttempt provisioningWrites;
     private final TenantMemberConflictResolver conflicts;
     private final AuditEventPublisher audit;
     private final Clock clock;
@@ -73,6 +76,7 @@ public class TenantMemberService implements TenantAccess {
             UserDirectory directory,
             SessionRevocation sessions,
             TenantMemberWriteAttempt writes,
+            TenantMemberProvisioningAttempt provisioningWrites,
             TenantMemberConflictResolver conflicts,
             AuditEventPublisher audit,
             Clock clock) {
@@ -82,6 +86,7 @@ public class TenantMemberService implements TenantAccess {
         this.directory = directory;
         this.sessions = sessions;
         this.writes = writes;
+        this.provisioningWrites = provisioningWrites;
         this.conflicts = conflicts;
         this.audit = audit;
         this.clock = clock;
@@ -146,6 +151,129 @@ public class TenantMemberService implements TenantAccess {
                                 tenant.getId(),
                                 tenant.getName(),
                                 tenant.getStatus().name())));
+    }
+
+    // -------------------------------------------------------------------------
+    // TenantProvisioning: cross-module SCIM surface (S14-03, issue #69)
+    // -------------------------------------------------------------------------
+
+    /**
+     * The declarative membership write of SCIM group mapping: make the
+     * row match (role, ACTIVE). A provisioning request carries no
+     * tenant context, so this method begins (and ends) its own scope —
+     * the TenantContext javadoc's sanctioned shape for background
+     * work, the tenant id the explicit argument the scope binds to.
+     * The create arm runs through the provisioning attempt's own
+     * transaction so a lost uniqueness race is answered with the
+     * re-derived winner, never the dead-catch 500.
+     */
+    @Override
+    @Transactional
+    public Outcome ensureMembership(UUID tenantId, UUID userId, TenantRole role, UUID actingUserId) {
+        TenantEntity tenant = tenants.findById(tenantId).orElse(null);
+        if (tenant == null) {
+            return Outcome.SKIPPED_UNKNOWN_TENANT;
+        }
+        boolean scopeBoundHere = TenantContext.current().isEmpty();
+        if (scopeBoundHere) {
+            TenantContext.begin(tenantId, actingUserId, false);
+        }
+        try {
+            TenantMemberEntity membership =
+                    members.findByTenantIdAndUserId(tenantId, userId).orElse(null);
+            if (membership == null) {
+                if (tenant.getStatus() == TenantEntity.Status.DEACTIVATED) {
+                    return Outcome.SKIPPED_INACTIVE_TENANT;
+                }
+                try {
+                    provisioningWrites.attempt(actingUserId, tenantId, userId, role);
+                    return Outcome.CREATED;
+                } catch (DataIntegrityViolationException e) {
+                    // Lost the insert race: the winner row decides the
+                    // rest (this transaction stayed sound — only the
+                    // attempt's own rolled back).
+                    membership =
+                            members.findByTenantIdAndUserId(tenantId, userId).orElseThrow(() -> e);
+                }
+            }
+            TenantMemberEntity.Status before = membership.getStatus();
+            boolean roleChanged = membership.getRole() != role;
+            boolean reactivated = before != TenantMemberEntity.Status.ACTIVE;
+            if (!roleChanged && !reactivated) {
+                return Outcome.UNCHANGED;
+            }
+            if (roleChanged
+                    && !RolePermissions.lostOnTenantRoleChange(membership.getRole(), role)
+                            .isEmpty()) {
+                // The demotion discipline (the assignRole path's): a
+                // permission-losing change must not be outlived by
+                // sessions issued before it.
+                sessions.revokeRefreshTokens(userId, "role_demoted");
+            }
+            membership.setRole(role);
+            membership.setStatus(TenantMemberEntity.Status.ACTIVE);
+            members.save(membership);
+            Map<String, String> detail = new LinkedHashMap<>();
+            detail.put("userId", userId.toString());
+            detail.put("role.after", role.name());
+            detail.put("status.before", before.name());
+            detail.put("status.after", TenantMemberEntity.Status.ACTIVE.name());
+            detail.put("cascade", "scim_provisioned");
+            audit.publish(new AuditEvent(
+                    AuditEventType.TENANT_MEMBER_STATUS_CHANGED,
+                    Instant.now(clock),
+                    actingUserId,
+                    null,
+                    tenantId,
+                    true,
+                    detail));
+            return Outcome.CHANGED;
+        } finally {
+            if (scopeBoundHere) {
+                TenantContext.end();
+            }
+        }
+    }
+
+    /**
+     * The leaver cascade's membership half: every ACTIVE row of the
+     * user parks SUSPENDED — one bulk statement per the tester
+     * deactivation's discipline (the rows span tenants, so no single
+     * scope can serve the saves), each flipped row carrying its own
+     * audit line from the pre-update read. The caller owns the single
+     * account-level session revocation — per-row revocation would be N
+     * identical writes.
+     */
+    @Override
+    @Transactional
+    public int suspendMembershipsOf(UUID userId, String cascadeReason, UUID actingUserId) {
+        List<TenantMemberEntity> activeRows = members.findByUserId(userId).stream()
+                .filter(membership -> membership.getStatus() == TenantMemberEntity.Status.ACTIVE)
+                .toList();
+        if (activeRows.isEmpty()) {
+            return 0;
+        }
+        int flipped = members.suspendActiveByUserId(
+                userId, TenantMemberEntity.Status.ACTIVE, TenantMemberEntity.Status.SUSPENDED, Instant.now(clock));
+        for (TenantMemberEntity membership : activeRows) {
+            audit.publish(new AuditEvent(
+                    AuditEventType.TENANT_MEMBER_STATUS_CHANGED,
+                    Instant.now(clock),
+                    actingUserId,
+                    null,
+                    membership.getTenantId(),
+                    true,
+                    Map.of(
+                            "userId",
+                            userId.toString(),
+                            "status.before",
+                            TenantMemberEntity.Status.ACTIVE.name(),
+                            "status.after",
+                            TenantMemberEntity.Status.SUSPENDED.name(),
+                            "cascade",
+                            cascadeReason)));
+        }
+        return flipped;
     }
 
     // -------------------------------------------------------------------------

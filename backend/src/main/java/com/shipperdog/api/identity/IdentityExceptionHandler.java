@@ -17,7 +17,13 @@ import org.springframework.web.bind.annotation.RestControllerAdvice;
  */
 @Order(0)
 @RestControllerAdvice(
-        assignableTypes = {AuthController.class, SsoController.class, SamlController.class, SsoConfigController.class})
+        assignableTypes = {
+            AuthController.class,
+            SsoController.class,
+            SamlController.class,
+            SsoConfigController.class,
+            ScimConfigController.class
+        })
 public class IdentityExceptionHandler {
 
     @ExceptionHandler(AuthException.class)

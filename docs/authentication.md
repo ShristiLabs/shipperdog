@@ -1,4 +1,4 @@
-# Authentication (S1-03, extended by S1-04, S1-05, S14-01, and S14-02)
+# Authentication (S1-03, extended by S1-04, S1-05, S14-01, S14-02, and S14-03)
 
 First-party authentication for the platform: invitation-only user
 registration, email/password login, JWT access tokens with rotating
@@ -386,11 +386,27 @@ administrators keep their break-glass local login, existing sessions
 are untouched (the mandate governs the password credential, not live
 tokens), and disabling the configuration lifts it immediately.
 
+## SCIM provisioning (S14-03)
+
+The SCIM 2.0 provisioning surface carries the third credential
+posture: a per-organization connector bearer token (`sds_` prefix,
+the PAT posture — SHA-256 hash at rest, plaintext exactly once at
+generation, one live token per organization, atomic rotation). It is
+NOT a user credential: it authenticates the identity provider's
+provisioning pushes on `/scim/v2/**` only, those routes sit outside
+the `/api/v1` bearer surface, and it never mints sessions. The whole
+surface — token lifecycle, mapping rules, provisioning semantics, the
+leaver cascade, and the IdP setup guide — is documented in
+[scim.md](scim.md). Its failures answer the RFC 7644 SCIM error shape
+(`application/scim+json`), not the problem+json envelope: a
+deliberate, documented deviation (see
+[error codes](error-codes.md)).
+
 ## Extension path
 
 The OIDC provider S1-03's structure reserved a place for has landed
-(S14-01, above), as has SAML (S14-02, above); SCIM (S14-03) follows in
-E14. Identity touches organizations only through the
+(S14-01, above), as has SAML (S14-02, above) and SCIM provisioning
+(S14-03, above). Identity touches organizations only through the
 `OrganizationAccess` interface (login block, `org_id` claim,
 invitation membership grants, role snapshots and the SSO role-mapping
 apply for the S1-05 RBAC engine — see

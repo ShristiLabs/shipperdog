@@ -59,7 +59,29 @@ class EndpointSecurityAnnotationTest {
             // land on -- one-time request state and the pinned-metadata
             // XML-DSig verification are the authority.
             "com.shipperdog.api.identity.SamlController.metadata",
-            "com.shipperdog.api.identity.SamlController.acs");
+            "com.shipperdog.api.identity.SamlController.acs",
+            // The SCIM 2.0 provisioning surface (S14-03, issue #69):
+            // /scim/v2/Users and /scim/v2/Groups sit outside /api/v1
+            // (the baseline chain's permitAll) -- the per-organization
+            // connector bearer token IS the authentication, verified
+            // by the identity module; every authenticity failure
+            // answers the same uniform 401 SCIM error. The discovery
+            // documents are anonymous RFC 7643 capability metadata.
+            "com.shipperdog.api.identity.ScimController.serviceProviderConfig",
+            "com.shipperdog.api.identity.ScimController.resourceTypes",
+            "com.shipperdog.api.identity.ScimController.schemas",
+            "com.shipperdog.api.identity.ScimController.listUsers",
+            "com.shipperdog.api.identity.ScimController.createUser",
+            "com.shipperdog.api.identity.ScimController.getUser",
+            "com.shipperdog.api.identity.ScimController.replaceUser",
+            "com.shipperdog.api.identity.ScimController.patchUser",
+            "com.shipperdog.api.identity.ScimController.deleteUser",
+            "com.shipperdog.api.identity.ScimController.listGroups",
+            "com.shipperdog.api.identity.ScimController.createGroup",
+            "com.shipperdog.api.identity.ScimController.getGroup",
+            "com.shipperdog.api.identity.ScimController.replaceGroup",
+            "com.shipperdog.api.identity.ScimController.patchGroup",
+            "com.shipperdog.api.identity.ScimController.deleteGroup");
 
     private static final Pattern MAPPING_ANNOTATION =
             Pattern.compile("org\\.springframework\\.web\\.bind\\.annotation\\.[A-Za-z]+Mapping");

@@ -87,7 +87,13 @@ missing one. All errors use the problem+json envelope (see
   acceptance or login (deliberate for V1): testers hold no
   organization membership, so the deactivated-organization login
   block never applies — tester-record lifecycle blocks are this
-  module's own (suspension S6-01, deactivation S6-04 below).
+  module's own (suspension S6-01, deactivation S6-04 below). SCIM
+  provisioning (S14-03) drives the same guarded transitions from the
+  IdP side: deprovisioning deactivates a linked tester record through
+  the S6-04 cascade (reason `scim_deactivated`), and a re-provision
+  returns a DISABLED record to ACTIVE — the IdP's push is the
+  organization's authoritative onboarding signal; memberships stay
+  suspended ([scim](scim.md)).
 
 ## Email delivery
 

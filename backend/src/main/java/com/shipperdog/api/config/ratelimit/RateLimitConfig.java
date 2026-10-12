@@ -32,7 +32,11 @@ public class RateLimitConfig {
         // endpoints whose senders retry -- an abusive or mis-wired
         // producer must be throttled before it costs signature or
         // certificate-chain work (the same order rationale as /api/v1).
-        registration.addUrlPatterns("/api/v1/*", "/webhooks/*");
+        // The SCIM provisioning surface joins with S14-03 (issue
+        // #69): anonymous at the chain (the connector token is the
+        // authority), provider-facing, and retrying -- a flood is
+        // throttled before it costs token-hash or provisioning work.
+        registration.addUrlPatterns("/api/v1/*", "/webhooks/*", "/scim/v2/*");
         return registration;
     }
 }

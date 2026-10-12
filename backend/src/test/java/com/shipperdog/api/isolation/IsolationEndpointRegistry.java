@@ -145,6 +145,19 @@ final class IsolationEndpointRegistry {
                         404,
                         404,
                         side -> "/api/v1/organizations/" + UUID.randomUUID() + "/idp-config"),
+                // The SCIM provisioning configuration (S14-03): the same
+                // fresh-organization miss rationale as the IdP
+                // configuration above -- no SCIM settings exist in the
+                // seeded world, so the route's miss shape IS the honest
+                // own answer, and concealment of a REAL foreign
+                // organization's SCIM configuration is pinned with live
+                // configurations by the S14-03 SCIM suite.
+                surface(
+                        "/api/v1/organizations/{id}/scim-config",
+                        side -> "/api/v1/organizations/" + side.organizationId() + "/scim-config",
+                        404,
+                        404,
+                        side -> "/api/v1/organizations/" + UUID.randomUUID() + "/scim-config"),
                 surface(
                         "/api/v1/organizations/{id}/members",
                         side -> "/api/v1/organizations/" + side.organizationId() + "/members",
@@ -1216,7 +1229,27 @@ final class IsolationEndpointRegistry {
                 "GET /api/v1/auth/sso/options",
                 "GET /api/v1/auth/sso/authorize",
                 "GET /api/v1/auth/sso/callback",
-                "GET /api/v1/auth/sso/saml/{organizationId}/metadata");
+                "GET /api/v1/auth/sso/saml/{organizationId}/metadata",
+                // The SCIM 2.0 surface's read routes (S14-03, issue
+                // #69): anonymous at the security chain like the
+                // SSO browser legs -- the per-organization connector
+                // bearer token IS the authority (the webhook-receiver
+                // and download-proxy doctrine), verified by the
+                // identity module before anything is served, so
+                // these routes cannot join the session-persona
+                // cross-tenant matrix. The three discovery documents
+                // are deployment-level RFC 7643 capability metadata
+                // with no organization or user state at all. Every
+                // authenticity failure answers the SAME 401 SCIM
+                // error: an unauthenticated caller learns nothing,
+                // the download-proxy parity property.
+                "GET /scim/v2/ServiceProviderConfig",
+                "GET /scim/v2/ResourceTypes",
+                "GET /scim/v2/Schemas",
+                "GET /scim/v2/Users",
+                "GET /scim/v2/Users/{id}",
+                "GET /scim/v2/Groups",
+                "GET /scim/v2/Groups/{id}");
     }
 
     private IsolationEndpointRegistry() {}

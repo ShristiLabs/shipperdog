@@ -414,3 +414,25 @@ refused submission ("You must provide a value for the key ...") or a
 review rejection, truncated to 512 characters. The taxonomy code
 stays the closed vocabulary; the detail is the reason a Release
 Manager acts on.
+
+## SCIM — S14-03/issue #69
+
+The `/scim/v2/**` provisioning surface deliberately does NOT use this
+registry's envelope: SCIM clients parse SCIM errors and nothing else,
+so every failure — module refusals and framework faults alike —
+answers the RFC 7644 section 3.12 document
+(`urn:ietf:params:scim:api:messages:2.0:Error`) over
+`application/scim+json`, carrying `status`, the RFC `scimType` detail
+code (`invalidSyntax`, `invalidFilter`, `invalidValue`, `invalidPath`,
+`uniqueness`), and static `detail` text. The 401s are uniform — no
+code, no hint which leg refused; the distinct reason rides the
+`SCIM_REQUEST_REJECTED` audit line only. The one platform-envelope
+answer on the surface is the rate limiter's 429 `RATE_LIMITED` with
+`Retry-After` (deployment machinery, not SCIM protocol). The full
+contract: [scim.md](scim.md).
+
+The SCIM configuration surface (`/api/v1/organizations/{id}/
+scim-config` and its `/token` routes) DOES use this registry's
+envelope — it is a normal `/api/v1` route family answering the
+identity module's existing codes (the concealed `404` `NOT_FOUND`
+shapes and `INVALID_REQUEST` validations).

@@ -546,5 +546,65 @@ public enum AuditEventType {
      * the user's refresh families revoked -- IdP-initiated logout and
      * IdP session expiry land on the same leg.
      */
-    SSO_LOGOUT
+    SSO_LOGOUT,
+    /**
+     * The organization's SCIM provisioning settings authored or
+     * changed (S14-03, issue #69, PRD 25): the enabled state, the
+     * default role, and the group-mapping counts. The distinct
+     * before/after facts ride the detail map.
+     */
+    SCIM_CONFIGURED,
+    /**
+     * A SCIM connector bearer token generated (rotation) or revoked
+     * (S14-03): the organization and the connector label -- never the
+     * token or its hash. Rotation replaces the live token atomically;
+     * the detail says which.
+     */
+    SCIM_TOKEN_ROTATED,
+    /**
+     * One user provisioned or re-provisioned through SCIM (S14-03):
+     * the organization, the affected user, the externalId, the
+     * userName, and whether the account was freshly created, linked by
+     * email match, or re-activated -- the joiner flow's audit line,
+     * queryable per organization.
+     */
+    SCIM_USER_PROVISIONED,
+    /**
+     * One SCIM user resource updated (S14-03): the organization, the
+     * user, and the changed facts (email, name, active) in the detail
+     * map. Attribute updates that change nothing emit no event.
+     */
+    SCIM_USER_UPDATED,
+    /**
+     * One user deprovisioned through SCIM (S14-03): the security-
+     * critical leaver flow. The account crosses to the hard lock
+     * (LOCKED, reason scim_deactivated), every refresh family is
+     * revoked, all tenant memberships are suspended, and a linked
+     * tester record is deactivated -- the S6-04 cascade behind the
+     * SCIM active=false switch. The detail map carries the counts.
+     */
+    SCIM_USER_DEACTIVATED,
+    /**
+     * One previously deprovisioned user re-provisioned through SCIM
+     * (S14-03): the account returns to ACTIVE and assignments are
+     * re-derived from the CURRENT group state -- nothing suspended is
+     * silently restored (the S6-04 manual-restoration doctrine).
+     */
+    SCIM_USER_REACTIVATED,
+    /**
+     * One SCIM group resource created, replaced, updated, or deleted
+     * (S14-03): the organization, the group, the externalId, and the
+     * membership deltas in the detail map -- the provisioning log's
+     * group-sync trail.
+     */
+    SCIM_GROUP_SYNCED,
+    /**
+     * One SCIM request refused before any provisioning effect
+     * (S14-03): the organization when the bearer token resolved it,
+     * and the distinct reason (bad token, disabled connector,
+     * malformed payload, unsupported filter, conflict) -- the uniform
+     * HTTP answer carries none of it, so this line is the only place
+     * the reason exists, exactly like the SSO refusal discipline.
+     */
+    SCIM_REQUEST_REJECTED
 }

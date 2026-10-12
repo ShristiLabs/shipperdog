@@ -161,6 +161,16 @@ Current contents:
   events' domain-grain key, the thin `store_status_events` mapping
   E13 consumes, and the hardening posture — metrics, audit,
   per-client rate limits, and the bounded-read body filter.
+- [SCIM provisioning](scim.md) — the SCIM 2.0 joiner/leaver
+  automation (S14-03, issue #69, PRD 25): the `/scim/v2` surface and
+  its connector-token authority (one live token per organization,
+  SHA-256 at rest, plaintext once), the group-to-role/tenant mapping
+  rules with their doctrines (most-privileged-wins,
+  additive-only tenant grants), the externalId-first idempotent
+  upsert, the leaver hard-lock cascade and the re-provision
+  manual-restoration doctrine, the identity-provider setup guide
+  (Entra, Okta, Google Workspace), and the scim+json error envelope
+  deviation.
 - [ADR-0001: Flyway with plain SQL migrations](adr/ADR-0001-flyway-schema-migrations.md)
 - [ADR-0002: Predicate-injection repository seam for tenant isolation](adr/ADR-0002-tenant-isolation-data-seam.md)
 - [ADR-0003: Artifact object storage behind the ArtifactStore port](adr/ADR-0003-artifact-object-storage.md)

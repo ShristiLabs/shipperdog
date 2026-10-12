@@ -17,6 +17,8 @@ see [authorization](authorization.md) for the matrix and semantics.
 | PUT | `/{id}` | `org:organizations:update` at `{id}` | `200`; partial update — null fields unchanged. `name` and `status` (`ACTIVE`/`DEACTIVATED`) for permission holders; `externalId` additionally requires a platform administrator (billing/CRM mapping) |
 | GET | `/{id}/idp-config` | `org:idp-configs:read` at `{id}` | `200` the organization's SSO configuration — OIDC (the secret's reference echoes, never material) or SAML (the pinned certificates' fingerprints echo, never the metadata XML) — or `404` when none is stored |
 | PUT | `/{id}/idp-config` | `org:idp-configs:write` at `{id}` | `200` upserts the typed SSO configuration, one row per provider kind since S14-02 (the flows, provisioning policy, and payload shape live in [authentication](authentication.md)) |
+| GET | `/{id}/scim-config` | `org:idp-configs:read` at `{id}` | `200` the organization's SCIM provisioning settings, group-mapping rules, and connector-token metadata (never the token) — or `404` when none is stored |
+| PUT | `/{id}/scim-config` | `org:idp-configs:write` at `{id}` | `200` upserts the settings and mapping rules (the write is the rules' complete declarative state; the token lifecycle routes and the whole provisioning contract live in [scim](scim.md)) |
 | GET | `/{id}/members` | `org:members:read` at `{id}` | `200` members with roles and display fields, cursor-paginated (S1-08) |
 | PUT | `/{id}/members/{userId}/role` | `org:members:manage` at `{id}` | role assignment — guards and revocation in [authorization](authorization.md) |
 | DELETE | `/{id}/members/{userId}` | `org:members:manage` at `{id}` | membership removal — same |
