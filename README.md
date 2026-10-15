@@ -1,5 +1,9 @@
 # ShipperDog
 
+<p align="center">
+  <img src="docs/assets/brand/logo.png" alt="ShipperDog" width="240" />
+</p>
+
 ShipperDog is an enterprise platform for mobile-app beta distribution and
 release management: upload builds, route them through workflows and quality
 gates, distribute them to testers, and collect feedback.

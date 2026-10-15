@@ -3,7 +3,6 @@
  * returns (docs/authentication.md — suspended and deactivated testers
  * are indistinguishable from wrong passwords; no account-state hints). */
 import { Alert, Box, Button, Card, CardContent, Link, Stack, TextField, Typography } from "@mui/material";
-import LockIcon from "@mui/icons-material/Lock";
 import { useState, type FormEvent } from "react";
 import { Link as RouterLink, useLocation, useNavigate } from "react-router-dom";
 import { useAuth } from "../auth/AuthContext";
@@ -59,7 +58,13 @@ export default function LoginPage() {
         <CardContent>
           <Stack spacing={2} component="form" onSubmit={handleSubmit} noValidate>
             <Stack direction="row" spacing={1} sx={{ alignItems: "center" }}>
-              <LockIcon color="primary" />
+              <Box
+                component="img"
+                src="/logo-mark-192.png"
+                alt=""
+                aria-hidden="true"
+                sx={{ width: 32, height: 32, borderRadius: 0.5 }}
+              />
               <Typography variant="h6">ShipperDog Tester Portal</Typography>
             </Stack>
             <TextField

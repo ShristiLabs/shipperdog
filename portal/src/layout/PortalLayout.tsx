@@ -6,7 +6,6 @@
  * width on desktop.
  */
 import LogoutIcon from "@mui/icons-material/Logout";
-import SmartphoneIcon from "@mui/icons-material/Smartphone";
 import { AppBar, Box, Container, IconButton, Toolbar, Typography } from "@mui/material";
 import { Outlet, useNavigate } from "react-router-dom";
 import { useAuth } from "../auth/AuthContext";
@@ -24,7 +23,13 @@ export default function PortalLayout() {
     <Box sx={{ minHeight: "100vh", backgroundColor: "grey.100", display: "flex", flexDirection: "column" }}>
       <AppBar position="static" color="primary">
         <Toolbar>
-          <SmartphoneIcon sx={{ mr: 1 }} />
+          <Box
+            component="img"
+            src="/logo-mark-192.png"
+            alt=""
+            aria-hidden="true"
+            sx={{ width: 28, height: 28, mr: 1.5, borderRadius: 0.5 }}
+          />
           <Typography variant="h6" component="div" sx={{ flexGrow: 1, fontSize: { xs: "1.05rem", sm: "1.25rem" } }}>
             ShipperDog Tester Portal
           </Typography>

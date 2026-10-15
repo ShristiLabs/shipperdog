@@ -161,6 +161,13 @@ export default function ConsoleLayout() {
     <Box sx={{ display: "flex", minHeight: "100vh" }}>
       <AppBar position="fixed" sx={{ zIndex: (theme) => theme.zIndex.drawer + 1 }}>
         <Toolbar>
+          <Box
+            component="img"
+            src="/logo-mark-192.png"
+            alt=""
+            aria-hidden="true"
+            sx={{ width: 32, height: 32, mr: 1.5, borderRadius: 0.5 }}
+          />
           <Typography variant="h6" component="div" sx={{ flexGrow: 1 }}>
             ShipperDog Console
           </Typography>
