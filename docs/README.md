@@ -1,5 +1,9 @@
 # ShipperDog Developer Documentation
 
+<p align="center">
+  <img src="assets/brand/logo-mark-512.png" alt="ShipperDog" width="140" />
+</p>
+
 Developer-facing documentation lives here. As stories land, this directory
 gains: runbooks and deeper operational guides.
 

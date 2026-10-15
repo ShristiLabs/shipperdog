@@ -2,7 +2,6 @@
  * tenant console. Failures keep the uniform opaque 401 message the API
  * returns (docs/authentication.md — no account-state hints). */
 import { Alert, Box, Button, Card, CardContent, Divider, Stack, TextField, Typography } from "@mui/material";
-import LockIcon from "@mui/icons-material/Lock";
 import { useState, type FormEvent } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { useAuth } from "../auth/AuthContext";
@@ -81,7 +80,13 @@ export default function LoginPage() {
         <CardContent>
           <Stack spacing={2} component="form" onSubmit={handleSubmit} noValidate>
             <Stack direction="row" spacing={1} sx={{ alignItems: "center" }}>
-              <LockIcon color="primary" />
+              <Box
+                component="img"
+                src="/logo-mark-192.png"
+                alt=""
+                aria-hidden="true"
+                sx={{ width: 32, height: 32, borderRadius: 0.5 }}
+              />
               <Typography variant="h6">ShipperDog Console</Typography>
             </Stack>
             <TextField
