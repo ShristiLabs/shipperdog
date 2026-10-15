@@ -111,7 +111,21 @@ public class ScimGroupService {
                     replaceState(organizationId, existing.get(), externalId, displayName, memberIds, "replaced");
             return new Created(updated, false);
         }
-        requireDisplayNameFree(organizationId, displayName);
+        if (displayNameOwner(organizationId, displayName) != null) {
+            // A same-externalId winner may have committed between the
+            // two probes (each statement snapshots independently under
+            // READ COMMITTED): re-read the externalId before refusing —
+            // the raced duplicate is the idempotent replace, not a
+            // conflict.
+            ScimGroupEntity raced = externalId == null
+                    ? null
+                    : lookupByExternalId(organizationId, externalId).orElse(null);
+            if (raced != null) {
+                return new Created(
+                        replaceState(organizationId, raced, externalId, displayName, memberIds, "replaced"), false);
+            }
+            throw displayNameConflict();
+        }
         try {
             return provisioning.attempt(() -> provisionFresh(organizationId, externalId, displayName, memberIds));
         } catch (DataIntegrityViolationException e) {
@@ -126,7 +140,18 @@ public class ScimGroupService {
                 return new Created(
                         replaceState(organizationId, winner, externalId, displayName, memberIds, "replaced"), false);
             }
-            requireDisplayNameFree(organizationId, displayName);
+            if (displayNameOwner(organizationId, displayName) != null) {
+                // Same commit-in-between window as the pre-check:
+                // re-read the externalId before refusing.
+                ScimGroupEntity raced = externalId == null
+                        ? null
+                        : lookupByExternalId(organizationId, externalId).orElse(null);
+                if (raced != null) {
+                    return new Created(
+                            replaceState(organizationId, raced, externalId, displayName, memberIds, "replaced"), false);
+                }
+                throw displayNameConflict();
+            }
             throw e;
         }
     }
@@ -143,13 +168,15 @@ public class ScimGroupService {
         return new Created(replaceState(organizationId, group, externalId, displayName, memberIds, "created"), true);
     }
 
-    /** The displayName-under-another-group refusal of the create path. */
-    private void requireDisplayNameFree(UUID organizationId, String displayName) {
-        scimGroups
+    /** The displayName-under-another-group probe of the create path. */
+    private ScimGroupEntity displayNameOwner(UUID organizationId, String displayName) {
+        return scimGroups
                 .findByOrganizationIdAndDisplayName(organizationId, displayName)
-                .ifPresent(other -> {
-                    throw ScimException.uniqueness("displayName is already used by another group in this organization");
-                });
+                .orElse(null);
+    }
+
+    private static ScimException displayNameConflict() {
+        return ScimException.uniqueness("displayName is already used by another group in this organization");
     }
 
     /** RFC 7644 section 3.4.1 read (by id): the uniform 404 on miss. */
