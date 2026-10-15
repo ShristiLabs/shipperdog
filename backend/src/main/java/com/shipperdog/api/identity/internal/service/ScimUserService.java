@@ -147,7 +147,20 @@ public class ScimUserService {
         if (existing != null) {
             return new Created(applyUpdate(organizationId, existing, payload), false);
         }
-        requireUserNameFree(organizationId, payload.userName());
+        if (userNameOwner(organizationId, payload.userName()) != null) {
+            // A same-payload winner may have committed between the
+            // externalId probe above and this one (each statement
+            // snapshots independently under READ COMMITTED): re-read
+            // the externalId before refusing — the raced duplicate is
+            // the idempotent 200, not a conflict.
+            ScimUserEntity raced = scimUsers
+                    .findByOrganizationIdAndExternalId(organizationId, payload.externalId())
+                    .orElse(null);
+            if (raced != null) {
+                return new Created(applyUpdate(organizationId, raced, payload), false);
+            }
+            throw userNameConflict();
+        }
         try {
             return provisioning.attempt(() -> provisionFresh(organizationId, payload));
         } catch (DataIntegrityViolationException e) {
@@ -160,7 +173,17 @@ public class ScimUserService {
             if (winner != null) {
                 return new Created(applyUpdate(organizationId, winner, payload), false);
             }
-            requireUserNameFree(organizationId, payload.userName());
+            if (userNameOwner(organizationId, payload.userName()) != null) {
+                // Same commit-in-between window as the pre-check:
+                // re-read the externalId before refusing.
+                ScimUserEntity raced = scimUsers
+                        .findByOrganizationIdAndExternalId(organizationId, payload.externalId())
+                        .orElse(null);
+                if (raced != null) {
+                    return new Created(applyUpdate(organizationId, raced, payload), false);
+                }
+                throw userNameConflict();
+            }
             // No SCIM row is visible under either key: the race was on
             // the account address or the membership floor — a
             // concurrent create linked the same email under a
@@ -196,11 +219,15 @@ public class ScimUserService {
     }
 
     /** The userName-under-another-externalId refusal of the create path. */
-    private void requireUserNameFree(UUID organizationId, String userName) {
-        scimUsers.findByOrganizationIdAndUserName(organizationId, userName).ifPresent(other -> {
-            throw ScimException.uniqueness(
-                    "userName is already provisioned for a different externalId in this organization");
-        });
+    private ScimUserEntity userNameOwner(UUID organizationId, String userName) {
+        return scimUsers
+                .findByOrganizationIdAndUserName(organizationId, userName)
+                .orElse(null);
+    }
+
+    private static ScimException userNameConflict() {
+        return ScimException.uniqueness(
+                "userName is already provisioned for a different externalId in this organization");
     }
 
     /** RFC 7644 section 3.4.1 read (by id): the uniform 404 on miss. */

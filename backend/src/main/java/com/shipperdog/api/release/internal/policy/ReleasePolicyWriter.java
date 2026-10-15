@@ -39,7 +39,7 @@ import org.springframework.transaction.annotation.Transactional;
 public class ReleasePolicyWriter {
 
     private final ReleasePolicyRuleRepository rules;
-    private final ReleasePolicyHoldRepository holds;
+    private final ReleasePolicyHoldAttempt holdAttempts;
     private final ReleasePolicyEvaluationRepository evaluations;
     private final ReleasePolicyEvaluationRuleRepository evaluationRules;
     private final AuditEventPublisher audit;
@@ -47,13 +47,13 @@ public class ReleasePolicyWriter {
 
     ReleasePolicyWriter(
             ReleasePolicyRuleRepository rules,
-            ReleasePolicyHoldRepository holds,
+            ReleasePolicyHoldAttempt holdAttempts,
             ReleasePolicyEvaluationRepository evaluations,
             ReleasePolicyEvaluationRuleRepository evaluationRules,
             AuditEventPublisher audit,
             Clock clock) {
         this.rules = rules;
-        this.holds = holds;
+        this.holdAttempts = holdAttempts;
         this.evaluations = evaluations;
         this.evaluationRules = evaluationRules;
         this.audit = audit;
@@ -64,9 +64,10 @@ public class ReleasePolicyWriter {
      * Records one promote attempt's evaluation (AC5) — ONE
      * transaction: the evaluation row, every per-rule outcome row in
      * the walked order, and the PENDING holds the fired HOLD rules
-     * demand (a lost concurrent insert of the same triple re-reads
-     * the winner's row — the (release, rule, ring) hold is one fact,
-     * never two), with the audit summary beside.
+     * demand (each hold inserts through {@link ReleasePolicyHoldAttempt}'s
+     * own transaction — the (release, rule, ring) hold is one fact,
+     * never two, and refusal evidence survives the caller's rollback),
+     * with the audit summary beside.
      */
     @Transactional
     public void recordEvaluation(ReleasePromotionPolicy.PromotionCheck check, EngineResult result) {
@@ -106,12 +107,15 @@ public class ReleasePolicyWriter {
             evidence.put("detail", bounded(hold.detail()));
             evidence.put("fromRing", check.fromRing());
             try {
-                holds.saveAndFlush(new ReleasePolicyHoldEntity(
+                holdAttempts.insert(new ReleasePolicyHoldEntity(
                         check.releaseId(), rule.getId(), check.organizationId(), result.ring(), evidence));
             } catch (DataIntegrityViolationException lostRace) {
                 // A concurrent attempt recorded the same (release,
-                // rule, ring) hold first: one fact, never two.
-                holds.findByReleaseIdAndRuleIdAndRing(check.releaseId(), rule.getId(), result.ring());
+                // rule, ring) hold first: one fact, never two. Only
+                // the attempt's own transaction rolled back — this one
+                // stays sound — and no re-read is needed: the winner's
+                // committed row is the fact (a same-transaction re-read
+                // after the abort is the 25P02 500 this replaces).
             }
         }
         Map<String, String> detail = new LinkedHashMap<>();

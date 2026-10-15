@@ -182,6 +182,14 @@ public class DeviceService implements DeviceAccess {
         try {
             saved = devices.saveScoped(
                     new DeviceEntity(command.testerId(), tenantId, platform, model, osVersion, identifier));
+            // The insert must hit the index inside this guard: deferred
+            // to commit, the same violation surfaces from
+            // JpaTransactionManager.doCommit — outside every catch — and
+            // the lost half of the race answers a raw 500 instead of
+            // the named conflict (the SCIM ScimProvisioningAttempt
+            // doctrine, issue #69, applied to the one table this write
+            // touches).
+            devices.flush();
         } catch (DataIntegrityViolationException e) {
             // The lost half of a duplicate race: the constraint is the
             // same guard the probe applied.
