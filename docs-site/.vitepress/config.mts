@@ -61,7 +61,18 @@ export default withMermaid({
       },
       {
         text: 'Roles',
-        items: [{ text: 'All roles', link: '/roles/' }],
+        items: [
+          { text: 'All roles', link: '/roles/' },
+          { text: 'Platform Operator', link: '/roles/platform-operator' },
+          { text: 'Organization Admin', link: '/roles/org-admin' },
+          { text: 'Release Manager', link: '/roles/release-manager' },
+          { text: 'App Owner', link: '/roles/app-owner' },
+          { text: 'Developer', link: '/roles/developer' },
+          { text: 'QA Engineer', link: '/roles/qa-engineer' },
+          { text: 'Security / Compliance Reviewer', link: '/roles/security-reviewer' },
+          { text: 'Tenant Admin', link: '/roles/tenant-admin' },
+          { text: 'Tester', link: '/roles/tester' },
+        ],
       },
       {
         text: 'How-To',
