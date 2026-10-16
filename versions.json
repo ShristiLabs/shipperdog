@@ -4,6 +4,10 @@
     {
       "id": "snapshot",
       "label": "SNAPSHOT (main)"
+    },
+    {
+      "id": "v0.0-docs-test",
+      "label": "v0.0-docs-test"
     }
   ]
 }
