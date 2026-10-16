@@ -1,3 +1,38 @@
+<script lang="ts">
+// Module-scope manifest cache: the component mounts twice (navbar and
+// the mobile nav screen), and each mount used to fetch versions.json
+// on its own — the WP2 review's low finding. One shared promise per
+// (site root, base) pair serves every instance; failures resolve null
+// and the component hides, exactly as before.
+interface VersionEntry {
+  id: string;
+  label: string;
+}
+const manifestCache = new Map<string, Promise<VersionEntry[] | null>>();
+function loadVersions(siteRoot: string, base: string): Promise<VersionEntry[] | null> {
+  const key = `${siteRoot}|${base}`;
+  if (!manifestCache.has(key)) {
+    manifestCache.set(
+      key,
+      (async () => {
+        for (const url of [`${siteRoot}versions.json`, `${base}versions.json`]) {
+          try {
+            const res = await fetch(url);
+            if (!res.ok) continue;
+            const manifest = await res.json();
+            if (Array.isArray(manifest.versions)) return manifest.versions;
+          } catch {
+            // try next candidate
+          }
+        }
+        return null;
+      })(),
+    );
+  }
+  return manifestCache.get(key)!;
+}
+</script>
+
 <script setup lang="ts">
 import { ref, onMounted, onBeforeUnmount, computed } from 'vue';
 import { useData } from 'vitepress';
@@ -17,10 +52,6 @@ const segments = base.split('/').filter(Boolean);
 const siteRoot = segments.length >= 2 ? `/${segments.slice(0, -1).join('/')}/` : null;
 const currentVersion = siteRoot ? segments[segments.length - 1] : null;
 
-interface VersionEntry {
-  id: string;
-  label: string;
-}
 const versions = ref<VersionEntry[] | null>(null);
 const open = ref(false);
 const root = ref<HTMLElement | null>(null);
@@ -31,18 +62,8 @@ const currentLabel = computed(
 let disposed = false;
 onMounted(async () => {
   if (!siteRoot || !currentVersion) return;
-  for (const url of [`${siteRoot}versions.json`, `${base}versions.json`]) {
-    try {
-      const res = await fetch(url);
-      if (!res.ok) continue;
-      const manifest = await res.json();
-      if (!Array.isArray(manifest.versions)) continue;
-      if (!disposed) versions.value = manifest.versions;
-      return;
-    } catch {
-      // try next candidate
-    }
-  }
+  const loaded = await loadVersions(siteRoot, base);
+  if (!disposed && loaded) versions.value = loaded;
 });
 
 const onDocClick = (e: MouseEvent) => {

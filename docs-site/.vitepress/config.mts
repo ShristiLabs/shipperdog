@@ -52,7 +52,12 @@ export default withMermaid({
     sidebar: [
       {
         text: 'Get Started',
-        items: [{ text: 'Overview', link: '/get-started/' }],
+        items: [
+          { text: 'Overview', link: '/get-started/' },
+          { text: 'Core concepts', link: '/get-started/concepts' },
+          { text: 'Platform tour', link: '/get-started/platform-tour' },
+          { text: 'Five-minute install', link: '/get-started/five-minute-install' },
+        ],
       },
       {
         text: 'Roles',
@@ -64,7 +69,19 @@ export default withMermaid({
       },
       {
         text: 'Concepts',
-        items: [{ text: 'Overview', link: '/concepts/' }],
+        items: [
+          { text: 'Overview', link: '/concepts/' },
+          { text: 'Architecture', link: '/concepts/architecture' },
+          { text: 'Tenancy and isolation', link: '/concepts/tenancy-isolation' },
+          { text: 'Release lifecycle', link: '/concepts/release-lifecycle' },
+          { text: 'Rings and rollout', link: '/concepts/rings-and-rollout' },
+          { text: 'Approvals and gates', link: '/concepts/approvals-gates' },
+          { text: 'Artifact pipeline', link: '/concepts/artifact-pipeline' },
+          { text: 'Authorization', link: '/concepts/authorization' },
+          { text: 'Identity and SSO', link: '/concepts/identity-sso' },
+          { text: 'Feedback and analytics', link: '/concepts/feedback-analytics' },
+          { text: 'Security model', link: '/concepts/security-model' },
+        ],
       },
       {
         text: 'Reference',
