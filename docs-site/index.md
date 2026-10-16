@@ -1,0 +1,62 @@
+---
+layout: home
+
+hero:
+  name: ShipperDog
+  text: Beta distribution and release management for enterprise mobile teams
+  tagline: >-
+    Upload builds, govern releases through approvals and quality gates, and
+    promote them across rings — from the Console, the Tester Portal, or your
+    CLI and CI pipelines.
+  actions:
+    - theme: brand
+      text: Get started
+      link: /get-started/
+    - theme: alt
+      text: Find your role
+      link: /roles/
+
+features:
+  - title: Platform Operator
+    details: Org onboarding, instance health, cross-tenant ops, break-glass.
+    link: /roles/#platform-operator
+    linkText: Platform Operator guide
+  - title: Organization Admin
+    details: Members and roles, tenants, IdP/SCIM/SSO, channel credentials, ABAC and SIEM policies.
+    link: /roles/#organization-admin
+    linkText: Organization Admin guide
+  - title: Release Manager
+    details: Release creation, approvals, gates, ring promotion, staged rollout, rollback.
+    link: /roles/#release-manager
+    linkText: Release Manager guide
+  - title: App Owner / Product
+    details: App registry, ownership scope, product approvals, release manifests, dashboards.
+    link: /roles/#app-owner-product
+    linkText: App Owner guide
+  - title: Developer
+    details: Artifact upload with provenance, versions and tags, CI actions, gate feedback.
+    link: /roles/#developer
+    linkText: Developer guide
+  - title: QA Engineer
+    details: Tester groups, feedback triage, crash-free gates, device fleet.
+    link: /roles/#qa-engineer
+    linkText: QA Engineer guide
+  - title: Security / Compliance Reviewer
+    details: Security feedback, approval signatures, audit trail, SIEM streams.
+    link: /roles/#security-compliance-reviewer
+    linkText: Security and Compliance guide
+  - title: Tenant Admin
+    details: Tenant members, devices, tenant dashboard, app visibility.
+    link: /roles/#tenant-admin
+    linkText: Tenant Admin guide
+  - title: Tester
+    details: Accept an invite, browse apps, install builds, submit feedback — no Console access needed.
+    link: /roles/#tester
+    linkText: Tester guide
+---
+
+ShipperDog ships through three surfaces:
+
+- **Console** — the web app where organizations, tenants, apps, releases, and policies are managed.
+- **Tester Portal** — the standalone mobile web app where testers install builds and give feedback.
+- **CLI / CI** — the command line and pipeline integrations developers use to upload artifacts and drive releases.
