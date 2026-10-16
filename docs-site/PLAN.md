@@ -1,0 +1,154 @@
+# ShipperDog End-User Documentation Site — Plan
+
+Status: approved plan. Work packages WP1–WP7 land sequentially, one PR each.
+
+## 1. Who the users are
+
+ShipperDog has three delivery surfaces (Console web app, Tester Portal mobile web,
+CLI/CI) and a role catalog that maps cleanly to nine documentation personas:
+
+| # | Persona | Roles (system) | Primary surface | What they come for |
+|---|---|---|---|---|
+| 1 | **Platform Operator** | `platform_admin` | Console + Terraform | Org onboarding, instance health, cross-tenant ops, break-glass |
+| 2 | **Organization Admin** | `ORG_ADMIN` | Console | Members & roles, tenants, IdP/SCIM/SSO config, channel credentials, ABAC/SIEM policies |
+| 3 | **Release Manager** | `RELEASE_MANAGER` | Console + CLI | Release creation → approvals → gates → ring promotion → staged rollout → rollback |
+| 4 | **App Owner / Product** | `APP_OWNER` | Console | App registry, ownership scope, product approvals, release manifests, dashboards |
+| 5 | **Developer** | `DEVELOPER` | CLI + CI + Console | Artifact upload w/ provenance, versions & tags, CI actions (GHA/Jenkins/GitLab), gate feedback |
+| 6 | **QA Engineer** | `QA_ENGINEER` | Console + Portal admin views | Tester groups, feedback triage, crash-free gates, device fleet |
+| 7 | **Security / Compliance Reviewer** | `SECURITY_REVIEWER`, `COMPLIANCE_REVIEWER` | Console | Security feedback, approval signatures, audit trail, SIEM streams |
+| 8 | **Tenant Admin** | `TENANT_ADMIN` | Console (tenant-scoped) | Tenant members, devices, tenant dashboard, app visibility |
+| 9 | **Tester** ⭐ | `TENANT_TESTER` | **Portal (+ companion app)** | Accept invite → browse apps → install builds → submit feedback; the only true end-user persona |
+
+⭐ The Tester is the persona with zero Console access — the Portal track must be
+fully standalone (invite email → first install in under 5 minutes).
+
+## 2. Site architecture (VitePress, versioned, mermaid)
+
+### 2.1 Repo & tooling
+
+- **Location:** `docs-site/` (developer docs stay in `docs/`)
+- **Stack:** VitePress (pinned) + `vitepress-plugin-mermaid` + `mermaid` v11;
+  local search (built-in minisearch — zero external service)
+- **Branding:** the corgi — `docs/assets/brand/` as logo/mark in navbar, favicon
+  set, portal-blue accent
+
+### 2.2 Versioning strategy
+
+VitePress has no first-class versioning (vuejs/vitepress#109). Pattern:
+
+```
+https://<org>.github.io/shipperdog/
+├── snapshot/        ← built from main on every merge (docs paths only)
+├── v0.1/            ← built from the v0.1 release tag — immutable after publish
+├── v0.2/            ← ditto
+├── /                ← REAL COPY of the newest stable (no symlinks on Pages)
+└── versions.json    ← [{id:"snapshot"},{id:"v0.2"},{id:"v0.1"}] + which is "latest"
+```
+
+- **Build rule:** each trigger builds exactly ONE version subtree (never rebuilds
+  old versions); `actions-gh-pages`-style deploy with keep-files preserves prior
+  subtrees on the `gh-pages` branch
+- **Switcher:** a small custom navbar Vue component (~100 lines, no third-party
+  dep) reading `versions.json`; on switch it maps the current page path onto the
+  target version and falls back to that version's home if the page does not
+  exist there
+- **Alternative evaluated:** `@viteplus/versions` (npm) ships a ready-made
+  multiversion build + switcher — decision at WP2: DIY component preferred (one
+  less dependency, full control of path-mapping behavior)
+- **Snapshot banner:** `snapshot/` build injects an "Unreleased — docs for main"
+  banner via VitePress theme config
+- **Publish flow:** version tag → workflow builds `/vX.Y/` → re-copies it to `/`
+  → regenerates `versions.json` → single Pages deploy
+
+### 2.3 CI (`docs-site.yml`)
+
+- **Trigger A** — push to `main` touching `docs-site/**`: build+deploy `snapshot/` only
+- **Trigger B** — release tag `v*`: build+deploy `vX.Y/` + refresh root copy + `versions.json`
+- **PR validation:** build-only (no deploy) when `docs-site/**` changed —
+  `vitepress build` catches dead internal links natively
+- Concurrency-cancel, no PR matrix — per standing ShristiLabs CI preferences
+
+## 3. Information architecture & page inventory
+
+```
+docs-site/
+├── .vitepress/  (config, theme, VersionSwitcher.vue, versions workflow)
+├── public/      (brand assets, versions.json)
+└── <version-root>/
+    ├── index.md                    Hero: what ShipperDog is, role cards
+    ├── get-started/
+    │   ├── concepts.md             Org→Tenant→App→Version→Artifact model (mermaid)
+    │   ├── platform-tour.md        Console walk-through (screenshots)
+    │   └── five-minute-install.md  The tester golden path (mermaid sequence)
+    ├── roles/                      One quickstart per persona (9 pages)
+    │   ├── platform-operator.md  org-admin.md  release-manager.md  app-owner.md
+    │   ├── developer.md  qa-engineer.md  security-reviewer.md  tenant-admin.md
+    │   └── tester.md               ⭐ the standalone portal track
+    ├── how-to/
+    │   ├── console/                ~15 task guides: orgs · tenants · apps ·
+    │   │   versions+tags · environments · releases · approvals · quality-gates ·
+    │   │   rings+promotion · staged-rollout · rollback · feedback-triage ·
+    │   │   devices · analytics+dashboards · notifications ·
+    │   │   distribution-channels · abac-policies · sso-oidc-saml ·
+    │   │   scim-provisioning · siem-streams · audit-log
+    │   ├── portal/                 Tester how-tos (5): accept-invite ·
+    │   │   browse-apps · install-ios · install-android · feedback
+    │   └── automation/             CLI + CI (6): cli-reference · github-actions ·
+    │       jenkins · gitlab · webhooks · companion-app
+    ├── concepts/                   Deep dives (10)
+    │   ├── architecture.md · tenancy-isolation.md · release-lifecycle.md ·
+    │   ├── rings-and-rollout.md · approvals-gates.md · artifact-pipeline.md ·
+    │   ├── authorization.md · identity-sso.md · feedback-analytics.md ·
+    │   └── security-model.md
+    └── reference/
+        ├── glossary.md · error-codes.md (user-facing subset) · faq.md
+        └── troubleshooting.md      Top 10 support scenarios
+```
+
+≈ 50 pages across versions (only `snapshot/` edits in-tree; releases are frozen copies).
+
+## 4. Mermaid diagram inventory (14)
+
+| Diagram | Type | Placed in |
+|---|---|---|
+| Platform architecture | flowchart TB | concepts/architecture |
+| Tenancy model | flowchart | get-started/concepts |
+| Release lifecycle (11 edges, 3 terminals) | stateDiagram-v2 | concepts/release-lifecycle |
+| Artifact validation FSM | stateDiagram-v2 | concepts/artifact-pipeline |
+| Ring promotion walk | flowchart LR | concepts/rings-and-rollout |
+| Approval engine (ALL/ANY/conditional) | flowchart | concepts/approvals-gates |
+| Authorization decision chain (7 layers) | flowchart | concepts/authorization |
+| Tester golden path | sequenceDiagram | get-started/five-minute-install |
+| Signed-URL download issuance | sequenceDiagram | concepts/security-model |
+| OIDC + SAML login flows | sequenceDiagram ×2 | concepts/identity-sso |
+| SCIM provisioning/leaver cascade | sequenceDiagram | concepts/identity-sso |
+| Feedback→metric→gate→promotion closed loop | flowchart | concepts/feedback-analytics |
+| Staged tenant rollout + rollback | flowchart | how-to/console/staged-rollout |
+| CI integration topology | flowchart | how-to/automation |
+
+## 5. Work packages
+
+1. **WP1 — Scaffold:** `docs-site/` VitePress app, theme + brand, mermaid wiring,
+   local search, snapshot banner, build CI (PR build-only), Pages deploy of `snapshot/`
+2. **WP2 — Versioning:** version-switcher component, `versions.json` contract,
+   tag-triggered `vX.Y/` build + root-copy refresh, keep-files Pages deploy, runbook
+3. **WP3 — Foundations:** concepts/ (all 10, with diagrams 1–8, 14) + get-started/
+4. **WP4 — Role quickstarts:** the 9 role pages, each ending in a hand-off task list
+5. **WP5 — Tester portal track:** portal how-tos + companion page, mobile-screenshot
+   set (Playwright, phone viewport)
+6. **WP6 — Console + automation how-tos:** remaining ~21 pages, CLI reference
+   generated from `--help`
+7. **WP7 — Reference + polish:** glossary, FAQ, troubleshooting, error-code subset,
+   full-site review pass, OG image
+
+Each WP lands as its own PR. Content sources of truth: the API's OpenAPI baseline
+and `docs/` (developer docs) — user docs never duplicate developer internals.
+
+## Sources
+
+- vuejs/vitepress#109 — Versioning
+- VitePress Routing (base/subdirectory builds) — https://vitepress.dev/guide/routing
+- VitePress Default Theme Nav — https://vitepress.dev/reference/default-theme-nav
+- @viteplus/versions (npm) — https://www.npmjs.com/package/@viteplus/versions
+- Lando Multiversion VitePress Build — https://vitepress-theme-default-plus.lando.dev/guides/multiversion-vitepress-build.html
+- SQLFluff versioned docs hosting — https://docs.sqlfluff.com/en/stable/development/versioned-docs-hosting

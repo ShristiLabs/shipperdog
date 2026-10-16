@@ -23,6 +23,7 @@ subsequent story builds on.
 | `sdk/` | Tester telemetry SDK — Kotlin/Android + Swift/iOS, zero deps, < 200 KB (S15-01, [docs/telemetry-sdk.md](docs/telemetry-sdk.md)) |
 | `infrastructure/` | Local docker compose stack, terraform (Cloud Run, S8-05), smoke + security-header checks, Grafana/Prometheus |
 | `docs/` | Developer documentation |
+| `docs-site/` | User documentation site — VitePress, versioned, mermaid diagrams (WP1; [docs-site/README.md](docs-site/README.md)) |
 | `.github/workflows/` | GitHub Actions CI + the manual deploy pipeline (S8-05) |
 
 Production deployment (Cloud Run, terraform, post-deploy smoke test):
@@ -163,6 +164,12 @@ Three gates run on every pull request and on pushes to `main`:
   golangci-lint gate, unit tests (including the endpoint contract test
   against the OpenAPI baseline), build, and a linux/darwin amd64/arm64
   cross-compile matrix publishing version-stamped binary tarballs.
+- `.github/workflows/docs-site.yml` (docs-site-ci, WP1) builds the
+  user-docs VitePress site on PRs touching `docs-site/**` (dead internal
+  links fail the build) and, on merges to `main`, deploys the `snapshot/`
+  subtree of the site to the `gh-pages` branch — served at
+  https://shristilabs.github.io/shipperdog/snapshot/ once GitHub Pages is
+  enabled (one-time: Settings -> Pages, deploy-from-branch `gh-pages`).
 
 Since S1-08 the backend build also
 exports the generated OpenAPI contract (`backend/target/openapi.yaml`,

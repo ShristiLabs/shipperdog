@@ -1,0 +1,97 @@
+name: docs-site-ci
+
+# User-docs site gate (docs-site/PLAN.md WP1). One job, Node 22, npm cache.
+# - pull_request touching docs-site/**: build only — vitepress build fails on
+#   dead internal links natively, so the build IS the link check.
+# - push to main touching docs-site/**: build, then deploy the build to the
+#   snapshot/ subtree of the gh-pages branch.
+#
+# Deploy uses plain git (worktree + rsync into snapshot/) rather than a
+# third-party Pages action: peaceiris/action-gh-pages is no longer available
+# (repo returns 404), and a subtree-replace deploy gives keep-files semantics
+# with zero third-party supply-chain surface. Old version subtrees (v0.1, …,
+# added by WP2) are never touched.
+#
+# ONE-TIME SETUP (repo admin): the deploy cannot enable Pages by itself.
+# Settings -> Pages -> Source "Deploy from a branch" -> Branch: gh-pages,
+# folder "/ (root)". Publishing to gh-pages works without it; the site goes
+# live at https://shristilabs.github.io/shipperdog/snapshot/ only after this
+# step.
+on:
+  pull_request:
+    paths:
+      - 'docs-site/**'
+      - '.github/workflows/docs-site.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'docs-site/**'
+      - '.github/workflows/docs-site.yml'
+
+concurrency:
+  group: docs-site-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+    permissions:
+      # Write is needed only for the push-to-main gh-pages deploy; pull
+      # requests never reach that step (fork PRs get a read-only token).
+      contents: write
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: docs-site/package-lock.json
+
+      - name: Install dependencies
+        working-directory: docs-site
+        run: npm ci
+
+      - name: Build (dead links fail the build)
+        working-directory: docs-site
+        env:
+          DOCS_VERSION: snapshot
+        run: npm run docs:build
+
+      # Mirrors frontend-ci: the docs lockfile must audit clean at the
+      # high/critical bar (currently 0 vulnerabilities of any severity;
+      # transitive pins documented in docs-site/README.md).
+      - name: Dependency audit (fails on high/critical)
+        working-directory: docs-site
+        run: npm audit --audit-level=high
+
+      - name: Deploy snapshot subtree to gh-pages
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          if git fetch origin gh-pages --depth=1; then
+            git worktree add --detach ../gh-pages-deploy origin/gh-pages
+          else
+            echo "gh-pages branch not found; initializing it"
+            mkdir -p ../gh-pages-deploy
+            cd ../gh-pages-deploy
+            git init --initial-branch=gh-pages
+            git remote add origin "https://x-access-token:${GITHUB_TOKEN}@github.com/${GITHUB_REPOSITORY}.git"
+            cd "${GITHUB_WORKSPACE}"
+          fi
+          touch ../gh-pages-deploy/.nojekyll
+          rsync -a --delete docs-site/.vitepress/dist/ ../gh-pages-deploy/snapshot/
+          cd ../gh-pages-deploy
+          git add -A
+          if git diff --cached --quiet; then
+            echo "No changes to deploy"
+          else
+            git commit -m "docs: deploy snapshot ${GITHUB_SHA}"
+            git push origin HEAD:gh-pages
+          fi
