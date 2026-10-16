@@ -11,8 +11,8 @@ built here.
 | --- | --- |
 | `get-started/` | Shipped (WP3): core concepts, platform tour with real screenshots (`public/screenshots/`), five-minute install |
 | `concepts/` | Shipped (WP3): all ten deep-dive pages with their mermaid diagrams |
-| `roles/` | Stub — lands in WP4 |
-| `how-to/` | Stub — lands in WP5-WP6 |
+| `roles/` | Shipped (WP4): all nine role quickstarts with real persona screenshots (`public/screenshots/roles/`) |
+| `how-to/` | Stub pages only (link targets for the role guides) — full guides land in WP5-WP6 |
 | `reference/` | Stub — lands in WP7 |
 
 Convention: user pages link developer depth to the `docs/` tree via

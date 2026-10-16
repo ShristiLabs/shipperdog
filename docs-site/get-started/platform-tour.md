@@ -144,7 +144,7 @@ whole tester story is its own guide:
 ## Where to go next
 
 - [Core concepts](/get-started/concepts.md) if you skipped it
-- The role guides (in the Roles section) for persona-specific paths
+- [The role guides](/roles/) for persona-specific paths
 - [Release lifecycle](/concepts/release-lifecycle.md),
   [approvals and gates](/concepts/approvals-gates.md), and
   [rings and rollout](/concepts/rings-and-rollout.md) for the models
