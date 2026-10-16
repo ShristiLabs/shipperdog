@@ -1,16 +1,22 @@
 name: docs-site-ci
 
-# User-docs site gate (docs-site/PLAN.md WP1). One job, Node 22, npm cache.
+# User-docs site gate (docs-site/PLAN.md WP1+WP2). One job, Node 22, npm cache.
 # - pull_request touching docs-site/**: build only — vitepress build fails on
 #   dead internal links natively, so the build IS the link check.
-# - push to main touching docs-site/**: build, then deploy the build to the
-#   snapshot/ subtree of the gh-pages branch.
+# - push to main touching docs-site/** (Trigger A): build, deploy snapshot/
+#   subtree, refresh versions.json (seeding it with the snapshot entry if no
+#   release exists yet).
+# - push of a release tag v* (Trigger B) or workflow_dispatch with a version
+#   input (tag-flow test path): build with DOCS_VERSION=<version>, deploy the
+#   v<version>/ subtree, real-copy it to the gh-pages root, regenerate
+#   versions.json preserving existing entries, single push.
 #
-# Deploy uses plain git (worktree + rsync into snapshot/) rather than a
-# third-party Pages action: peaceiris/action-gh-pages is no longer available
-# (repo returns 404), and a subtree-replace deploy gives keep-files semantics
-# with zero third-party supply-chain surface. Old version subtrees (v0.1, …,
-# added by WP2) are never touched.
+# Deploy uses plain git (worktree + rsync into the target subtree) rather
+# than a third-party Pages action: peaceiris/action-gh-pages is no longer
+# available (repo returns 404), and a subtree-replace deploy gives keep-files
+# semantics with zero third-party supply-chain surface. Version subtrees
+# other than the deployed one are never touched — released docs are
+# immutable (docs-site/VERSIONING.md).
 #
 # ONE-TIME SETUP (repo admin): the deploy cannot enable Pages by itself.
 # Settings -> Pages -> Source "Deploy from a branch" -> Branch: gh-pages,
@@ -27,17 +33,31 @@ on:
     paths:
       - 'docs-site/**'
       - '.github/workflows/docs-site.yml'
+    # Release tags always cut a docs version, even when the tagged commit
+    # changed no docs files (the frozen subtree must exist for the switcher).
+    tags: ['v*']
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version subtree to build and deploy, e.g. v0.1 (tag-flow test: v0.0-docs-test)'
+        required: true
+        type: string
 
+# PR builds share a per-ref group; every gh-pages-mutating event (main push,
+# tag push, dispatch) shares ONE group so deploys queue instead of racing on
+# the gh-pages ref. cancel-in-progress stays off: canceling a deploy run
+# would silently skip publishing that docs change (a superseded PR build is
+# cheap; a lost snapshot deploy is not).
 concurrency:
-  group: docs-site-${{ github.ref }}
-  cancel-in-progress: true
+  group: ${{ github.event_name == 'pull_request' && format('docs-site-{0}', github.ref) || 'docs-site-pages-deploy' }}
+  cancel-in-progress: false
 
 jobs:
   build-and-deploy:
     runs-on: ubuntu-latest
     permissions:
-      # Write is needed only for the push-to-main gh-pages deploy; pull
-      # requests never reach that step (fork PRs get a read-only token).
+      # Write is needed only for the gh-pages deploys; pull requests never
+      # reach those steps (fork PRs get a read-only token).
       contents: write
     steps:
       - name: Check out repository
@@ -50,6 +70,31 @@ jobs:
           cache: npm
           cache-dependency-path: docs-site/package-lock.json
 
+      - name: Resolve docs version
+        id: ver
+        env:
+          DISPATCH_VERSION: ${{ inputs.version }}
+        run: |
+          set -euo pipefail
+          if [[ "$GITHUB_EVENT_NAME" == "push" && "$GITHUB_REF" == refs/tags/* ]]; then
+            v="${GITHUB_REF_NAME}"
+          elif [[ "$GITHUB_EVENT_NAME" == "workflow_dispatch" ]]; then
+            v="${DISPATCH_VERSION}"
+          else
+            v="snapshot"
+          fi
+          # Same id grammar as docs-site/scripts/regen-versions.mjs: the
+          # literal snapshot id, a released vX[.Y...] id, or the transient
+          # two-segment -docs-test id (v0.0-docs-test). Longer test ids such
+          # as v1.2.3-docs-test match no grammar regen accepts, so they are
+          # rejected here before any deploy step runs.
+          if [[ "$v" != "snapshot" && ! "$v" =~ ^v[0-9]+(\.[0-9]+)+$ && ! "$v" =~ ^v[0-9]+\.[0-9]+-docs-test$ ]]; then
+            echo "invalid version id: ${v}" >&2
+            exit 1
+          fi
+          echo "version=$v" >> "$GITHUB_OUTPUT"
+          echo "Docs version: ${v}"
+
       - name: Install dependencies
         working-directory: docs-site
         run: npm ci
@@ -57,8 +102,16 @@ jobs:
       - name: Build (dead links fail the build)
         working-directory: docs-site
         env:
-          DOCS_VERSION: snapshot
+          DOCS_VERSION: ${{ steps.ver.outputs.version }}
         run: npm run docs:build
+
+      # public/versions.json is a dev-server-only fixture for the switcher
+      # (the dev server has no site root and serves public/ directly); never
+      # ship it inside a deployed subtree, where the switcher's fallback
+      # fetch could serve its stale data. The deployed manifest is always
+      # the gh-pages root versions.json written by regen-versions.mjs.
+      - name: Strip dev-only versions.json fixture from the build output
+        run: rm -f docs-site/.vitepress/dist/versions.json
 
       # Mirrors frontend-ci: the docs lockfile must audit clean at the
       # high/critical bar (currently 0 vulnerabilities of any severity;
@@ -66,6 +119,8 @@ jobs:
       - name: Dependency audit (fails on high/critical)
         working-directory: docs-site
         run: npm audit --audit-level=high
+
+      # ---------------- Trigger A: snapshot ----------------
 
       - name: Deploy snapshot subtree to gh-pages
         if: github.event_name == 'push' && github.ref == 'refs/heads/main'
@@ -90,11 +145,59 @@ jobs:
           fi
           touch ../gh-pages-deploy/.nojekyll
           rsync -a --delete docs-site/.vitepress/dist/ ../gh-pages-deploy/snapshot/
+          node docs-site/scripts/regen-versions.mjs ../gh-pages-deploy snapshot
           cd ../gh-pages-deploy
           git add -A
           if git diff --cached --quiet; then
             echo "No changes to deploy"
           else
             git commit -m "docs: deploy snapshot ${GITHUB_SHA}"
+            git push origin HEAD:gh-pages
+          fi
+
+      # -------- Trigger B: versioned subtree + root copy --------
+
+      - name: Deploy version subtree and root copy to gh-pages
+        if: (github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')) || github.event_name == 'workflow_dispatch'
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          VERSION: ${{ steps.ver.outputs.version }}
+        run: |
+          set -euo pipefail
+          git config --global user.name "github-actions[bot]"
+          git config --global user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          if git fetch origin gh-pages --depth=1; then
+            git worktree add --detach ../gh-pages-deploy origin/gh-pages
+          else
+            echo "gh-pages branch not found; initializing it"
+            mkdir -p ../gh-pages-deploy
+            cd ../gh-pages-deploy
+            git init --initial-branch=gh-pages
+            git remote add origin "https://x-access-token:${GITHUB_TOKEN}@github.com/${GITHUB_REPOSITORY}.git"
+            cd "${GITHUB_WORKSPACE}"
+          fi
+          DEST="../gh-pages-deploy/${VERSION}"
+          touch ../gh-pages-deploy/.nojekyll
+          # Subtree replace: only this version's directory is rebuilt.
+          rsync -a --delete docs-site/.vitepress/dist/ "${DEST}/"
+          # Root real copy (PLAN 2.2: no symlinks on Pages). --delete keeps
+          # the root in sync with this version, while the excludes protect
+          # everything the root must never own: the worktree's .git file,
+          # sibling version subtrees, snapshot/, versions.json, .nojekyll
+          # (rsync excludes shield them from deletion as well as from copy).
+          rsync -a --delete \
+            --exclude='.git' \
+            --exclude='.nojekyll' \
+            --exclude='versions.json' \
+            --exclude='snapshot' \
+            --exclude='v[0-9]*' \
+            docs-site/.vitepress/dist/ ../gh-pages-deploy/
+          node docs-site/scripts/regen-versions.mjs ../gh-pages-deploy "${VERSION}"
+          cd ../gh-pages-deploy
+          git add -A
+          if git diff --cached --quiet; then
+            echo "No changes to deploy"
+          else
+            git commit -m "docs: deploy version ${VERSION} from ${GITHUB_SHA}"
             git push origin HEAD:gh-pages
           fi

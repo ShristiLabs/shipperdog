@@ -29,7 +29,7 @@ export default withMermaid({
     },
   },
   base,
-  srcExclude: ['README.md', 'PLAN.md'],
+  srcExclude: ['README.md', 'PLAN.md', 'VERSIONING.md'],
   cleanUrls: true,
   title: 'ShipperDog Docs',
   description:
