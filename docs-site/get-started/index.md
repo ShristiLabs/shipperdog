@@ -2,8 +2,13 @@
 
 Orientation for every ShipperDog user:
 
-- **Concepts** — the Org, Tenant, App, Version, Artifact model that everything else builds on.
-- **Platform tour** — a walk-through of the Console.
-- **Five-minute install** — the tester golden path, from invite email to a running build.
+- [Core concepts](/get-started/concepts.md) — the Organization,
+  Tenant, Application, Version, Artifact model everything else builds
+  on.
+- [Platform tour](/get-started/platform-tour.md) — a walk-through of
+  the Console and the Tester Portal, with real screenshots.
+- [Five-minute install](/get-started/five-minute-install.md) — the
+  tester golden path, from invite email to a running build.
 
-These guides land in the WP3 rollout of the documentation plan.
+Looking for the models behind these guides? The
+[concepts](/concepts/) section is the deep-dive reference.

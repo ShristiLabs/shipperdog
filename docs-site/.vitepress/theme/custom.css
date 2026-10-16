@@ -1,0 +1,18 @@
+/* Portal-blue accent (PLAN 2.1): the docs brand color follows the
+   Tester Portal's primary (#2f5aa8, portal/src/theme.ts) so both
+   ShipperDog surfaces read as one product. Small, deliberate override
+   of the default theme's brand ramp — nothing else is restyled. */
+
+:root {
+  --vp-c-brand-1: #2f5aa8;
+  --vp-c-brand-2: #3d6cbf;
+  --vp-c-brand-3: #5c83d0;
+  --vp-c-brand-soft: rgba(47, 90, 168, 0.14);
+}
+
+.dark {
+  --vp-c-brand-1: #6c93d8;
+  --vp-c-brand-2: #5c83d0;
+  --vp-c-brand-3: #3d6cbf;
+  --vp-c-brand-soft: rgba(108, 147, 216, 0.16);
+}

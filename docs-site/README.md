@@ -5,6 +5,19 @@ stay in `docs/`). Architecture, information design, and the work-package
 breakdown live in [PLAN.md](PLAN.md) — it is the contract for everything
 built here.
 
+## Content status
+
+| Section | Status (PLAN 3/5) |
+| --- | --- |
+| `get-started/` | Shipped (WP3): core concepts, platform tour with real screenshots (`public/screenshots/`), five-minute install |
+| `concepts/` | Shipped (WP3): all ten deep-dive pages with their mermaid diagrams |
+| `roles/` | Stub — lands in WP4 |
+| `how-to/` | Stub — lands in WP5-WP6 |
+| `reference/` | Stub — lands in WP7 |
+
+Convention: user pages link developer depth to the `docs/` tree via
+GitHub blob URLs on `main` rather than duplicating it.
+
 ## Requirements
 
 - Node >= 22.12, npm (no pnpm/yarn — matches the repo's other apps)
