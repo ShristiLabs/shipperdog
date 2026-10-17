@@ -173,7 +173,7 @@ Delivered 2026-10, one PR per work package:
 | WP4 Role quickstarts | [#153](https://github.com/ShristiLabs/shipperdog/pull/153) | The nine persona pages with real screenshots |
 | WP5 Tester portal track | [#154](https://github.com/ShristiLabs/shipperdog/pull/154) | Portal how-tos, mobile screenshot set, companion page |
 | WP6 Console + automation | [#157](https://github.com/ShristiLabs/shipperdog/pull/157) | 19 console how-tos, CLI reference, CI pages, webhooks |
-| WP7 Reference + polish | this PR | Glossary, error-code subset, FAQ, troubleshooting, full-site review pass, OG image + meta |
+| WP7 Reference + polish | [#158](https://github.com/ShristiLabs/shipperdog/pull/158) | Glossary, error-code subset, FAQ, troubleshooting, full-site review pass, OG image + meta |
 
 Deviations from the original inventory, both recorded at delivery time:
 the audit-log page folded into siem-streams (WP6, one console screen), and
