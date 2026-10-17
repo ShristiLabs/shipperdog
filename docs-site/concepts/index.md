@@ -1,3 +1,7 @@
+---
+description: Deep dives into how ShipperDog works - tenancy, the release lifecycle, rings, approvals, gates, artifacts, authorization, identity, feedback, and security.
+---
+
 # Concepts
 
 Deep dives into how ShipperDog works — the models behind every screen.
@@ -26,7 +30,8 @@ Read them in any order; each stands alone and links to the others.
 
 New to ShipperDog? Start with [core concepts](/get-started/concepts.md)
 and the [platform tour](/get-started/platform-tour.md) instead — this
-section is the reference behind them.
+section is the reference behind them. Every term these pages use is
+defined in one line in the [glossary](/reference/glossary.md).
 
 Developer internals (API reference, module documentation, ADRs) live in
 the [shipperdog repository's docs

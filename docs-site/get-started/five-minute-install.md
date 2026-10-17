@@ -1,3 +1,7 @@
+---
+description: The tester golden path - from an invitation email to a running build in under five minutes, entirely in the Tester Portal.
+---
+
 # Five-minute install
 
 The tester golden path: from an invitation email to a running build in

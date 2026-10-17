@@ -1,3 +1,7 @@
+---
+description: ShipperDog's authorization model - the seven-layer decision chain, grants, and the concealed 404.
+---
+
 # Authorization
 
 ShipperDog's design principle is explicit authorization: nobody can

@@ -1,3 +1,7 @@
+---
+description: The release lifecycle - states from DRAFT to COMPLETED, what each crossing demands, and the frozen release manifest.
+---
+
 # Release lifecycle
 
 A release is a controlled distribution event: one version of one

@@ -1,10 +1,16 @@
+---
+description: The nine ShipperDog personas - from platform operator to tester - each with a dedicated quickstart and a hand-off task list.
+---
+
 # Roles
 
 ShipperDog's role catalog maps to nine documentation personas. Each
 persona gets a dedicated quickstart — who you are, what you can do, your
 first fifteen minutes in the real product, and where to go next — ending
 in a hand-off task list. Hold more than one role? Work one track per
-session and pick the persona you are being right now.
+session and pick the persona you are being right now. Hit a wall
+anywhere? [Troubleshooting](/reference/troubleshooting.md) lists the
+top ten scenarios across all nine tracks.
 
 ## [Platform Operator](/roles/platform-operator.md)
 

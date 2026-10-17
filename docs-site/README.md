@@ -7,13 +7,17 @@ built here.
 
 ## Content status
 
+Complete — all seven work packages of [PLAN.md](PLAN.md) delivered
+(WP1 #149, WP2 #151, WP3 #152, WP4 #153, WP5 #154, WP6 #157, WP7 —
+the reference and polish pass). 62 pages in the snapshot tree.
+
 | Section | Status (PLAN 3/5) |
 | --- | --- |
 | `get-started/` | Shipped (WP3): core concepts, platform tour with real screenshots (`public/screenshots/`), five-minute install |
 | `concepts/` | Shipped (WP3): all ten deep-dive pages with their mermaid diagrams |
 | `roles/` | Shipped (WP4): all nine role quickstarts with real persona screenshots (`public/screenshots/roles/`) |
 | `how-to/` | Shipped (WP5+WP6): all 5 portal pages with mobile screenshots (`public/screenshots/portal/`), the companion-app page, all 19 console pages (audit-log folded into siem-streams), and the automation set — CLI reference (generated from the CLI's own `--help`), GitHub Actions, Jenkins, GitLab CI, and the inbound-webhooks reference |
-| `reference/` | Stub — lands in WP7 |
+| `reference/` | Shipped (WP7): glossary, user-facing error-code subset, FAQ (14 questions), troubleshooting (top ten scenarios), plus the full-site polish pass — per-page descriptions, OG image (`public/og-image.png`) and social meta on every page |
 
 Convention: user pages link developer depth to the `docs/` tree via
 GitHub blob URLs on `main` rather than duplicating it.

@@ -39,6 +39,27 @@ export default withMermaid({
     ['link', { rel: 'icon', type: 'image/png', sizes: '16x16', href: `${base}favicon-16.png` }],
     ['link', { rel: 'apple-touch-icon', sizes: '180x180', href: `${base}apple-touch-icon.png` }],
   ],
+  // Social/SEO meta (WP7): every page gets og/twitter card tags.
+  // transformHead is VitePress's per-page head hook — the description
+  // meta itself comes from each page's frontmatter. No new deps. The
+  // image is an absolute URL because crawlers never resolve relative
+  // og:image values; the origin is the fixed GitHub Pages host.
+  transformHead({ pageData, title }) {
+    const siteOrigin = 'https://shristilabs.github.io';
+    const description = pageData.description || 'End-user documentation for ShipperDog.';
+    const pageTitle = title || 'ShipperDog Docs';
+    return [
+      ['meta', { property: 'og:title', content: pageTitle }],
+      ['meta', { property: 'og:description', content: description }],
+      ['meta', { property: 'og:image', content: `${siteOrigin}${base}og-image.png` }],
+      ['meta', { property: 'og:type', content: 'website' }],
+      ['meta', { property: 'og:site_name', content: 'ShipperDog Docs' }],
+      ['meta', { name: 'twitter:card', content: 'summary_large_image' }],
+      ['meta', { name: 'twitter:title', content: pageTitle }],
+      ['meta', { name: 'twitter:description', content: description }],
+      ['meta', { name: 'twitter:image', content: `${siteOrigin}${base}og-image.png` }],
+    ];
+  },
   themeConfig: {
     siteTitle: 'ShipperDog',
     logo: '/logo-mark-192.png',
@@ -146,7 +167,13 @@ export default withMermaid({
       },
       {
         text: 'Reference',
-        items: [{ text: 'Overview', link: '/reference/' }],
+        items: [
+          { text: 'Overview', link: '/reference/' },
+          { text: 'Glossary', link: '/reference/glossary' },
+          { text: 'Error codes', link: '/reference/error-codes' },
+          { text: 'FAQ', link: '/reference/faq' },
+          { text: 'Troubleshooting', link: '/reference/troubleshooting' },
+        ],
       },
     ],
     search: {

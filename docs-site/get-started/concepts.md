@@ -1,3 +1,7 @@
+---
+description: The five nouns of ShipperDog - Organization, Tenant, Application, Version, Artifact - and how a build reaches a phone.
+---
+
 # Core concepts
 
 Five nouns explain almost everything in ShipperDog. Once you can draw

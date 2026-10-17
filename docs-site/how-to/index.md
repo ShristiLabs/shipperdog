@@ -1,3 +1,7 @@
+---
+description: Task guides grouped by surface - tester portal how-tos, console administration, and CLI and CI automation.
+---
+
 # How-To
 
 Task guides, grouped by surface:
@@ -34,3 +38,7 @@ Task guides, grouped by surface:
   [inbound webhooks](/how-to/automation/webhooks.md) reference, and
   the [Android companion app](/how-to/automation/companion-app.md)
   (preview).
+
+Something failing? The [error codes](/reference/error-codes.md) and
+[troubleshooting](/reference/troubleshooting.md) pages cover the
+codes and scenarios these guides produce.

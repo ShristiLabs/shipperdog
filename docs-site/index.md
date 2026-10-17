@@ -1,5 +1,6 @@
 ---
 layout: home
+description: ShipperDog documentation - beta distribution and release management for enterprise mobile teams, across the Console, the Tester Portal, and the CLI and CI.
 
 hero:
   name: ShipperDog
@@ -15,6 +16,9 @@ hero:
     - theme: alt
       text: Find your role
       link: /roles/
+    - theme: alt
+      text: Reference
+      link: /reference/
 
 features:
   - title: Platform Operator

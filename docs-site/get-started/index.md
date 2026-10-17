@@ -1,3 +1,7 @@
+---
+description: Orientation for every ShipperDog user - core concepts, a Console platform tour, and the tester five-minute install.
+---
+
 # Get Started
 
 Orientation for every ShipperDog user:
@@ -11,4 +15,6 @@ Orientation for every ShipperDog user:
   tester golden path, from invite email to a running build.
 
 Looking for the models behind these guides? The
-[concepts](/concepts/) section is the deep-dive reference.
+[concepts](/concepts/) section is the deep-dive reference. Stuck on
+something? [Troubleshooting](/reference/troubleshooting.md) and the
+[FAQ](/reference/faq.md) cover the common cases.

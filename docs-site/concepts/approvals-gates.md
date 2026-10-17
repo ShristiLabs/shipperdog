@@ -1,3 +1,7 @@
+---
+description: Approval workflows and quality gates - the two engines that stand between a ready release and your testers.
+---
+
 # Approvals and quality gates
 
 Two engines stand between a ready release and your testers: approval

@@ -1,3 +1,7 @@
+---
+description: Rings and rollout - the ordered ladder of audiences a release climbs, each ring with its own rules.
+---
+
 # Rings and rollout
 
 Once a release is `ACTIVE`, distribution widens stage by stage through
