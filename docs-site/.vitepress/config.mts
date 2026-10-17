@@ -38,6 +38,13 @@ export default withMermaid({
     ['link', { rel: 'icon', type: 'image/png', sizes: '32x32', href: `${base}favicon-32.png` }],
     ['link', { rel: 'icon', type: 'image/png', sizes: '16x16', href: `${base}favicon-16.png` }],
     ['link', { rel: 'apple-touch-icon', sizes: '180x180', href: `${base}apple-touch-icon.png` }],
+    // Snapshot builds carry the fixed prerelease strip: reserve its height
+    // so the theme's fixed navbar (top: var(--vp-layout-top-height)) and
+    // every content padding slide below it instead of covering it.
+    // Released versions render no banner and inject no offset.
+    ...(version === 'snapshot'
+      ? [['style', {}, ':root{--vp-layout-top-height:30px}'] as [string, Record<string, string>]]
+      : []),
   ],
   // Social/SEO meta (WP7): every page gets og/twitter card tags.
   // transformHead is VitePress's per-page head hook — the description

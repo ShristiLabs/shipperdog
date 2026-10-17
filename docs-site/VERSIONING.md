@@ -20,8 +20,12 @@ https://shristilabs.github.io/shipperdog/
   push builds exactly ONE subtree; **released subtrees are immutable — they
   are never rebuilt** by any later trigger. Fixes to a released version go
   through the bad-publish procedure below.
-- **`/` (root)** is a plain file copy of the newest stable `vX.Y/` so the
-  site root serves stable docs (GitHub Pages does not follow symlinks).
+- **`/` (root)** is a redirect page to the current docs target — the
+  newest stable `vX.Y/`, or `snapshot/` before the first release. A file
+  copy cannot work: VitePress emits absolute asset URLs
+  (`/shipperdog/<version>/assets/...`), so a copied root breaks whenever
+  the source subtree rebuilds with new content hashes; the redirect is
+  rewritten by every deploy and can never go stale.
 - **`versions.json`** at the gh-pages root drives the navbar switcher:
   `{ "latest": "v0.2", "versions": [{ "id": "snapshot", "label": "SNAPSHOT (main)" }, { "id": "v0.2", "label": "v0.2" }, ...] }`
   — snapshot first, releases newest-first.
@@ -36,7 +40,7 @@ https://shristilabs.github.io/shipperdog/
    - builds with VitePress `base=/shipperdog/v0.1/` (banner off);
    - rsyncs the build into `v0.1/` on `gh-pages` (subtree replace — old
      versions untouched);
-   - real-copies the same build to the gh-pages root, excluding
+   - writes the gh-pages root redirect page to this version (it becomes
      `snapshot/`, `v*/`, `versions.json`, `.nojekyll` so siblings survive;
    - regenerates `versions.json` via `docs-site/scripts/regen-versions.mjs`
      (preserves existing entries, adds the new id, sets `latest` to the
@@ -72,7 +76,7 @@ git fetch origin gh-pages
 git worktree add --detach /tmp/gh-pages-cleanup origin/gh-pages
 cd /tmp/gh-pages-cleanup
 git rm -r v0.0-docs-test/
-# Restore the root copy from the newest stable release — before the first
+# Restore the root redirect to the newest stable release — before the first
 # real release, restore it from snapshot/ instead. Same excludes as
 # Trigger B's root copy, so sibling subtrees and versions.json survive:
 rsync -a --delete \
@@ -84,7 +88,7 @@ git add -A && git commit -m "docs: remove v0.0-docs-test test subtree"
 git push origin HEAD:gh-pages
 ```
 
-After the cleanup the root serves the restored copy (the newest stable
+After the cleanup the root redirects to the restored target (the newest stable
 release, or the snapshot before the first real release) — never a 404 —
 and `versions.json` is back to its pre-test state, snapshot-only until a
 release exists.
@@ -104,7 +108,7 @@ patched in place by CI:
    cd /tmp/gh-pages-fix
    git rm -r v0.9/
    node <repo>/docs-site/scripts/regen-versions.mjs . snapshot
-   # restore the root copy from the new latest (here v0.1):
+   # restore the root redirect to the new latest (here v0.1):
    rm -rf assets get-started how-to concepts roles reference index.html 404.html hashmap.json vp-icons.css favicon-*.png apple-touch-icon.png logo-mark-192.png
    rsync -a v0.1/ ./ --exclude versions.json --exclude snapshot --exclude 'v[0-9]*'
    git add -A && git commit -m "docs: remove bad v0.9 publish" && git push origin HEAD:gh-pages

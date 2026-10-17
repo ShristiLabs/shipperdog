@@ -59,7 +59,7 @@ environment variable selects it and derives the VitePress `base`:
 | DOCS_VERSION      | base path                  | deployed subtree |
 | ----------------- | -------------------------- | ---------------- |
 | `snapshot` (default) | `/shipperdog/snapshot/` | `snapshot/` on gh-pages |
-| `v0.1` (from release tags, Trigger B) | `/shipperdog/v0.1/` | `v0.1/` on gh-pages + root copy |
+| `v0.1` (from release tags, Trigger B) | `/shipperdog/v0.1/` | `v0.1/` on gh-pages + root redirect |
 
 A `snapshot` build also shows the "Unreleased — documentation for main"
 banner (`.vitepress/theme/SnapshotBanner.vue`).

@@ -44,7 +44,7 @@ https://<org>.github.io/shipperdog/
 ├── snapshot/        ← built from main on every merge (docs paths only)
 ├── v0.1/            ← built from the v0.1 release tag — immutable after publish
 ├── v0.2/            ← ditto
-├── /                ← REAL COPY of the newest stable (no symlinks on Pages)
+├── /                ← redirect page to newest stable (a copied root breaks — absolute hashed asset URLs)
 └── versions.json    ← [{id:"snapshot"},{id:"v0.2"},{id:"v0.1"}] + which is "latest"
 ```
 
