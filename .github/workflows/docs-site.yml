@@ -8,7 +8,7 @@ name: docs-site-ci
 #   release exists yet).
 # - push of a release tag v* (Trigger B) or workflow_dispatch with a version
 #   input (tag-flow test path): build with DOCS_VERSION=<version>, deploy the
-#   v<version>/ subtree, real-copy it to the gh-pages root, regenerate
+#   v<version>/ subtree, write the gh-pages root redirect to it, regenerate
 #   versions.json preserving existing entries, single push.
 #
 # Deploy uses plain git (worktree + rsync into the target subtree) rather
@@ -145,6 +145,34 @@ jobs:
           fi
           touch ../gh-pages-deploy/.nojekyll
           rsync -a --delete docs-site/.vitepress/dist/ ../gh-pages-deploy/snapshot/
+          # Root is a redirect page, never a copy: VitePress emits absolute
+          # asset URLs (/shipperdog/<version>/assets/...), so a file-copied
+          # root breaks the moment the source subtree rebuilds with new
+          # content hashes. Pre-first-release the redirect targets snapshot.
+          write_root_redirect() {
+            local target="$1"
+            find ../gh-pages-deploy -mindepth 1 -maxdepth 1 \
+              ! -name '.git' ! -name '.nojekyll' ! -name 'versions.json' \
+              ! -name 'snapshot' ! -name 'v[0-9]*' -exec rm -rf {} +
+            cat > ../gh-pages-deploy/index.html <<HTML
+          <!doctype html>
+          <html lang="en">
+            <head>
+              <meta charset="utf-8">
+              <meta http-equiv="refresh" content="0;url=${target}/">
+              <link rel="canonical" href="${target}/">
+              <title>ShipperDog Docs</title>
+            </head>
+            <body style="font-family: system-ui, sans-serif; text-align: center; padding-top: 4rem; color: #1b2a4a;">
+              <h1>ShipperDog Docs</h1>
+              <p>Taking you to the current documentation&hellip;</p>
+              <p><a href="${target}/">Continue to ${target}</a></p>
+              <script>location.replace('${target}/')</script>
+            </body>
+          </html>
+          HTML
+          }
+          write_root_redirect snapshot
           node docs-site/scripts/regen-versions.mjs ../gh-pages-deploy snapshot
           cd ../gh-pages-deploy
           git add -A
@@ -180,18 +208,33 @@ jobs:
           touch ../gh-pages-deploy/.nojekyll
           # Subtree replace: only this version's directory is rebuilt.
           rsync -a --delete docs-site/.vitepress/dist/ "${DEST}/"
-          # Root real copy (PLAN 2.2: no symlinks on Pages). --delete keeps
-          # the root in sync with this version, while the excludes protect
-          # everything the root must never own: the worktree's .git file,
-          # sibling version subtrees, snapshot/, versions.json, .nojekyll
-          # (rsync excludes shield them from deletion as well as from copy).
-          rsync -a --delete \
-            --exclude='.git' \
-            --exclude='.nojekyll' \
-            --exclude='versions.json' \
-            --exclude='snapshot' \
-            --exclude='v[0-9]*' \
-            docs-site/.vitepress/dist/ ../gh-pages-deploy/
+          # Root redirect (not a copy — see the snapshot trigger's note):
+          # the newest release becomes the root target; every tag deploy
+          # rewrites the redirect, and released subtrees stay immutable.
+          write_root_redirect() {
+            local target="$1"
+            find ../gh-pages-deploy -mindepth 1 -maxdepth 1 \
+              ! -name '.git' ! -name '.nojekyll' ! -name 'versions.json' \
+              ! -name 'snapshot' ! -name 'v[0-9]*' -exec rm -rf {} +
+            cat > ../gh-pages-deploy/index.html <<HTML
+          <!doctype html>
+          <html lang="en">
+            <head>
+              <meta charset="utf-8">
+              <meta http-equiv="refresh" content="0;url=${target}/">
+              <link rel="canonical" href="${target}/">
+              <title>ShipperDog Docs</title>
+            </head>
+            <body style="font-family: system-ui, sans-serif; text-align: center; padding-top: 4rem; color: #1b2a4a;">
+              <h1>ShipperDog Docs</h1>
+              <p>Taking you to the current documentation&hellip;</p>
+              <p><a href="${target}/">Continue to ${target}</a></p>
+              <script>location.replace('${target}/')</script>
+            </body>
+          </html>
+          HTML
+          }
+          write_root_redirect "${VERSION}"
           node docs-site/scripts/regen-versions.mjs ../gh-pages-deploy "${VERSION}"
           cd ../gh-pages-deploy
           git add -A
