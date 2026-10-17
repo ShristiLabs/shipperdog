@@ -12,7 +12,7 @@ built here.
 | `get-started/` | Shipped (WP3): core concepts, platform tour with real screenshots (`public/screenshots/`), five-minute install |
 | `concepts/` | Shipped (WP3): all ten deep-dive pages with their mermaid diagrams |
 | `roles/` | Shipped (WP4): all nine role quickstarts with real persona screenshots (`public/screenshots/roles/`) |
-| `how-to/` | Tester Portal guides shipped (WP5): all 5 portal pages with mobile screenshots (`public/screenshots/portal/`) plus the companion-app page; console and remaining automation pages are stubs — they land in WP6 |
+| `how-to/` | Shipped (WP5+WP6): all 5 portal pages with mobile screenshots (`public/screenshots/portal/`), the companion-app page, all 19 console pages (audit-log folded into siem-streams), and the automation set — CLI reference (generated from the CLI's own `--help`), GitHub Actions, Jenkins, GitLab CI, and the inbound-webhooks reference |
 | `reference/` | Stub — lands in WP7 |
 
 Convention: user pages link developer depth to the `docs/` tree via
