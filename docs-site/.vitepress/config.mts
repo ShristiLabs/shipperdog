@@ -76,7 +76,25 @@ export default withMermaid({
       },
       {
         text: 'How-To',
-        items: [{ text: 'Overview', link: '/how-to/' }],
+        items: [
+          { text: 'Overview', link: '/how-to/' },
+          {
+            text: 'Tester Portal',
+            collapsed: false,
+            items: [
+              { text: 'Accept an invitation', link: '/how-to/portal/accept-invite' },
+              { text: 'Browse your applications', link: '/how-to/portal/browse-apps' },
+              { text: 'Install on iOS', link: '/how-to/portal/install-ios' },
+              { text: 'Install on Android', link: '/how-to/portal/install-android' },
+              { text: 'Submit feedback', link: '/how-to/portal/feedback' },
+            ],
+          },
+          {
+            text: 'Automation',
+            collapsed: false,
+            items: [{ text: 'Android companion app', link: '/how-to/automation/companion-app' }],
+          },
+        ],
       },
       {
         text: 'Concepts',

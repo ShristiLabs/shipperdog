@@ -94,8 +94,7 @@ appear on your home screen.
 
 ## Where to go next
 
-The step-by-step guides for each part of the portal live in the how-to
-section (landing with the portal guide rollout):
+The step-by-step guides for each part of the portal:
 
 - [Accept an invitation](/how-to/portal/accept-invite.md)
 - [Browse your applications](/how-to/portal/browse-apps.md)
