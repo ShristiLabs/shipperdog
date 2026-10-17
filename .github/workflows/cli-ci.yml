@@ -8,12 +8,16 @@ name: cli-ci
 # git via ldflags.
 on:
   pull_request:
-    paths-ignore:
-      - 'docs-site/**'
+    paths:
+      - 'cli/**'
+      - 'docs/openapi/baseline.yaml'
+      - '.github/workflows/cli-ci.yml'
   push:
     branches: [main]
-    paths-ignore:
-      - 'docs-site/**'
+    paths:
+      - 'cli/**'
+      - 'docs/openapi/baseline.yaml'
+      - '.github/workflows/cli-ci.yml'
 
 jobs:
   lint-test:

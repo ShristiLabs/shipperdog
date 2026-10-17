@@ -10,12 +10,14 @@ name: companion-ci
 
 on:
   pull_request:
-    paths-ignore:
-      - 'docs-site/**'
+    paths:
+      - 'companion/**'
+      - '.github/workflows/companion-ci.yml'
   push:
     branches: [main]
-    paths-ignore:
-      - 'docs-site/**'
+    paths:
+      - 'companion/**'
+      - '.github/workflows/companion-ci.yml'
 
 permissions:
   contents: read

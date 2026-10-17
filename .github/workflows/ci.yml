@@ -2,12 +2,22 @@ name: backend-ci
 
 on:
   pull_request:
-    paths-ignore:
-      - 'docs-site/**'
+    paths:
+      - 'backend/**'
+      - 'infrastructure/**'
+      - 'frontend/package-lock.json'
+      - 'portal/package-lock.json'
+      - 'cli/go.sum'
+      - '.github/workflows/ci.yml'
   push:
     branches: [main]
-    paths-ignore:
-      - 'docs-site/**'
+    paths:
+      - 'backend/**'
+      - 'infrastructure/**'
+      - 'frontend/package-lock.json'
+      - 'portal/package-lock.json'
+      - 'cli/go.sum'
+      - '.github/workflows/ci.yml'
 
 jobs:
   build-and-test:
