@@ -87,6 +87,6 @@ Hand-off task list:
       chain you gate and the override records you audit
 - [ ] Read [authorization](/concepts/authorization.md) for the
       decision chain your reviews ride on
-- [ ] How-tos as they land: [audit log](/how-to/console/audit-log.md),
-      [SIEM streams](/how-to/console/siem-streams.md) (configured by
-      your Organization Admin)
+- [ ] How-tos: [SIEM streams and the audit
+      trail](/how-to/console/siem-streams.md) (configured by your
+      Organization Admin)

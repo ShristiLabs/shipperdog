@@ -90,9 +90,9 @@ Hand-off task list:
       what your cross-tenant authority does and does not touch
 - [ ] Read [authorization](/concepts/authorization.md) for the decision
       chain your inspection queries walk
-- [ ] Bookmark the how-tos as they land:
+- [ ] Bookmark the how-tos:
       [onboard an organization](/how-to/console/orgs.md),
-      [audit log](/how-to/console/audit-log.md)
+      [SIEM streams and the audit trail](/how-to/console/siem-streams.md)
 - [ ] Operations depth (deployment, infrastructure) lives in the
       developer docs:
       [deployment](https://github.com/ShristiLabs/shipperdog/blob/main/docs/deployment.md)

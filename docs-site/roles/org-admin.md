@@ -100,11 +100,10 @@ Hand-off task list:
       authentication models you are configuring
 - [ ] Decide your ABAC posture:
       [authorization](/concepts/authorization.md)
-- [ ] How-tos as they land: [tenants](/how-to/console/tenants.md),
+- [ ] How-tos: [tenants](/how-to/console/tenants.md),
       [SSO](/how-to/console/sso-oidc-saml.md),
       [SCIM](/how-to/console/scim-provisioning.md),
-      [SIEM streams](/how-to/console/siem-streams.md),
-      [ABAC policies](/how-to/console/abac-policies.md),
-      [audit log](/how-to/console/audit-log.md)
+      [SIEM streams and the audit trail](/how-to/console/siem-streams.md),
+      [ABAC policies](/how-to/console/abac-policies.md)
 - [ ] Onboard testers with the QA Engineer's
       [tester-invitation flow](/roles/qa-engineer.md)
