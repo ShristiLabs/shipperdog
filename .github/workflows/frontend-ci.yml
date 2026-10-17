@@ -9,12 +9,18 @@ name: frontend-ci
 # gate can pass on the other's green.
 on:
   pull_request:
-    paths-ignore:
-      - 'docs-site/**'
+    paths:
+      - 'frontend/**'
+      - 'portal/**'
+      - 'infrastructure/security-headers/**'
+      - '.github/workflows/frontend-ci.yml'
   push:
     branches: [main]
-    paths-ignore:
-      - 'docs-site/**'
+    paths:
+      - 'frontend/**'
+      - 'portal/**'
+      - 'infrastructure/security-headers/**'
+      - '.github/workflows/frontend-ci.yml'
 
 jobs:
   lint-typecheck-build-test:

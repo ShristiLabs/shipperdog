@@ -13,12 +13,14 @@ name: sdk-ci
 
 on:
   pull_request:
-    paths-ignore:
-      - 'docs-site/**'
+    paths:
+      - 'sdk/**'
+      - '.github/workflows/sdk-ci.yml'
   push:
     branches: [main]
-    paths-ignore:
-      - 'docs-site/**'
+    paths:
+      - 'sdk/**'
+      - '.github/workflows/sdk-ci.yml'
 
 permissions:
   contents: read
