@@ -88,6 +88,18 @@ That is the whole loop. QA triages your reports; critical ones gate
 promotions; your installs and sessions feed the metrics that decide
 how wide the release spreads.
 
+## Step-by-step guides
+
+Each part of the path above has its own short guide in the how-to
+section:
+
+1. [Accept an invitation](/how-to/portal/accept-invite.md)
+2. [Browse your applications](/how-to/portal/browse-apps.md) — the
+   catalog and the version history
+3. [Install on Android](/how-to/portal/install-android.md) /
+   [install on iOS](/how-to/portal/install-ios.md)
+4. [Submit feedback](/how-to/portal/feedback.md)
+
 ## For administrators: what makes this work
 
 The five-minute promise rests on four setup facts, all covered
