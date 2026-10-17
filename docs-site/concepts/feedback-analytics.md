@@ -1,3 +1,7 @@
+---
+description: Feedback and analytics - tester reports, device events, and the closed loop from metrics to gates to promotion.
+---
+
 # Feedback and analytics
 
 ShipperDog closes the loop between "we shipped a build" and "is it any

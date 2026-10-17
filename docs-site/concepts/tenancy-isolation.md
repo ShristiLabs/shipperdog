@@ -1,3 +1,7 @@
+---
+description: How ShipperDog isolates tenants - per-tenant data, scoped applications, and populations that never leak across tenants.
+---
+
 # Tenancy and isolation
 
 ShipperDog is built for enterprises that distribute apps to many

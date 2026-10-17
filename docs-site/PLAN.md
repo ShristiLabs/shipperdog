@@ -1,6 +1,9 @@
 # ShipperDog End-User Documentation Site — Plan
 
-Status: approved plan. Work packages WP1–WP7 land sequentially, one PR each.
+Status: **delivered** (2026-10). Work packages WP1–WP7 landed sequentially,
+one PR each — see the completion note at the end. This document is now the
+as-built record; the page inventory below reflects what shipped, including
+the two deliberate deviations noted alongside it.
 
 ## 1. Who the users are
 
@@ -85,12 +88,15 @@ docs-site/
     │   ├── developer.md  qa-engineer.md  security-reviewer.md  tenant-admin.md
     │   └── tester.md               ⭐ the standalone portal track
     ├── how-to/
-    │   ├── console/                ~15 task guides: orgs · tenants · apps ·
-    │   │   versions+tags · environments · releases · approvals · quality-gates ·
+    │   ├── console/                19 task guides: orgs · tenants · apps ·
+    │   │   versions+tags · releases · approvals · quality-gates ·
     │   │   rings+promotion · staged-rollout · rollback · feedback-triage ·
     │   │   devices · analytics+dashboards · notifications ·
     │   │   distribution-channels · abac-policies · sso-oidc-saml ·
-    │   │   scim-provisioning · siem-streams · audit-log
+    │   │   scim-provisioning · siem-streams
+    │   │   (as built: audit-log folded into siem-streams — both surfaces
+    │   │   live on one console screen; environments have no dedicated
+    │   │   screen — folded as mentions into releases/channels/policies)
     │   ├── portal/                 Tester how-tos (5): accept-invite ·
     │   │   browse-apps · install-ios · install-android · feedback
     │   └── automation/             CLI + CI (6): cli-reference · github-actions ·
@@ -105,7 +111,9 @@ docs-site/
         └── troubleshooting.md      Top 10 support scenarios
 ```
 
-≈ 50 pages across versions (only `snapshot/` edits in-tree; releases are frozen copies).
+≈ 50 pages across versions (as built: 62 in the snapshot tree — 58 through
+WP6, plus the four reference pages of WP7; only `snapshot/` edits in-tree,
+releases are frozen copies).
 
 ## 4. Mermaid diagram inventory (14)
 
@@ -152,3 +160,22 @@ and `docs/` (developer docs) — user docs never duplicate developer internals.
 - @viteplus/versions (npm) — https://www.npmjs.com/package/@viteplus/versions
 - Lando Multiversion VitePress Build — https://vitepress-theme-default-plus.lando.dev/guides/multiversion-vitepress-build.html
 - SQLFluff versioned docs hosting — https://docs.sqlfluff.com/en/stable/development/versioned-docs-hosting
+
+## Completion note
+
+Delivered 2026-10, one PR per work package:
+
+| WP | PR | Scope shipped |
+|---|---|---|
+| WP1 Scaffold | [#149](https://github.com/ShristiLabs/shipperdog/pull/149) | VitePress app, theme + corgi brand, mermaid, local search, snapshot banner, CI, Pages deploy |
+| WP2 Versioning | [#151](https://github.com/ShristiLabs/shipperdog/pull/151) | Version switcher, `versions.json` contract, tag builds + root-copy refresh, runbook |
+| WP3 Foundations | [#152](https://github.com/ShristiLabs/shipperdog/pull/152) | All ten concept pages with diagrams, get-started track |
+| WP4 Role quickstarts | [#153](https://github.com/ShristiLabs/shipperdog/pull/153) | The nine persona pages with real screenshots |
+| WP5 Tester portal track | [#154](https://github.com/ShristiLabs/shipperdog/pull/154) | Portal how-tos, mobile screenshot set, companion page |
+| WP6 Console + automation | [#157](https://github.com/ShristiLabs/shipperdog/pull/157) | 19 console how-tos, CLI reference, CI pages, webhooks |
+| WP7 Reference + polish | this PR | Glossary, error-code subset, FAQ, troubleshooting, full-site review pass, OG image + meta |
+
+Deviations from the original inventory, both recorded at delivery time:
+the audit-log page folded into siem-streams (WP6, one console screen), and
+environments folded as mentions (WP6, no dedicated screen). All other
+sections shipped as planned.

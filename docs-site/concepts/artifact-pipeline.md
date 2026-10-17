@@ -1,3 +1,7 @@
+---
+description: The artifact pipeline - upload with provenance, the seven-stage validation FSM, and immutable SHA-256-identified binaries.
+---
+
 # Artifact pipeline
 
 An artifact is a concrete, immutable binary — an IPA, APK, or AAB.

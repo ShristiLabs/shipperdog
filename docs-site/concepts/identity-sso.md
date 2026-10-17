@@ -1,3 +1,7 @@
+---
+description: Identity and SSO - OIDC and SAML login flows, provisioning postures, and SCIM joiner-mover-leaver cascades.
+---
+
 # Identity and SSO
 
 ShipperDog fits your corporate identity stack rather than replacing

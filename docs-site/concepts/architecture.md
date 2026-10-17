@@ -1,3 +1,7 @@
+---
+description: The ShipperDog platform at a glance - three surfaces, one API, and the engines that govern distribution underneath.
+---
+
 # Platform architecture
 
 ShipperDog is an enterprise platform for distributing mobile builds to

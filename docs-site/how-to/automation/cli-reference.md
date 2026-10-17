@@ -10,8 +10,8 @@ promote) without curl and JSON.
 
 ::: tip About this page
 The command tables below are **generated from the CLI's own
-`--help` output** — captured from the CLI as of commit `74aa320`
-(WP6). The full help text of every command is committed at the
+`--help` output** — captured from the CLI as of commit `74aa320`.
+The full help text of every command is committed at the
 bottom as the source of truth. The CLI does not self-update this
 page: after a CLI change, regenerate manually with
 `shipperdog <command> --help`.
@@ -137,7 +137,7 @@ Captured from the CLI's own `--help` at commit `74aa320`.
 
 #### `shipperdog` (root)
 
-```
+```text
 The ShipperDog developer-side companion (PRD 20): script uploads, inspections,
 and the release path (create, drive, promote) without curl and JSON.
 Credentials live in ~/.shipperdog/credentials (0600) after `shipperdog login`;
@@ -166,7 +166,7 @@ Use "shipperdog [command] --help" for more information about a command.
 
 #### `shipperdog artifact`
 
-```
+```text
 Upload and inspect artifact binaries
 
 Usage:
@@ -189,7 +189,7 @@ Use "shipperdog artifact [command] --help" for more information about a command.
 
 #### `shipperdog gate`
 
-```
+```text
 The quality-gate surface (FR-026, PRD 32): submit a gate result from CI with
 evidence (latest wins, history kept), read a release's gate block (passed,
 failed, no-data fail-closed, or not-reported per gate, with thresholds and
@@ -217,7 +217,7 @@ Use "shipperdog gate [command] --help" for more information about a command.
 
 #### `shipperdog login`
 
-```
+```text
 Verifies a personal access token (PAT) against GET /api/v1/auth/me and
 stores it in ~/.shipperdog/credentials with 0600 permissions. The token is
 read from --token, then SHIPPERDOG_TOKEN, then an interactive hidden
@@ -238,7 +238,7 @@ Global Flags:
 
 #### `shipperdog logout`
 
-```
+```text
 Remove the stored credentials
 
 Usage:
@@ -253,7 +253,7 @@ Global Flags:
 
 #### `shipperdog release`
 
-```
+```text
 The release surface (PRD 17/20): create a release from a version's READY
 artifacts targeting tenants/groups on a ring, read it back by quotable id
 (R-1028), drive the state machine edge by edge with transition, or walk it
@@ -285,7 +285,7 @@ Use "shipperdog release [command] --help" for more information about a command.
 
 #### `shipperdog version`
 
-```
+```text
 Inspect versions
 
 Usage:
@@ -305,7 +305,7 @@ Use "shipperdog version [command] --help" for more information about a command.
 
 #### `shipperdog artifact list`
 
-```
+```text
 Walks the visible applications and their versions and renders one row per
 artifact slot (the listing the API serves carries artifact status, format
 verdict, and validation summary). An optional <app> argument (name or uuid)
@@ -328,7 +328,7 @@ Global Flags:
 
 #### `shipperdog artifact revalidate`
 
-```
+```text
 POST /api/v1/artifacts/{id}/revalidate: a FAILED artifact re-enters through
 FAILED -> VALIDATING, a blocked validation re-drives, a blocked extraction
 re-arms. 409 ARTIFACT_NOT_VALIDATABLE answers for anything the state machine
@@ -353,7 +353,7 @@ Global Flags:
 
 #### `shipperdog artifact upload`
 
-```
+```text
 Uploads a .ipa/.apk/.aab binary to a version. Provenance flags map to the frozen
 S5-04 fields (gitCommit, gitBranch, pipeline, ciRunUrl, buildTimestamp); all are
 optional and never fabricated. Files larger than the resumable threshold (default
@@ -387,7 +387,7 @@ Global Flags:
 
 #### `shipperdog artifact view`
 
-```
+```text
 GET /api/v1/artifacts/{id}: the artifact read where the extraction outcome and
 the validation block (per-stage status/code/reason in FR-006 order, attempts,
 duration, format verdict) settle. With --wait, polls until settled; a settled
@@ -410,7 +410,7 @@ Global Flags:
 
 #### `shipperdog gate list`
 
-```
+```text
 GET /api/v1/releases/{id}/gates (PRD 32): the release's quality-gate
 block - every gate the release's ring expects (required first-class,
 advisory marked) beside any reported results: PASSED with evidence,
@@ -433,7 +433,7 @@ Global Flags:
 
 #### `shipperdog gate override`
 
-```
+```text
 POST /api/v1/releases/{id}/gates/{gate}/override (FR-026): the governed
 exception - a FAILED or NO_DATA gate stops blocking, exactly once, with
 actor, mandatory reason, and moment recorded on the release and
@@ -456,7 +456,7 @@ Global Flags:
 
 #### `shipperdog gate result`
 
-```
+```text
 POST /api/v1/releases/{id}/gates/{gate}/result (FR-022/FR-026): records a
 pass or fail with the mandatory evidence URL (the report link a human can
 follow) and the submitting caller's identity. Idempotent per gate+release
@@ -484,7 +484,7 @@ Global Flags:
 
 #### `shipperdog release create`
 
-```
+```text
 POST /api/v1/releases (FR-015): assembles the distribution event in one
 governed act - the version, one READY artifact per platform, the target
 tenants with optional tester-group narrowing, and the starting ring
@@ -513,7 +513,7 @@ Global Flags:
 
 #### `shipperdog release get`
 
-```
+```text
 GET /api/v1/releases/{id}: the full creation record - status, per-platform
 artifact selection, the complete target set, ring and environment - with
 the live quality-gate block (S10-03, issue #42) appended: per-gate
@@ -539,7 +539,7 @@ Global Flags:
 
 #### `shipperdog release list`
 
-```
+```text
 GET /api/v1/releases?applicationId=…: newest (quotable number) first with
 the server's conjunctive filters - --version (name or uuid, resolved to the
 server's versionId filter), --status, --tenant. Without an <app> argument
@@ -562,7 +562,7 @@ Global Flags:
 
 #### `shipperdog release manifest`
 
-```
+```text
 GET /api/v1/releases/{id}/manifest (PRD 16): the immutable record of what
 the release ships, frozen at the APPROVED crossing and never recomputed -
 artifact pins by content (sha256, build, size, filename), targets, ring,
@@ -586,7 +586,7 @@ Global Flags:
 
 #### `shipperdog release precheck`
 
-```
+```text
 GET /api/v1/releases/{id}/promotion-precheck (S10-05, issue #44's technical
 note: one evaluation function, three surfaces): the SAME evaluation the
 promote act runs, answered as a read - the verdict, the complete blocker
@@ -610,7 +610,7 @@ Global Flags:
 
 #### `shipperdog release promote`
 
-```
+```text
 The CI showcase (PRD 20/32): drives the release forward through PRD 17's
 edges - VALIDATING, READY, APPROVAL_PENDING, APPROVED (the manifest freeze),
 DEPLOYING, ACTIVE - and then through the promotion engine's ring hops (S10-05:
@@ -642,7 +642,7 @@ Global Flags:
 
 #### `shipperdog release promotions`
 
-```
+```text
 GET /api/v1/releases/{id}/promotions (S10-05, PRD 18: promotion preserves
 release history): the append-only timeline - every COMPLETED hop with its
 two rings, the tenants moved, and the actor, and every BLOCKED attempt
@@ -664,7 +664,7 @@ Global Flags:
 
 #### `shipperdog release transition`
 
-```
+```text
 POST /api/v1/releases/{id}/transitions (PRD 17): the machine's edges only -
 DRAFT->VALIDATING->READY->APPROVAL_PENDING->APPROVED->DEPLOYING->ACTIVE,
 ACTIVE->PROMOTED->COMPLETED, the failure edges to FAILED, and
@@ -688,7 +688,7 @@ Global Flags:
 
 #### `shipperdog version list`
 
-```
+```text
 GET /api/v1/applications/{id}/versions: newest-first by the normalized semver
 sort key. The default window is the working set (DRAFT and ACTIVE); --include
 archived,revoked widens it; --tag narrows to versions carrying a tag.

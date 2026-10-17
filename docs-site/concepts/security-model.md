@@ -1,3 +1,7 @@
+---
+description: The ShipperDog security model - fail-closed by construction, concealed denials, signed download URLs, and an append-only audit trail.
+---
+
 # Security model
 
 ShipperDog's security posture is fail-closed by construction: deny by
