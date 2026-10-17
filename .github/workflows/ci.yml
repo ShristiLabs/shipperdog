@@ -2,8 +2,12 @@ name: backend-ci
 
 on:
   pull_request:
+    paths-ignore:
+      - 'docs-site/**'
   push:
     branches: [main]
+    paths-ignore:
+      - 'docs-site/**'
 
 jobs:
   build-and-test:

@@ -9,8 +9,12 @@ name: frontend-ci
 # gate can pass on the other's green.
 on:
   pull_request:
+    paths-ignore:
+      - 'docs-site/**'
   push:
     branches: [main]
+    paths-ignore:
+      - 'docs-site/**'
 
 jobs:
   lint-typecheck-build-test:

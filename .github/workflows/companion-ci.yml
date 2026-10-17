@@ -10,8 +10,12 @@ name: companion-ci
 
 on:
   pull_request:
+    paths-ignore:
+      - 'docs-site/**'
   push:
     branches: [main]
+    paths-ignore:
+      - 'docs-site/**'
 
 permissions:
   contents: read

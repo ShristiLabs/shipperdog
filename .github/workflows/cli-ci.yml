@@ -8,8 +8,12 @@ name: cli-ci
 # git via ldflags.
 on:
   pull_request:
+    paths-ignore:
+      - 'docs-site/**'
   push:
     branches: [main]
+    paths-ignore:
+      - 'docs-site/**'
 
 jobs:
   lint-test:
