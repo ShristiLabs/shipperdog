@@ -6,6 +6,7 @@ import jakarta.persistence.PrePersist;
 import jakarta.persistence.PreUpdate;
 import jakarta.persistence.Table;
 import java.time.Instant;
+import java.time.temporal.ChronoUnit;
 import java.util.UUID;
 
 /**
@@ -118,10 +119,15 @@ public class OtaAppTokenEntity {
         return revokedAt == null;
     }
 
-    /** Revocation's write: stamps the row dead (idempotent — a live row only). */
+    /**
+     * Revocation's write: stamps the row dead (idempotent — a live row only). The stamp is
+     * truncated to microseconds before persisting: the column's precision is microseconds, so
+     * the first response and any replay render the identical value regardless of the host
+     * clock's nanosecond granularity.
+     */
     public void revoke() {
         if (revokedAt == null) {
-            this.revokedAt = Instant.now();
+            this.revokedAt = Instant.now().truncatedTo(ChronoUnit.MICROS);
         }
     }
 }
