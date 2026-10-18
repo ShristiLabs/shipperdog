@@ -192,6 +192,18 @@ shipperdog:
   telemetry:
     token-ttl: ${TELEMETRY_TOKEN_TTL:P90D}
     token-key: ${TELEMETRY_TOKEN_KEY:shipperdog-local-telemetry-key}
+  # The OTA device identifier (issue #166, S16-04, ADR-0010 D3): the
+  # HMAC key behind every minted sdc1. app token — the identifier the
+  # console/CLI issues per application and the shipped app embeds for
+  # the device check. No TTL by doctrine (an identifier, not a
+  # secret): its lifetime is the registry row's (revoked_at), never a
+  # clock's. The key's rotation is the break-glass revocation of
+  # every minted app token, on its own key so rotating one credential
+  # family never retires another's. Local default is a dev-only value
+  # exactly like the JWT secret's local default; production supplies a
+  # real secret through the environment.
+  ota:
+    app-token-key: ${OTA_APP_TOKEN_KEY:shipperdog-local-ota-app-token-key}
   # The domain-event bus and notification service (issue #51, S12-01,
   # FR-023, PRD 51): the transactional-outbox relay's schedule and
   # ceilings, and the delivery retry policy every channel shares

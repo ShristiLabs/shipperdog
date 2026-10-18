@@ -1331,7 +1331,22 @@ final class IsolationEndpointRegistry {
                         side -> "/api/v1/ota/signing-keys?applicationId=" + side.applicationId(),
                         404,
                         404,
-                        side -> "/api/v1/ota/signing-keys?applicationId=" + UUID.randomUUID()));
+                        side -> "/api/v1/ota/signing-keys?applicationId=" + UUID.randomUUID()),
+                // The sdc1. app-token registry's listing (S16-04):
+                // the same app:artifacts:read grain and miss shape as
+                // the bundle reads (neither matrix persona holds it);
+                // the seeded world's app is not OTA-enabled, so the
+                // own side would answer an empty page only after the
+                // opt-in — the permission denial's concealed shape is
+                // the honest own answer here, and concealment of a
+                // REAL foreign token listing is pinned with live
+                // tokens by the S16-04 otabundle suite.
+                surface(
+                        "/api/v1/ota/app-tokens",
+                        side -> "/api/v1/ota/app-tokens?applicationId=" + side.applicationId(),
+                        404,
+                        404,
+                        side -> "/api/v1/ota/app-tokens?applicationId=" + UUID.randomUUID()));
     }
 
     /**
