@@ -454,3 +454,15 @@ and the batch history. Documented with its surface in
 | `AUDIT_STREAM_EXPORT_NOT_FOUND` | 404 | Resource not found. (Also the concealed-denial shape — a foreign organization's export is indistinguishable from a missing one on every export item route; the permission target conceals first) |
 | `AUDIT_STREAM_EXPORT_INVALID` | 422 | The export is invalid: an unknown kind or format, an unknown audit event type in the filter, a non-routable collector URL (the webhook SSRF policy), a non-`gs://` bucket URI (the `s3://` connector is the documented follow-up), a malformed secret reference, or a kind/destination shape violation — one 422 keyed by the offending member |
 | `AUDIT_STREAM_EXPORT_CONFLICT` | 409 | The export changed; reload and retry. (The optimistic `version` column — a rotated secret reference or replaced destination is never silently resurrected by a stale writer) |
+
+## OTA bundle — S16-04/issue #166 (`OtaBundleException.Code`)
+
+The OTA update workstream's module (ADR-0010): bundle authoring and
+the `sdc1.` app-token registry. Registered here: the app-token
+surface (S16-04). The module's bundle-authoring codes (S16-03,
+issue #165) are pending registration with the workstream's docs
+pass (S16-16, issue #178).
+
+| Code | HTTP | Detail |
+|---|---|---|
+| `TOKEN_NOT_FOUND` | 404 | Resource not found. (since S16-04, issue #166: the app-token registry's single answer for every failed revoke on `DELETE /api/v1/ota/app-tokens/{tokenId}/revoke` — a tokenId never issued to the named application or one that belongs to another application is the same concealed miss; revoking an already-revoked token replays the row and never answers this code) |

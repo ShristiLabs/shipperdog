@@ -26,6 +26,7 @@ public class OtaBundleException extends RuntimeException {
         BUNDLE_NOT_FOUND(HttpStatus.NOT_FOUND, "BUNDLE_NOT_FOUND", "Resource not found."),
         APPLICATION_NOT_FOUND(HttpStatus.NOT_FOUND, "APPLICATION_NOT_FOUND", "Resource not found."),
         SIGNING_KEY_NOT_FOUND(HttpStatus.NOT_FOUND, "SIGNING_KEY_NOT_FOUND", "Resource not found."),
+        TOKEN_NOT_FOUND(HttpStatus.NOT_FOUND, "TOKEN_NOT_FOUND", "Resource not found."),
         INVALID_REQUEST(HttpStatus.BAD_REQUEST, "INVALID_REQUEST", "The request is invalid."),
         APPLICATION_NOT_OTA_ENABLED(
                 HttpStatus.CONFLICT,

@@ -3028,6 +3028,77 @@ paths:
             '*/*':
               schema:
                 $ref: "#/components/schemas/FinalizeView"
+  /api/v1/ota/app-tokens:
+    get:
+      tags:
+      - ota-app-token-controller
+      operationId: listAppTokens
+      parameters:
+      - name: applicationId
+        in: query
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - name: limit
+        in: query
+        required: false
+        schema:
+          type: string
+      - name: cursor
+        in: query
+        required: false
+        schema:
+          type: string
+      responses:
+        "200":
+          description: OK
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/PageResponseOtaAppTokenView"
+    post:
+      tags:
+      - ota-app-token-controller
+      operationId: issueAppToken
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/IssueAppTokenRequest"
+        required: true
+      responses:
+        "201":
+          description: Created
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/IssuedView"
+  /api/v1/ota/app-tokens/{tokenId}/revoke:
+    post:
+      tags:
+      - ota-app-token-controller
+      operationId: revokeAppToken
+      parameters:
+      - name: tokenId
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RevokeAppTokenRequest"
+        required: true
+      responses:
+        "200":
+          description: OK
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/OtaAppTokenView"
   /api/v1/organizations:
     get:
       tags:
@@ -7706,6 +7777,10 @@ components:
     JsonNode:
       type: object
       properties:
+        string:
+          type: boolean
+        valueNode:
+          type: boolean
         nodeType:
           type: string
           enum:
@@ -7718,17 +7793,11 @@ components:
           - OBJECT
           - POJO
           - STRING
-        string:
-          type: boolean
-        integralNumber:
-          type: boolean
         missingNode:
-          type: boolean
-        valueNode:
           type: boolean
         pojo:
           type: boolean
-        number:
+        integralNumber:
           type: boolean
         short:
           type: boolean
@@ -7749,9 +7818,11 @@ components:
           type: boolean
         binary:
           type: boolean
-        floatingPointNumber:
-          type: boolean
         container:
+          type: boolean
+        number:
+          type: boolean
+        floatingPointNumber:
           type: boolean
         empty:
           type: boolean
@@ -8810,6 +8881,49 @@ components:
           type: boolean
         bundle:
           $ref: "#/components/schemas/BundleView"
+    IssueAppTokenRequest:
+      type: object
+      description: "The OTA app token to issue: applicationId (the permission target)\
+        \ and the human name the registry distinguishes tokens by (1-200 chars)."
+      properties:
+        applicationId:
+          type: string
+          format: uuid
+        name:
+          type: string
+    IssuedView:
+      type: object
+      properties:
+        token:
+          $ref: "#/components/schemas/OtaAppTokenView"
+        value:
+          type: string
+    OtaAppTokenView:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        applicationId:
+          type: string
+          format: uuid
+        name:
+          type: string
+        createdBy:
+          type: string
+          format: uuid
+        revoked:
+          type: boolean
+        revokedAt:
+          type: string
+          format: date-time
+    RevokeAppTokenRequest:
+      type: object
+      description: The application id the revoked app token belongs to.
+      properties:
+        applicationId:
+          type: string
+          format: uuid
     SubscriptionView:
       type: object
       properties:
@@ -10644,6 +10758,15 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/BundleView"
+        next_cursor:
+          type: string
+    PageResponseOtaAppTokenView:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/OtaAppTokenView"
         next_cursor:
           type: string
     PageResponseOrganizationResponse:

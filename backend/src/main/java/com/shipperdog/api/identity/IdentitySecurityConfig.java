@@ -6,6 +6,8 @@ import com.shipperdog.api.config.ProblemJsonSecurityHandlers;
 import com.shipperdog.api.identity.internal.crypto.SecureTokens;
 import com.shipperdog.api.identity.internal.service.TokenService;
 import com.shipperdog.api.identity.internal.web.PatAuthenticationFilter;
+import com.shipperdog.api.otabundle.OtaAppTokenAuthenticationFilter;
+import com.shipperdog.api.otabundle.OtaAppTokenCodec;
 import java.util.List;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.context.annotation.Bean;
@@ -47,7 +49,8 @@ public class IdentitySecurityConfig {
             JwtDecoder jwtDecoder,
             TokenService tokens,
             ProblemJsonSecurityHandlers problemHandlers,
-            ObjectProvider<TelemetryTokenAuthenticationFilter> telemetryTokens)
+            ObjectProvider<TelemetryTokenAuthenticationFilter> telemetryTokens,
+            ObjectProvider<OtaAppTokenAuthenticationFilter> otaAppTokens)
             throws Exception {
         PatAuthenticationFilter patFilter = new PatAuthenticationFilter(tokens);
         http.securityMatcher("/api/v1/**")
@@ -116,6 +119,17 @@ public class IdentitySecurityConfig {
         if (telemetryFilter != null) {
             http.addFilterBefore(telemetryFilter, BearerTokenAuthenticationFilter.class);
         }
+        // The shipped app's OTA device identifier (issue #166,
+        // S16-04, ADR-0010 D3): the sdc1. prefix is authenticated by
+        // the otabundle module's filter against the hashed registry
+        // (revocation is immediate), one authority
+        // (ota:app-token:check) that nothing honors until the device
+        // check lands (S16-07). The same ObjectProvider decoupling as
+        // the telemetry filter above.
+        OtaAppTokenAuthenticationFilter otaAppTokenFilter = otaAppTokens.getIfAvailable();
+        if (otaAppTokenFilter != null) {
+            http.addFilterBefore(otaAppTokenFilter, BearerTokenAuthenticationFilter.class);
+        }
         // The API-surface security headers (issue #39, S8-05):
         // HSTS, no-referrer, empty Permissions-Policy, and a
         // default-src 'none' CSP — the same posture the baseline
@@ -129,10 +143,11 @@ public class IdentitySecurityConfig {
     }
 
     /**
-     * Keeps the resource server away from personal access tokens and
-     * telemetry tokens: the {@code sdp_} and {@code sdt1.} prefixes
-     * belong to their own filters, and the default resolver must not
-     * attempt (and fail) JWT decoding for them.
+     * Keeps the resource server away from personal access tokens,
+     * telemetry tokens, and OTA app tokens: the {@code sdp_},
+     * {@code sdt1.}, and {@code sdc1.} prefixes belong to their own
+     * filters, and the default resolver must not attempt (and fail)
+     * JWT decoding for them.
      */
     private static BearerTokenResolver patAwareBearerTokenResolver() {
         DefaultBearerTokenResolver delegate = new DefaultBearerTokenResolver();
@@ -140,7 +155,8 @@ public class IdentitySecurityConfig {
             String header = request.getHeader(HttpHeaders.AUTHORIZATION);
             if (header != null
                     && (header.startsWith("Bearer " + SecureTokens.PAT_PREFIX)
-                            || header.startsWith("Bearer " + TelemetryTokenCodec.TOKEN_PREFIX))) {
+                            || header.startsWith("Bearer " + TelemetryTokenCodec.TOKEN_PREFIX)
+                            || header.startsWith("Bearer " + OtaAppTokenCodec.TOKEN_PREFIX))) {
                 return null;
             }
             return delegate.resolve(request);

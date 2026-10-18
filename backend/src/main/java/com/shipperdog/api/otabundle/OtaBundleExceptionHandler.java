@@ -12,16 +12,17 @@ import org.springframework.web.bind.annotation.RestControllerAdvice;
 /**
  * Renders otabundle-module failures in the platform's single error
  * envelope (issue #8): RFC 7807 problem+json with a stable public code
- * and the request's trace_id. The neighboring modules' rejections the
- * bundle flow provokes — the version module's creation guards (the
- * semver name vocabulary, the unique-label race) and the artifact
- * module's session machinery (expiry, size ceilings, storage) — are
- * re-rendered verbatim under their own codes, the same
- * one-renderer-per-route discipline the artifact module's advice
- * established.
+ * and the request's trace_id. The module's whole vocabulary — bundle,
+ * signing-key, and app-token codes — renders here, and the
+ * neighboring modules' rejections the bundle flow provokes — the
+ * version module's creation guards (the semver name vocabulary, the
+ * unique-label race) and the artifact module's session machinery
+ * (expiry, size ceilings, storage) — are re-rendered verbatim under
+ * their own codes, the same one-renderer-per-route discipline the
+ * artifact module's advice established.
  */
 @Order(0)
-@RestControllerAdvice(assignableTypes = OtaBundleController.class)
+@RestControllerAdvice(assignableTypes = {OtaBundleController.class, OtaAppTokenController.class})
 public class OtaBundleExceptionHandler {
 
     @ExceptionHandler(OtaBundleException.class)
