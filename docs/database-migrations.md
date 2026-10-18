@@ -50,6 +50,21 @@ backend/src/main/resources/db/
     V40__slack_teams_notifiers.sql
     V41__inbound_webhook_deliveries.sql
     V42__store_status_events.sql
+    V43__distribution_adapter_framework.sql
+    V44__testflight_connector.sql
+    V45__appstore_submission.sql
+    V46__google_play_connector.sql
+    V47__play_production_rollout.sql
+    V48__staged_tenant_rollout.sql
+    V49__oidc_sso.sql
+    V50__saml_sso.sql
+    V51__scim_provisioning.sql
+    V52__abac_policy_engine.sql
+    V53__siem_audit_stream.sql
+    V54__telemetry_sdk.sql
+    V55__ota_bundles.sql
+    V56__ota_rollout.sql
+    V57__ota_telemetry.sql
   seed/                 dev fixture, applied only when the seed location is active
     R__dev_seed.sql
 ```
@@ -810,6 +825,66 @@ There are no down-migrations and no automated rollback.
   at-scale finding, folded here because V42 was already touching the
   receiver family's storage. New tables and indexes only; nothing
   existing touched.
+
+(V43–V54's prose entries are documentation debt from the S13–S15
+deliveries; the Layout inventory above lists every file. V55–V57 resume
+the per-migration record here.)
+
+- `V55__ota_bundles.sql` (S16-02, issue #164) adds the OTA bundle
+  authoring foundation ([ADR-0010](adr/ADR-0010-ota-updates.md)):
+  `applications.ota_enabled` (NOT NULL DEFAULT false — every existing
+  app opts out; new apps enable it), `ota_bundles` (the authored generic
+  bundle: its OWN `versions` row held exclusively —
+  `uq_ota_bundles_version`, D2; bytes served as an ordinary `artifacts`
+  row per D5; the manifest sha256/size lands as a coherent pair at
+  finalize and the Ed25519 signature/key_id as a pair at sign, D8;
+  status vocabulary UPLOADING/VALIDATING/SIGNED/RELEASED/REVOKED;
+  `release_id` NULL until publish), and `ota_app_tokens` (the hashed
+  `sdc1.` device-identifier registry: SHA-256 hex only, write-only the
+  V49 `code_hash` doctrine; the unique hash IS the identity; revocable
+  by row through `revoked_at`). `platform_tag` is a shape-checked
+  varchar(32), deliberately not an enum — the generic-bundle platform
+  set is an open vocabulary, the V41 `provider` doctrine. Expand-only,
+  nothing dropped.
+- `V56__ota_rollout.sql` (S16-02, issue #164) adds the OTA device
+  rollout and alert machinery, mirroring V48's proven plan/stage/event
+  shape (ADR-0010 D6/D10): `ota_rollout_plans` (ONE per release — the
+  `uq_` mirror; mode AUTOMATIC/CHECKPOINT; plan status
+  RUNNING/HALTED/PAUSED/COMPLETE; `plan_salt` for the deterministic
+  on-the-fly device bucketing, `hash(device_id, plan_salt) mod 10000`
+  below the stage's cumulative basis points; the optimistic-lock
+  `version bigint`), `ota_rollout_stages` (position + basis points
+  1..10000 + status PENDING/REACHED — halting is plan-level per D10,
+  so stages carry no ROLLED_BACK), `ota_rollout_events` (append-only:
+  COMMENCED/HALTED/RESUMED/ADVANCED/COMPLETED — COMPLETED deliberately
+  mirrors V48's timeline vocabulary), and `ota_alert_rules` +
+  `ota_alert_firings` (the D10 alert definitions — metric, comparator
+  GT/GTE/LT/LTE, threshold, window, severity INFO/WARNING/CRITICAL —
+  and the resolvable firings they raise; a partial unresolved index
+  serves the console's active-alert badge). Expand-only, nothing
+  dropped.
+- `V57__ota_telemetry.sql` (S16-02, issue #164) adds the OTA telemetry
+  surface (ADR-0010 D9): six `analytics_event_type` values appended
+  (server-side `OTA_CHECK` plus the five device lifecycle events), and
+  BOTH V38 CHECKs re-admitted WIDER, not weaker — `result_shape` keeps
+  its four pre-existing branches verbatim and admits every type beyond
+  the pre-existing four as the explicit open remainder (result NULL or
+  a trimmed 1..32 value); the predicates name only pre-existing enum
+  values so the `ADD VALUE`s and the constraint re-additions share one
+  Flyway transaction, the V40 discipline. A NEW
+  `ck_analytics_events_ota_shape` closes the coherence: the
+  pre-existing family never carries bundle attribution, the OTA family
+  always carries it, and `ota_payload` is a jsonb object or NULL.
+  `result` widens varchar(16) to varchar(32) in place (the OTA failure
+  reasons are 17 characters); `analytics_events` gains nullable
+  `ota_bundle_id`/`ota_payload` with the
+  `(ota_bundle_id, event_type, occurred_at)` funnel index; and
+  `metric_hourly`/`metric_daily` gain nullable `ota_bundle_id` beside
+  their UNTOUCHED five-column primary-key grain (OTA metrics are
+  distinct metric names), with partial bundle-window indexes.
+  Expand-only: enum values appended, two checks re-admitted wider, one
+  new check, nullable columns, one in-place length widen; nothing
+  dropped.
 
 ## Verifying migrations
 
