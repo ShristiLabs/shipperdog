@@ -204,6 +204,11 @@ Current contents:
 - [ADR-0007: The domain-event bus ships in-process over a transactional outbox; the broker is a swap behind one port](adr/ADR-0007-event-bus-transport.md)
 - [ADR-0008: Credential material lives behind a secret-store port — GCP Secret Manager in production, an AES-256-GCM envelope store as the self-hostable default](adr/ADR-0008-credential-secret-storage.md)
 - [ADR-0009: SAML Response validation is a scoped in-house layer over Apache Santuario's XML-DSig — never a hand-rolled signature path, never a full SAML object framework](adr/ADR-0009-saml-validation-stack.md)
+- [ADR-0010: OTA updates ride the existing release machinery — an `sdc1.` app token identifies devices, app-scoped Ed25519 keys stay in the secret store, and the telemetry funnel splits between server and device](adr/ADR-0010-ota-updates.md)
+- [OTA updates implementation plan](ota-updates-plan.md) — the approved
+  OTA Updates design (PR #161): decisions D1-D11, the component
+  change analysis, the 16-issue tree, the key reuse map, and the
+  verification gates. ADR-0010 is its architecture anchor.
 - [Distribution: channel adapters and credential delegation](distribution.md) —
   the adapter SPI (S13-01): the one interface every delivery channel
   implements as a bean (capabilities, `distribute`/`status`, the
