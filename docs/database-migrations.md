@@ -65,6 +65,7 @@ backend/src/main/resources/db/
     V55__ota_bundles.sql
     V56__ota_rollout.sql
     V57__ota_telemetry.sql
+    V58__ota_signing_keys.sql
   seed/                 dev fixture, applied only when the seed location is active
     R__dev_seed.sql
 ```
@@ -885,6 +886,25 @@ the per-migration record here.)
   Expand-only: enum values appended, two checks re-admitted wider, one
   new check, nullable columns, one in-place length widen; nothing
   dropped.
+- `V58__ota_signing_keys.sql` (S16-03, issue #165) adds the app-scoped
+  Ed25519 signing-key registry that [ADR-0010](adr/ADR-0010-ota-updates.md)
+  D8 froze and V55 deferred: `ota_signing_keys` keeps the PUBLIC half and
+  the secret-store port's opaque `secret_reference` only — the private
+  key lives behind [ADR-0008](adr/ADR-0008-credential-secret-storage.md)'s
+  store (`local-envelope://` self-hosted, GCP Secret Manager in
+  production) and exists in JVM memory only for one signing flight. One
+  ACTIVE key per application (the partial unique index
+  `uq_ota_signing_keys_active` on `application_id WHERE revoked_at IS
+  NULL`); rotation is generational — a new row under a new `key_id` with
+  the old row's `revoked_at` stamped in the same transaction, so bundles
+  signed under the old key keep verifying against the public key devices
+  embedded. `key_id` (16 hex of the raw public key's SHA-256) is globally
+  unique (`uq_ota_signing_keys_key`) — it names keys on device
+  manifests — and `algorithm` is CHECK-pinned to Ed25519 (D8's frozen
+  choice). `tenant_id` mirrors the owning application's dimension (NULL
+  for organization-shared apps, the applications row's own shape).
+  Expand-only: one new table, its indexes, and its checks; nothing
+  existing touched.
 
 ## Verifying migrations
 

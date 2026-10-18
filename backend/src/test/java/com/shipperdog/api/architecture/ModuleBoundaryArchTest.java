@@ -38,7 +38,8 @@ class ModuleBoundaryArchTest {
         "analytics",
         "integration",
         "notification",
-        "audit"
+        "audit",
+        "otabundle"
     };
 
     private static final JavaClasses CLASSES = new ClassFileImporter()

@@ -95,6 +95,15 @@ public class ApplicationEntity implements OrganizationScope {
     @JdbcTypeCode(SqlTypes.NAMED_ENUM)
     private Status status;
 
+    /**
+     * The OTA bundle-updates opt-in (V55, S16-02, ADR-0010): false for
+     * every application until its owner enables OTA; gates bundle
+     * authoring and the device-check resolution. Read-only from this
+     * module's perspective -- the toggle surface arrives with the OTA
+     * console work (S16-15).
+     */
+    private boolean otaEnabled;
+
     private Instant createdAt;
 
     private Instant updatedAt;
@@ -202,6 +211,11 @@ public class ApplicationEntity implements OrganizationScope {
 
     public String getPackageName() {
         return packageName;
+    }
+
+    /** The OTA opt-in flag (V55): false until the owner enables it. */
+    public boolean isOtaEnabled() {
+        return otaEnabled;
     }
 
     public void setPackageName(String packageName) {

@@ -220,6 +220,7 @@ public interface ApplicationRegistryRepository extends JpaRepository<Application
                         application.getPlatforms(),
                         application.getStatus().name(),
                         application.getBundleId(),
-                        application.getPackageName()));
+                        application.getPackageName(),
+                        application.isOtaEnabled()));
     }
 }

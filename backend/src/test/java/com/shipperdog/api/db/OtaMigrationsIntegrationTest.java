@@ -165,7 +165,8 @@ class OtaMigrationsIntegrationTest {
                         "ota_rollout_stages",
                         "ota_rollout_events",
                         "ota_alert_rules",
-                        "ota_alert_firings");
+                        "ota_alert_firings",
+                        "ota_signing_keys");
 
         Boolean enabled = jdbc.queryForObject(
                 "SELECT ota_enabled FROM applications WHERE id = ?", Boolean.class, world.application);
@@ -181,6 +182,83 @@ class OtaMigrationsIntegrationTest {
                 world.tenant);
         assertThat(jdbc.queryForObject("SELECT ota_enabled FROM applications WHERE id = ?", Boolean.class, plainApp))
                 .isFalse();
+    }
+
+    /**
+     * V58 (S16-03): the app-scoped signing-key registry — one ACTIVE
+     * key per application (the partial unique index), the public half
+     * and the store reference only, and the D8 algorithm pin.
+     */
+    @Test
+    void signingKeyRegistryAllowsOneActiveKeyPerApplication() {
+        Timestamp now = Timestamp.from(Instant.now());
+        jdbc.update(
+                "INSERT INTO ota_signing_keys (id, organization_id, tenant_id, application_id, key_id, public_key,"
+                        + " secret_reference, created_at, updated_at)"
+                        + " VALUES (?, ?, ?, ?, 'k-aaa', ?, 'local-envelope://x', ?, ?)",
+                UUID.randomUUID(),
+                world.organization,
+                world.tenant,
+                world.application,
+                "p".repeat(44),
+                now,
+                now);
+
+        // A second ACTIVE key for the same app is the rotation
+        // invariant's refusal; a REVOKED row beside the active one is
+        // exactly rotation's landed state.
+        assertThatThrownBy(() -> jdbc.update(
+                        "INSERT INTO ota_signing_keys (id, organization_id, tenant_id, application_id, key_id,"
+                                + " public_key, secret_reference, created_at, updated_at)"
+                                + " VALUES (?, ?, ?, ?, 'k-bbb', ?, 'local-envelope://y', ?, ?)",
+                        UUID.randomUUID(),
+                        world.organization,
+                        world.tenant,
+                        world.application,
+                        "q".repeat(44),
+                        now,
+                        now))
+                .isInstanceOf(DataIntegrityViolationException.class);
+        jdbc.update(
+                "UPDATE ota_signing_keys SET revoked_at = ? WHERE application_id = ? AND key_id = 'k-aaa'",
+                now,
+                world.application);
+        jdbc.update(
+                "INSERT INTO ota_signing_keys (id, organization_id, tenant_id, application_id, key_id, public_key,"
+                        + " secret_reference, created_at, updated_at)"
+                        + " VALUES (?, ?, ?, ?, 'k-bbb', ?, 'local-envelope://y', ?, ?)",
+                UUID.randomUUID(),
+                world.organization,
+                world.tenant,
+                world.application,
+                "q".repeat(44),
+                now,
+                now);
+
+        // key ids are globally unique (they name keys on device
+        // manifests) and the algorithm is D8's frozen choice.
+        assertThatThrownBy(() -> jdbc.update(
+                        "INSERT INTO ota_signing_keys (id, organization_id, application_id, key_id, public_key,"
+                                + " secret_reference, created_at, updated_at)"
+                                + " VALUES (?, ?, ?, 'k-bbb', ?, 'local-envelope://z', ?, ?)",
+                        UUID.randomUUID(),
+                        world.organization,
+                        world.application,
+                        "r".repeat(44),
+                        now,
+                        now))
+                .isInstanceOf(DataIntegrityViolationException.class);
+        assertThatThrownBy(() -> jdbc.update(
+                        "INSERT INTO ota_signing_keys (id, organization_id, application_id, key_id, public_key,"
+                                + " secret_reference, algorithm, created_at, updated_at)"
+                                + " VALUES (?, ?, ?, 'k-ccc', ?, 'local-envelope://w', 'RSA', ?, ?)",
+                        UUID.randomUUID(),
+                        world.organization,
+                        world.application,
+                        "s".repeat(44),
+                        now,
+                        now))
+                .isInstanceOf(DataIntegrityViolationException.class);
     }
 
     /**

@@ -72,7 +72,9 @@ public interface ApplicationAccess {
      * an uploaded bundle id or package name that differs from the
      * registry's fails the artifact). {@code bundleId} serves IOS,
      * {@code packageName} ANDROID (S3-01's registry rule); each is
-     * null for a platform the application did not register.
+     * null for a platform the application did not register. Since
+     * S16-03 the tuple also carries the OTA opt-in flag (V55's
+     * {@code ota_enabled}): the otabundle module's authoring guard.
      */
     record ApplicationProfile(
             UUID applicationId,
@@ -81,5 +83,6 @@ public interface ApplicationAccess {
             List<String> platforms,
             String status,
             String bundleId,
-            String packageName) {}
+            String packageName,
+            boolean otaEnabled) {}
 }

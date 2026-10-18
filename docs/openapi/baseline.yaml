@@ -2927,11 +2927,112 @@ paths:
             '*/*':
               schema:
                 $ref: "#/components/schemas/RuleView"
+  /api/v1/ota/bundles:
+    get:
+      tags:
+      - ota-bundle-controller
+      operationId: list_8
+      parameters:
+      - name: applicationId
+        in: query
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - name: status
+        in: query
+        required: false
+        schema:
+          type: string
+      - name: limit
+        in: query
+        required: false
+        schema:
+          type: string
+      - name: cursor
+        in: query
+        required: false
+        schema:
+          type: string
+      responses:
+        "200":
+          description: OK
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/PageResponseBundleView"
+    post:
+      tags:
+      - ota-bundle-controller
+      operationId: create_7
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateBundleRequest"
+        required: true
+      responses:
+        "201":
+          description: Created
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/DraftView"
+  /api/v1/ota/bundles/{bundleId}/revoke:
+    post:
+      tags:
+      - ota-bundle-controller
+      operationId: revoke
+      parameters:
+      - name: bundleId
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RevokeRequest"
+        required: true
+      responses:
+        "200":
+          description: OK
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/BundleView"
+  /api/v1/ota/bundles/{bundleId}/finalize:
+    post:
+      tags:
+      - ota-bundle-controller
+      operationId: finalize
+      parameters:
+      - name: bundleId
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/FinalizeRequest"
+        required: true
+      responses:
+        "200":
+          description: OK
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/FinalizeView"
   /api/v1/organizations:
     get:
       tags:
       - organization-controller
-      operationId: list_8
+      operationId: list_9
       parameters:
       - name: limit
         in: query
@@ -2953,7 +3054,7 @@ paths:
     post:
       tags:
       - organization-controller
-      operationId: create_7
+      operationId: create_8
       requestBody:
         content:
           application/json:
@@ -2971,7 +3072,7 @@ paths:
     get:
       tags:
       - notification-controller
-      operationId: list_9
+      operationId: list_10
       parameters:
       - name: organizationId
         in: path
@@ -2999,7 +3100,7 @@ paths:
     post:
       tags:
       - notification-controller
-      operationId: create_8
+      operationId: create_9
       parameters:
       - name: organizationId
         in: path
@@ -3049,7 +3150,7 @@ paths:
     get:
       tags:
       - audit-stream-controller
-      operationId: list_10
+      operationId: list_11
       parameters:
       - name: organizationId
         in: path
@@ -3077,7 +3178,7 @@ paths:
     post:
       tags:
       - audit-stream-controller
-      operationId: create_9
+      operationId: create_10
       parameters:
       - name: organizationId
         in: path
@@ -3190,7 +3291,7 @@ paths:
     get:
       tags:
       - gate-controller
-      operationId: list_11
+      operationId: list_12
       parameters:
       - name: organizationId
         in: query
@@ -3223,7 +3324,7 @@ paths:
     post:
       tags:
       - gate-controller
-      operationId: create_10
+      operationId: create_11
       requestBody:
         content:
           application/json:
@@ -3315,7 +3416,7 @@ paths:
     get:
       tags:
       - environment-controller
-      operationId: list_12
+      operationId: list_13
       parameters:
       - name: organizationId
         in: query
@@ -3343,7 +3444,7 @@ paths:
     post:
       tags:
       - environment-controller
-      operationId: create_11
+      operationId: create_12
       requestBody:
         content:
           application/json:
@@ -3959,7 +4060,7 @@ paths:
     get:
       tags:
       - workflow-controller
-      operationId: list_13
+      operationId: list_14
       parameters:
       - name: organizationId
         in: query
@@ -3987,7 +4088,7 @@ paths:
     post:
       tags:
       - workflow-controller
-      operationId: create_12
+      operationId: create_13
       requestBody:
         content:
           application/json:
@@ -4005,7 +4106,7 @@ paths:
     get:
       tags:
       - application-controller
-      operationId: list_14
+      operationId: list_15
       parameters:
       - name: organizationId
         in: query
@@ -4033,7 +4134,7 @@ paths:
     post:
       tags:
       - application-controller
-      operationId: create_13
+      operationId: create_14
       requestBody:
         content:
           application/json:
@@ -4106,7 +4207,7 @@ paths:
     get:
       tags:
       - version-controller
-      operationId: list_15
+      operationId: list_16
       parameters:
       - name: applicationId
         in: path
@@ -4144,7 +4245,7 @@ paths:
     post:
       tags:
       - version-controller
-      operationId: create_14
+      operationId: create_15
       parameters:
       - name: applicationId
         in: path
@@ -4250,7 +4351,7 @@ paths:
     get:
       tags:
       - abac-policy-controller
-      operationId: list_16
+      operationId: list_17
       parameters:
       - name: organizationId
         in: query
@@ -4278,7 +4379,7 @@ paths:
     post:
       tags:
       - abac-policy-controller
-      operationId: create_15
+      operationId: create_16
       requestBody:
         content:
           application/json:
@@ -4871,7 +4972,7 @@ paths:
     delete:
       tags:
       - authorization-grant-controller
-      operationId: revoke
+      operationId: revoke_1
       parameters:
       - name: id
         in: path
@@ -4969,7 +5070,7 @@ paths:
     get:
       tags:
       - tenant-applications-controller
-      operationId: list_17
+      operationId: list_18
       parameters:
       - name: id
         in: path
@@ -5259,7 +5360,7 @@ paths:
     get:
       tags:
       - feedback-controller
-      operationId: list_18
+      operationId: list_19
       parameters:
       - name: releaseId
         in: path
@@ -5435,6 +5536,50 @@ paths:
             '*/*':
               schema:
                 $ref: "#/components/schemas/EligibilityView"
+  /api/v1/ota/signing-keys:
+    get:
+      tags:
+      - ota-bundle-controller
+      operationId: signingKey
+      parameters:
+      - name: applicationId
+        in: query
+        required: true
+        schema:
+          type: string
+          format: uuid
+      responses:
+        "200":
+          description: OK
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/SigningKeyView"
+  /api/v1/ota/bundles/{bundleId}:
+    get:
+      tags:
+      - ota-bundle-controller
+      operationId: get_17
+      parameters:
+      - name: bundleId
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - name: applicationId
+        in: query
+        required: true
+        schema:
+          type: string
+          format: uuid
+      responses:
+        "200":
+          description: OK
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/BundleView"
   /api/v1/organizations/{organizationId}/notification-deliveries:
     get:
       tags:
@@ -6194,7 +6339,7 @@ paths:
     get:
       tags:
       - artifact-controller
-      operationId: get_17
+      operationId: get_18
       parameters:
       - name: artifactId
         in: path
@@ -6256,7 +6401,7 @@ paths:
     get:
       tags:
       - application-tenant-authorization-controller
-      operationId: list_19
+      operationId: list_20
       parameters:
       - name: id
         in: path
@@ -6285,7 +6430,7 @@ paths:
     get:
       tags:
       - version-controller
-      operationId: get_18
+      operationId: get_19
       parameters:
       - name: applicationId
         in: path
@@ -7561,8 +7706,6 @@ components:
     JsonNode:
       type: object
       properties:
-        container:
-          type: boolean
         nodeType:
           type: string
           enum:
@@ -7607,6 +7750,8 @@ components:
         binary:
           type: boolean
         floatingPointNumber:
+          type: boolean
+        container:
           type: boolean
         empty:
           type: boolean
@@ -8540,6 +8685,131 @@ components:
           format: uuid
         reason:
           type: string
+    CreateBundleRequest:
+      type: object
+      description: "The OTA bundle to author: applicationId, the semver-triple bundleVersion\
+        \ labeling its dedicated versions row, the open-vocabulary platformTag (1-32\
+        \ chars), the bare fileName of the bundle archive, the per-bundle forced/minAppVersion\
+        \ defaults, and the optional sizeHint in bytes."
+      properties:
+        applicationId:
+          type: string
+          format: uuid
+        bundleVersion:
+          type: string
+        platformTag:
+          type: string
+        fileName:
+          type: string
+        forced:
+          type: boolean
+        minAppVersion:
+          type: string
+        sizeHint:
+          type: integer
+          format: int64
+    DraftView:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        applicationId:
+          type: string
+          format: uuid
+        versionId:
+          type: string
+          format: uuid
+        bundleVersion:
+          type: string
+        platformTag:
+          type: string
+        forced:
+          type: boolean
+        minAppVersion:
+          type: string
+        status:
+          type: string
+        upload:
+          $ref: "#/components/schemas/UploadGrantView"
+    UploadGrantView:
+      type: object
+      properties:
+        artifactId:
+          type: string
+          format: uuid
+        uploadUrl:
+          type: string
+        expiresAt:
+          type: string
+          format: date-time
+    RevokeRequest:
+      type: object
+      description: The application id the revoked bundle belongs to.
+      properties:
+        applicationId:
+          type: string
+          format: uuid
+    BundleView:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        applicationId:
+          type: string
+          format: uuid
+        versionId:
+          type: string
+          format: uuid
+        artifactId:
+          type: string
+          format: uuid
+        releaseId:
+          type: string
+          format: uuid
+        bundleVersion:
+          type: string
+        platformTag:
+          type: string
+        sha256:
+          type: string
+        sizeBytes:
+          type: integer
+          format: int64
+        signature:
+          type: string
+        keyId:
+          type: string
+        forced:
+          type: boolean
+        minAppVersion:
+          type: string
+        status:
+          type: string
+        createdBy:
+          type: string
+          format: uuid
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+    FinalizeRequest:
+      type: object
+      description: The version id the bundle's dedicated versions row carries.
+      properties:
+        versionId:
+          type: string
+          format: uuid
+    FinalizeView:
+      type: object
+      properties:
+        created:
+          type: boolean
+        bundle:
+          $ref: "#/components/schemas/BundleView"
     SubscriptionView:
       type: object
       properties:
@@ -9137,20 +9407,6 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/ValidationStageView"
-    FinalizeRequest:
-      type: object
-      description: The version id the finalized artifact belongs to.
-      properties:
-        versionId:
-          type: string
-          format: uuid
-    FinalizeView:
-      type: object
-      properties:
-        created:
-          type: boolean
-        artifact:
-          $ref: "#/components/schemas/ArtifactView"
     CreateSessionRequest:
       type: object
       description: "The direct-to-storage upload session to create: the version, platform,\
@@ -10364,6 +10620,30 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/RuleView"
+        next_cursor:
+          type: string
+    SigningKeyView:
+      type: object
+      properties:
+        applicationId:
+          type: string
+          format: uuid
+        keyId:
+          type: string
+        publicKey:
+          type: string
+        algorithm:
+          type: string
+        createdAt:
+          type: string
+          format: date-time
+    PageResponseBundleView:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/BundleView"
         next_cursor:
           type: string
     PageResponseOrganizationResponse:

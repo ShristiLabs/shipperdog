@@ -7,6 +7,9 @@ import com.shipperdog.api.audit.AuditEventType;
 import com.shipperdog.api.config.CursorPageable;
 import com.shipperdog.api.config.TraceAttributes;
 import com.shipperdog.api.tenant.TenantContext;
+import com.shipperdog.api.version.BundleVersionCreation;
+import com.shipperdog.api.version.VersionAccess.VersionOwnership;
+import com.shipperdog.api.version.VersionAccess.VersionState;
 import com.shipperdog.api.version.VersionArtifacts;
 import com.shipperdog.api.version.VersionArtifacts.VersionArtifactSlot;
 import com.shipperdog.api.version.VersionDistributionContributor;
@@ -105,7 +108,7 @@ import org.springframework.transaction.annotation.Transactional;
  * result, in any interleaving.
  */
 @Service
-public class VersionService implements VersionDistributionGuard {
+public class VersionService implements VersionDistributionGuard, BundleVersionCreation {
 
     /**
      * The semver-style name vocabulary (issue #17 AC1 and technical
@@ -251,6 +254,24 @@ public class VersionService implements VersionDistributionGuard {
                 applicationId,
                 detail);
         return detailOf(saved, application.platforms(), Set.of(), List.of());
+    }
+
+    /**
+     * The otabundle module's creation port (S16-03, ADR-0010 D2): the
+     * bundle's dedicated versions row through the exact creation path
+     * above — same guards, same audit, same unique-label race
+     * translation — answered as the decision tuple the caller's scope
+     * already established. The caller (never this module) owns the OTA
+     * naming surface; a bundle version must satisfy the same semver
+     * triple vocabulary as every other version label.
+     */
+    @Override
+    @Transactional
+    public VersionState createOtaBundleVersion(UUID actorId, UUID applicationId, String versionName) {
+        VersionDetail created = create(actorId, applicationId, versionName);
+        VersionOwnership ownership = registry.ownershipOf(created.id()).orElseThrow(() -> nameTaken());
+        return new VersionState(
+                created.id(), applicationId, ownership.organizationId(), ownership.tenantId(), created.status());
     }
 
     // -------------------------------------------------------------------------
