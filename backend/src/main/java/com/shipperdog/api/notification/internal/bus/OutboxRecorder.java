@@ -11,6 +11,7 @@ import com.shipperdog.api.notification.DomainEventName;
 import com.shipperdog.api.notification.internal.entity.NotificationOutboxEntity;
 import com.shipperdog.api.notification.internal.repository.AuditStreamExportRepository;
 import com.shipperdog.api.notification.internal.repository.NotificationOutboxRepository;
+import com.shipperdog.api.otabundle.OtaBundleSignedEvent;
 import com.shipperdog.api.release.ReleaseCreatedEvent;
 import com.shipperdog.api.release.ReleasePromotedEvent;
 import com.shipperdog.api.release.ReleaseTransitionedEvent;
@@ -282,6 +283,37 @@ class OutboxRecorder {
                 null,
                 null,
                 event.releaseId(),
+                payload,
+                event.occurredAt());
+    }
+
+    // The OTA stream (S16-03, issue #165) ---------------------------------------
+
+    /**
+     * The bundle-authoring terminal write (S16-03, ADR-0010 D8): one
+     * {@code OTA_BUNDLE_SIGNED} row per finalized bundle, appended in
+     * the same transaction the SIGNED bundle row commits under — the
+     * manifest facts plus the signature's key id ride the payload, so
+     * webhook and CI consumers learn the bundle is publishable the
+     * moment it is.
+     */
+    @TransactionalEventListener(phase = TransactionPhase.BEFORE_COMMIT, fallbackExecution = true)
+    void on(OtaBundleSignedEvent event) {
+        Map<String, Object> payload = new LinkedHashMap<>();
+        payload.put("bundleVersion", event.bundleVersion());
+        payload.put("platformTag", event.platformTag());
+        payload.put("sha256", event.sha256());
+        payload.put("sizeBytes", event.sizeBytes());
+        payload.put("keyId", event.keyId());
+        payload.put("signature", event.signature());
+        record(
+                DomainEventName.OTA_BUNDLE_SIGNED,
+                event.organizationId(),
+                event.tenantId(),
+                event.applicationId(),
+                event.versionId(),
+                event.artifactId(),
+                null,
                 payload,
                 event.occurredAt());
     }

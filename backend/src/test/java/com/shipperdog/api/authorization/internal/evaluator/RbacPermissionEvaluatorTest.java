@@ -554,7 +554,8 @@ class RbacPermissionEvaluatorTest {
                                 List.of("IOS"),
                                 "ACTIVE",
                                 "com.acme.banking",
-                                null));
+                                null,
+                                false));
             }
 
             @Override

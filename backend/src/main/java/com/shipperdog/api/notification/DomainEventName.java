@@ -79,5 +79,15 @@ public enum DomainEventName {
      * bridge (the export is org-scoped routing; there is no
      * organization to route by).
      */
-    AUDIT_EVENT
+    AUDIT_EVENT,
+    /**
+     * One OTA bundle finalized and signed (S16-03, issue #165,
+     * ADR-0010 D8): the manifest landed, the checksum signed under
+     * the application's active Ed25519 key, and the row crossed to
+     * SIGNED -- ready to hang off a release. Published with the
+     * bundle row in one transaction; the payload carries the bundle's
+     * own facts (version label, platform tag, sha256, sizeBytes,
+     * keyId, signature).
+     */
+    OTA_BUNDLE_SIGNED
 }

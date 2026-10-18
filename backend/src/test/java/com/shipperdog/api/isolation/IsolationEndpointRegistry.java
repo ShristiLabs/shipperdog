@@ -1298,7 +1298,40 @@ final class IsolationEndpointRegistry {
                         400,
                         404,
                         side -> "/api/v1/distribution/play/tracks?organizationId=" + UUID.randomUUID()
-                                + "&applicationId=" + UUID.randomUUID()));
+                                + "&applicationId=" + UUID.randomUUID()),
+
+                // OTA bundles (S16-03): the bundle reads ride the
+                // artifact family's permission (app:artifacts:read, the
+                // D5 ride-along), which neither matrix persona holds --
+                // the artifact read's own shape, the concealed miss for
+                // both own sides. The seeded world's app is not
+                // OTA-enabled (V55's default), so own and miss probes
+                // share the route's miss shapes regardless; concealment
+                // of a REAL foreign bundle is pinned with live bundles
+                // by the S16-03 otabundle suite.
+                surface(
+                        "/api/v1/ota/bundles",
+                        side -> "/api/v1/ota/bundles?applicationId=" + side.applicationId(),
+                        404,
+                        404,
+                        side -> "/api/v1/ota/bundles?applicationId=" + UUID.randomUUID()),
+                surface(
+                        "/api/v1/ota/bundles/{bundleId}",
+                        side -> "/api/v1/ota/bundles/" + UUID.randomUUID() + "?applicationId=" + side.applicationId(),
+                        404,
+                        404,
+                        side -> "/api/v1/ota/bundles/" + UUID.randomUUID() + "?applicationId=" + UUID.randomUUID()),
+                // The signing-key read (D8: the public half for SDK
+                // embedding): the same app:artifacts:read grain and miss
+                // shape as the bundle reads; before the app's first
+                // finalized bundle there is no key, so the miss shape is
+                // also the honest own answer.
+                surface(
+                        "/api/v1/ota/signing-keys",
+                        side -> "/api/v1/ota/signing-keys?applicationId=" + side.applicationId(),
+                        404,
+                        404,
+                        side -> "/api/v1/ota/signing-keys?applicationId=" + UUID.randomUUID()));
     }
 
     /**

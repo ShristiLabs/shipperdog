@@ -4,6 +4,7 @@ import com.shipperdog.api.application.ApplicationAccess;
 import com.shipperdog.api.artifact.ArtifactException;
 import com.shipperdog.api.artifact.ArtifactStore;
 import com.shipperdog.api.artifact.ArtifactUploadedEvent;
+import com.shipperdog.api.artifact.OtaBundleArtifacts;
 import com.shipperdog.api.artifact.internal.entity.ArtifactEntity;
 import com.shipperdog.api.artifact.internal.entity.ArtifactEntity.Platform;
 import com.shipperdog.api.artifact.internal.entity.ArtifactUploadSessionEntity;
@@ -119,7 +120,7 @@ import org.springframework.web.multipart.MultipartFile;
  */
 @Service
 @DecisionGuarded
-public class ArtifactService implements VersionArtifacts {
+public class ArtifactService implements VersionArtifacts, OtaBundleArtifacts {
 
     /** The upload allowlist (issue #20 AC1): extension to platform coherence. */
     private static final Map<String, Platform> ALLOWED_EXTENSIONS =
@@ -278,7 +279,8 @@ public class ArtifactService implements VersionArtifacts {
                     file.getSize(),
                     buildNumber,
                     provenance == null ? null : provenance.toJson(),
-                    actorId);
+                    actorId,
+                    ArtifactEntity.Status.VALIDATING);
             auditUploaded(actorId, ownership, "multipart", saved);
             extraction.schedule(saved, ownership);
             return viewOf(saved, duplicatesOf(sha256, ownership.applicationId(), saved.getId()));
@@ -421,7 +423,8 @@ public class ArtifactService implements VersionArtifacts {
                         stored.size(),
                         session.getBuildNumber(),
                         session.getProvenance(),
-                        actorId);
+                        actorId,
+                        ArtifactEntity.Status.VALIDATING);
                 sample.stop(timer("resumable", "success"));
             } catch (RuntimeException e) {
                 sample.stop(timer("resumable", "failure"));
@@ -433,6 +436,174 @@ public class ArtifactService implements VersionArtifacts {
             return new FinalizeView(
                     true, viewOf(saved, duplicatesOf(stored.sha256Hex(), ownership.applicationId(), saved.getId())));
         });
+    }
+
+    // -------------------------------------------------------------------------
+    // The OTA bundle port (S16-03, ADR-0010 D5): bundle binaries ride
+    // the same storage, sessions, and hash-back finalize — without the
+    // platform-package gates or the extraction pipeline they feed.
+    // -------------------------------------------------------------------------
+
+    /**
+     * The bundle session grant ({@code OtaBundleArtifacts} port): the
+     * same handoff the resumable artifact path grants — pre-allocated
+     * artifact id, PRD 24 storage key, store-minted session URL, TTL'd
+     * session row — minus the package gates: the file name is any bare
+     * name (a generic bundle is a platform-agnostic archive; the
+     * extension allowlist stays an installable-package rule), the
+     * platform is the caller-derived enum value the closed V1 storage
+     * vocabulary forces, and the session carries the caller's opaque
+     * claims document in the provenance slot (the same capture-point
+     * discipline: claims belong to the creating client, finalize
+     * replays them). Audited as {@code ARTIFACT_UPLOAD_SESSION_CREATED}
+     * with the OTA kind in the detail.
+     */
+    @Override
+    public SessionGrant createBundleSession(
+            UUID actorId, UUID versionId, String fileName, String platformText, Long sizeHint, String claimsDocument) {
+        Platform platform = parsePlatform(platformText);
+        String validatedName = requireBundleFileName(fileName);
+        if (claimsDocument == null || claimsDocument.isBlank()) {
+            throw invalid("the bundle session requires its claims document");
+        }
+        if (sizeHint != null) {
+            if (sizeHint <= 0) {
+                throw invalid("sizeHint must be positive when present");
+            }
+            if (sizeHint > uploadLimits.maxBytes()) {
+                throw tooLarge();
+            }
+        }
+        VersionOwnership ownership = ownershipOf(versionId);
+        // The port's scope contract: the CALLER (the otabundle module)
+        // has established the version's owning scope; the seam enforces
+        // it on every row this path touches, and the executor would
+        // refuse the re-scope an inner binding attempt is.
+        requireUploadableApplication(ownership, platform);
+        distributionGuard.requireArtifactsMutable(ownership.applicationId(), versionId);
+        UUID artifactId = UUID.randomUUID();
+        String storageKey = keyOf(ownership, artifactId);
+        String sessionUrl = store.createResumableSession(storageKey, CONTENT_TYPE);
+        Instant expiresAt = Instant.now(clock).plus(uploadLimits.sessionTtl());
+        ArtifactUploadSessionEntity session = sessions.saveScoped(new ArtifactUploadSessionEntity(
+                ownership.organizationId(),
+                ownership.tenantId(),
+                versionId,
+                artifactId,
+                platform,
+                validatedName,
+                null,
+                claimsDocument,
+                storageKey,
+                sessionUrl,
+                expiresAt,
+                actorId));
+        trace.application(ownership.applicationId());
+        trace.version(versionId);
+        trace.artifact(artifactId);
+        Map<String, String> detail = new LinkedHashMap<>();
+        detail.put("kind", "ota-bundle");
+        detail.put("platform", platform.name());
+        detail.put("fileName", validatedName);
+        detail.put("expiresAt", expiresAt.toString());
+        audit(AuditEventType.ARTIFACT_UPLOAD_SESSION_CREATED, actorId, ownership, artifactId, detail);
+        return new SessionGrant(session.getId(), artifactId, versionId, sessionUrl, expiresAt);
+    }
+
+    /**
+     * The bundle session finalize ({@code OtaBundleArtifacts} port):
+     * the same hash-back, expiry, and replay semantics as the artifact
+     * finalize — the artifact row registers with the checksum the
+     * store itself computed, and an already-registered artifact
+     * replays ({@code created = false}). Two deliberate differences:
+     * the row lands {@code READY} (nothing structural to validate on a
+     * platform-agnostic bundle, so no extraction or validation is ever
+     * scheduled for it), and the registration is audited as
+     * {@code ARTIFACT_UPLOADED} without the bus event — the otabundle
+     * module's {@code OtaBundleSignedEvent} is this binary's one bus
+     * fact, published with the bundle row in the same transaction the
+     * caller holds.
+     */
+    @Override
+    public BundleRegistration finalizeBundleSession(UUID actorId, UUID artifactId, UUID versionId) {
+        VersionOwnership ownership = ownershipOf(versionId);
+        // The port's scope contract: the caller's established context
+        // governs (the seam enforces it); this path never re-binds.
+        ArtifactEntity healed = artifacts.findScoped(artifactId).orElse(null);
+        if (healed != null) {
+            requireOwnVersion(healed, versionId);
+            sessions.findOneScoped(sessionOf(artifactId)).ifPresent(sessions::delete);
+            return new BundleRegistration(
+                    false,
+                    healed.getId(),
+                    versionId,
+                    healed.getFileName(),
+                    healed.getSha256(),
+                    healed.getSize(),
+                    healed.getProvenance());
+        }
+        ArtifactUploadSessionEntity session =
+                sessions.findOneScoped(sessionOf(artifactId)).orElseThrow(ArtifactService::artifactMissing);
+        requireOwnVersion(session, versionId);
+        distributionGuard.requireArtifactsMutable(ownership.applicationId(), versionId);
+        if (Instant.now(clock).isAfter(session.getExpiresAt())) {
+            throw new ArtifactException(
+                    ArtifactException.Code.UPLOAD_SESSION_EXPIRED, "the upload session has expired");
+        }
+        ArtifactStore.StoredChecksum stored = store.hash(session.getStorageKey())
+                .orElseThrow(() -> invalid("no bytes were uploaded to this session yet"));
+        if (stored.size() == 0) {
+            throw invalid("the uploaded bundle is empty");
+        }
+        if (stored.size() > uploadLimits.maxBytes()) {
+            throw tooLarge();
+        }
+        ArtifactEntity saved = register(
+                artifactId,
+                ownership,
+                session.getPlatform(),
+                session.getFileName(),
+                session.getStorageKey(),
+                stored.sha256Hex(),
+                stored.size(),
+                null,
+                session.getProvenance(),
+                actorId,
+                ArtifactEntity.Status.READY);
+        sessions.delete(session);
+        Map<String, String> detail = new LinkedHashMap<>();
+        detail.put("kind", "ota-bundle");
+        detail.put("platform", saved.getPlatform().name());
+        detail.put("fileName", saved.getFileName());
+        detail.put("size", Long.toString(saved.getSize()));
+        detail.put("sha256", saved.getSha256());
+        detail.put("path", "ota-resumable");
+        audit(AuditEventType.ARTIFACT_UPLOADED, actorId, ownership, saved.getId(), detail);
+        return new BundleRegistration(
+                true,
+                saved.getId(),
+                versionId,
+                saved.getFileName(),
+                saved.getSha256(),
+                saved.getSize(),
+                saved.getProvenance());
+    }
+
+    /**
+     * The bundle file-name guard: the same bare-name rule as the
+     * package path minus the extension allowlist — at most 255
+     * characters, no path separators, no NUL. The storage key never
+     * derives from it (the name is display metadata only).
+     */
+    private static String requireBundleFileName(String fileName) {
+        if (fileName == null || fileName.isBlank()) {
+            throw invalid("file name is required");
+        }
+        String trimmed = fileName.trim();
+        if (trimmed.length() > 255 || trimmed.contains("/") || trimmed.contains("\\") || trimmed.contains("\0")) {
+            throw invalid("file name is a bare name of at most 255 characters");
+        }
+        return trimmed;
     }
 
     // -------------------------------------------------------------------------
@@ -869,7 +1040,11 @@ public class ArtifactService implements VersionArtifacts {
     /**
      * Inserts the metadata row; the pinned-build race answers the precise 409.
      * The provenance document is written HERE and never after (issue
-     * #23: upload-time capture, INV-003's immutable-after-insert).
+     * #23: upload-time capture, INV-003's immutable-after-insert). The
+     * initial status is the caller's: {@code VALIDATING} for the
+     * installable-package paths (the pipeline moves it on), {@code
+     * READY} for OTA bundle binaries (no package structure exists to
+     * validate, S16-03).
      */
     private ArtifactEntity register(
             UUID artifactId,
@@ -881,7 +1056,8 @@ public class ArtifactService implements VersionArtifacts {
             long size,
             Long buildNumber,
             String provenanceDocument,
-            UUID actorId) {
+            UUID actorId,
+            ArtifactEntity.Status initialStatus) {
         ArtifactEntity entity = new ArtifactEntity(
                 artifactId,
                 ownership.versionId(),
@@ -893,7 +1069,7 @@ public class ArtifactService implements VersionArtifacts {
                 sha256,
                 size,
                 buildNumber,
-                ArtifactEntity.Status.VALIDATING,
+                initialStatus,
                 actorId,
                 provenanceDocument);
         try {

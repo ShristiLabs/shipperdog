@@ -72,6 +72,13 @@ class CrossTenantAccessMatrixTest extends IsolationScenarioHarness {
                 // without a download entitlement conceal (the
                 // entry's own-side 404s above).
                 case "/api/v1/artifacts/{artifactId}/download" -> 200;
+                // The OTA bundle listing (S16-03): an RBAC-gated
+                // console read like the release listing — the org and
+                // tenant personas lack the artifact family's read
+                // permission (the entry's own-side 404s), while the
+                // wildcard passes it and receives the honest empty
+                // page; the seeded world holds no bundle.
+                case "/api/v1/ota/bundles" -> 200;
                 default -> entry.ownOrgAdmin();
             };
             expectOwn(entry, sideB, sideA.platformAdminToken(), "platform-admin", platformExpected, violations);
