@@ -1346,7 +1346,20 @@ final class IsolationEndpointRegistry {
                         side -> "/api/v1/ota/app-tokens?applicationId=" + side.applicationId(),
                         404,
                         404,
-                        side -> "/api/v1/ota/app-tokens?applicationId=" + UUID.randomUUID()));
+                        side -> "/api/v1/ota/app-tokens?applicationId=" + UUID.randomUUID()),
+                // The OTA rollout status read (S16-06): the release
+                // family's app:releases:read grain and the release
+                // item's own miss shape -- the seeded world holds no
+                // OTA release, own-side probes address a random
+                // release id, and concealment of a REAL foreign
+                // rollout is pinned with live plans by the S16-06
+                // otabundle suite.
+                surface(
+                        "/api/v1/ota/rollouts/{releaseId}",
+                        side -> "/api/v1/ota/rollouts/" + UUID.randomUUID() + "?applicationId=" + side.applicationId(),
+                        404,
+                        404,
+                        side -> "/api/v1/ota/rollouts/" + UUID.randomUUID() + "?applicationId=" + UUID.randomUUID()));
     }
 
     /**

@@ -405,9 +405,18 @@ class OtaMigrationsIntegrationTest {
                 UUID.randomUUID(),
                 plan,
                 now);
+        // V60 (S16-06) widened the action CHECK by exactly PAUSED: the
+        // pause -- one of the four control actions -- now lands its
+        // timeline row like every other operator act, and the closed
+        // disjunction still refuses everything outside the vocabulary.
+        jdbc.update(
+                "INSERT INTO ota_rollout_events (id, plan_id, action, occurred_at)" + " VALUES (?, ?, 'PAUSED', ?)",
+                UUID.randomUUID(),
+                plan,
+                now);
         assertThatThrownBy(() -> jdbc.update(
                         "INSERT INTO ota_rollout_events (id, plan_id, action, occurred_at)"
-                                + " VALUES (?, ?, 'PAUSED', ?)",
+                                + " VALUES (?, ?, 'FROZEN', ?)",
                         UUID.randomUUID(),
                         plan,
                         now))

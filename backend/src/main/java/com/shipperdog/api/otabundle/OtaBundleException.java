@@ -33,6 +33,23 @@ public class OtaBundleException extends RuntimeException {
                 "APPLICATION_NOT_OTA_ENABLED",
                 "The application has not enabled OTA bundle updates; enable OTA before authoring bundles."),
         BUNDLE_NOT_REVOKABLE(HttpStatus.CONFLICT, "BUNDLE_NOT_REVOKABLE", "Only a SIGNED bundle can be revoked."),
+        ROLLOUT_NOT_FOUND(HttpStatus.NOT_FOUND, "ROLLOUT_NOT_FOUND", "Resource not found."),
+        ROLLOUT_CONFLICT(
+                HttpStatus.CONFLICT,
+                "ROLLOUT_CONFLICT",
+                "The rollout plan already exists or changed concurrently; reload and retry."),
+        ROLLOUT_ACTION_INVALID(
+                HttpStatus.CONFLICT, "ROLLOUT_ACTION_INVALID", "The action is not valid for the plan's standing."),
+        ROLLOUT_BLOCKED(
+                HttpStatus.CONFLICT, "ROLLOUT_BLOCKED", "The advancement is blocked: resolve the policy rule first."),
+        ROLLOUT_RELEASE_NOT_LIVE(
+                HttpStatus.CONFLICT,
+                "ROLLOUT_RELEASE_NOT_LIVE",
+                "The release is not distributing; a rollout plan commences on a live (ACTIVE or PROMOTED) release."),
+        ROLLOUT_RELEASE_NOT_OTA(
+                HttpStatus.CONFLICT,
+                "ROLLOUT_RELEASE_NOT_OTA",
+                "The release carries no OTA bundle; rollout plans belong to OTA releases."),
         SIGNING_UNAVAILABLE(
                 HttpStatus.SERVICE_UNAVAILABLE,
                 "SIGNING_UNAVAILABLE",
@@ -72,10 +89,21 @@ public class OtaBundleException extends RuntimeException {
         return fieldErrors;
     }
 
-    /** The RFC 7807 envelope for this failure (issue #8). */
+    /**
+     * The RFC 7807 envelope for this failure (issue #8). The detail is
+     * the exception's own message when one was authored -- this
+     * module's messages are deliberate safe-for-callers prose carrying
+     * the refusal's specifics (a policy rule's evidence, a stage's
+     * constraint), the {@code DistributionException} discipline -- and
+     * the code's stable static detail otherwise.
+     */
     public ProblemDetail problem() {
         return ApiProblems.withErrors(
-                ApiProblems.of(code.httpStatus, code.code, code.httpStatus.getReasonPhrase(), code.detail),
+                ApiProblems.of(
+                        code.httpStatus,
+                        code.code,
+                        code.httpStatus.getReasonPhrase(),
+                        getMessage() == null || getMessage().isBlank() ? code.detail : getMessage()),
                 fieldErrors);
     }
 }

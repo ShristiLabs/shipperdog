@@ -89,5 +89,18 @@ public enum DomainEventName {
      * own facts (version label, platform tag, sha256, sizeBytes,
      * keyId, signature).
      */
-    OTA_BUNDLE_SIGNED
+    OTA_BUNDLE_SIGNED,
+    /**
+     * One committed OTA rollout control act (S16-06, issue #168,
+     * ADR-0010 D6/D10) -- the {@code ReleaseTransitionedEvent}
+     * doctrine applied to the rollout's own machine: one name for
+     * every crossing, the {@code action} in the payload carrying
+     * which (COMMENCED, HALTED, PAUSED, RESUMED, ADVANCED, or
+     * COMPLETED; a terminal advancement publishes both its ADVANCED
+     * and its COMPLETED). Every act is an operator's (halt is
+     * manual, D10) and commits with its timeline row and audit line
+     * in one transaction; the payload carries the crossing's own
+     * facts (action, fromStatus, toStatus, stage, reason/detail).
+     */
+    OTA_ROLLOUT_TRANSITIONED
 }

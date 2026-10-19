@@ -677,5 +677,43 @@ public enum AuditEventType {
      * terminally failed deliveries returned to the retry schedule
      * -- the operator's answer to a consumer outage (AC3).
      */
-    AUDIT_STREAM_REPLAYED
+    AUDIT_STREAM_REPLAYED,
+    /**
+     * An OTA rollout plan attached to a live OTA release and thereby
+     * COMMENCED (S16-06, issue #168, ADR-0010 D6/D10): the release,
+     * the mode, and the stage count -- the widening ladder's birth,
+     * one audit line per {@code ota_rollout_events} row the same
+     * transaction writes.
+     */
+    OTA_ROLLOUT_COMMENCED,
+    /**
+     * One OTA rollout stage advanced (S16-06): the stage position and
+     * its cumulative basis points; also the AUTOMATIC mode's refused
+     * advance (success=false, the policy rule's evidence) -- the
+     * blocked widening leaves its audit line without a timeline row.
+     */
+    OTA_ROLLOUT_ADVANCED,
+    /**
+     * An OTA rollout's final stage reached (S16-06): the completion
+     * beside the final ADVANCED of the same act.
+     */
+    OTA_ROLLOUT_COMPLETED,
+    /**
+     * The manual, audit-trailed halt of an OTA rollout (S16-06,
+     * ADR-0010 D10): the mandatory reason rides the detail map. No
+     * code path halts on its own -- this line is always an
+     * operator's.
+     */
+    OTA_ROLLOUT_HALTED,
+    /**
+     * The temporary stop of an OTA rollout (S16-06): serving freezes
+     * at the current stage; the ladder never retreats.
+     */
+    OTA_ROLLOUT_PAUSED,
+    /**
+     * An OTA rollout resumed (S16-06): from HALTED or PAUSED back to
+     * RUNNING, serving what the plan had reached -- resuming widens
+     * nothing by itself.
+     */
+    OTA_ROLLOUT_RESUMED
 }

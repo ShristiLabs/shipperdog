@@ -461,10 +461,22 @@ and the batch history. Documented with its surface in
 
 The OTA update workstream's module (ADR-0010): bundle authoring and
 the `sdc1.` app-token registry. Registered here: the app-token
-surface (S16-04). The module's bundle-authoring codes (S16-03,
-issue #165) are pending registration with the workstream's docs
-pass (S16-16, issue #178).
+surface (S16-04) and the rollout-control surface under
+`/api/v1/ota/rollouts` (S16-06, issue #168). The module's
+bundle-authoring codes (S16-03, issue #165) are pending registration
+with the workstream's docs pass (S16-16, issue #178). Since S16-06
+the envelope's `detail` is the exception's authored message when one
+was written — this module's messages are deliberate safe-for-callers
+prose carrying the refusal's specifics — and the code's stable
+static detail otherwise.
 
 | Code | HTTP | Detail |
 |---|---|---|
 | `TOKEN_NOT_FOUND` | 404 | Resource not found. (since S16-04, issue #166: the app-token registry's single answer for every failed revoke on `DELETE /api/v1/ota/app-tokens/{tokenId}/revoke` — a tokenId never issued to the named application or one that belongs to another application is the same concealed miss; revoking an already-revoked token replays the row and never answers this code) |
+| `INVALID_REQUEST` | 400 | The request is invalid. (since S16-06, issue #168, the rollout attach request's shape: `stages[i].basisPoints` a cumulative threshold of 1 to 10000, strictly ascending, the last exactly 10000 — the ladder only widens; `stages[i].note` 1 to 512 characters when present; an unknown `mode`; and a halt without its required reason — answered with the `errors` member naming every offending wire field) |
+| `ROLLOUT_NOT_FOUND` | 404 | Resource not found. (since S16-06, issue #168: the rollout surface's single answer for a release carrying no rollout plan on the get and every control route — never committed, or another application's release, is the same concealed miss) |
+| `ROLLOUT_CONFLICT` | 409 | The rollout plan already exists or changed concurrently; reload and retry. (the attach refusal — one plan per OTA release — and the optimistic `version` losing a control-act race) |
+| `ROLLOUT_ACTION_INVALID` | 409 | The action is not valid for the plan's standing. (advance, halt, pause, or resume against a standing that does not admit it, a complete plan's control refusals included) |
+| `ROLLOUT_BLOCKED` | 409 | The advancement is blocked: resolve the policy rule first. (the AUTOMATIC mode's policy-refused advance — the refusal's evidence rides the detail) |
+| `ROLLOUT_RELEASE_NOT_LIVE` | 409 | The release is not distributing; a rollout plan commences on a live (ACTIVE or PROMOTED) release. |
+| `ROLLOUT_RELEASE_NOT_OTA` | 409 | The release carries no OTA bundle; rollout plans belong to OTA releases. |
