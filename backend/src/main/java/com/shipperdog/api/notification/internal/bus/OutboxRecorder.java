@@ -318,6 +318,39 @@ class OutboxRecorder {
                 event.occurredAt());
     }
 
+    /**
+     * The rollout control stream (S16-06, issue #168): one {@code
+     * OTA_ROLLOUT_TRANSITIONED} row per committed control act --
+     * commenced, advanced, halted, paused, resumed, completed --
+     * appended in the same transaction the plan row, the timeline
+     * row, and the audit line commit under. The payload carries the
+     * crossing's own facts so webhook consumers can filter on the
+     * action (a halt is the high-value one) without a read-back.
+     */
+    @TransactionalEventListener(phase = TransactionPhase.BEFORE_COMMIT, fallbackExecution = true)
+    void on(com.shipperdog.api.otabundle.OtaRolloutTransitionedEvent event) {
+        Map<String, Object> payload = new LinkedHashMap<>();
+        payload.put("action", event.action());
+        payload.put("fromStatus", event.fromStatus());
+        payload.put("toStatus", event.toStatus());
+        if (event.stagePosition() != null) {
+            payload.put("stage", event.stagePosition());
+        }
+        if (event.detail() != null) {
+            payload.put("detail", event.detail());
+        }
+        record(
+                DomainEventName.OTA_ROLLOUT_TRANSITIONED,
+                event.organizationId(),
+                event.tenantId(),
+                event.applicationId(),
+                event.versionId(),
+                null,
+                event.releaseId(),
+                payload,
+                event.occurredAt());
+    }
+
     // The audit stream (S14-05, issue #71) -------------------------------------
 
     /**

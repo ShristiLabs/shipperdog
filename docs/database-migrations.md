@@ -67,6 +67,7 @@ backend/src/main/resources/db/
     V57__ota_telemetry.sql
     V58__ota_signing_keys.sql
     V59__ota_release_integration.sql
+    V60__ota_rollout_paused_event.sql
   seed/                 dev fixture, applied only when the seed location is active
     R__dev_seed.sql
 ```
@@ -921,6 +922,27 @@ the per-migration record here.)
   publishes and after a rollback returns it to the SIGNED pool, so
   only live RELEASED links are unique. Expand-only: two nullable
   columns and one partial index; nothing existing touched.
+- `V60__ota_rollout_paused_event.sql` (S16-06, issue #168) is the two
+  gap-fixes the rollout control service surfaced over V56's frozen
+  rollout triple ([ADR-0010](adr/ADR-0010-ota-updates.md) D6/D10):
+  first, `PAUSED` joins `ota_rollout_events`' action vocabulary — V56
+  wrote "every operator action lands here" over the timeline but
+  pinned the action CHECK without the pause, so the constraint REWRITE
+  (the V57 precedent of rewriting V38's closed CHECK disjunctions)
+  widens `ck_ota_rollout_events_action` by exactly that one value, to
+  the six control acts (`COMMENCED`, `HALTED`, `PAUSED`, `RESUMED`,
+  `ADVANCED`, `COMPLETED`). Second, `ota_rollout_plans` gains the
+  nullable `tenant_id` uuid the org-owned doctrine presupposes but V56
+  omitted — the tenant-isolation seam composes its organization-scope
+  predicate on mapped attributes, so an org-grain row without the
+  column cannot ride the seam — pinned org-grain by the new
+  `ck_ota_rollout_plans_org_grain` (`tenant_id IS NULL`): the plan
+  serves the release's whole device population, the owning
+  organization's grain and never one tenant's, exactly the shape
+  V58's `ota_signing_keys` and every other org-scoped row carries.
+  Expand-only: one CHECK widened by one value, one nullable column,
+  one new check; nothing dropped or re-typed, and no existing action
+  value leaves the vocabulary.
 
 ## Verifying migrations
 

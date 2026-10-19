@@ -3028,6 +3028,124 @@ paths:
             '*/*':
               schema:
                 $ref: "#/components/schemas/FinalizeView"
+  /api/v1/ota/rollouts:
+    post:
+      tags:
+      - ota-rollout-controller
+      operationId: attachRollout
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AttachRolloutRequest"
+        required: true
+      responses:
+        "201":
+          description: Created
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/OtaRolloutView"
+  /api/v1/ota/rollouts/{releaseId}/resume:
+    post:
+      tags:
+      - ota-rollout-controller
+      operationId: resumeRollout
+      parameters:
+      - name: releaseId
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ControlRequest"
+        required: true
+      responses:
+        "200":
+          description: OK
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/OtaRolloutView"
+  /api/v1/ota/rollouts/{releaseId}/pause:
+    post:
+      tags:
+      - ota-rollout-controller
+      operationId: pauseRollout
+      parameters:
+      - name: releaseId
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ControlRequest"
+        required: true
+      responses:
+        "200":
+          description: OK
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/OtaRolloutView"
+  /api/v1/ota/rollouts/{releaseId}/halt:
+    post:
+      tags:
+      - ota-rollout-controller
+      operationId: haltRollout
+      parameters:
+      - name: releaseId
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ControlRequest"
+        required: true
+      responses:
+        "200":
+          description: OK
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/OtaRolloutView"
+  /api/v1/ota/rollouts/{releaseId}/advance:
+    post:
+      tags:
+      - ota-rollout-controller
+      operationId: advanceStage
+      parameters:
+      - name: releaseId
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ControlRequest"
+        required: true
+      responses:
+        "200":
+          description: OK
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/OtaRolloutView"
   /api/v1/ota/app-tokens:
     get:
       tags:
@@ -5626,6 +5744,31 @@ paths:
             '*/*':
               schema:
                 $ref: "#/components/schemas/SigningKeyView"
+  /api/v1/ota/rollouts/{releaseId}:
+    get:
+      tags:
+      - ota-rollout-controller
+      operationId: rolloutStatus
+      parameters:
+      - name: releaseId
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - name: applicationId
+        in: query
+        required: true
+        schema:
+          type: string
+          format: uuid
+      responses:
+        "200":
+          description: OK
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/OtaRolloutView"
   /api/v1/ota/bundles/{bundleId}:
     get:
       tags:
@@ -6359,6 +6502,12 @@ paths:
           - AUDIT_STREAM_EXPORT_DELETED
           - AUDIT_STREAM_EXPORT_TESTED
           - AUDIT_STREAM_REPLAYED
+          - OTA_ROLLOUT_COMMENCED
+          - OTA_ROLLOUT_ADVANCED
+          - OTA_ROLLOUT_COMPLETED
+          - OTA_ROLLOUT_HALTED
+          - OTA_ROLLOUT_PAUSED
+          - OTA_ROLLOUT_RESUMED
       - name: applicationId
         in: query
         required: false
@@ -8754,6 +8903,102 @@ components:
           format: date-time
     RestartRequest:
       type: object
+      properties:
+        applicationId:
+          type: string
+          format: uuid
+        reason:
+          type: string
+    AttachRolloutRequest:
+      type: object
+      description: "The OTA rollout plan to attach and commence: applicationId, releaseId,\
+        \ the mode (AUTOMATIC or CHECKPOINT), and the stages -- each a cumulative\
+        \ basisPoints threshold of 1..10000, strictly ascending, the final stage 10000."
+      properties:
+        applicationId:
+          type: string
+          format: uuid
+        releaseId:
+          type: string
+          format: uuid
+        mode:
+          type: string
+        stages:
+          type: array
+          items:
+            $ref: "#/components/schemas/StageBody"
+    StageBody:
+      type: object
+      description: "One stage: cumulative basisPoints (1..10000) and the optional\
+        \ note."
+      properties:
+        basisPoints:
+          type: integer
+          format: int32
+        note:
+          type: string
+    OtaRolloutView:
+      type: object
+      properties:
+        releaseId:
+          type: string
+          format: uuid
+        applicationId:
+          type: string
+          format: uuid
+        mode:
+          type: string
+        status:
+          type: string
+        currentStage:
+          type: integer
+          format: int32
+        planSalt:
+          type: string
+        stages:
+          type: array
+          items:
+            $ref: "#/components/schemas/RolloutStageView"
+        timeline:
+          type: array
+          items:
+            $ref: "#/components/schemas/RolloutEventView"
+    RolloutEventView:
+      type: object
+      properties:
+        action:
+          type: string
+        stagePosition:
+          type: integer
+          format: int32
+        detail:
+          type: string
+        actorId:
+          type: string
+          format: uuid
+        occurredAt:
+          type: string
+          format: date-time
+    RolloutStageView:
+      type: object
+      properties:
+        position:
+          type: integer
+          format: int32
+        basisPoints:
+          type: integer
+          format: int32
+        note:
+          type: string
+        status:
+          type: string
+        reachedAt:
+          type: string
+          format: date-time
+    ControlRequest:
+      type: object
+      description: "The applicationId the plan's release belongs to, and the reason\
+        \ (mandatory for halt)."
       properties:
         applicationId:
           type: string
@@ -11461,6 +11706,12 @@ components:
           - AUDIT_STREAM_EXPORT_DELETED
           - AUDIT_STREAM_EXPORT_TESTED
           - AUDIT_STREAM_REPLAYED
+          - OTA_ROLLOUT_COMMENCED
+          - OTA_ROLLOUT_ADVANCED
+          - OTA_ROLLOUT_COMPLETED
+          - OTA_ROLLOUT_HALTED
+          - OTA_ROLLOUT_PAUSED
+          - OTA_ROLLOUT_RESUMED
         occurredAt:
           type: string
           format: date-time

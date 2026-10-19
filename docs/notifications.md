@@ -70,6 +70,7 @@ authority to read.
 | `NOTIFICATION_TEST_SENT` | A subscription's test message (S12-02) | the test action itself — no domain transition publishes it |
 | `AUDIT_EVENT` | One immutable audit event bridged for the SIEM export (S14-05) | the outbox recorder's audit listener — every published `AuditEvent` of an organization holding an enabled export, org-gated ([siem](siem.md)) |
 | `OTA_BUNDLE_SIGNED` | One OTA bundle finalized and signed under the application's active Ed25519 key (S16-03) | `OtaBundleSignedEvent` |
+| `OTA_ROLLOUT_TRANSITIONED` | One committed OTA rollout control act — commence, advance, halt, pause, resume; a terminal advancement publishes both its `ADVANCED` and its `COMPLETED` (S16-06) | `OtaRolloutTransitionedEvent` |
 
 Two deliberate suppressions: a validation outcome of `BLOCKED` (the
 operational queue-refusal skip) publishes nothing, and the release

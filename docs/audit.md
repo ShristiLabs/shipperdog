@@ -397,7 +397,22 @@ backfill-only provenance exception ([ci](ci.md)), and
 notification (App Store / Google Play) was mapped to a normalized
 internal event — provider, event, delivery id, and the store-side
 identifiers, thin by design because E13's connectors own the
-semantics ([webhooks](webhooks.md)).
+semantics ([webhooks](webhooks.md)),
+and the OTA rollout family — S16-06/issue #168:
+`OTA_ROLLOUT_COMMENCED` (a plan attached to a live OTA release and
+thereby commenced, the widening ladder's birth, carrying release,
+mode, and stage count), `OTA_ROLLOUT_ADVANCED` (a stage crossing,
+carrying position and cumulative basis points — also the AUTOMATIC
+mode's refused advance, success=false, the policy rule's evidence
+without a timeline row), `OTA_ROLLOUT_COMPLETED` (the final stage
+reached, beside the same act's ADVANCED), `OTA_ROLLOUT_HALTED` (the
+manual stop, the mandatory reason riding the detail map — no code
+path halts on its own), `OTA_ROLLOUT_PAUSED` (the temporary stop;
+serving freezes but the ladder never retreats), and
+`OTA_ROLLOUT_RESUMED` (from HALTED or PAUSED back to serving what the
+plan had reached) — one line per committed control act, in the same
+transaction as the plan row, the timeline row, and the bus event
+([ADR-0010](adr/ADR-0010-ota-updates.md)).
 
 ## Streaming to a SIEM (S14-05)
 

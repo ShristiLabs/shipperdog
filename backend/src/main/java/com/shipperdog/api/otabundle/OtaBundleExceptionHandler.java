@@ -22,7 +22,8 @@ import org.springframework.web.bind.annotation.RestControllerAdvice;
  * artifact module's advice established.
  */
 @Order(0)
-@RestControllerAdvice(assignableTypes = {OtaBundleController.class, OtaAppTokenController.class})
+@RestControllerAdvice(
+        assignableTypes = {OtaBundleController.class, OtaAppTokenController.class, OtaRolloutController.class})
 public class OtaBundleExceptionHandler {
 
     @ExceptionHandler(OtaBundleException.class)
