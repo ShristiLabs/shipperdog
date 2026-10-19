@@ -22,6 +22,10 @@ export interface Application {
   bundleId: string | null;
   packageName: string | null;
   status: ApplicationStatus;
+  /** OTA gate (V55's applications.ota_enabled, S16-15): served on every
+   * view since the REST surface landed; still read defensively — absent
+   * falls back to the column's default (false, OTA refused). */
+  otaEnabled?: boolean;
   createdAt: string;
   updatedAt: string;
 }
@@ -66,6 +70,8 @@ export interface UpdateApplicationInput {
   status?: ApplicationStatus;
   ownershipScope?: OwnershipScope;
   tenantId?: string;
+  /** The OTA gate flip (S16-15): PATCHes applications.ota_enabled. */
+  otaEnabled?: boolean;
 }
 
 /** Effective-visibility listing for a tenant (S3-03 AC4): the tenant's

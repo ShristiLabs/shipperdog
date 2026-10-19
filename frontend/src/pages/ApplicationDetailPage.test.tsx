@@ -28,6 +28,7 @@ const SHARED_APP = {
   bundleId: "com.acme.fieldservice",
   packageName: "com.acme.fieldservice.android",
   status: "ACTIVE",
+  otaEnabled: false,
   createdAt: "2026-10-01T10:00:00Z",
   updatedAt: "2026-10-02T10:00:00Z",
 };
@@ -341,5 +342,79 @@ describe("ApplicationDetailPage", () => {
       expect(body).not.toHaveProperty("tenantId");
     });
     expect(await screen.findByText("Application Field Service 2 updated")).toBeInTheDocument();
+  });
+
+  // The OTA block (S16-15, issue #177): the signing key's copyable
+  // pair and the OTA-enable toggle's PATCH.
+  it("shows the ACTIVE signing key with its keyId and copy affordances (S16-15)", async () => {
+    renderDetail(
+      detailRoutes([
+        {
+          method: "GET",
+          url: "/api/v1/ota/signing-keys",
+          status: 200,
+          body: {
+            applicationId: APP_ID,
+            keyId: "k1k1k1k1k1k1k1k1k1k1k1k1k1k1k1k1",
+            publicKey: "MCowBQYDK2VwAyEAGb9ECWmEzf6FQbrBZ9w7lshQhqowtrbLDFw4rXAxZuE=",
+            algorithm: "ED25519",
+            createdAt: "2026-10-05T10:00:00Z",
+          },
+        },
+      ]),
+    );
+
+    expect(await screen.findByTestId("ota-signing-key")).toBeInTheDocument();
+    expect(screen.getByText(/keyId k1k1k1k1k1k1k1k1k1k1k1k1k1k1k1k1/)).toBeInTheDocument();
+    expect(screen.getByTestId("ota-public-key")).toHaveTextContent("MCowBQYDK2VwAyEAGb9");
+    expect(screen.getByTestId("copy-ota-key-id")).toBeInTheDocument();
+    expect(screen.getByTestId("copy-ota-public-key")).toBeInTheDocument();
+  });
+
+  it("explains the missing key honestly (a finalize-time act, never a read side effect)", async () => {
+    renderDetail(
+      detailRoutes([
+        {
+          method: "GET",
+          url: "/api/v1/ota/signing-keys",
+          status: 404,
+          body: { title: "Not Found", status: 404, code: "OTA_SIGNING_KEY_NOT_FOUND" },
+        },
+      ]),
+    );
+    await screen.findByTestId("ota-section");
+    expect(await screen.findByTestId("ota-key-empty")).toHaveTextContent("No signing key yet");
+  });
+
+  it("flips the OTA-enable toggle and PATCHes otaEnabled (S16-15)", async () => {
+    renderDetail(
+      detailRoutes([
+        {
+          method: "GET",
+          url: "/api/v1/ota/signing-keys",
+          status: 404,
+          body: { title: "Not Found", status: 404, code: "OTA_SIGNING_KEY_NOT_FOUND" },
+        },
+        {
+          method: "PATCH",
+          url: `/api/v1/applications/${APP_ID}`,
+          status: 200,
+          body: { ...SHARED_APP, otaEnabled: true },
+        },
+      ]),
+    );
+    await screen.findByTestId("ota-section");
+    expect(screen.getByText(/OTA disabled/)).toBeInTheDocument();
+
+    await user.click(screen.getByRole("switch"));
+
+    await waitFor(() => {
+      const patches = fetchCalls().filter(
+        ([url, init]) => url.includes(`/api/v1/applications/${APP_ID}`) && init?.method === "PATCH",
+      );
+      expect(patches).toHaveLength(1);
+      expect(JSON.parse(String(patches[0]?.[1]?.body))).toEqual({ otaEnabled: true });
+    });
+    expect(await screen.findByText("OTA enabled — bundles can be authored and devices can check")).toBeInTheDocument();
   });
 });

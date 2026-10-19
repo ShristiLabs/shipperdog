@@ -98,9 +98,9 @@ public class ApplicationEntity implements OrganizationScope {
     /**
      * The OTA bundle-updates opt-in (V55, S16-02, ADR-0010): false for
      * every application until its owner enables OTA; gates bundle
-     * authoring and the device-check resolution. Read-only from this
-     * module's perspective -- the toggle surface arrives with the OTA
-     * console work (S16-15).
+     * authoring and the device-check resolution. Flipped only through
+     * the registry PATCH toggle (S16-15); the otabundle module reads it
+     * through the profile tuple and never writes it.
      */
     private boolean otaEnabled;
 
@@ -213,9 +213,17 @@ public class ApplicationEntity implements OrganizationScope {
         return packageName;
     }
 
-    /** The OTA opt-in flag (V55): false until the owner enables it. */
+    /**
+     * The OTA opt-in flag (V55): false until the owner enables it. The
+     * setter serves the registry PATCH toggle (S16-15); the entity javadoc's
+     * read-only note refers to the otabundle module, never this one.
+     */
     public boolean isOtaEnabled() {
         return otaEnabled;
+    }
+
+    public void setOtaEnabled(boolean otaEnabled) {
+        this.otaEnabled = otaEnabled;
     }
 
     public void setPackageName(String packageName) {

@@ -15,6 +15,7 @@ import PolicyIcon from "@mui/icons-material/Policy";
 import TollIcon from "@mui/icons-material/Toll";
 import LogoutIcon from "@mui/icons-material/Logout";
 import RocketLaunchIcon from "@mui/icons-material/RocketLaunch";
+import SystemUpdateAltIcon from "@mui/icons-material/SystemUpdateAlt";
 import AltRouteIcon from "@mui/icons-material/AltRoute";
 import StreamIcon from "@mui/icons-material/Stream";
 import {
@@ -367,6 +368,25 @@ export default function ConsoleLayout() {
                   <RocketLaunchIcon />
                 </ListItemIcon>
                 <ListItemText primary="Releases" />
+              </ListItemButton>
+            </List>
+          ) : null}
+          {/* The OTA bundles authoring screen (S16-15) renders under the
+              same applications probe as Releases: the screen is unusable
+              without the registry picker, and per-application reads and
+              every write stay server-enforced regardless. */}
+          {orgId !== null && applicationsNav.allowed ? (
+            <List>
+              <ListItemButton
+                component={NavLink}
+                to="/ota/bundles"
+                data-testid="nav-ota-bundles"
+                sx={{ "&.active": { backgroundColor: "action.selected" } }}
+              >
+                <ListItemIcon>
+                  <SystemUpdateAltIcon />
+                </ListItemIcon>
+                <ListItemText primary="OTA bundles" />
               </ListItemButton>
             </List>
           ) : null}

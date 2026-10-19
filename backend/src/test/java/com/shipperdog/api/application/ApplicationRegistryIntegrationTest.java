@@ -364,6 +364,70 @@ class ApplicationRegistryIntegrationTest {
     }
 
     // -----------------------------------------------------------------------
+    // S16-15: the OTA opt-in toggle rides the registry PATCH (V55)
+    // -----------------------------------------------------------------------
+
+    @Test
+    void otaOptInToggleFlipsThroughPatchAuditedAndGuarded() throws Exception {
+        UUID orgId = createOrg("Reg Ota Corp");
+        String ownerToken = loginOfOrgRoleIn(orgId, "r-ota-owner@example.com", "ORG_ADMIN");
+        UUID tenantId = createTenant(ownerToken, orgId, "Reg Ota Bank", "crm-r-ota-1");
+        UUID appId = UUID.fromString(post(
+                        ownerToken,
+                        "/api/v1/applications",
+                        app(tenantId, "Updatable", List.of("IOS"), "com.regota.app", null),
+                        201)
+                .get("id")
+                .asText());
+
+        // The opt-in is born disabled (V55's default) and the view says so.
+        JsonNode born = get(ownerToken, "/api/v1/applications/" + appId, 200);
+        assertThat(born.get("otaEnabled").asBoolean()).isFalse();
+
+        // A same-value PATCH is a pure no-op: 200, the unchanged view,
+        // and no audit noise (the change-pair discipline skips it).
+        JsonNode noop = patch(ownerToken, "/api/v1/applications/" + appId, Map.of("otaEnabled", false), 200);
+        assertThat(noop.get("otaEnabled").asBoolean()).isFalse();
+        assertThat(audit.eventsOfType(AuditEventType.APPLICATION_UPDATED)).isEmpty();
+
+        // Flipping the gate is a normal PATCH field: audited before/after.
+        JsonNode enabled = patch(ownerToken, "/api/v1/applications/" + appId, Map.of("otaEnabled", true), 200);
+        assertThat(enabled.get("otaEnabled").asBoolean()).isTrue();
+        assertThat(jdbc.queryForObject("SELECT ota_enabled FROM applications WHERE id = ?", Boolean.class, appId))
+                .isTrue();
+        // The plain GET re-read carries the enabled gate too — the
+        // console renders from GET, never from the PATCH echo.
+        assertThat(get(ownerToken, "/api/v1/applications/" + appId, 200)
+                        .get("otaEnabled")
+                        .asBoolean())
+                .isTrue();
+        Map<String, String> detail =
+                audit.eventsOfType(AuditEventType.APPLICATION_UPDATED).get(0).detail();
+        assertThat(detail).containsEntry("otaEnabled.before", "false");
+        assertThat(detail).containsEntry("otaEnabled.after", "true");
+
+        // The toggle is reversible, mirroring every sibling field.
+        JsonNode disabled = patch(ownerToken, "/api/v1/applications/" + appId, Map.of("otaEnabled", false), 200);
+        assertThat(disabled.get("otaEnabled").asBoolean()).isFalse();
+
+        // A read-only org role cannot flip it: the write-grain denial
+        // conceals on the application target (PRD 12).
+        String viewerToken = loginOfOrgRoleIn(orgId, "r-ota-viewer@example.com", "VIEWER");
+        Recording viewerDenied =
+                exchange("/api/v1/applications/" + appId, viewerToken, "PATCH", Map.of("otaEnabled", true));
+        assertThat(viewerDenied.status).isEqualTo(404);
+        assertThat(viewerDenied.body.get("code").asText()).isEqualTo("APPLICATION_NOT_FOUND");
+
+        // Another organization's administrator sees the standard miss.
+        UUID otherOrgId = createOrg("Reg Ota Other Corp");
+        String otherAdminToken = loginOfOrgRoleIn(otherOrgId, "r-ota-other-admin@example.com", "ORG_ADMIN");
+        Recording outsiderDenied =
+                exchange("/api/v1/applications/" + appId, otherAdminToken, "PATCH", Map.of("otaEnabled", true));
+        assertThat(outsiderDenied.status).isEqualTo(404);
+        assertThat(outsiderDenied.body.get("code").asText()).isEqualTo("APPLICATION_NOT_FOUND");
+    }
+
+    // -----------------------------------------------------------------------
     // AC5: visibility respects tenant scope (S2-02)
     // -----------------------------------------------------------------------
 

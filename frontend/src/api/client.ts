@@ -41,6 +41,10 @@ interface RequestOptions {
   retrying?: boolean;
   /** Internal: carried by apiFetchText to override the Accept header. */
   acceptOverride?: string;
+  /** Extra request headers (S16-15): designated POSTs carry an
+   * Idempotency-Key so an intra-wizard retry never double-creates —
+   * the CLI's per-invocation key doctrine (issue #8's contract). */
+  headers?: Record<string, string>;
 }
 
 let refreshInFlight: Promise<boolean> | null = null;
@@ -133,6 +137,7 @@ async function rawFetch(path: string, options: RequestOptions): Promise<Response
   const headers: Record<string, string> = {
     Accept: options.acceptOverride ?? "application/json",
     "X-Correlation-Id": crypto.randomUUID(),
+    ...options.headers,
   };
   if (options.body !== undefined) {
     headers["Content-Type"] = "application/json";

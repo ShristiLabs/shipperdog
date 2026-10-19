@@ -2011,4 +2011,115 @@ describe("ReleaseDetailPage", () => {
       expect(gatesReadsAfter).toBeGreaterThan(gatesReadsBefore);
     });
   });
+
+  // The OTA rollout block (S16-15, issue #177): the staged plan with
+  // its ladder and timeline, the controls behind confirmation, halt's
+  // mandatory reason, and the optimistic-lock 409 surfacing the
+  // problem's own actionable wording while the view re-reads.
+  const OTA_ROLLOUT = {
+    releaseId: RELEASE_ID,
+    applicationId: APPLICATION_ID,
+    mode: "CHECKPOINT",
+    status: "RUNNING",
+    currentStage: 1,
+    planSalt: "salt-1",
+    stages: [
+      { position: 1, basisPoints: 1000, note: "canary", status: "REACHED", reachedAt: "2026-10-02T12:00:00Z" },
+      { position: 2, basisPoints: 5000, note: null, status: "PENDING", reachedAt: null },
+      { position: 3, basisPoints: 10000, note: null, status: "PENDING", reachedAt: null },
+    ],
+    timeline: [
+      { action: "COMMENCED", stagePosition: 1, detail: "basis=1000", actorId: ACTOR_ID, occurredAt: "2026-10-02T12:00:00Z" },
+    ],
+  };
+
+  it("renders the OTA rollout ladder and advances behind confirmation (S16-15)", async () => {
+    renderDetail(DETAIL_ACTIVE, [
+      {
+        method: "GET",
+        url: `/api/v1/ota/rollouts/${RELEASE_ID}`,
+        status: 200,
+        body: OTA_ROLLOUT,
+      },
+      {
+        method: "POST",
+        url: `/api/v1/ota/rollouts/${RELEASE_ID}/advance`,
+        status: 200,
+        body: { ...OTA_ROLLOUT, currentStage: 2 },
+      },
+    ]);
+
+    expect(await screen.findByTestId("ota-rollout")).toBeInTheDocument();
+    expect(screen.getByTestId("ota-rollout-status")).toHaveTextContent("running");
+    expect(screen.getByText(/10% of devices/)).toBeInTheDocument();
+    expect(screen.getByText(/Stage 2: 50% of devices/)).toBeInTheDocument();
+    expect(screen.getByTestId("ota-rollout-timeline")).toHaveTextContent("commenced");
+
+    await user.click(screen.getByTestId("ota-rollout-advance"));
+    expect(await screen.findByTestId("ota-rollout-confirm-title")).toHaveTextContent(
+      "Advance the OTA rollout to the next stage?",
+    );
+    await user.click(screen.getByTestId("ota-rollout-confirm"));
+
+    await waitFor(() => {
+      const posts = fetchCalls().filter(
+        ([url, init]) => url.endsWith(`/ota/rollouts/${RELEASE_ID}/advance`) && init?.method === "POST",
+      );
+      expect(posts).toHaveLength(1);
+      expect(JSON.parse(String(posts[0]?.[1]?.body))).toEqual({ applicationId: APPLICATION_ID });
+    });
+    expect(await screen.findByText(/OTA rollout: running at stage 2 of 3/)).toBeInTheDocument();
+  });
+
+  it("requires halt's reason and surfaces the optimistic-lock 409 toast (S16-15)", async () => {
+    renderDetail(DETAIL_ACTIVE, [
+      {
+        method: "GET",
+        url: `/api/v1/ota/rollouts/${RELEASE_ID}`,
+        status: 200,
+        body: OTA_ROLLOUT,
+      },
+      {
+        method: "POST",
+        url: `/api/v1/ota/rollouts/${RELEASE_ID}/halt`,
+        status: 409,
+        body: {
+          title: "Conflict",
+          status: 409,
+          code: "ROLLOUT_CONFLICT",
+          detail: "the rollout changed concurrently; reload and retry",
+        },
+      },
+    ]);
+    await screen.findByTestId("ota-rollout");
+
+    await user.click(screen.getByTestId("ota-rollout-halt"));
+    expect(await screen.findByTestId("ota-rollout-confirm-title")).toHaveTextContent(
+      "Halt the OTA rollout?",
+    );
+    // The confirm stays disabled until the mandatory reason lands.
+    expect(screen.getByTestId("ota-rollout-confirm")).toBeDisabled();
+    await user.type(screen.getByTestId("ota-rollout-reason"), "crash spike in the field");
+    await user.click(screen.getByTestId("ota-rollout-confirm"));
+
+    await waitFor(() => {
+      const halts = fetchCalls().filter(
+        ([url, init]) => url.endsWith(`/ota/rollouts/${RELEASE_ID}/halt`) && init?.method === "POST",
+      );
+      expect(halts).toHaveLength(1);
+      expect(JSON.parse(String(halts[0]?.[1]?.body))).toEqual({
+        applicationId: APPLICATION_ID,
+        reason: "crash spike in the field",
+      });
+    });
+    // The 409 surfaces the problem's own wording (the actionable
+    // toast) and the plan re-reads toward the winner's state.
+    expect(await screen.findByText(/ROLLOUT_CONFLICT/)).toBeInTheDocument();
+    await waitFor(() => {
+      const reads = fetchCalls().filter(
+        ([url, init]) => url.includes(`/ota/rollouts/${RELEASE_ID}`) && (init?.method ?? "GET") === "GET",
+      );
+      expect(reads.length).toBeGreaterThan(1);
+    });
+  });
 });
