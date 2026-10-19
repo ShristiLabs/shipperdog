@@ -119,7 +119,8 @@ Current contents:
   their ≤ 5-line integrations, the telemetry token the download
   issuance mints (the events contract's SDK authority), offline
   batching with (device, release, event id) dedup, chainable crash
-  context, the feedback deep link, and the size/battery budgets
+  context, the feedback deep link, the OTA updater (Android, S16-12),
+  and the size/battery budgets
 - [Companion app spike](companion-spike.md) — the S15-02 decision
   memo for PRD §38's conditional Android companion installer app:
   the working prototype in companion/ (catalog, PackageInstaller

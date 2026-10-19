@@ -20,5 +20,6 @@ java {
 
 dependencies {
     implementation(project(":telemetry-android"))
+    implementation(project(":ota-android"))
     compileOnly("org.robolectric:android-all:15-robolectric-12650502")
 }

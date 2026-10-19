@@ -1,14 +1,16 @@
-# sdk-ci (issue #72, S15-01): the tester telemetry SDK's own gate —
-# the Kotlin/Android and iOS/Swift suites beside the repo's existing
-# per-component workflows (the cli-ci precedent: one workflow, one
-# component). The Kotlin job runs on the pure-JVM core's full test
-# suite and compiles the Android adapter and the docs-proven sample
-# against the real framework classes (the Robolectric android-all
-# stub — compileOnly, never packaged); the Swift job runs the
-# package's XCTest suite on macOS and typechecks the UIKit paths
-# against an iOS simulator target. Both jobs assert the size budget
-# (< 200 KB per platform, stripped) — the acceptance criterion is a
-# number the CI measures, not a claim the docs make.
+# sdk-ci (issue #72, S15-01; OTA modules since issue #174, S16-12):
+# the tester telemetry SDK's own gate — the Kotlin/Android and
+# iOS/Swift suites beside the repo's existing per-component
+# workflows (the cli-ci precedent: one workflow, one component). The
+# Kotlin job runs on the pure-JVM cores' full test suites (telemetry
+# and the OTA updater) and compiles the Android adapters and the
+# docs-proven sample against the real framework classes (the
+# Robolectric android-all stub — compileOnly, never packaged); the
+# Swift job runs the package's XCTest suite on macOS and typechecks
+# the UIKit paths against an iOS simulator target. Both jobs assert
+# the size budget (< 200 KB per platform, stripped — Kotlin: all
+# four jars combined) — the acceptance criterion is a number the CI
+# measures, not a claim the docs make.
 name: sdk-ci
 
 on:
@@ -27,7 +29,7 @@ permissions:
 
 jobs:
   kotlin:
-    name: telemetry-sdk (Kotlin/Android)
+    name: sdks (Kotlin/Android)
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -43,12 +45,14 @@ jobs:
       - name: Build, test, and assemble every module
         run: ./gradlew --no-daemon build
 
-      - name: Assert the size budget (< 200 KB, the core + adapter)
+      - name: Assert the size budget (< 200 KB, all four jars combined)
         run: |
           CORE=$(stat -c%s telemetry/build/libs/telemetry.jar)
           ADAPTER=$(stat -c%s telemetry-android/build/libs/telemetry-android.jar)
-          TOTAL=$((CORE + ADAPTER))
-          echo "core=${CORE}B adapter=${ADAPTER}B total=${TOTAL}B"
+          OTA=$(stat -c%s ota/build/libs/ota.jar)
+          OTA_ADAPTER=$(stat -c%s ota-android/build/libs/ota-android.jar)
+          TOTAL=$((CORE + ADAPTER + OTA + OTA_ADAPTER))
+          echo "core=${CORE}B adapter=${ADAPTER}B ota=${OTA}B ota-adapter=${OTA_ADAPTER}B total=${TOTAL}B"
           test "$TOTAL" -lt 204800
 
   swift:
