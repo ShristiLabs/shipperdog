@@ -80,7 +80,39 @@ public final class AnalyticsCatalog {
          * current value serves the live span; rollups attribute each
          * closed span to its exit bucket. Duration, INTERNAL.
          */
-        TIME_IN_RING(Source.INTERNAL, Unit.MINUTES);
+        TIME_IN_RING(Source.INTERNAL, Unit.MINUTES),
+        /**
+         * Count of update-available device checks ({@code OTA_CHECK}
+         * rows, D9's server-side leg — the funnel's first stage).
+         * Count, INTERNAL — the check surface is the writer, and the
+         * rollup rows carry the bundle dimension (V57).
+         */
+        OTA_CHECKS(Source.INTERNAL, Unit.COUNT),
+        /**
+         * Count of devices' first manifest observations ({@code
+         * OTA_SEEN} reports) — the funnel's seen stage. Count,
+         * DEVICE_SDK, bundle-dimensioned.
+         */
+        OTA_SEEN(Source.DEVICE_SDK, Unit.COUNT),
+        /**
+         * Count of bundle download reports ({@code OTA_DOWNLOAD},
+         * either result — the funnel's download stage; the failure
+         * legs ride the {@code OTA_FAILED} vocabulary). Count,
+         * DEVICE_SDK, bundle-dimensioned.
+         */
+        OTA_DOWNLOADS(Source.DEVICE_SDK, Unit.COUNT),
+        /** Count of successful apply reports ({@code OTA_APPLIED}). Count, DEVICE_SDK, bundle-dimensioned. */
+        OTA_APPLIED(Source.DEVICE_SDK, Unit.COUNT),
+        /**
+         * Count of apply failure reports ({@code OTA_FAILED}; the
+         * open reason row values — {@code checksum_mismatch} and kin —
+         * are the funnel's failure breakdown, served per reason by the
+         * OTA funnel query, not by this count). Count, DEVICE_SDK,
+         * bundle-dimensioned.
+         */
+        OTA_FAILURES(Source.DEVICE_SDK, Unit.COUNT),
+        /** Count of rollback reports ({@code OTA_ROLLED_BACK}). Count, DEVICE_SDK, bundle-dimensioned. */
+        OTA_ROLLBACKS(Source.DEVICE_SDK, Unit.COUNT);
 
         private final Source source;
         private final Unit unit;

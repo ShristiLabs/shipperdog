@@ -42,7 +42,16 @@ S11-04 SDK event store     recompute,                ring/release/window)
   membership row can be removed) only shrinks a denominator the recompute
   re-derives. The hourly job recomputes the trailing lookback (24h default,
   `ANALYTICS_ROLLUP_LOOKBACK`) — the late-event healing bound; older history
-  is repaired by the recompute trigger.
+  is repaired by the recompute trigger. The OTA count family (S16-09) rides
+  the same engine with the bundle dimension V57 added: `ota_bundle_id`
+  (nullable on both tables, NULL on every legacy row — the legacy statements
+  are untouched, so historical outputs are byte-identical) carried by the
+  six OTA metric names. OTA rows attribute to the BUNDLE's own release,
+  never the reporting release's: the ingest admits a report naming any
+  bundle of the release's application (attribution is history, S16-08), so
+  only the bundle's own linkage makes the (application, metric, bucket,
+  release, ring) grain one row per bundle by construction — the
+  release-to-bundle uniqueness the funnel reads key on.
 - **Reads.** The per-release current values are computed on demand over the
   release's own bounded, index-backed facts; the time series read the
   precomputed rollups (the p95 < 1s cached reads — one indexed window scan,
@@ -57,6 +66,9 @@ release occupied when the underlying event occurred (the starting ring
 until the first COMPLETED promotion, then that hop's to-ring — the
 timeline's own semantics), so release, application, tenant (the owning
 dimension), ring, and time-window views aggregate from the same rows.
+The OTA count family (S16-09) additionally keys the **bundle**
+(`ota_bundle_id`, V57) — every OTA event row carries the bundle its
+manifest served, so the funnel views bundle from the same rollup rows.
 
 | Metric | Unit | Source | Formula | NO_DATA when |
 |---|---|---|---|---|
@@ -69,6 +81,12 @@ dimension), ring, and time-window views aggregate from the same rows.
 | `TESTER_ENGAGEMENT` | rate 0..1 | internal (day one) | distinct targeted testers who downloaded / distinct targeted testers (targets expanded: a tenant target's retained members, narrowed by its named tester groups when present) | the release targets no testers |
 | `APPROVAL_DURATION` | minutes | internal (day one) | average of (final decision time - round start) over the release's decided approval rounds | no decision has landed |
 | `TIME_IN_RING` | minutes | internal (day one) | current: minutes since the release entered the ring it holds; rollups: the average of ring occupancies the bucket closed (open spans are the live read's) | never — a release always occupies its starting ring |
+| `OTA_CHECKS` | count | internal (S16-09) | update-available `OTA_CHECK` rows attributed to the bundle (D9's server-side leg — the check surface is the one writer) | no event reported |
+| `OTA_SEEN` | count | device SDK (S16-09) | `OTA_SEEN` reports attributed to the bundle | no event reported |
+| `OTA_DOWNLOADS` | count | device SDK (S16-09) | `OTA_DOWNLOAD` reports attributed to the bundle (either result — the failure legs ride `OTA_FAILED`) | no event reported |
+| `OTA_APPLIED` | count | device SDK (S16-09) | `OTA_APPLIED` reports attributed to the bundle | no event reported |
+| `OTA_FAILURES` | count | device SDK (S16-09) | `OTA_FAILED` reports attributed to the bundle (the per-reason breakdown is the funnel read's, not this count's) | no event reported |
+| `OTA_ROLLBACKS` | count | device SDK (S16-09) | `OTA_ROLLED_BACK` reports attributed to the bundle | no event reported |
 
 The policy seam's wider vocabulary (PRD 33): `TESTER_APPROVAL_RATE` =
 `APPROVED` / (`APPROVED` + `REJECTED`) verdicts (NO_DATA until any lands);
@@ -100,6 +118,45 @@ double-answers it.
   window (a day's bucket starts at its midnight). Windows wider than 366
   days are refused, never clamped; `to` may not be in the future beyond
   clock skew.
+
+## The OTA bundle reads (S16-09, issue #171)
+
+Two service-layer reads the S16-10 dashboard endpoints (#172) serve; no
+HTTP surface ships with this story. Both are computed on demand over the
+bundle's own bounded, index-backed facts (`idx_analytics_events_ota_bundle`),
+and both resolve the bundle through the tenant's visible-application
+catalog (tenant-owned or ACTIVE-authorized — the dashboard union):
+unknown, foreign, and unvisible answer the one concealed `BUNDLE_NOT_FOUND`.
+
+- **`AnalyticsQueryService.otaFunnel(tenantId, bundleId, ring)`** — the
+  device funnel of one bundle: the six stage counts (check -> seen ->
+  download -> applied, beside the failure and rollback legs), the
+  failure-reason breakdown (`OTA_FAILED`'s open row values —
+  `checksum_mismatch` and kin — ordered count-descending then by word),
+  and the adoption curve over time: for each day the bundle drew a seen
+  or applied report, the cumulative distinct identified devices that
+  applied over the cumulative distinct that observed. Reports without
+  the payload's `device_id` count toward the stage counts but never
+  toward adoption — adoption needs identity; a day with observers and
+  no applies answers the real 0.0, and honest arithmetic is never
+  clamped (a device whose apply landed without any seen report can
+  push a day past 1.0 — partial reporting reported as it stands). The
+  optional ring filter narrows EVERY leg — stages, breakdown, and
+  curve — to the reports that occurred while the bundle's release
+  occupied the named ring (the rollups' own attribution); an unknown
+  ring code is refused, never silently empty.
+- **`DashboardQueryService.otaBundleHealth(tenantId, bundleId)`** — the
+  crash-rate comparison current vs new: the addressed (new) bundle
+  beside the application's CURRENT bundle — its most recent OTHER
+  RELEASED bundle by the release ladder (a first rollout answers the
+  new side alone). Each side's crash-free rate is the dictionary's
+  CRASH_FREE_SESSIONS formula over the bundle's release's SESSION
+  reports (the release-keyed attribution V57's doctrine names:
+  `ota_bundle_id` is NULL on SESSION rows by schema, and an OTA release
+  carries exactly one bundle) — null while the release holds no
+  sessions (the explicit NO_DATA, never a zero), and the delta (new
+  minus current — positive is better) serves only when both sides are
+  evidenced.
 
 ## The recompute trigger
 

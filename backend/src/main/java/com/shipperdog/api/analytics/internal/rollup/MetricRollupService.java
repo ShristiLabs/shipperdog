@@ -41,6 +41,19 @@ import org.springframework.transaction.annotation.Transactional;
  * the first COMPLETED promotion, then that hop's to-ring (the
  * timeline's own semantics; docs/analytics.md documents the grain).
  * Metrics that carry no ring dimension store the nil uuid sentinel.
+ *
+ * <p><strong>The OTA bundle dimension</strong> (V57, S16-09): the six
+ * OTA event types roll as their own metric names through the same
+ * engine — one count metric per type, each row carrying {@code
+ * ota_bundle_id} beside the legacy grain, and attributing to the
+ * BUNDLE's own release (a bundle holds exactly one release, so the
+ * (application, metric, bucket, release, ring) key identifies one row
+ * per bundle by construction — the ingest's attribution is
+ * application-scoped, so the reporting release can never anchor the
+ * grain; the bundle-carrying rows never collide with the legacy grain
+ * because the metric names are distinct). The legacy statements are
+ * untouched — every historical row's NULL dimension aggregates exactly
+ * as before, pre- and post-OTA outputs byte-identical.
  */
 @Service
 public class MetricRollupService {
@@ -107,6 +120,14 @@ public class MetricRollupService {
         written += grainUpdate(jdbc, grain, parameters, testerEngagement(table));
         written += grainUpdate(jdbc, grain, parameters, approvalDuration(table));
         written += grainUpdate(jdbc, grain, parameters, timeInRing(table));
+        // The OTA funnel counts (S16-09): one metric per event type,
+        // every row carrying the bundle dimension beside the grain.
+        written += grainUpdate(jdbc, grain, parameters, otaEventCount(table, "OTA_CHECKS", "'OTA_CHECK'"));
+        written += grainUpdate(jdbc, grain, parameters, otaEventCount(table, "OTA_SEEN", "'OTA_SEEN'"));
+        written += grainUpdate(jdbc, grain, parameters, otaEventCount(table, "OTA_DOWNLOADS", "'OTA_DOWNLOAD'"));
+        written += grainUpdate(jdbc, grain, parameters, otaEventCount(table, "OTA_APPLIED", "'OTA_APPLIED'"));
+        written += grainUpdate(jdbc, grain, parameters, otaEventCount(table, "OTA_FAILURES", "'OTA_FAILED'"));
+        written += grainUpdate(jdbc, grain, parameters, otaEventCount(table, "OTA_ROLLBACKS", "'OTA_ROLLED_BACK'"));
         return written;
     }
 
@@ -125,6 +146,19 @@ public class MetricRollupService {
         return "INSERT INTO "
                 + table
                 + " (organization_id, tenant_id, application_id, release_id, ring_id, metric, bucket_start, value, computed_at) ";
+    }
+
+    /**
+     * The OTA family's insert head: the legacy columns plus the bundle
+     * dimension (V57's nullable {@code ota_bundle_id}). The legacy
+     * head above stays byte-identical for the legacy statements — the
+     * historical rows' NULL dimension is written by exactly the code
+     * that always wrote it.
+     */
+    private static String otaInsertInto(String table) {
+        return "INSERT INTO " + table
+                + " (organization_id, tenant_id, application_id, release_id, ring_id, metric, bucket_start, "
+                + "value, computed_at, ota_bundle_id) ";
     }
 
     private static String upsert() {
@@ -174,6 +208,41 @@ public class MetricRollupService {
                   AND e.occurred_at >= :from AND e.occurred_at < :to
                 GROUP BY r.organization_id, r.tenant_id, r.application_id, r.id,
                          COALESCE(hop.to_ring_id, r.starting_ring_id), date_trunc('{GRAIN}', e.occurred_at)
+                """ + upsert();
+    }
+
+    /**
+     * One OTA funnel count (S16-09): the bundle's reports of one OTA
+     * event type, grouped at the grain with the bundle dimension —
+     * every OTA row carries {@code e.ota_bundle_id} (the ota_shape
+     * check guarantees it non-null on the family). The row attributes
+     * to the BUNDLE's own release, never the reporting release's: the
+     * ingest's attribution is application-scoped (a report may name
+     * any bundle of the release's application — attribution is
+     * history), so only the bundle's own linkage keeps the
+     * (application, metric, bucket, release, ring) arbiter one row per
+     * bundle by construction. The ring attribution rides the bundle's
+     * release's own timeline (the lateral, over the bundle's release).
+     */
+    private static String otaEventCount(String table, String metric, String typeLiteral) {
+        return otaInsertInto(table) + """
+                SELECT rb.organization_id, rb.tenant_id, rb.application_id, rb.id,
+                       COALESCE(hop.to_ring_id, rb.starting_ring_id),
+                       '""" + metric + """
+                ', date_trunc('{GRAIN}', e.occurred_at), count(*)::float8, now(), e.ota_bundle_id
+                FROM analytics_events e
+                JOIN ota_bundles ob ON ob.id = e.ota_bundle_id
+                JOIN releases rb ON rb.id = ob.release_id AND rb.application_id = :applicationId
+                LEFT JOIN LATERAL (
+                    SELECT rp.to_ring_id FROM release_promotions rp
+                    WHERE rp.release_id = rb.id AND rp.status = 'COMPLETED' AND rp.occurred_at <= e.occurred_at
+                    ORDER BY rp.occurred_at DESC LIMIT 1
+                ) hop ON true
+                WHERE e.event_type = """ + typeLiteral + """
+                  AND e.occurred_at >= :from AND e.occurred_at < :to
+                GROUP BY rb.organization_id, rb.tenant_id, rb.application_id, rb.id,
+                         COALESCE(hop.to_ring_id, rb.starting_ring_id), date_trunc('{GRAIN}', e.occurred_at),
+                         e.ota_bundle_id
                 """ + upsert();
     }
 
