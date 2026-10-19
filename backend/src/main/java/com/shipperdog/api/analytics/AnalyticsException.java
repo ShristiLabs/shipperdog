@@ -41,6 +41,12 @@ public class AnalyticsException extends RuntimeException {
          * foreign — byte-identical to the tenant module's genuine miss.
          */
         TENANT_NOT_FOUND(HttpStatus.NOT_FOUND, "TENANT_NOT_FOUND", "Resource not found."),
+        /**
+         * The addressed OTA bundle (S16-09's funnel and health reads):
+         * unknown, foreign, or not visible to the addressed tenant —
+         * the concealed miss, byte-identical for every leg.
+         */
+        BUNDLE_NOT_FOUND(HttpStatus.NOT_FOUND, "BUNDLE_NOT_FOUND", "Resource not found."),
         /** A syntactically invalid query or ingest body (unknown metric token, malformed window, bad batch). */
         INVALID_REQUEST(HttpStatus.BAD_REQUEST, "INVALID_REQUEST", "The request is invalid."),
         /**

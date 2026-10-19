@@ -156,6 +156,115 @@ public class DashboardQueryService {
     }
 
     // ------------------------------------------------------------------
+    // OTA bundle health (S16-09, issue #171 AC4)
+    // ------------------------------------------------------------------
+
+    /**
+     * The OTA bundle health comparison (AC4): the crash-rate standing
+     * of the addressed (new) bundle beside the application's CURRENT
+     * bundle — the most recent OTHER RELEASED bundle of the same
+     * application (the OTA release the fleet ran before this rollout;
+     * the first rollout of an application answers the new side alone,
+     * the comparison NO_DATA).
+     *
+     * <p>Each side's crash-free rate is the dictionary's CRASH_FREE
+     * SESSIONS formula over the bundle's release's SESSION reports —
+     * the release-keyed attribution V57's doctrine names ({@code
+     * analytics_events.ota_bundle_id} is NULL on SESSION rows by
+     * schema; an OTA release holds exactly one bundle, so its
+     * release-attributed sessions are by construction sessions on that
+     * bundle) — NO_DATA (null) while the release holds no sessions,
+     * never a zero. The delta (new minus current, positive is better)
+     * serves only when both sides are evidenced.
+     *
+     * <p>The bundle must belong to an application the addressed tenant
+     * can see (the catalog union) — the concealed miss of every
+     * bundle-addressed read.
+     */
+    @Transactional(readOnly = true)
+    public OtaBundleHealthView otaBundleHealth(UUID tenantId, UUID bundleId) {
+        Boolean tenantExists = jdbc.queryForObject(
+                "SELECT EXISTS(SELECT 1 FROM tenants WHERE id = :tenant)",
+                new MapSqlParameterSource("tenant", tenantId),
+                Boolean.class);
+        if (!Boolean.TRUE.equals(tenantExists)) {
+            throw new AnalyticsException(AnalyticsException.Code.TENANT_NOT_FOUND, "unknown tenant");
+        }
+        BundleHealthRow addressed =
+                bundleHealthOf("""
+                SELECT b.id, b.application_id, b.release_id, b.bundle_version,
+                       'R-' || r.release_number AS release_ref,
+                       coalesce(sum(e.sessions), 0) AS sessions,
+                       coalesce(sum(e.crash_sessions), 0) AS crash_sessions
+                FROM ota_bundles b
+                JOIN applications a ON a.id = b.application_id
+                LEFT JOIN releases r ON r.id = b.release_id
+                LEFT JOIN analytics_events e ON e.release_id = b.release_id AND e.event_type = 'SESSION'
+                WHERE b.id = :bundleId
+                  AND (a.tenant_id = :tenantId
+                       OR EXISTS (SELECT 1 FROM tenant_application_authorizations aa
+                                   WHERE aa.tenant_id = :tenantId AND aa.application_id = a.id
+                                     AND aa.status = 'ACTIVE'))
+                GROUP BY b.id, b.application_id, b.release_id, b.bundle_version, r.release_number
+                """, new MapSqlParameterSource(Map.of("bundleId", bundleId, "tenantId", tenantId)));
+        if (addressed == null) {
+            throw new AnalyticsException(
+                    AnalyticsException.Code.BUNDLE_NOT_FOUND, "the addressed bundle did not resolve");
+        }
+        BundleHealthRow current = bundleHealthOf(
+                """
+                SELECT b.id, b.application_id, b.release_id, b.bundle_version,
+                       'R-' || r.release_number AS release_ref,
+                       coalesce(sum(e.sessions), 0) AS sessions,
+                       coalesce(sum(e.crash_sessions), 0) AS crash_sessions
+                FROM ota_bundles b
+                JOIN releases r ON r.id = b.release_id
+                LEFT JOIN analytics_events e ON e.release_id = b.release_id AND e.event_type = 'SESSION'
+                WHERE b.application_id = :applicationId AND b.id <> :bundleId
+                  AND b.status = 'RELEASED'
+                GROUP BY b.id, b.application_id, b.release_id, b.bundle_version, r.release_number, r.created_at
+                ORDER BY r.release_number DESC
+                LIMIT 1
+                """,
+                new MapSqlParameterSource(Map.of("applicationId", addressed.applicationId(), "bundleId", bundleId)));
+        OtaBundleSideView newSide = sideOf(addressed);
+        OtaBundleSideView currentSide = current == null ? null : sideOf(current);
+        Double delta = newSide.crashFreeRate() != null && currentSide != null && currentSide.crashFreeRate() != null
+                ? newSide.crashFreeRate() - currentSide.crashFreeRate()
+                : null;
+        return new OtaBundleHealthView(newSide, currentSide, delta);
+    }
+
+    /** One health statement's single row (an empty answer is the concealed miss / the no-current case). */
+    private BundleHealthRow bundleHealthOf(String sql, MapSqlParameterSource bound) {
+        List<BundleHealthRow> rows = jdbc.query(
+                sql,
+                bound,
+                (rs, i) -> new BundleHealthRow(
+                        rs.getObject("id", UUID.class),
+                        rs.getObject("application_id", UUID.class),
+                        rs.getObject("release_id", UUID.class),
+                        rs.getString("bundle_version"),
+                        rs.getString("release_ref"),
+                        rs.getLong("sessions"),
+                        rs.getLong("crash_sessions")));
+        return rows.isEmpty() ? null : rows.get(0);
+    }
+
+    /** The served side: the crash-free rate computed from the row's session arithmetic (null while none). */
+    private static OtaBundleSideView sideOf(BundleHealthRow row) {
+        Double rate = row.sessions() > 0 ? 1.0 - (double) row.crashSessions() / row.sessions() : null;
+        return new OtaBundleSideView(
+                row.bundleId(),
+                row.bundleVersion(),
+                row.releaseId(),
+                row.releaseRef(),
+                row.sessions(),
+                row.crashSessions(),
+                rate);
+    }
+
+    // ------------------------------------------------------------------
     // Ring vocabulary
     // ------------------------------------------------------------------
 
@@ -622,4 +731,37 @@ public class DashboardQueryService {
             String applicationName,
             String status,
             String ring) {}
+
+    /**
+     * The OTA bundle health comparison (S16-09): the new (addressed)
+     * bundle's crash standing beside the application's current bundle,
+     * with the delta (new minus current — positive is better) when
+     * both sides are evidenced.
+     */
+    public record OtaBundleHealthView(
+            OtaBundleSideView newBundle, OtaBundleSideView currentBundle, Double crashFreeRateDelta) {}
+
+    /**
+     * One side of the comparison: the bundle's identity and release
+     * context, its SESSION arithmetic, and the crash-free rate (null —
+     * the explicit NO_DATA — while the release holds no sessions).
+     */
+    public record OtaBundleSideView(
+            UUID bundleId,
+            String bundleVersion,
+            UUID releaseId,
+            String releaseRef,
+            long sessions,
+            long crashSessions,
+            Double crashFreeRate) {}
+
+    /** One health statement's raw row (internal; the views above are the served shape). */
+    private record BundleHealthRow(
+            UUID bundleId,
+            UUID applicationId,
+            UUID releaseId,
+            String bundleVersion,
+            String releaseRef,
+            long sessions,
+            long crashSessions) {}
 }
