@@ -135,7 +135,10 @@ Current contents:
   with the BLOCKED/TESTING/HEALTHY derivation, role-filtered pending
   actions) and the tenant dashboard, the two read APIs behind them,
   and the series-folding rule (counts sum, rates never do) every
-  chart consumer of the analytics reads follows
+  chart consumer of the analytics reads follows — plus the OTA
+  dashboard endpoints (S16-10): the bundle funnel (stages, failure
+  reasons, adoption curve, ring filter) and the current-vs-new
+  crash-rate comparison the console's OtaDashboardPage renders
 - [Notifications](notifications.md) — the domain-event bus and the
   notification service (S12-01): the transactional outbox and the
   at-least-once relay behind the DomainEventBus port (ADR-0007), the

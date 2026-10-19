@@ -298,6 +298,35 @@ final class IsolationEndpointRegistry {
                         200,
                         200,
                         side -> "/api/v1/tenants/" + UUID.randomUUID() + "/dashboard"),
+                // The OTA dashboard funnel (S16-10): the tenant
+                // dashboard's own grain and permission, but the seeded
+                // world holds no OTA bundle, so own-side probes address
+                // a random bundle id (the grant-item rationale — the
+                // route's miss shape IS the correct own answer), and
+                // concealment of a REAL foreign bundle's funnel is
+                // pinned with live bundles by the S16-10 dashboard
+                // endpoint suite.
+                surface(
+                        "/api/v1/tenants/{tenantId}/dashboard/ota/bundles/{bundleId}/funnel",
+                        side -> "/api/v1/tenants/" + side.tenantId() + "/dashboard/ota/bundles/" + UUID.randomUUID()
+                                + "/funnel",
+                        404,
+                        404,
+                        side -> "/api/v1/tenants/" + UUID.randomUUID() + "/dashboard/ota/bundles/" + UUID.randomUUID()
+                                + "/funnel"),
+                // The OTA bundle health comparison (S16-10): the same
+                // tenant:dashboard:read grain and miss shape as the
+                // funnel beside it — the live concealment proof (a
+                // foreign tenant cannot learn a bundle's crash
+                // standing) belongs to the S16-10 endpoint suite.
+                surface(
+                        "/api/v1/tenants/{tenantId}/dashboard/ota/bundles/{bundleId}/health",
+                        side -> "/api/v1/tenants/" + side.tenantId() + "/dashboard/ota/bundles/" + UUID.randomUUID()
+                                + "/health",
+                        404,
+                        404,
+                        side -> "/api/v1/tenants/" + UUID.randomUUID() + "/dashboard/ota/bundles/" + UUID.randomUUID()
+                                + "/health"),
 
                 // Notifications (S12-01) --------------------------------------------
                 // The subscription listing: org:notifications:read is

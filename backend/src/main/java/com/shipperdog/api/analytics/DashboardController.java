@@ -1,6 +1,9 @@
 package com.shipperdog.api.analytics;
 
+import com.shipperdog.api.analytics.internal.service.AnalyticsQueryService;
+import com.shipperdog.api.analytics.internal.service.AnalyticsQueryService.OtaFunnelView;
 import com.shipperdog.api.analytics.internal.service.DashboardQueryService;
+import com.shipperdog.api.analytics.internal.service.DashboardQueryService.OtaBundleHealthView;
 import com.shipperdog.api.identity.AuthenticatedPrincipal;
 import java.util.UUID;
 import org.springframework.security.access.prepost.PreAuthorize;
@@ -8,6 +11,7 @@ import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 /**
@@ -33,14 +37,27 @@ import org.springframework.web.bind.annotation.RestController;
  * render as the concealed 404 a genuine miss produces (PRD 12); the
  * tenant read is scoped by the bound parameter, and the isolation
  * suite's matrix proves the parity (IsolationEndpointRegistry).
+ *
+ * <p>The OTA dashboard reads (S16-10, issue #172, PRD 29's console
+ * OtaDashboardPage) ride the SAME tenant authority under {@code
+ * /dashboard/ota/*}: the funnel (stage counts, failure-reason
+ * breakdown, adoption curve — the S16-09 live read, optional ring
+ * filter) and the bundle-health crash-rate comparison (current vs
+ * new). Both wrap the S16-09 service layer whole; the bundle must
+ * belong to an application the addressed tenant can see (the catalog
+ * union), and every miss conceals as the {@code BUNDLE_NOT_FOUND} a
+ * genuine miss produces.
  */
 @RestController
 public class DashboardController {
 
     private final DashboardQueryService dashboards;
 
-    DashboardController(DashboardQueryService dashboards) {
+    private final AnalyticsQueryService queries;
+
+    DashboardController(DashboardQueryService dashboards, AnalyticsQueryService queries) {
         this.dashboards = dashboards;
+        this.queries = queries;
     }
 
     /**
@@ -69,6 +86,40 @@ public class DashboardController {
     DashboardQueryService.TenantDashboardView tenantDashboard(
             @AuthenticationPrincipal Object principal, @PathVariable UUID tenantId) {
         return dashboards.tenantDashboard(tenantId);
+    }
+
+    /**
+     * The OTA bundle funnel (S16-10): the device funnel's stage counts
+     * (check -> seen -> download -> applied, beside the failure and
+     * rollback legs), the failure-reason breakdown, and the adoption
+     * curve over time — the S16-09 {@code otaFunnel} read served whole
+     * for the console's OtaDashboardPage. The optional {@code ring}
+     * filter narrows every leg through the bundle's own release's
+     * timeline (release-anchored, the rollups' grain); an unknown ring
+     * code is refused, never silently empty.
+     */
+    @GetMapping("/api/v1/tenants/{tenantId}/dashboard/ota/bundles/{bundleId}/funnel")
+    @PreAuthorize("hasPermission(#tenantId, 'tenant', 'tenant:dashboard:read')")
+    OtaFunnelView otaFunnel(
+            @AuthenticationPrincipal Object principal,
+            @PathVariable UUID tenantId,
+            @PathVariable UUID bundleId,
+            @RequestParam(required = false) String ring) {
+        return queries.otaFunnel(tenantId, bundleId, ring);
+    }
+
+    /**
+     * The OTA bundle health comparison (S16-10): the crash-free-rate
+     * standing of the addressed (new) bundle beside the application's
+     * current bundle — the S16-09 {@code otaBundleHealth} read, the
+     * console's crash-rate comparison panel. A side without sessions
+     * carries the explicit NO_DATA (null), never a zero.
+     */
+    @GetMapping("/api/v1/tenants/{tenantId}/dashboard/ota/bundles/{bundleId}/health")
+    @PreAuthorize("hasPermission(#tenantId, 'tenant', 'tenant:dashboard:read')")
+    OtaBundleHealthView otaBundleHealth(
+            @AuthenticationPrincipal Object principal, @PathVariable UUID tenantId, @PathVariable UUID bundleId) {
+        return dashboards.otaBundleHealth(tenantId, bundleId);
     }
 
     private static UUID requireUserId(Object principal) {
