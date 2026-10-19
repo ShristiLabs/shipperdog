@@ -51,4 +51,17 @@ public interface OtaBundleRegistryRepository extends JpaRepository<OtaBundleEnti
      * bundle linkage.
      */
     Optional<OtaBundleEntity> findByReleaseIdAndStatus(UUID releaseId, OtaBundleEntity.Status status);
+
+    /**
+     * One bundle by id, proven to belong to the named application,
+     * whatever its status (the S16-11 alert rule's scope probe): the
+     * rule-create surface resolves its optional bundle scope before
+     * any operator scope is bound -- the create's probe-then-scope
+     * order -- so the registry's application-addressed derived-query
+     * surface is the sanctioned read (the seam's id-based reads
+     * refuse without a bound context, by construction). Application-
+     * addressed exactly like the check probes beside it: a foreign
+     * application's bundles are unreachable through this path.
+     */
+    Optional<OtaBundleEntity> findByIdAndApplicationId(UUID id, UUID applicationId);
 }

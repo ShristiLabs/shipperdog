@@ -715,5 +715,18 @@ public enum AuditEventType {
      * RUNNING, serving what the plan had reached -- resuming widens
      * nothing by itself.
      */
-    OTA_ROLLOUT_RESUMED
+    OTA_ROLLOUT_RESUMED,
+    /**
+     * One evaluation pass of the OTA alert rules (S16-11, issue
+     * #173, ADR-0010 D10): the scheduler's own line, the {@code
+     * METRIC_ROLLUPS_RECOMPUTED} doctrine -- the detail carries the
+     * pass's counts (rules evaluated, firings landed, firings
+     * resolved). The firings themselves carry no audit lines of their
+     * own: each lands a persisted {@code ota_alert_firings} row and
+     * one {@code OTA_ALERT_FIRED} bus event in the same transaction,
+     * and nothing the pass does ever touches a rollout plan (no
+     * auto-halt, D10 -- halting stays the operator's audited
+     * OTA_ROLLOUT_HALTED act).
+     */
+    OTA_ALERTS_EVALUATED
 }

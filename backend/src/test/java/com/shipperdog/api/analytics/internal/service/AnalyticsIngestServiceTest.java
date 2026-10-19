@@ -70,7 +70,15 @@ class AnalyticsIngestServiceTest {
     private final AuditEventPublisher audit = mock(AuditEventPublisher.class);
 
     private final AnalyticsIngestService service = new AnalyticsIngestService(
-            releases, devices, testers, bundles, events, audit, new ObjectMapper(), Clock.systemUTC());
+            releases,
+            devices,
+            testers,
+            bundles,
+            events,
+            new io.micrometer.core.instrument.simple.SimpleMeterRegistry(),
+            audit,
+            new ObjectMapper(),
+            Clock.systemUTC());
 
     @Test
     void aFlushTimeIndexRaceMapsToContentionNeverAnInTransactionReProbe() {

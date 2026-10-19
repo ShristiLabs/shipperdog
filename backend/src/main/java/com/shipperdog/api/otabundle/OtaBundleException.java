@@ -53,7 +53,12 @@ public class OtaBundleException extends RuntimeException {
         SIGNING_UNAVAILABLE(
                 HttpStatus.SERVICE_UNAVAILABLE,
                 "SIGNING_UNAVAILABLE",
-                "Bundle signing is unavailable; retry the finalize.");
+                "Bundle signing is unavailable; retry the finalize."),
+        ALERT_RULE_NOT_FOUND(HttpStatus.NOT_FOUND, "ALERT_RULE_NOT_FOUND", "Resource not found."),
+        ALERT_RULE_HAS_FIRINGS(
+                HttpStatus.CONFLICT,
+                "ALERT_RULE_HAS_FIRINGS",
+                "The rule has firing history; keep the rule (update it) so the trail stays addressable.");
 
         final HttpStatus httpStatus;
         final String code;

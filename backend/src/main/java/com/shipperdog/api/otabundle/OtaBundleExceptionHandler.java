@@ -27,7 +27,8 @@ import org.springframework.web.bind.annotation.RestControllerAdvice;
             OtaBundleController.class,
             OtaAppTokenController.class,
             OtaRolloutController.class,
-            OtaCheckController.class
+            OtaCheckController.class,
+            OtaAlertController.class
         })
 public class OtaBundleExceptionHandler {
 

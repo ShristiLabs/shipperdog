@@ -86,6 +86,12 @@ class CrossTenantAccessMatrixTest extends IsolationScenarioHarness {
                 // (the seeded world holds no token; the registry is
                 // hash-only, so an empty page is all it could leak).
                 case "/api/v1/ota/app-tokens" -> 200;
+                // The OTA alert-rule listing (S16-11): the same
+                // RBAC-gated console read shape as the bundle listing —
+                // the wildcard passes the release family's read
+                // permission and receives the honest empty page (the
+                // seeded world holds no rule).
+                case "/api/v1/ota/alert-rules" -> 200;
                 default -> entry.ownOrgAdmin();
             };
             expectOwn(entry, sideB, sideA.platformAdminToken(), "platform-admin", platformExpected, violations);

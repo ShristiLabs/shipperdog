@@ -212,6 +212,16 @@ shipperdog:
     # startup.
     check:
       poll-interval: ${OTA_CHECK_POLL_INTERVAL:PT1H}
+    # The alert evaluation pass (issue #173, S16-11, ADR-0010 D10):
+    # every persisted ota_alert_rule evaluated against the rollups on
+    # a schedule — a crossing lands its firing row, its bus event
+    # (OTA_ALERT_FIRED), and the console badge; a recovery stamps the
+    # standing row. Nothing auto-halts (D10): the halt stays the
+    # operator's manual, audited act through the S16-06 endpoints.
+    # Tests and CI drive the pass through the service, not the clock.
+    alerts:
+      enabled: ${OTA_ALERTS_ENABLED:true}
+      cron: ${OTA_ALERTS_CRON:0 */5 * * * *}
   # The domain-event bus and notification service (issue #51, S12-01,
   # FR-023, PRD 51): the transactional-outbox relay's schedule and
   # ceilings, and the delivery retry policy every channel shares

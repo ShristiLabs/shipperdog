@@ -102,5 +102,21 @@ public enum DomainEventName {
      * in one transaction; the payload carries the crossing's own
      * facts (action, fromStatus, toStatus, stage, reason/detail).
      */
-    OTA_ROLLOUT_TRANSITIONED
+    OTA_ROLLOUT_TRANSITIONED,
+    /**
+     * One OTA alert rule fired (S16-11, issue #173, ADR-0010 D10):
+     * the evaluation scheduler observed a rollup metric crossing a
+     * persisted rule's threshold and landed the {@code
+     * ota_alert_firings} row — published with that row in one
+     * transaction (the outbox guarantee); the payload carries the
+     * rule's own facts (rule id, metric, comparator, threshold, the
+     * observed value, severity, the bundle scope, the detail). The
+     * FIRING surfaces the degradation; nothing halts on it (D10) —
+     * halting stays the manual, audit-trailed {@code
+     * OTA_ROLLOUT_TRANSITIONED} act an operator drives through the
+     * S16-06 endpoints. A firing's resolution (the metric's recovery)
+     * stamps the standing row's {@code resolved_at} and publishes
+     * nothing — the feed, not the bus, carries the recovery.
+     */
+    OTA_ALERT_FIRED
 }

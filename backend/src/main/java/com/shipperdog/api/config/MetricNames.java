@@ -199,5 +199,20 @@ public final class MetricNames {
      */
     public static final String OTA_CHECK_COUNT = "shipperdog.ota.check.count";
 
+    /**
+     * Counter of every landed OTA apply-failure report (S16-11, issue
+     * #173, the OTA updates plan's workstream 7), tagged {@code
+     * bundle} (the failing bundle's id) and {@code reason} (the
+     * documented open row-value vocabulary of the {@code OTA_FAILED}
+     * report: checksum_mismatch, apply_error, signature_invalid).
+     * Counted on the rows that LANDED — the ingest's client-id dedup
+     * filters retries before the increment, so an SDK's at-least-once
+     * resends never double-count — beside the persisted OTA_FAILURES
+     * rollup rows (the alert rules' evaluation input); this meter is
+     * the live operational signal the moment a fleet starts failing
+     * applies, before the hourly rollup lands.
+     */
+    public static final String OTA_APPLY_FAILURE = "shipperdog.ota.apply.failure";
+
     private MetricNames() {}
 }

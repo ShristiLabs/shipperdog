@@ -351,6 +351,44 @@ class OutboxRecorder {
                 event.occurredAt());
     }
 
+    /**
+     * The alert stream (S16-11, issue #173, ADR-0010 D10): one {@code
+     * OTA_ALERT_FIRED} row per landed firing, appended in the same
+     * transaction the {@code ota_alert_firings} row commits under --
+     * the scheduler's crossing, on the bus the moment it is observed.
+     * The payload carries the rule's whole watch beside the observed
+     * value, so webhook and chat consumers can filter on the severity
+     * and the metric without a read-back. The firing surfaces; it
+     * never halts anything (D10) -- and a recovery publishes nothing
+     * (the feed, not the bus, carries it).
+     */
+    @TransactionalEventListener(phase = TransactionPhase.BEFORE_COMMIT, fallbackExecution = true)
+    void on(com.shipperdog.api.otabundle.OtaAlertFiredEvent event) {
+        Map<String, Object> payload = new LinkedHashMap<>();
+        payload.put("ruleId", event.ruleId().toString());
+        payload.put("metric", event.metric());
+        payload.put("comparator", event.comparator());
+        payload.put("threshold", event.threshold());
+        payload.put("observedValue", event.observedValue());
+        payload.put("severity", event.severity());
+        if (event.otaBundleId() != null) {
+            payload.put("bundleId", event.otaBundleId().toString());
+        }
+        if (event.detail() != null) {
+            payload.put("detail", event.detail());
+        }
+        record(
+                DomainEventName.OTA_ALERT_FIRED,
+                event.organizationId(),
+                null,
+                event.applicationId(),
+                null,
+                null,
+                null,
+                payload,
+                event.occurredAt());
+    }
+
     // The audit stream (S14-05, issue #71) -------------------------------------
 
     /**
