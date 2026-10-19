@@ -37,7 +37,14 @@ import org.hibernate.type.SqlTypes;
 @Table(name = "analytics_events")
 public class AnalyticsEventEntity {
 
-    /** The frozen {@code analytics_event_type} vocabulary (V38). */
+    /**
+     * The {@code analytics_event_type} vocabulary (V38, extended by V57).
+     * The four pre-existing values are the frozen SDK contract the ingest
+     * accepts; the six OTA values are the DB vocabulary since V57 — the
+     * server-side {@code OTA_CHECK} writer (S16-07) lands first, the five
+     * device lifecycle values await the S16-08 ingest extension and are
+     * refused by the ingest's own acceptance guard until then.
+     */
     public enum Type {
         /** A device install report ({@code result}: SUCCEEDED or FAILED). */
         INSTALL,
@@ -46,10 +53,29 @@ public class AnalyticsEventEntity {
         /** A device uninstall report. */
         UNINSTALL,
         /** A tester's verdict on the release ({@code result}: APPROVED or REJECTED). */
-        TESTER_VERDICT
+        TESTER_VERDICT,
+        /** The server-inserted check outcome (D9: the one OTA event where the release is known). */
+        OTA_CHECK,
+        /** A device's first observation of a served manifest (S16-08 ingest). */
+        OTA_SEEN,
+        /** A device's bundle download report (S16-08 ingest). */
+        OTA_DOWNLOAD,
+        /** A device's successful apply report (S16-08 ingest). */
+        OTA_APPLIED,
+        /** A device's apply failure report, {@code result} the open reason row value (S16-08 ingest). */
+        OTA_FAILED,
+        /** A device's rollback report (S16-08 ingest). */
+        OTA_ROLLED_BACK
     }
 
-    /** The per-type result vocabulary (INSTALL: SUCCEEDED/FAILED; TESTER_VERDICT: APPROVED/REJECTED). */
+    /**
+     * The pre-existing family's result vocabulary (INSTALL:
+     * SUCCEEDED/FAILED; TESTER_VERDICT: APPROVED/REJECTED) — the ingest's
+     * validation enum. The OTA family's results are OPEN row values (the
+     * V42 provider precedent V57 names: {@code update_available}, {@code
+     * checksum_mismatch}, ...), so the column itself is a String since
+     * S16-07 and this enum validates only the four pre-existing types.
+     */
     public enum Result {
         SUCCEEDED,
         FAILED,
@@ -79,8 +105,16 @@ public class AnalyticsEventEntity {
     @JdbcTypeCode(SqlTypes.NAMED_ENUM)
     private Type eventType;
 
-    @Enumerated(EnumType.STRING)
-    private Result result;
+    /**
+     * The event's outcome word: one of the pre-existing family's closed
+     * vocabulary (the ingest validates it into {@link Result} and writes
+     * the enum's name) or, since V57/S16-07, the OTA family's OPEN row
+     * value ({@code update_available} and its kin, up to 32 characters —
+     * the varchar the migration widened). String, never an enum: the OTA
+     * vocabulary is row values, not schema migrations.
+     */
+    @jakarta.persistence.Column(name = "result", length = 32)
+    private String result;
 
     private Integer sessions;
 
@@ -117,7 +151,9 @@ public class AnalyticsEventEntity {
      * reporter's tenant, the device and tester the service has proven
      * against that tenant, and the type's own shape (the checks of
      * V38 mirrored in code — the database refuses what the service
-     * missed).
+     * missed). The result crosses as its storage word (the ingest
+     * writes the validated enum's name; the pre-existing family's
+     * closed vocabulary renders here exactly as before).
      */
     public AnalyticsEventEntity(
             UUID organizationId,
@@ -128,7 +164,7 @@ public class AnalyticsEventEntity {
             UUID deviceId,
             UUID testerId,
             Type eventType,
-            Result result,
+            String result,
             Integer sessions,
             Integer crashSessions,
             Integer anrSessions,
@@ -150,6 +186,37 @@ public class AnalyticsEventEntity {
         this.occurredAt = occurredAt;
         this.receivedAt = receivedAt;
         this.eventId = eventId;
+    }
+
+    /**
+     * One server-inserted OTA event row (S16-07, D9): no device, no
+     * tester, no session aggregates, no client event id (the server's
+     * own rows are plain appends — the V54 dedup key governs
+     * client-carried ids, and a server check row is one per served
+     * manifest by construction), and the bundle attribution V57's
+     * {@code ck_analytics_events_ota_shape} requires.
+     */
+    public AnalyticsEventEntity(
+            UUID organizationId,
+            UUID tenantId,
+            UUID applicationId,
+            UUID versionId,
+            UUID releaseId,
+            Type eventType,
+            String result,
+            UUID otaBundleId,
+            Instant occurredAt,
+            Instant receivedAt) {
+        this.organizationId = organizationId;
+        this.tenantId = tenantId;
+        this.applicationId = applicationId;
+        this.versionId = versionId;
+        this.releaseId = releaseId;
+        this.eventType = eventType;
+        this.result = result;
+        this.otaBundleId = otaBundleId;
+        this.occurredAt = occurredAt;
+        this.receivedAt = receivedAt;
     }
 
     public UUID getId() {
@@ -188,7 +255,8 @@ public class AnalyticsEventEntity {
         return eventType;
     }
 
-    public Result result() {
+    /** The outcome word as stored: a closed-vocabulary name or an OTA open row value. */
+    public String result() {
         return result;
     }
 

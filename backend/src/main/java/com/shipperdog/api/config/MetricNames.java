@@ -188,5 +188,16 @@ public final class MetricNames {
      */
     public static final String APPROVAL_DURATION = "shipperdog.approval.duration";
 
+    /**
+     * Counter of every device check's terminal outcome (S16-07, issue
+     * #169, ADR-0010 D9 — the check funnel's server-side split, since
+     * a no-update check inserts no analytics row), tagged {@code
+     * outcome=update_available|up_to_date|not_eligible|halted|
+     * no_active_release|no_rollout|below_stage}: one increment per
+     * answered check, the operator's live view of which refusal leg
+     * (or the serving leg) a fleet sits behind.
+     */
+    public static final String OTA_CHECK_COUNT = "shipperdog.ota.check.count";
+
     private MetricNames() {}
 }

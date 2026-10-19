@@ -1,7 +1,6 @@
 package com.shipperdog.api.analytics.internal.repository;
 
 import com.shipperdog.api.analytics.internal.entity.AnalyticsEventEntity;
-import com.shipperdog.api.analytics.internal.entity.AnalyticsEventEntity.Result;
 import com.shipperdog.api.analytics.internal.entity.AnalyticsEventEntity.Type;
 import java.util.Collection;
 import java.util.List;
@@ -23,8 +22,13 @@ public interface AnalyticsEventRepository extends JpaRepository<AnalyticsEventEn
     /** The release's events of one type, oldest first — the bounded scan every device-side formula folds. */
     List<AnalyticsEventEntity> findByReleaseIdAndEventTypeOrderByOccurredAtAsc(UUID releaseId, Type eventType);
 
-    /** The release's INSTALL reports by result — the installations count and the success rate's halves. */
-    long countByReleaseIdAndEventTypeAndResult(UUID releaseId, Type eventType, Result result);
+    /**
+     * The release's INSTALL reports by result — the installations count
+     * and the success rate's halves. The result crosses as its stored
+     * word (the closed vocabulary's enum name since S16-07's String
+     * column; the callers pass {@code Result.X.name()}).
+     */
+    long countByReleaseIdAndEventTypeAndResult(UUID releaseId, Type eventType, String result);
 
     /** The release's INSTALL reports — the denominator of the uninstall rate. */
     long countByReleaseIdAndEventType(UUID releaseId, Type eventType);

@@ -7,6 +7,7 @@ import com.shipperdog.api.release.internal.entity.ReleaseEntity;
 import com.shipperdog.api.release.internal.entity.ReleaseTargetEntity;
 import com.shipperdog.api.release.internal.entity.ReleaseTargetGroupEntity;
 import com.shipperdog.api.release.internal.entity.RingEntity;
+import com.shipperdog.api.release.internal.repository.ReleaseRegistryRepository;
 import com.shipperdog.api.release.internal.repository.ReleaseScopedRepository;
 import com.shipperdog.api.release.internal.repository.ReleaseTargetGroupRepository;
 import com.shipperdog.api.release.internal.repository.ReleaseTargetRepository;
@@ -54,6 +55,7 @@ import org.springframework.transaction.annotation.Transactional;
 public class RingEligibilityService implements RingEligibility {
 
     private final ReleaseScopedRepository releases;
+    private final ReleaseRegistryRepository registry;
     private final ReleaseTargetRepository targets;
     private final ReleaseTargetGroupRepository targetGroups;
     private final RingRepository rings;
@@ -65,6 +67,7 @@ public class RingEligibilityService implements RingEligibility {
 
     RingEligibilityService(
             ReleaseScopedRepository releases,
+            ReleaseRegistryRepository registry,
             ReleaseTargetRepository targets,
             ReleaseTargetGroupRepository targetGroups,
             RingRepository rings,
@@ -74,6 +77,7 @@ public class RingEligibilityService implements RingEligibility {
             TenantTesterMembershipAccess memberships,
             TesterAccess testers) {
         this.releases = releases;
+        this.registry = registry;
         this.targets = targets;
         this.targetGroups = targetGroups;
         this.rings = rings;
@@ -202,11 +206,20 @@ public class RingEligibilityService implements RingEligibility {
      * platform-tag axis matches the tag's lowercase standing (V55's
      * open vocabulary is lowercase by convention, the platform-tag
      * write surface's own normalization).
+     *
+     * <p><strong>Registry-probed since S16-07</strong> (issue #169):
+     * the caller is the device-check surface, whose thread binds no
+     * operator scope by construction — the {@code distribution*Of}
+     * standing, the {@code OtaRolloutRegistryRepository} precedent the
+     * rollout seam set. The port's own contract carries the guard: the
+     * caller resolves the application from the {@code sdc1.} token
+     * first and asks about a release of THAT application, so a foreign
+     * release never reaches this read.
      */
     @Override
     @Transactional(readOnly = true)
     public Optional<Boolean> admitsDevice(UUID releaseId, String bundleId, String platformTag) {
-        return releases.findScoped(releaseId).map(release -> {
+        return registry.probeById(releaseId).map(release -> {
             Map<String, RingEntity> effectiveRings = new LinkedHashMap<>();
             boolean admitted = false;
             for (ReleaseTargetEntity target : targets.findByReleaseIdOrderByTenantIdAsc(release.getId())) {

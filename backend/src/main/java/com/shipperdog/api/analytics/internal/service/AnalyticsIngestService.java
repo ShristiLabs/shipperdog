@@ -195,7 +195,7 @@ public class AnalyticsIngestService {
                     deviceId,
                     testerId,
                     type,
-                    result,
+                    result == null ? null : result.name(),
                     sessionShape[0] < 0 ? null : sessionShape[0],
                     sessionShape[1] < 0 ? null : sessionShape[1],
                     sessionShape[2] < 0 ? null : sessionShape[2],
@@ -316,16 +316,37 @@ public class AnalyticsIngestService {
                 AnalyticsException.Code.RELEASE_NOT_FOUND, "the addressed release did not resolve");
     }
 
+    /**
+     * The ingest's type acceptance: the four pre-existing values of the
+     * frozen SDK contract. The entity's Type enum also carries the six
+     * OTA values of the DB vocabulary (V57) — the server-side
+     * OTA_CHECK writer (S16-07) and the S16-08 lifecycle ingest to come
+     * — but THIS contract does not accept them yet: a client-posted OTA
+     * row would need the bundle attribution ({@code
+     * ck_analytics_events_ota_shape}) the device payload does not
+     * carry, so the honest answer is the same field-addressed refusal
+     * every unknown type gets.
+     */
     private static Type validateType(String token, Map<String, String> errors) {
         if (token == null || token.isBlank()) {
             errors.put("type", "type is required");
             return null;
         }
+        Type type;
         try {
-            return Type.valueOf(token.trim().toUpperCase(java.util.Locale.ROOT));
+            type = Type.valueOf(token.trim().toUpperCase(java.util.Locale.ROOT));
         } catch (IllegalArgumentException e) {
             errors.put("type", "unknown type " + token);
             return null;
+        }
+        switch (type) {
+            case INSTALL, SESSION, UNINSTALL, TESTER_VERDICT -> {
+                return type;
+            }
+            default -> {
+                errors.put("type", "unknown type " + token);
+                return null;
+            }
         }
     }
 

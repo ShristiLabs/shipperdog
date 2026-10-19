@@ -2927,107 +2927,6 @@ paths:
             '*/*':
               schema:
                 $ref: "#/components/schemas/RuleView"
-  /api/v1/ota/bundles:
-    get:
-      tags:
-      - ota-bundle-controller
-      operationId: list_8
-      parameters:
-      - name: applicationId
-        in: query
-        required: true
-        schema:
-          type: string
-          format: uuid
-      - name: status
-        in: query
-        required: false
-        schema:
-          type: string
-      - name: limit
-        in: query
-        required: false
-        schema:
-          type: string
-      - name: cursor
-        in: query
-        required: false
-        schema:
-          type: string
-      responses:
-        "200":
-          description: OK
-          content:
-            '*/*':
-              schema:
-                $ref: "#/components/schemas/PageResponseBundleView"
-    post:
-      tags:
-      - ota-bundle-controller
-      operationId: create_7
-      requestBody:
-        content:
-          application/json:
-            schema:
-              $ref: "#/components/schemas/CreateBundleRequest"
-        required: true
-      responses:
-        "201":
-          description: Created
-          content:
-            '*/*':
-              schema:
-                $ref: "#/components/schemas/DraftView"
-  /api/v1/ota/bundles/{bundleId}/revoke:
-    post:
-      tags:
-      - ota-bundle-controller
-      operationId: revoke
-      parameters:
-      - name: bundleId
-        in: path
-        required: true
-        schema:
-          type: string
-          format: uuid
-      requestBody:
-        content:
-          application/json:
-            schema:
-              $ref: "#/components/schemas/RevokeRequest"
-        required: true
-      responses:
-        "200":
-          description: OK
-          content:
-            '*/*':
-              schema:
-                $ref: "#/components/schemas/BundleView"
-  /api/v1/ota/bundles/{bundleId}/finalize:
-    post:
-      tags:
-      - ota-bundle-controller
-      operationId: finalize
-      parameters:
-      - name: bundleId
-        in: path
-        required: true
-        schema:
-          type: string
-          format: uuid
-      requestBody:
-        content:
-          application/json:
-            schema:
-              $ref: "#/components/schemas/FinalizeRequest"
-        required: true
-      responses:
-        "200":
-          description: OK
-          content:
-            '*/*':
-              schema:
-                $ref: "#/components/schemas/FinalizeView"
   /api/v1/ota/rollouts:
     post:
       tags:
@@ -3146,6 +3045,107 @@ paths:
             '*/*':
               schema:
                 $ref: "#/components/schemas/OtaRolloutView"
+  /api/v1/ota/bundles:
+    get:
+      tags:
+      - ota-bundle-controller
+      operationId: list_8
+      parameters:
+      - name: applicationId
+        in: query
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - name: status
+        in: query
+        required: false
+        schema:
+          type: string
+      - name: limit
+        in: query
+        required: false
+        schema:
+          type: string
+      - name: cursor
+        in: query
+        required: false
+        schema:
+          type: string
+      responses:
+        "200":
+          description: OK
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/PageResponseBundleView"
+    post:
+      tags:
+      - ota-bundle-controller
+      operationId: create_7
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateBundleRequest"
+        required: true
+      responses:
+        "201":
+          description: Created
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/DraftView"
+  /api/v1/ota/bundles/{bundleId}/revoke:
+    post:
+      tags:
+      - ota-bundle-controller
+      operationId: revoke
+      parameters:
+      - name: bundleId
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RevokeRequest"
+        required: true
+      responses:
+        "200":
+          description: OK
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/BundleView"
+  /api/v1/ota/bundles/{bundleId}/finalize:
+    post:
+      tags:
+      - ota-bundle-controller
+      operationId: finalize
+      parameters:
+      - name: bundleId
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/FinalizeRequest"
+        required: true
+      responses:
+        "200":
+          description: OK
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/FinalizeView"
   /api/v1/ota/app-tokens:
     get:
       tags:
@@ -5769,6 +5769,44 @@ paths:
             '*/*':
               schema:
                 $ref: "#/components/schemas/OtaRolloutView"
+  /api/v1/ota/check:
+    get:
+      tags:
+      - ota-check-controller
+      operationId: check
+      parameters:
+      - name: deviceId
+        in: query
+        required: true
+        schema:
+          type: string
+      - name: platform
+        in: query
+        required: true
+        schema:
+          type: string
+      - name: appVersion
+        in: query
+        required: true
+        schema:
+          type: string
+      - name: bundleVersion
+        in: query
+        required: false
+        schema:
+          type: string
+      - name: channel
+        in: query
+        required: true
+        schema:
+          type: string
+      responses:
+        "200":
+          description: OK
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/Manifest"
   /api/v1/ota/bundles/{bundleId}:
     get:
       tags:
@@ -7926,12 +7964,6 @@ components:
     JsonNode:
       type: object
       properties:
-        string:
-          type: boolean
-        valueNode:
-          type: boolean
-        missingNode:
-          type: boolean
         nodeType:
           type: string
           enum:
@@ -7944,7 +7976,17 @@ components:
           - OBJECT
           - POJO
           - STRING
+        string:
+          type: boolean
         integralNumber:
+          type: boolean
+        missingNode:
+          type: boolean
+        valueNode:
+          type: boolean
+        pojo:
+          type: boolean
+        number:
           type: boolean
         short:
           type: boolean
@@ -7963,15 +8005,11 @@ components:
           deprecated: true
         boolean:
           type: boolean
-        number:
-          type: boolean
         binary:
           type: boolean
-        pojo:
+        floatingPointNumber:
           type: boolean
         container:
-          type: boolean
-        floatingPointNumber:
           type: boolean
         empty:
           type: boolean
@@ -11000,6 +11038,31 @@ components:
         createdAt:
           type: string
           format: date-time
+    Manifest:
+      type: object
+      properties:
+        bundleVersion:
+          type: string
+        url:
+          type: string
+        sha256:
+          type: string
+        signature:
+          type: string
+        keyId:
+          type: string
+        sizeBytes:
+          type: integer
+          format: int64
+        forced:
+          type: boolean
+        minAppVersion:
+          type: string
+        ingestToken:
+          type: string
+        pollIntervalSeconds:
+          type: integer
+          format: int64
     PageResponseBundleView:
       type: object
       properties:

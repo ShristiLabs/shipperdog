@@ -240,6 +240,52 @@ public interface ReleaseAccess {
     void rollbackActiveRelease(UUID organizationId, UUID releaseId, UUID actorId, String reason);
 
     /**
+     * The device-check release standing (S16-07, issue #169): the
+     * application's LIVE release currently distributing on the named
+     * OTA-channel ring code — the "OTA ring for channel, then ACTIVE
+     * release" leg of ADR-0010's check resolution chain. LIVE is the
+     * rollout attachment's own vocabulary (ACTIVE or PROMOTED —
+     * distributing to devices); the channel is the ring CODE the
+     * device named ({@code rings.distribution_channel = 'ota'}, D1),
+     * matched against the release's current effective ring, trimmed
+     * and case-insensitive the ring-code vocabulary's own
+     * normalization. When more than one live release occupies the
+     * channel the newest (release number, id the tiebreak) answers —
+     * the listing's own order.
+     *
+     * <p><strong>Registry-probed, not seam-served</strong> (the
+     * {@code distribution*Of} standing): the caller is the device
+     * check surface, whose thread binds no operator scope by
+     * construction. The caller owns the guard: it resolves the
+     * application from the {@code sdc1.} token FIRST (the token, not
+     * the channel, carries the unambiguous resolution) and this
+     * answer names only releases of THAT application — the
+     * organization the facts carry is the comparison the caller
+     * makes. The OTA-channel proof itself is the bundle linkage: a
+     * {@code RELEASED} ota bundle exists only on an OTA-channel
+     * release (the S16-05 creation rule), so the check composes this
+     * read with the otabundle module's own to complete the chain.
+     *
+     * <p>The D7 per-target override standing rides the answer: the
+     * release's targets' {@code forced} override fuses true-forward
+     * (a forced intent no target would lose — the safety direction
+     * for a roll-forward platform), the {@code minAppVersion}
+     * override crosses only when the targets agree (a single
+     * distinct non-null value; conflicting or absent selections fall
+     * back to the bundle's own default — the manifest's conservative
+     * standing, documented here because the device names no target
+     * tenant to select among them).
+     */
+    Optional<OtaChannelRelease> otaChannelReleaseOf(UUID applicationId, String channelCode);
+
+    /**
+     * The device-check release standing: the live release's facts
+     * beside the D7 per-target override tuple the manifest reflects
+     * ({@code null} members mean "the bundle's own default applies").
+     */
+    record OtaChannelRelease(ReleaseFacts facts, Boolean forcedOverride, String minAppVersionOverride) {}
+
+    /**
      * The release facts the approval engine acts on: the owning
      * dimensions and creator beside the lifecycle and attachment
      * points. {@code ringId} is the resolved starting ring (its code

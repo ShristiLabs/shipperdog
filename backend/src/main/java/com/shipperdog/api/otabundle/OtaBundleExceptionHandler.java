@@ -23,7 +23,12 @@ import org.springframework.web.bind.annotation.RestControllerAdvice;
  */
 @Order(0)
 @RestControllerAdvice(
-        assignableTypes = {OtaBundleController.class, OtaAppTokenController.class, OtaRolloutController.class})
+        assignableTypes = {
+            OtaBundleController.class,
+            OtaAppTokenController.class,
+            OtaRolloutController.class,
+            OtaCheckController.class
+        })
 public class OtaBundleExceptionHandler {
 
     @ExceptionHandler(OtaBundleException.class)

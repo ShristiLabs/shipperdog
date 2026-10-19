@@ -914,21 +914,73 @@ public class ReleaseService implements ReleaseAccess, VersionDistributionContrib
     @Override
     @Transactional(readOnly = true)
     public Optional<ReleaseAccess.ReleaseFacts> distributionFactsOf(UUID releaseId) {
-        return registry.probeById(releaseId).map(release -> {
-            RingEntity ring = rings.findById(release.getStartingRingId()).orElse(null);
-            return new ReleaseAccess.ReleaseFacts(
-                    release.getId(),
-                    release.releaseRef(),
-                    release.getApplicationId(),
-                    release.getVersionId(),
-                    release.getOrganizationId(),
-                    release.getTenantId(),
-                    release.getCreatedBy(),
-                    release.getStatus().name(),
-                    ring == null ? null : ring.getId(),
-                    ring == null ? null : ring.getCode(),
-                    release.getEnvironmentId());
-        });
+        return registry.probeById(releaseId).map(release -> factsOf(release));
+    }
+
+    /**
+     * The device-check release standing (S16-07, issue #169, ADR-0010
+     * workstream 4): the application's LIVE release on the named
+     * OTA-channel ring code, registry-probed (the {@code
+     * distribution*Of} standing — the caller is the device check
+     * surface and owns the organization guard). The channel match runs
+     * against the release's CURRENT effective ring, trimmed and
+     * case-insensitive the ring-code vocabulary's own normalization;
+     * the newest live release on the channel answers. The D7 override
+     * tuple rides beside the facts exactly as the port's contract
+     * documents: {@code forced} fuses true-forward, {@code
+     * minAppVersion} crosses only when the targets agree.
+     */
+    @Override
+    @Transactional(readOnly = true)
+    public Optional<ReleaseAccess.OtaChannelRelease> otaChannelReleaseOf(UUID applicationId, String channelCode) {
+        if (applicationId == null || channelCode == null || channelCode.isBlank()) {
+            return Optional.empty();
+        }
+        String wanted = channelCode.trim().toLowerCase(Locale.ROOT);
+        for (ReleaseEntity release : registry.probeLiveByApplication(
+                applicationId, List.of(ReleaseEntity.Status.ACTIVE, ReleaseEntity.Status.PROMOTED))) {
+            String effective = effectiveRingCodeOf(release).orElse(null);
+            if (effective == null || !wanted.equals(effective.trim().toLowerCase(Locale.ROOT))) {
+                continue;
+            }
+            Boolean forced = null;
+            String minAppVersion = null;
+            Set<String> distinctMinAppVersions = new LinkedHashSet<>();
+            boolean anyForcedTrue = false;
+            for (ReleaseTargetEntity target : targets.findByReleaseIdOrderByTenantIdAsc(release.getId())) {
+                if (Boolean.TRUE.equals(target.getForced())) {
+                    anyForcedTrue = true;
+                }
+                if (target.getMinAppVersion() != null) {
+                    distinctMinAppVersions.add(target.getMinAppVersion());
+                }
+            }
+            if (anyForcedTrue) {
+                forced = true;
+            }
+            if (distinctMinAppVersions.size() == 1) {
+                minAppVersion = distinctMinAppVersions.iterator().next();
+            }
+            return Optional.of(new ReleaseAccess.OtaChannelRelease(factsOf(release), forced, minAppVersion));
+        }
+        return Optional.empty();
+    }
+
+    /** The public facts tuple of one release row (never the row itself). */
+    private ReleaseAccess.ReleaseFacts factsOf(ReleaseEntity release) {
+        RingEntity ring = rings.findById(release.getStartingRingId()).orElse(null);
+        return new ReleaseAccess.ReleaseFacts(
+                release.getId(),
+                release.releaseRef(),
+                release.getApplicationId(),
+                release.getVersionId(),
+                release.getOrganizationId(),
+                release.getTenantId(),
+                release.getCreatedBy(),
+                release.getStatus().name(),
+                ring == null ? release.getStartingRingId() : ring.getId(),
+                ring == null ? null : ring.getCode(),
+                release.getEnvironmentId());
     }
 
     /**

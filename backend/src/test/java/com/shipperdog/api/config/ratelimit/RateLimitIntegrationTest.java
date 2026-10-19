@@ -44,6 +44,8 @@ import tools.jackson.databind.ObjectMapper;
             "shipperdog.ratelimit.rules.downloads.refill=PT1H",
             "shipperdog.ratelimit.rules.webhooks.capacity=2",
             "shipperdog.ratelimit.rules.webhooks.refill=PT1H",
+            "shipperdog.ratelimit.rules.ota-check.capacity=2",
+            "shipperdog.ratelimit.rules.ota-check.refill=PT1H",
             "shipperdog.webhooks.jenkins-secrets=fixture-jenkins-secret"
         })
 @Testcontainers
@@ -152,6 +154,31 @@ class RateLimitIntegrationTest {
         assertThat(refused.getHeaders().getFirst("Retry-After")).isNotNull();
         JsonNode problem = mapper.readTree(refused.getBody());
         assertThat(problem.path("code").asString()).isEqualTo("RATE_LIMITED");
+    }
+
+    /**
+     * The OTA device check's rule (issue #169, S16-07): a polling,
+     * device-facing GET throttled per client before it costs token or
+     * rollout work — the anonymous method-security 403s inside the
+     * burst, then the same 429 envelope the platform's floods answer.
+     */
+    @Test
+    void otaCheckFloodAnswers429BeforeResolutionWork() {
+        for (int i = 0; i < 2; i++) {
+            assertThat(otaCheck().getStatusCode().value())
+                    .as("attempt %d inside the burst", i + 1)
+                    .isEqualTo(403);
+        }
+        ResponseEntity<String> refused = otaCheck();
+        assertThat(refused.getStatusCode().value()).isEqualTo(429);
+        assertThat(refused.getHeaders().getFirst("Retry-After")).isNotNull();
+        JsonNode problem = mapper.readTree(refused.getBody());
+        assertThat(problem.path("code").asString()).isEqualTo("RATE_LIMITED");
+    }
+
+    private ResponseEntity<String> otaCheck() {
+        return neverThrow(
+                client.get().uri("/api/v1/ota/check?deviceId=device-rl&platform=ios&appVersion=1.0.0&channel=ota"));
     }
 
     private ResponseEntity<String> webhook() {

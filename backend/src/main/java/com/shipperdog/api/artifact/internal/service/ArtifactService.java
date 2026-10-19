@@ -5,6 +5,8 @@ import com.shipperdog.api.artifact.ArtifactException;
 import com.shipperdog.api.artifact.ArtifactStore;
 import com.shipperdog.api.artifact.ArtifactUploadedEvent;
 import com.shipperdog.api.artifact.OtaBundleArtifacts;
+import com.shipperdog.api.artifact.OtaBundleArtifacts.BundleDownloadUrl;
+import com.shipperdog.api.artifact.internal.download.ArtifactDownloadService;
 import com.shipperdog.api.artifact.internal.entity.ArtifactEntity;
 import com.shipperdog.api.artifact.internal.entity.ArtifactEntity.Platform;
 import com.shipperdog.api.artifact.internal.entity.ArtifactUploadSessionEntity;
@@ -145,6 +147,7 @@ public class ArtifactService implements VersionArtifacts, OtaBundleArtifacts {
     private final TenantScopeExecutor scopeExecutor;
     private final ArtifactExtractionService extraction;
     private final ArtifactValidationService validation;
+    private final ArtifactDownloadService downloads;
     private final AuditEventPublisher audit;
     private final ApplicationEventPublisher events;
     /**
@@ -173,6 +176,7 @@ public class ArtifactService implements VersionArtifacts, OtaBundleArtifacts {
             TenantScopeExecutor scopeExecutor,
             ArtifactExtractionService extraction,
             ArtifactValidationService validation,
+            ArtifactDownloadService downloads,
             AuditEventPublisher audit,
             ApplicationEventPublisher events,
             ObjectProvider<AuthorizationService> authorization,
@@ -190,6 +194,7 @@ public class ArtifactService implements VersionArtifacts, OtaBundleArtifacts {
         this.scopeExecutor = scopeExecutor;
         this.extraction = extraction;
         this.validation = validation;
+        this.downloads = downloads;
         this.audit = audit;
         this.events = events;
         this.authorization = authorization;
@@ -443,7 +448,6 @@ public class ArtifactService implements VersionArtifacts, OtaBundleArtifacts {
     // the same storage, sessions, and hash-back finalize — without the
     // platform-package gates or the extraction pipeline they feed.
     // -------------------------------------------------------------------------
-
     /**
      * The bundle session grant ({@code OtaBundleArtifacts} port): the
      * same handoff the resumable artifact path grants — pre-allocated
@@ -608,6 +612,21 @@ public class ArtifactService implements VersionArtifacts, OtaBundleArtifacts {
                 saved.getSha256(),
                 saved.getSize(),
                 saved.getProvenance());
+    }
+
+    /**
+     * The bundle URL mint ({@code OtaBundleArtifacts} port, S16-07):
+     * the download service's OTA issuance — the same signed-URL
+     * machinery, counters, and {@code DOWNLOAD_ISSUED} audit a tester
+     * download records — delegated with the device surface's acting
+     * record (the {@code sdc1.} token's registry row). The CALLER owns
+     * the authorization (the check's own resolution chain); this mint
+     * records, it never decides.
+     */
+    @Override
+    public BundleDownloadUrl issueBundleDownloadUrl(UUID scopeActorId, UUID artifactId, UUID versionId) {
+        ArtifactDownloadService.OtaBundleUrl issued = downloads.issueOtaBundleUrl(scopeActorId, artifactId, versionId);
+        return new BundleDownloadUrl(issued.url(), issued.expiresAt());
     }
 
     /**
