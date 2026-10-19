@@ -33,6 +33,22 @@ public interface TenantScopedAccess<T> {
     Optional<T> findOneScoped(Specification<T> filter);
 
     /**
+     * First match of the filter inside the caller's tenant context, the
+     * row taken under a pessimistic write lock ({@code SELECT ... FOR
+     * UPDATE}, held to the transaction's end). The serialization point
+     * for read-modify-write flows over one tenant-scoped row: callers
+     * that must not race each other (a same-row finalize, a
+     * version-counter allocation) lock the row first and every other
+     * scoped reader of the same shape waits, so the loser re-reads the
+     * winner's committed fact instead of colliding on it — the seam's
+     * tenant predicate composes identically (S16-05, the #181
+     * concurrent-finalize finding). Deliberately blocking: PostgreSQL
+     * holds the waiter to the lock holder's commit, so this is not for
+     * request paths that can answer without the row.
+     */
+    Optional<T> findOneScopedForUpdate(Specification<T> filter);
+
+    /**
      * Paged matches of the filter inside the caller's tenant context.
      * Unsorted pageables default to the platform listing order
      * ({@code createdAt ASC, id ASC}).

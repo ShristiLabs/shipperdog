@@ -66,6 +66,7 @@ backend/src/main/resources/db/
     V56__ota_rollout.sql
     V57__ota_telemetry.sql
     V58__ota_signing_keys.sql
+    V59__ota_release_integration.sql
   seed/                 dev fixture, applied only when the seed location is active
     R__dev_seed.sql
 ```
@@ -905,6 +906,21 @@ the per-migration record here.)
   for organization-shared apps, the applications row's own shape).
   Expand-only: one new table, its indexes, and its checks; nothing
   existing touched.
+- `V59__ota_release_integration.sql` (S16-05, issue #167) adds the OTA
+  release linkage's schema floor ([ADR-0010](adr/ADR-0010-ota-updates.md)
+  workstream 3): `release_targets.forced`/`min_app_version` — the D7
+  per-target overrides of the bundle's per-bundle defaults, both NULL
+  by default and NULL meaning "the bundle's own value applies" (the
+  tri-state is the point: a stored FALSE is a real override, distinct
+  from no override at all; `min_app_version` is varchar(100), the
+  create surface's cap) — and `uq_ota_bundles_release`, the partial
+  unique index on `ota_bundles.release_id WHERE release_id IS NOT
+  NULL`: exactly one bundle per OTA release at the floor, the
+  release-side twin of V55's `uq_ota_bundles_version`. The partial
+  predicate is the lifecycle: `release_id` is NULL until the bundle
+  publishes and after a rollback returns it to the SIGNED pool, so
+  only live RELEASED links are unique. Expand-only: two nullable
+  columns and one partial index; nothing existing touched.
 
 ## Verifying migrations
 

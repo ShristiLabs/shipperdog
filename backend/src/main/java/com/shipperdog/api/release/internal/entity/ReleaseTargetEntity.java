@@ -38,6 +38,22 @@ public class ReleaseTargetEntity {
 
     private UUID ringId;
 
+    /**
+     * ADR-0010 D7 (S16-05): this target's override of the bundle's
+     * {@code forced} default. NULL — the default — means the bundle's
+     * own value applies at manifest serve time; a stored FALSE is a
+     * real override, distinct from no override. Set only on OTA-channel
+     * releases (the create surface refuses the override elsewhere).
+     */
+    private Boolean forced;
+
+    /**
+     * ADR-0010 D7 (S16-05): this target's override of the bundle's
+     * {@code min_app_version} default, same NULL-means-default
+     * discipline as {@link #forced}.
+     */
+    private String minAppVersion;
+
     private Instant createdAt;
 
     private Instant updatedAt;
@@ -49,6 +65,19 @@ public class ReleaseTargetEntity {
         this.releaseId = releaseId;
         this.tenantId = tenantId;
         this.ringId = ringId;
+    }
+
+    /**
+     * One target of a new OTA-channel release (S16-05, D7): the tenant,
+     * at the starting ring, carrying the target's overrides of the
+     * bundle's per-bundle defaults (either may be null — the default).
+     */
+    public ReleaseTargetEntity(UUID releaseId, UUID tenantId, UUID ringId, Boolean forced, String minAppVersion) {
+        this.releaseId = releaseId;
+        this.tenantId = tenantId;
+        this.ringId = ringId;
+        this.forced = forced;
+        this.minAppVersion = minAppVersion;
     }
 
     @PrePersist
@@ -73,6 +102,16 @@ public class ReleaseTargetEntity {
 
     public UUID getRingId() {
         return ringId;
+    }
+
+    /** The D7 override of the bundle's forced default; null means the default applies. */
+    public Boolean getForced() {
+        return forced;
+    }
+
+    /** The D7 override of the bundle's min_app_version default; null means the default applies. */
+    public String getMinAppVersion() {
+        return minAppVersion;
     }
 
     public Instant getCreatedAt() {

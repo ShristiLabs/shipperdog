@@ -26,12 +26,14 @@ class GateCatalogTest {
                         "mobile-security-scan",
                         "coverage-threshold",
                         "crash-free-threshold",
+                        "bundle-crash-free-threshold",
                         "open-critical-bugs");
 
         assertThat(GateCatalog.schemaOf("unit-tests")).isEqualTo(GateCatalog.ResultSchema.PASS_FAIL);
         assertThat(GateCatalog.schemaOf("sast")).isEqualTo(GateCatalog.ResultSchema.PASS_FAIL);
         assertThat(GateCatalog.schemaOf("coverage-threshold")).isEqualTo(GateCatalog.ResultSchema.NUMERIC_MIN);
         assertThat(GateCatalog.schemaOf("crash-free-threshold")).isEqualTo(GateCatalog.ResultSchema.NUMERIC_MIN);
+        assertThat(GateCatalog.schemaOf("bundle-crash-free-threshold")).isEqualTo(GateCatalog.ResultSchema.NUMERIC_MIN);
         assertThat(GateCatalog.schemaOf("open-critical-bugs")).isEqualTo(GateCatalog.ResultSchema.COUNT_MAX);
 
         // FR-026's list names Approvals too — that gate is the
@@ -48,10 +50,15 @@ class GateCatalogTest {
     }
 
     @Test
-    void metricBackedKindsAreExactlyTheAnalyticsPair() {
-        assertThat(GateCatalog.metricBackedTypes()).containsExactly("crash-free-threshold", "open-critical-bugs");
+    void metricBackedKindsAreExactlyTheAnalyticsFamily() {
+        assertThat(GateCatalog.metricBackedTypes())
+                .containsExactly("crash-free-threshold", "bundle-crash-free-threshold", "open-critical-bugs");
         assertThat(GateCatalog.builtinOf("crash-free-threshold").orElseThrow().metric())
                 .isEqualTo(GateCatalog.Metric.CRASH_FREE_RATE);
+        assertThat(GateCatalog.builtinOf("bundle-crash-free-threshold")
+                        .orElseThrow()
+                        .metric())
+                .isEqualTo(GateCatalog.Metric.BUNDLE_CRASH_FREE_RATE);
         assertThat(GateCatalog.builtinOf("open-critical-bugs").orElseThrow().metric())
                 .isEqualTo(GateCatalog.Metric.OPEN_CRITICAL_BUGS);
         // Coverage is numeric but externally reported (CI submits it).

@@ -7781,6 +7781,8 @@ components:
           type: boolean
         valueNode:
           type: boolean
+        missingNode:
+          type: boolean
         nodeType:
           type: string
           enum:
@@ -7793,10 +7795,6 @@ components:
           - OBJECT
           - POJO
           - STRING
-        missingNode:
-          type: boolean
-        pojo:
-          type: boolean
         integralNumber:
           type: boolean
         short:
@@ -7816,11 +7814,13 @@ components:
           deprecated: true
         boolean:
           type: boolean
+        number:
+          type: boolean
         binary:
           type: boolean
-        container:
+        pojo:
           type: boolean
-        number:
+        container:
           type: boolean
         floatingPointNumber:
           type: boolean
@@ -8366,6 +8366,10 @@ components:
           items:
             type: string
             format: uuid
+        forced:
+          type: boolean
+        minAppVersion:
+          type: string
     TransitionRequest:
       type: object
       description: "The release transition body: the permission-target application\

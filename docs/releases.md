@@ -131,12 +131,56 @@ passes; the whole write is one transaction):
    Every offense accumulates into ONE `422 RELEASE_TARGETS_INVALID`
    keyed by tenant or group id in the `errors` member, so a Release
    Manager fixes the whole set in one pass. An empty `testerGroupIds`
-   targets the tenant at large.
+   targets the tenant at large. Since S16-05 a target may carry the
+   D7 `forced`/`minAppVersion` overrides of the bundle's per-bundle
+   defaults — on OTA-channel releases only; either may be null (the
+   bundle's own value then applies), `minAppVersion` trims to nothing
+   or caps at 100 characters, and a store release carrying either is
+   one more target offense (see
+   [OTA-channel releases](#ota-channel-releases-s16-05))).
+6. **OTA-channel linkage** (S16-05) — when the ring's distribution
+   channel is `ota`, the artifact set is exactly one slot carrying one
+   SIGNED bundle's bytes and the release's `versionId` is that
+   bundle's own versions row; every other shape — zero bundles, a
+   store artifact, two slots, a not-SIGNED bundle, a mismatched
+   version — is one `422 RELEASE_OTA_BUNDLE_INVALID`. A bundle's bytes
+   on a store-channel ring is the same refusal. The linkage write (the
+   bundle's SIGNED to RELEASED crossing with its `release_id`
+   backfill) shares the creation transaction; a bundle that lost a
+   revoke/publish race between validation and that write is the
+   precise `409 RELEASE_OTA_BUNDLE_UNAVAILABLE`.
 
 The response is `201` with the detail — the quotable id, ring, artifact
 slots, and the full target set. Creation is audited as
 `RELEASE_CREATED` carrying the complete target set (FR-024): ring,
-per-platform artifacts, and every tenant with its group count.
+per-platform artifacts, and every tenant with its group count; an
+OTA-channel release's audit adds the linked `bundle` id:version and a
+`channel: ota` marker.
+
+### OTA-channel releases (S16-05)
+
+The OTA release linkage ([ADR-0010](adr/ADR-0010-ota-updates.md)
+workstream 3, D1/D2/D7): a ring whose `distributionChannel` is `ota`
+(name-only reference, trimmed and case-insensitive) publishes authored
+bundles, and only that way. The linkage is one transaction with the
+release row — the bundle crosses SIGNED to RELEASED with the
+`release_id` backfill (`ota_bundles.release_id`), V59's
+`uq_ota_bundles_release` holding exactly one live link per release at
+the floor and V55's `uq_ota_bundles_version` making a second release
+of the same bundle impossible (it would need the bundle's own versions
+row, which V1's one-release-per-version refuses). The detail renders
+each target's `forced`/`minAppVersion` overrides beside the bundle's
+own defaults — the tri-state survives the round trip (a stored FALSE
+is a real override; null means the bundle's value applies, resolved at
+manifest serve time by S16-07).
+
+A release that reaches ACTIVE and crosses to `ROLLED_BACK` returns its
+bundle to the SIGNED authoring pool — the live link cleared inside the
+rollback's transaction (a store release's empty answer is a no-op) —
+so the bundle is publishable again on a fresh release; the version row
+stays held by the rolled-back release until then (V1's floor). The
+authoring side of the bundle lifecycle (draft, upload, finalize, sign,
+revoke) is [OTA updates](ota-updates-plan.md)'s own surface.
 
 ## Reads
 
@@ -235,7 +279,11 @@ orchestrated rollback lands it — the staged rollout surface pulls
 the release across this edge (direct downloads cut, TestFlight
 assignments reverted, Play halted, channel records rolled back)
 while the artifacts stay untouched (see
-[distribution](distribution.md)).
+[distribution](distribution.md)). Since S16-05 the same crossing
+carries the OTA twin: a pulled OTA-channel release returns its
+bundle to the SIGNED authoring pool, the live `release_id` link
+cleared inside the rollback's transaction
+([OTA-channel releases](#ota-channel-releases-s16-05)).
 
 ### History — `GET /api/v1/releases/{releaseId}/history?applicationId=…`
 
@@ -624,6 +672,21 @@ A ring with no eligibility rule admits every release target (the
 seeded standing: rings widen by configuration, never by default).
 Every eligibility id is validated at write time — tenants must be the
 organization's, groups must belong to one of its tenants.
+
+Since S16-05 a rule may also carry the DEVICE axes of the OTA check
+resolution (ADR-0010, the S16-07 leg): `bundleIds` (the app's bundle
+identifier strings, 1 to 255 characters — an exact, case-sensitive
+member test; identifiers are not tenant-unique, so the read is
+release-addressed under the owning application, never a global
+registry) and `platformTags` (V55's open tag vocabulary, 1 to 32
+characters, stored and matched lowercase). Both are
+absent-or-constrained like the tenant and group axes — a rule with no
+device axis admits every device; a rule naming neither the reported
+bundle identifier nor the platform tag excludes with FALSE, never an
+error. The `RingEligibility` port's `admitsDevice` read answers the
+widest standing the release's targets hold (any occupied ring's rule
+admitting the device); unknown and out-of-scope releases answer the
+concealed empty.
 
 `GET /api/v1/releases/{releaseId}/eligibility?applicationId=…` renders
 the admission rows (the console view); the optional `testerId` adds

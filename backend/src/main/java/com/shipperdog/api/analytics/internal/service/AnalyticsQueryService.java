@@ -113,6 +113,24 @@ public class AnalyticsQueryService {
                 metric.name(), value, metric.unit().name(), metric.source().name());
     }
 
+    /**
+     * The bundle-scoped crash-free rate (S16-05, issue #167, ADR-0010
+     * workstream 3): 1 - crash sessions / total sessions over the
+     * SESSION reports V57's {@code ota_bundle_id} attributes to the
+     * bundle — the formula the {@code bundle-crash-free-threshold} gate
+     * resolves at evaluation time. Empty while the bundle holds no
+     * attributed sessions (the NO_DATA case the gate's documented
+     * release-keyed fallback covers until the S16-08 funnel attribution
+     * lands).
+     */
+    @Transactional(readOnly = true)
+    public java.util.Optional<Double> crashFreeRateOfBundle(UUID bundleId) {
+        return events.sessionArithmeticOfBundle(bundleId, Type.SESSION).stream()
+                .findFirst()
+                .filter(row -> ((Number) row[0]).longValue() > 0)
+                .map(row -> 1.0 - ((Number) row[1]).doubleValue() / ((Number) row[0]).doubleValue());
+    }
+
     /** The release's own row: the concealed miss for unknown, foreign, and mismatched ids alike. */
     private ReleaseRow releaseOf(UUID applicationId, UUID releaseId) {
         List<ReleaseRow> rows = jdbc.query(

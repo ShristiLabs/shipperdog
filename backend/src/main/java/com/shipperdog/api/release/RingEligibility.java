@@ -55,6 +55,30 @@ public interface RingEligibility {
      */
     Optional<Boolean> admitsTester(UUID releaseId, UUID testerId);
 
+    /**
+     * Whether the release's current rings admit one DEVICE (S16-05,
+     * issue #167, ADR-0010 workstream 3 — the OTA check resolution's
+     * eligibility leg): the ring rule's device axes, {@code bundleIds}
+     * (the app's bundle identifier strings — NOT tenant-unique, the
+     * companion-spike ambiguity) and {@code platformTags} (V55's open
+     * platform-tag vocabulary), each an absent-or-constrained axis like
+     * the tenant and group axes. A ring with no device axis admits
+     * every device; a rule that lists neither of the reported pair
+     * excludes with FALSE — never an error.
+     *
+     * <p><strong>Application scoping resolves the ambiguity</strong>
+     * (the companion-spike finding): the same bundle identifier string
+     * legitimately exists across tenants, so this read is
+     * release-addressed — the caller (S16-07's check route) resolves
+     * the application from the {@code sdc1.} token FIRST, consults the
+     * application's own standing ({@code ota_enabled}, application
+     * status — the caller's gates, composed before this call exactly as
+     * {@code requireOtaAuthorable} orders them on the authoring side),
+     * and then asks about a release of THAT application; a foreign or
+     * unknown release is the standard concealed empty answer.
+     */
+    Optional<Boolean> admitsDevice(UUID releaseId, String bundleId, String platformTag);
+
     /** One evaluation's answer: the release, and one row per target. */
     record Admission(UUID releaseId, String releaseRef, String ring, List<TargetAdmission> targets) {
 

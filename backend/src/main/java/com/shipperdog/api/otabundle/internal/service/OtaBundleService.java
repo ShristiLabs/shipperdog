@@ -184,6 +184,22 @@ public class OtaBundleService {
                 return new FinalizeView(false, viewOf(existing));
             }
             BundleRegistration registration = bundleArtifacts.finalizeBundleSession(actorId, bundleId, versionId);
+            if (!registration.created()) {
+                // The port replayed a landed registration: either the
+                // sequential replay (an earlier committed finalize) or a
+                // concurrent one serialized out on the upload session's
+                // row lock — and the artifact row and the bundle row
+                // land in ONE transaction, so a replayed registration
+                // means the bundle row is committed with it. Re-read and
+                // answer the replay; the no-row case (an artifact row
+                // without its bundle, impossible through this flow)
+                // falls through and builds it.
+                OtaBundleEntity winner = bundles.findScoped(bundleId).orElse(null);
+                if (winner != null) {
+                    requireOwnVersion(winner, versionId);
+                    return new FinalizeView(false, viewOf(winner));
+                }
+            }
             JsonNode claims = parseClaims(registration.claimsDocument());
             ApplicationProfile application =
                     applications.profileOf(ownership.applicationId()).orElseThrow(OtaBundleService::applicationMissing);
@@ -210,6 +226,12 @@ public class OtaBundleService {
             OtaBundleEntity saved;
             try {
                 saved = bundles.saveScoped(entity);
+                // Push the insert to the database inside the guard so the
+                // concurrent-finalize race translates HERE (the #181
+                // review's dead-catch finding, fixed): a deferred insert
+                // would surface its uniqueness violation at commit, past
+                // the catch, and answer 500 where this replay belongs.
+                bundles.flush();
             } catch (DataIntegrityViolationException e) {
                 // A concurrent finalize of the same bundle landed first;
                 // the artifact row registered exactly once and this caller

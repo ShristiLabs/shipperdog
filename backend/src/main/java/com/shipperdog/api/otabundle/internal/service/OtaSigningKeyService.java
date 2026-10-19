@@ -177,19 +177,16 @@ public class OtaSigningKeyService {
                 Base64.getEncoder().encodeToString(rawPublic),
                 reference,
                 actorId);
-        try {
-            return keys.saveScoped(entity);
-        } catch (org.springframework.dao.DataIntegrityViolationException e) {
-            // A concurrent first-finalize generated the app's key first:
-            // the partial unique index made exactly one ACTIVE row; this
-            // caller rides the winner's (whose secret is already stored —
-            // ours became an unreferenced store entry the port's hygiene
-            // owns, never a bundle's custody).
-            return keys.findOneScoped(activeOf(application.applicationId()))
-                    .orElseThrow(() -> new OtaBundleException(
-                            OtaBundleException.Code.SIGNING_UNAVAILABLE,
-                            "the application's signing key could not be established"));
-        }
+        // The concurrent first-finalize race is resolved by the DATABASE,
+        // not a catch: the save's insert defers to commit, so a lost race
+        // to V58's one-ACTIVE-row index aborts the WHOLE transaction
+        // there — this caller's secret store row rolls back with it (no
+        // orphan to hygiene away, the #181 review's correction) and the
+        // attempt answers 500; the documented retry self-heals, because
+        // activeKeyOf's read then resolves the winner. A flush-here catch
+        // would ride the winner but COMMIT this caller's now-unreferenced
+        // secret row — strictly worse, which is why there is no catch.
+        return keys.saveScoped(entity);
     }
 
     private PrivateKey resolvePrivateKey(OtaSigningKeyEntity key) {

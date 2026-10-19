@@ -100,6 +100,16 @@ public class AnalyticsEventEntity {
      */
     private UUID eventId;
 
+    /**
+     * The OTA bundle the report attributes to (V57, S16-05): NULL on
+     * every store-release report and on OTA reports until the S16-08
+     * ingest lands the funnel attribution. The read side (the
+     * bundle-scoped crash-free arithmetic) keys on it when present and
+     * composes with the release-keyed standing until then.
+     */
+    @jakarta.persistence.Column(name = "ota_bundle_id")
+    private UUID otaBundleId;
+
     protected AnalyticsEventEntity() {}
 
     /**
@@ -204,5 +214,10 @@ public class AnalyticsEventEntity {
 
     public UUID eventId() {
         return eventId;
+    }
+
+    /** The OTA bundle the report attributes to (V57); null on unattributed rows. */
+    public UUID otaBundleId() {
+        return otaBundleId;
     }
 }

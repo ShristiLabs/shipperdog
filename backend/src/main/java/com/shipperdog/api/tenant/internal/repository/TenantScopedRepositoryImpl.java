@@ -7,7 +7,11 @@ import com.shipperdog.api.tenant.TenantIsolationException;
 import com.shipperdog.api.tenant.TenantScope;
 import com.shipperdog.api.tenant.TenantScopedAccess;
 import jakarta.persistence.EntityManager;
+import jakarta.persistence.LockModeType;
+import jakarta.persistence.criteria.CriteriaBuilder;
+import jakarta.persistence.criteria.CriteriaQuery;
 import jakarta.persistence.criteria.Predicate;
+import jakarta.persistence.criteria.Root;
 import java.io.Serializable;
 import java.util.ArrayList;
 import java.util.List;
@@ -132,9 +136,13 @@ public class TenantScopedRepositoryImpl<T, ID extends Serializable> extends Simp
      */
     private final boolean tenantScoped;
 
+    /** The shared persistence context, kept for the seam's lock-capable read below. */
+    private final EntityManager entityManager;
+
     public TenantScopedRepositoryImpl(JpaEntityInformation<T, ?> information, EntityManager entityManager) {
         super(information, entityManager);
         this.tenantScoped = TenantScope.class.isAssignableFrom(information.getJavaType());
+        this.entityManager = entityManager;
     }
 
     public TenantScopedRepositoryImpl(Class<T> domainClass, EntityManager entityManager) {
@@ -153,6 +161,29 @@ public class TenantScopedRepositoryImpl<T, ID extends Serializable> extends Simp
     @Override
     public Optional<T> findOneScoped(Specification<T> filter) {
         return findOne(scoped(filter));
+    }
+
+    /**
+     * {@inheritDoc}
+     *
+     * <p>Composes the forced scope predicate exactly like {@link #findOneScoped}
+     * and issues the criteria query under {@code PESSIMISTIC_WRITE} — the
+     * row lock the database holds to the surrounding transaction's end, so
+     * concurrent callers of this shape serialize on the row itself. A
+     * holder's committed delete leaves the waiter's locked read empty (the
+     * row no longer matches), which is precisely the tell a racing caller
+     * re-reads for the winner's fact; an uncommitted holder's row blocks
+     * the read until the holder's outcome is visible.
+     */
+    @Override
+    public Optional<T> findOneScopedForUpdate(Specification<T> filter) {
+        Specification<T> scoped = scoped(filter);
+        CriteriaBuilder builder = entityManager.getCriteriaBuilder();
+        CriteriaQuery<T> query = builder.createQuery(getDomainClass());
+        Root<T> root = query.from(getDomainClass());
+        query.select(root).where(scoped.toPredicate(root, query, builder));
+        return entityManager.createQuery(query).setLockMode(LockModeType.PESSIMISTIC_WRITE).getResultList().stream()
+                .findFirst();
     }
 
     @Override
