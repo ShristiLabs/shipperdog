@@ -37,6 +37,16 @@ const (
 	pathReleasePromote      = "/api/v1/releases/{releaseId}/promote"
 	pathReleasePromotionPre = "/api/v1/releases/{releaseId}/promotion-precheck"
 	pathReleasePromotions   = "/api/v1/releases/{releaseId}/promotions"
+
+	pathOtaBundles        = "/api/v1/ota/bundles"
+	pathOtaBundleOne      = "/api/v1/ota/bundles/{bundleId}"
+	pathOtaBundleFinalize = "/api/v1/ota/bundles/{bundleId}/finalize"
+	pathOtaAppTokens      = "/api/v1/ota/app-tokens"
+	pathOtaRollouts       = "/api/v1/ota/rollouts"
+	pathOtaRolloutOne     = "/api/v1/ota/rollouts/{releaseId}"
+	pathOtaRolloutHalt    = "/api/v1/ota/rollouts/{releaseId}/halt"
+	pathOtaRolloutResume  = "/api/v1/ota/rollouts/{releaseId}/resume"
+	pathOtaFunnel         = "/api/v1/tenants/{tenantId}/dashboard/ota/bundles/{bundleId}/funnel"
 )
 
 // endpointTemplates lists every template above; endpoints_test.go
@@ -62,6 +72,15 @@ var endpointTemplates = []string{
 	pathReleasePromote,
 	pathReleasePromotionPre,
 	pathReleasePromotions,
+	pathOtaBundles,
+	pathOtaBundleOne,
+	pathOtaBundleFinalize,
+	pathOtaAppTokens,
+	pathOtaRollouts,
+	pathOtaRolloutOne,
+	pathOtaRolloutHalt,
+	pathOtaRolloutResume,
+	pathOtaFunnel,
 }
 
 // expand replaces each {placeholder} in order with the given segment

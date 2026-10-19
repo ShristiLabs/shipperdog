@@ -397,3 +397,211 @@ type ReleaseManifestView struct {
 	FrozenBy      string          `json:"frozenBy"`
 	Manifest      json.RawMessage `json:"manifest"`
 }
+
+// The OTA surface (S16-14, issue #176; ADR-0010): the bundle authoring
+// draft (the create answer carries the direct-to-storage grant - D5),
+// the SIGNED bundle the finalize lands, the exactly-once sdc1. app
+// token (D3), the release's staged rollout plan (D6), and the
+// dashboard funnel. Member names are the served baseline contract.
+
+// CreateOtaBundleRequest is POST /api/v1/ota/bundles: the owning
+// application, the semver-triple bundleVersion labeling the bundle's
+// dedicated versions row (D2), the open-vocabulary platformTag, the
+// bare fileName of the bundle archive, and the per-bundle forced/
+// minAppVersion defaults (D7).
+type CreateOtaBundleRequest struct {
+	ApplicationID string `json:"applicationId"`
+	BundleVersion string `json:"bundleVersion"`
+	PlatformTag   string `json:"platformTag"`
+	FileName      string `json:"fileName"`
+	Forced        *bool  `json:"forced,omitempty"`
+	MinAppVersion string `json:"minAppVersion,omitempty"`
+	SizeHint      int64  `json:"sizeHint,omitempty"`
+}
+
+// OtaUploadGrantView is the direct-to-storage grant the create answer
+// carries (the client streams the bundle's bytes to uploadUrl, as-is,
+// without the API bearer header).
+type OtaUploadGrantView struct {
+	ArtifactID string `json:"artifactId"`
+	UploadURL  string `json:"uploadUrl"`
+	ExpiresAt  string `json:"expiresAt"`
+}
+
+// OtaDraftView is the create answer: the draft's identity (the bundle
+// id IS the pre-allocated artifact id - the bytes are the bundle), its
+// dedicated versions row, and the upload grant.
+type OtaDraftView struct {
+	ID            string              `json:"id"`
+	ApplicationID string              `json:"applicationId"`
+	VersionID     string              `json:"versionId"`
+	BundleVersion string              `json:"bundleVersion"`
+	PlatformTag   string              `json:"platformTag"`
+	Forced        bool                `json:"forced"`
+	MinAppVersion string              `json:"minAppVersion"`
+	Status        string              `json:"status"`
+	Upload        *OtaUploadGrantView `json:"upload"`
+}
+
+// OtaBundleView is the bundle read (GET /api/v1/ota/bundles/{id}): the
+// landed manifest facts (sha256, size, platformTag) beside the
+// Ed25519 signature and its key id (D8) and the V55 status vocabulary
+// (UPLOADING, VALIDATING, SIGNED, RELEASED, REVOKED).
+type OtaBundleView struct {
+	ID            string `json:"id"`
+	ApplicationID string `json:"applicationId"`
+	VersionID     string `json:"versionId"`
+	ArtifactID    string `json:"artifactId"`
+	ReleaseID     string `json:"releaseId"`
+	BundleVersion string `json:"bundleVersion"`
+	PlatformTag   string `json:"platformTag"`
+	Sha256        string `json:"sha256"`
+	SizeBytes     int64  `json:"sizeBytes"`
+	Signature     string `json:"signature"`
+	KeyID         string `json:"keyId"`
+	Forced        bool   `json:"forced"`
+	MinAppVersion string `json:"minAppVersion"`
+	Status        string `json:"status"`
+	CreatedBy     string `json:"createdBy"`
+	CreatedAt     string `json:"createdAt"`
+	UpdatedAt     string `json:"updatedAt"`
+}
+
+// OtaBundlePage is the bundle listing's page shape.
+type OtaBundlePage struct {
+	Items      []OtaBundleView `json:"items"`
+	NextCursor string          `json:"next_cursor"`
+}
+
+// OtaFinalizeView answers POST /api/v1/ota/bundles/{id}/finalize;
+// created false means the retry replayed the already-SIGNED bundle.
+type OtaFinalizeView struct {
+	Created bool           `json:"created"`
+	Bundle  *OtaBundleView `json:"bundle"`
+}
+
+// IssueOtaAppTokenRequest is POST /api/v1/ota/app-tokens: the
+// permission-target application and the human name the registry
+// distinguishes tokens by.
+type IssueOtaAppTokenRequest struct {
+	ApplicationID string `json:"applicationId"`
+	Name          string `json:"name"`
+}
+
+// OtaAppTokenView is the registry row - it never carries the token
+// value (the server stores only its SHA-256).
+type OtaAppTokenView struct {
+	ID            string `json:"id"`
+	ApplicationID string `json:"applicationId"`
+	Name          string `json:"name"`
+	CreatedBy     string `json:"createdBy"`
+	Revoked       bool   `json:"revoked"`
+	RevokedAt     string `json:"revokedAt"`
+}
+
+// OtaIssuedView is the issue answer: the registry row beside the
+// sdc1. value - the only time the value ever leaves the server.
+type OtaIssuedView struct {
+	Token *OtaAppTokenView `json:"token"`
+	Value string           `json:"value"`
+}
+
+// OtaStageBody is one ladder stage of the attach body: the cumulative
+// basisPoints threshold (1..10000) and the optional operator note.
+type OtaStageBody struct {
+	BasisPoints int32  `json:"basisPoints"`
+	Note        string `json:"note,omitempty"`
+}
+
+// AttachOtaRolloutRequest is POST /api/v1/ota/rollouts: the owning
+// application, the release the plan hangs on, the advancement mode
+// (AUTOMATIC or CHECKPOINT), and the strictly ascending cumulative
+// basis-point ladder whose final stage is 10000.
+type AttachOtaRolloutRequest struct {
+	ApplicationID string         `json:"applicationId"`
+	ReleaseID     string         `json:"releaseId"`
+	Mode          string         `json:"mode"`
+	Stages        []OtaStageBody `json:"stages"`
+}
+
+// OtaControlRequest is the halt/resume body: the permission-target
+// application and the action's reason (mandatory for halt).
+type OtaControlRequest struct {
+	ApplicationID string `json:"applicationId"`
+	Reason        string `json:"reason,omitempty"`
+}
+
+// OtaRolloutStageView is one stage of the plan's ladder: its position,
+// cumulative threshold, and standing (REACHED or PENDING) with the
+// reach moment.
+type OtaRolloutStageView struct {
+	Position    int32  `json:"position"`
+	BasisPoints int32  `json:"basisPoints"`
+	Note        string `json:"note"`
+	Status      string `json:"status"`
+	ReachedAt   string `json:"reachedAt"`
+}
+
+// OtaRolloutEventView is one row of the plan's append-only timeline.
+type OtaRolloutEventView struct {
+	Action        string `json:"action"`
+	StagePosition int32  `json:"stagePosition"`
+	Detail        string `json:"detail"`
+	ActorID       string `json:"actorId"`
+	OccurredAt    string `json:"occurredAt"`
+}
+
+// OtaRolloutView is the rollout status read: the plan's mode and
+// standing (RUNNING, HALTED, PAUSED, COMPLETE), the full ladder, and
+// the timeline.
+type OtaRolloutView struct {
+	ReleaseID     string                `json:"releaseId"`
+	ApplicationID string                `json:"applicationId"`
+	Mode          string                `json:"mode"`
+	Status        string                `json:"status"`
+	CurrentStage  int32                 `json:"currentStage"`
+	PlanSalt      string                `json:"planSalt"`
+	Stages        []OtaRolloutStageView `json:"stages"`
+	Timeline      []OtaRolloutEventView `json:"timeline"`
+}
+
+// OtaFunnelStagesView is the funnel's stage counters (D9: checks are
+// counted server-side; the lifecycle events ride the sdt1. ingest).
+type OtaFunnelStagesView struct {
+	Checks     int64 `json:"checks"`
+	Seen       int64 `json:"seen"`
+	Downloads  int64 `json:"downloads"`
+	Applied    int64 `json:"applied"`
+	Failed     int64 `json:"failed"`
+	RolledBack int64 `json:"rolledBack"`
+}
+
+// OtaFailureView is one failure reason and its count.
+type OtaFailureView struct {
+	Reason string `json:"reason"`
+	Count  int64  `json:"count"`
+}
+
+// OtaAdoptionPointView is one day of the adoption curve.
+type OtaAdoptionPointView struct {
+	Day            string  `json:"day"`
+	SeenDevices    int64   `json:"seenDevices"`
+	AppliedDevices int64   `json:"appliedDevices"`
+	AdoptionRate   float64 `json:"adoptionRate"`
+}
+
+// OtaFunnelView is the dashboard funnel read (GET
+// /api/v1/tenants/{tenantId}/dashboard/ota/bundles/{bundleId}/funnel):
+// the bundle's identity, the check -> seen -> download -> applied
+// stage counters, the failure-reason breakdown, and the adoption
+// curve over time.
+type OtaFunnelView struct {
+	BundleID      string                 `json:"bundleId"`
+	BundleVersion string                 `json:"bundleVersion"`
+	ApplicationID string                 `json:"applicationId"`
+	ReleaseID     string                 `json:"releaseId"`
+	ReleaseRef    string                 `json:"releaseRef"`
+	Stages        *OtaFunnelStagesView   `json:"stages"`
+	Failures      []OtaFailureView       `json:"failures"`
+	Adoption      []OtaAdoptionPointView `json:"adoption"`
+}
