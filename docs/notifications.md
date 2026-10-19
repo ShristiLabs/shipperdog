@@ -71,6 +71,7 @@ authority to read.
 | `AUDIT_EVENT` | One immutable audit event bridged for the SIEM export (S14-05) | the outbox recorder's audit listener — every published `AuditEvent` of an organization holding an enabled export, org-gated ([siem](siem.md)) |
 | `OTA_BUNDLE_SIGNED` | One OTA bundle finalized and signed under the application's active Ed25519 key (S16-03) | `OtaBundleSignedEvent` |
 | `OTA_ROLLOUT_TRANSITIONED` | One committed OTA rollout control act — commence, advance, halt, pause, resume; a terminal advancement publishes both its `ADVANCED` and its `COMPLETED` (S16-06) | `OtaRolloutTransitionedEvent` |
+| `OTA_ALERT_FIRED` | One OTA alert rule's crossing observed by the evaluation scheduler (S16-11) — the firing row, the bus event, and the console badge land in one transaction; a recovery stamps the standing row and publishes nothing (the feed, not the bus, carries it); nothing halts on a firing (ADR-0010 D10 — halting stays the manual S16-06 act) | `OtaAlertFiredEvent` |
 
 Two deliberate suppressions: a validation outcome of `BLOCKED` (the
 operational queue-refusal skip) publishes nothing, and the release

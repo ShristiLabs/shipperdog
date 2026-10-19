@@ -122,6 +122,22 @@ public class DashboardController {
         return dashboards.otaBundleHealth(tenantId, bundleId);
     }
 
+    /**
+     * The OTA alerts feed (S16-11, issue #173 — the #172
+     * carry-forward): the console's alert badge and timeline — the
+     * standing firings of every rule on an application the addressed
+     * tenant can see, the standing counts by severity, and the
+     * bounded recent resolutions. The badge surfaces; nothing halts
+     * on it (D10) — the halt stays the operator's manual act through
+     * the rollout endpoints.
+     */
+    @GetMapping("/api/v1/tenants/{tenantId}/dashboard/ota/alerts")
+    @PreAuthorize("hasPermission(#tenantId, 'tenant', 'tenant:dashboard:read')")
+    DashboardQueryService.OtaAlertFeedView otaAlerts(
+            @AuthenticationPrincipal Object principal, @PathVariable UUID tenantId) {
+        return dashboards.otaAlertFeed(tenantId);
+    }
+
     private static UUID requireUserId(Object principal) {
         if (principal instanceof Jwt jwt) {
             return UUID.fromString(jwt.getSubject());

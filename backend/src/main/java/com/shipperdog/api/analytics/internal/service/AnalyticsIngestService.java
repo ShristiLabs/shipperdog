@@ -9,6 +9,7 @@ import com.shipperdog.api.analytics.internal.repository.AnalyticsEventRepository
 import com.shipperdog.api.audit.AuditEvent;
 import com.shipperdog.api.audit.AuditEventPublisher;
 import com.shipperdog.api.audit.AuditEventType;
+import com.shipperdog.api.config.MetricNames;
 import com.shipperdog.api.device.DeviceAccess;
 import com.shipperdog.api.device.DeviceAccess.DeviceFacts;
 import com.shipperdog.api.otabundle.OtaBundleAccess;
@@ -148,6 +149,8 @@ public class AnalyticsIngestService {
 
     private final AnalyticsEventRepository events;
 
+    private final io.micrometer.core.instrument.MeterRegistry meters;
+
     private final AuditEventPublisher audit;
 
     private final ObjectMapper mapper;
@@ -160,6 +163,7 @@ public class AnalyticsIngestService {
             TesterAccess testers,
             OtaBundleAccess bundles,
             AnalyticsEventRepository events,
+            io.micrometer.core.instrument.MeterRegistry meters,
             AuditEventPublisher audit,
             ObjectMapper mapper,
             Clock clock) {
@@ -168,6 +172,7 @@ public class AnalyticsIngestService {
         this.testers = testers;
         this.bundles = bundles;
         this.events = events;
+        this.meters = meters;
         this.audit = audit;
         this.mapper = mapper;
         this.clock = clock;
@@ -284,6 +289,25 @@ public class AnalyticsIngestService {
         // counts are computed from those survivors — never the
         // pre-dedup batch shape.
         int landed = rows.size();
+        for (AnalyticsEventEntity row : rows) {
+            if (row.eventType() == Type.OTA_FAILED) {
+                // The apply-failure meter (S16-11, workstream 7): one
+                // increment per LANDED failure report, tagged by the
+                // failing bundle and its documented reason vocabulary
+                // -- counted on the survivors so an SDK's at-least-once
+                // resends never double-count, and live the moment the
+                // report lands, before the hourly rollup.
+                meters.counter(
+                                MetricNames.OTA_APPLY_FAILURE,
+                                "bundle",
+                                row.otaBundleId() == null
+                                        ? "unknown"
+                                        : row.otaBundleId().toString(),
+                                "reason",
+                                row.result() == null ? "unknown" : row.result())
+                        .increment();
+            }
+        }
         Map<String, Integer> typeCounts = new LinkedHashMap<>();
         for (AnalyticsEventEntity row : rows) {
             typeCounts.merge(row.eventType().name(), 1, Integer::sum);

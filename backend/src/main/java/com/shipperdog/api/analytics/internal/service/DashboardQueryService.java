@@ -156,6 +156,81 @@ public class DashboardQueryService {
     }
 
     // ------------------------------------------------------------------
+    // OTA alerts feed (S16-11, issue #173 -- the #172 carry-forward)
+    // ------------------------------------------------------------------
+
+    /**
+     * The tenant's OTA alerts feed (issue #173, the console badge
+     * surface deferred from #172): the standing firings of every rule
+     * on an application the addressed tenant can see (the catalog
+     * union), the standing counts by severity (the badge's number),
+     * and the bounded recent resolutions (the timeline's tail) -- one
+     * bounded statement per block, the S11-04 read-model discipline.
+     *
+     * <p>The firings join their rules for the watch's shape (metric,
+     * comparator, threshold, severity) so the feed serves the badge
+     * and the timeline without a per-rule read-back; the rule's
+     * application carries the console's deep-link context. Nothing
+     * here halts anything (D10): the feed surfaces, the operator
+     * acts.
+     */
+    @Transactional(readOnly = true)
+    public OtaAlertFeedView otaAlertFeed(UUID tenantId) {
+        requireVisibleTenant(tenantId);
+        String visible = """
+                SELECT a.id FROM applications a
+                WHERE a.tenant_id = :tenantId
+                UNION
+                SELECT aa.application_id FROM tenant_application_authorizations aa
+                WHERE aa.tenant_id = :tenantId AND aa.status = 'ACTIVE'
+                """;
+        MapSqlParameterSource bound = new MapSqlParameterSource("tenantId", tenantId);
+        List<OtaAlertFiringView> standing =
+                jdbc.query("""
+                SELECT f.id, f.rule_id, r.application_id, f.ota_bundle_id, r.metric, r.comparator,
+                       r.threshold, r.severity, f.observed_value, f.detail, f.fired_at
+                FROM ota_alert_firings f
+                JOIN ota_alert_rules r ON r.id = f.rule_id
+                WHERE f.resolved_at IS NULL
+                  AND r.application_id IN (
+                """ + visible + ")\n ORDER BY f.fired_at DESC, f.id", bound, OtaAlertFiringView::alertRowOf);
+        int critical = 0;
+        int warning = 0;
+        int info = 0;
+        for (OtaAlertFiringView firing : standing) {
+            switch (firing.severity()) {
+                case "CRITICAL" -> critical++;
+                case "WARNING" -> warning++;
+                default -> info++;
+            }
+        }
+        List<OtaAlertFiringView> recent = jdbc.query(
+                """
+                SELECT f.id, f.rule_id, r.application_id, f.ota_bundle_id, r.metric, r.comparator,
+                       r.threshold, r.severity, f.observed_value, f.detail, f.fired_at
+                FROM ota_alert_firings f
+                JOIN ota_alert_rules r ON r.id = f.rule_id
+                WHERE f.resolved_at IS NOT NULL
+                  AND r.application_id IN (
+                """ + visible + ")\n ORDER BY f.resolved_at DESC, f.id LIMIT 25",
+                bound,
+                OtaAlertFiringView::alertRowOf);
+        return new OtaAlertFeedView(
+                tenantId, Instant.now().toString(), new OtaAlertCountsView(critical, warning, info), standing, recent);
+    }
+
+    /** The addressed tenant must exist (the concealed miss of every tenant-addressed read). */
+    private void requireVisibleTenant(UUID tenantId) {
+        Boolean tenantExists = jdbc.queryForObject(
+                "SELECT EXISTS(SELECT 1 FROM tenants WHERE id = :tenantId)",
+                new MapSqlParameterSource("tenantId", tenantId),
+                Boolean.class);
+        if (!Boolean.TRUE.equals(tenantExists)) {
+            throw new AnalyticsException(AnalyticsException.Code.TENANT_NOT_FOUND, "unknown tenant");
+        }
+    }
+
+    // ------------------------------------------------------------------
     // OTA bundle health (S16-09, issue #171 AC4)
     // ------------------------------------------------------------------
 
@@ -740,6 +815,57 @@ public class DashboardQueryService {
      */
     public record OtaBundleHealthView(
             OtaBundleSideView newBundle, OtaBundleSideView currentBundle, Double crashFreeRateDelta) {}
+
+    /**
+     * The tenant's OTA alerts feed (S16-11, issue #173): the badge's
+     * standing counts by severity, the standing firings, and the
+     * bounded recent resolutions — every rule on an application the
+     * tenant can see.
+     */
+    public record OtaAlertFeedView(
+            UUID tenantId,
+            String generatedAt,
+            OtaAlertCountsView counts,
+            List<OtaAlertFiringView> standing,
+            List<OtaAlertFiringView> recent) {}
+
+    /** The badge's numbers: standing firings by severity. */
+    public record OtaAlertCountsView(int critical, int warning, int info) {}
+
+    /**
+     * One firing as the feed serves it: the firing's own facts beside
+     * the rule's watch shape (the join carries metric, comparator,
+     * threshold, severity) and the application deep-link context.
+     */
+    public record OtaAlertFiringView(
+            UUID id,
+            UUID ruleId,
+            UUID applicationId,
+            UUID otaBundleId,
+            String metric,
+            String comparator,
+            double threshold,
+            String severity,
+            double observedValue,
+            String detail,
+            Instant firedAt) {
+
+        /** One standing/recent row from the feed's statements. */
+        static OtaAlertFiringView alertRowOf(ResultSet rs, int index) throws SQLException {
+            return new OtaAlertFiringView(
+                    rs.getObject("id", UUID.class),
+                    rs.getObject("rule_id", UUID.class),
+                    rs.getObject("application_id", UUID.class),
+                    rs.getObject("ota_bundle_id", UUID.class),
+                    rs.getString("metric"),
+                    rs.getString("comparator"),
+                    rs.getDouble("threshold"),
+                    rs.getString("severity"),
+                    rs.getDouble("observed_value"),
+                    rs.getString("detail"),
+                    rs.getTimestamp("fired_at").toInstant());
+        }
+    }
 
     /**
      * One side of the comparison: the bundle's identity and release

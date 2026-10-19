@@ -68,6 +68,7 @@ backend/src/main/resources/db/
     V58__ota_signing_keys.sql
     V59__ota_release_integration.sql
     V60__ota_rollout_paused_event.sql
+    V61__ota_alert_rules_org_grain.sql
   seed/                 dev fixture, applied only when the seed location is active
     R__dev_seed.sql
 ```
@@ -943,6 +944,19 @@ the per-migration record here.)
   Expand-only: one CHECK widened by one value, one nullable column,
   one new check; nothing dropped or re-typed, and no existing action
   value leaves the vocabulary.
+- `V61__ota_alert_rules_org_grain.sql` (S16-11, issue #173) is the one
+  gap-fix the alert build surfaced over V56's frozen alert pair:
+  `ota_alert_rules` is an org-grain row (a rule watches an
+  application's whole OTA funnel — the device population's grain, the
+  rollout plans' own doctrine) but V56 omitted the nullable
+  `tenant_id` the org-owned doctrine presupposes, the exact gap V60
+  fixed for `ota_rollout_plans`. The seam's organization-scope
+  predicate composes on mapped attributes, so the rule row cannot ride
+  it without the column; `ck_ota_alert_rules_org_grain`
+  (`tenant_id IS NULL`) pins the grain. `ota_alert_firings` needs no
+  such column by design — a firing is addressed only through its rule
+  (the `ota_rollout_events` doctrine). Expand-only: one nullable
+  column and one new check on a this-milestone table.
 
 ## Verifying migrations
 

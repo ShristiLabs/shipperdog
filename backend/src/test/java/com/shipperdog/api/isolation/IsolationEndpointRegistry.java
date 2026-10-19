@@ -327,6 +327,21 @@ final class IsolationEndpointRegistry {
                         404,
                         side -> "/api/v1/tenants/" + UUID.randomUUID() + "/dashboard/ota/bundles/" + UUID.randomUUID()
                                 + "/health"),
+                // The OTA alerts feed (S16-11, issue #173 -- the #172
+                // carry-forward): the tenant dashboard's own grain and
+                // permission, and the feed serves whole over the
+                // catalog union -- the seeded world holds no rules, so
+                // the own side answers the honest empty feed; the
+                // foreign tenant and the unknown tenant conceal
+                // identically, and concealment of a REAL standing
+                // firing is pinned with live rules by the S16-11 alert
+                // suite.
+                surface(
+                        "/api/v1/tenants/{tenantId}/dashboard/ota/alerts",
+                        side -> "/api/v1/tenants/" + side.tenantId() + "/dashboard/ota/alerts",
+                        200,
+                        200,
+                        side -> "/api/v1/tenants/" + UUID.randomUUID() + "/dashboard/ota/alerts"),
 
                 // Notifications (S12-01) --------------------------------------------
                 // The subscription listing: org:notifications:read is
@@ -1389,6 +1404,30 @@ final class IsolationEndpointRegistry {
                         404,
                         404,
                         side -> "/api/v1/ota/rollouts/" + UUID.randomUUID() + "?applicationId=" + UUID.randomUUID()),
+                // The OTA alert rules (S16-11): the release family's
+                // app:releases:read grain -- the org admin holds it on
+                // their own side and receives the honest empty page
+                // (the seeded world's app has no rules; the opt-in is
+                // deliberately not a read gate, the bundle reads' own
+                // shape), while the tenant persona conceals like the
+                // miss. Own-side probes of the item route address a
+                // random rule id -- the route's miss shape IS the
+                // correct own answer -- and concealment of a REAL
+                // foreign rule list is pinned with live rules by the
+                // S16-11 alert suite.
+                surface(
+                        "/api/v1/ota/alert-rules",
+                        side -> "/api/v1/ota/alert-rules?applicationId=" + side.applicationId(),
+                        200,
+                        404,
+                        side -> "/api/v1/ota/alert-rules?applicationId=" + UUID.randomUUID()),
+                surface(
+                        "/api/v1/ota/alert-rules/{ruleId}",
+                        side -> "/api/v1/ota/alert-rules/" + UUID.randomUUID() + "?applicationId="
+                                + side.applicationId(),
+                        404,
+                        404,
+                        side -> "/api/v1/ota/alert-rules/" + UUID.randomUUID() + "?applicationId=" + UUID.randomUUID()),
                 // The device check (S16-07): anonymous-by-design at the
                 // chain (the download-proxy doctrine -- the sdc1.
                 // prefix is the credential, the otabundle filter the
