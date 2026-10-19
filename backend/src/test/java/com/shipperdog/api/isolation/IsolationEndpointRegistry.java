@@ -1359,7 +1359,57 @@ final class IsolationEndpointRegistry {
                         side -> "/api/v1/ota/rollouts/" + UUID.randomUUID() + "?applicationId=" + side.applicationId(),
                         404,
                         404,
-                        side -> "/api/v1/ota/rollouts/" + UUID.randomUUID() + "?applicationId=" + UUID.randomUUID()));
+                        side -> "/api/v1/ota/rollouts/" + UUID.randomUUID() + "?applicationId=" + UUID.randomUUID()),
+                // The device check (S16-07): anonymous-by-design at the
+                // chain (the download-proxy doctrine -- the sdc1.
+                // prefix is the credential, the otabundle filter the
+                // entire authority), so the matrix personas' JWTs
+                // authenticate but carry no ota:app-token:check
+                // authority: own side, foreign probe, and genuine miss
+                // all answer the SAME method-security 403 envelope --
+                // the parity proof here is that a console credential
+                // cannot even learn that a fleet's channel exists.
+                // The valid-token legs (manifest, every 204 refusal,
+                // the filter's uniform 401 for a presented-but-invalid
+                // sdc1.) are the S16-07 check suite's.
+                new Entry() {
+                    @Override
+                    public String method() {
+                        return "GET";
+                    }
+
+                    @Override
+                    public String template() {
+                        return "/api/v1/ota/check";
+                    }
+
+                    @Override
+                    public String uri(IsolationScenarioHarness.IsolatedTenant side) {
+                        return "/api/v1/ota/check?deviceId=device-isolation-probe&platform=ios&appVersion=1.0.0"
+                                + "&channel=ota";
+                    }
+
+                    @Override
+                    public int ownOrgAdmin() {
+                        return 403;
+                    }
+
+                    @Override
+                    public int ownTenantAdmin() {
+                        return 403;
+                    }
+
+                    @Override
+                    public int concealStatus() {
+                        return 403;
+                    }
+
+                    @Override
+                    public String missUri(IsolationScenarioHarness.IsolatedTenant actorSide) {
+                        return "/api/v1/ota/check?deviceId=device-isolation-probe&platform=ios&appVersion=1.0.0"
+                                + "&channel=ota";
+                    }
+                });
     }
 
     /**

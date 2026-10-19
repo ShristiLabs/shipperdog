@@ -97,9 +97,10 @@ final class RateLimitFilter extends OncePerRequestFilter {
      * The rule table: the login door, both legs of the download tier
      * (the anonymous emulator proxy and the authenticated issuance
      * behind it), the inbound webhook receivers (S12-04, issue
-     * #54), and the SCIM provisioning surface (S14-03, issue #69) --
-     * anonymous, provider-facing requests whose senders retry,
-     * throttled per client before they cost signature, token-hash,
+     * #54), the SCIM provisioning surface (S14-03, issue #69), and
+     * the OTA device check (S16-07, issue #169) -- anonymous or
+     * device-facing requests whose senders retry or poll, throttled
+     * per client before they cost signature, token-hash, rollout,
      * or provisioning work. Everything else passes — the limiter
      * protects specific abuse surfaces, it is not a general tariff.
      */
@@ -118,6 +119,9 @@ final class RateLimitFilter extends OncePerRequestFilter {
         }
         if ("GET".equals(method) && isArtifactIssuance(path)) {
             return "downloads";
+        }
+        if ("GET".equals(method) && "/api/v1/ota/check".equals(path)) {
+            return "ota-check";
         }
         return null;
     }

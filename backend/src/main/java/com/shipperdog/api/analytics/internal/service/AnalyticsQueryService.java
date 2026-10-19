@@ -83,7 +83,7 @@ public class AnalyticsQueryService {
 
         long installs = events.countByReleaseIdAndEventType(releaseId, Type.INSTALL);
         metrics.add(value(Metric.INSTALLATIONS, installs == 0 ? null : (double) installs));
-        long succeeded = events.countByReleaseIdAndEventTypeAndResult(releaseId, Type.INSTALL, Result.SUCCEEDED);
+        long succeeded = events.countByReleaseIdAndEventTypeAndResult(releaseId, Type.INSTALL, Result.SUCCEEDED.name());
         metrics.add(value(Metric.INSTALL_SUCCESS_RATE, installs == 0 ? null : (double) succeeded / installs));
 
         long[] sessions = sessionArithmetic(releaseId);

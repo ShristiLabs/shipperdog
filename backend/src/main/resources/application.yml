@@ -204,6 +204,14 @@ shipperdog:
   # real secret through the environment.
   ota:
     app-token-key: ${OTA_APP_TOKEN_KEY:shipperdog-local-ota-app-token-key}
+    # The device check's own knob (issue #169, S16-07, D9): the
+    # pollIntervalSeconds every served manifest carries — the server
+    # owns the check cadence so an operator can slow (or quicken) a
+    # fleet without shipping a new binary. One hour is the steady
+    # state; the properties' floor (one minute) refuses a hot loop at
+    # startup.
+    check:
+      poll-interval: ${OTA_CHECK_POLL_INTERVAL:PT1H}
   # The domain-event bus and notification service (issue #51, S12-01,
   # FR-023, PRD 51): the transactional-outbox relay's schedule and
   # ceilings, and the delivery retry policy every channel shares

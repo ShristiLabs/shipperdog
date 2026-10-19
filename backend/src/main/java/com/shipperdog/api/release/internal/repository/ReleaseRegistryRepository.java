@@ -3,6 +3,8 @@ package com.shipperdog.api.release.internal.repository;
 import com.shipperdog.api.release.internal.entity.ReleaseEntity;
 import com.shipperdog.api.release.internal.entity.ReleaseEntity.Status;
 import com.shipperdog.api.tenant.CrossTenantByDesign;
+import java.util.Collection;
+import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 import org.springframework.data.jpa.repository.JpaRepository;
@@ -75,4 +77,20 @@ public interface ReleaseRegistryRepository extends JpaRepository<ReleaseEntity, 
      */
     @Query("select r from ReleaseEntity r where r.id = :releaseId")
     Optional<ReleaseEntity> probeById(@Param("releaseId") UUID releaseId);
+
+    /**
+     * The application's LIVE releases (S16-07, issue #169): a DECLARED
+     * query over the statuses the rollout attachment's own vocabulary
+     * names distributing (ACTIVE or PROMOTED). Consumed ONLY through
+     * {@code ReleaseAccess.otaChannelReleaseOf} — the device-check
+     * surface's channel resolution, which filters the answer by the
+     * effective ring and owns the organization guard (the {@code
+     * distribution*Of} character: the caller binds no operator scope,
+     * so the seam-served repository cannot answer and must not be
+     * asked to).
+     */
+    @Query("select r from ReleaseEntity r where r.applicationId = :applicationId and r.status in :live "
+            + "order by r.releaseNumber desc, r.id desc")
+    List<ReleaseEntity> probeLiveByApplication(
+            @Param("applicationId") UUID applicationId, @Param("live") Collection<Status> live);
 }

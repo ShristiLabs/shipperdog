@@ -168,15 +168,16 @@ final class AnalyticsMetricSources {
             if (installs == 0) {
                 return Optional.empty();
             }
-            long succeeded = events.countByReleaseIdAndEventTypeAndResult(releaseId, Type.INSTALL, Result.SUCCEEDED);
+            long succeeded =
+                    events.countByReleaseIdAndEventTypeAndResult(releaseId, Type.INSTALL, Result.SUCCEEDED.name());
             return Optional.of((double) succeeded / installs);
         }
 
         private static Optional<Double> testerApprovalRate(AnalyticsEventRepository events, UUID releaseId) {
-            long approved =
-                    events.countByReleaseIdAndEventTypeAndResult(releaseId, Type.TESTER_VERDICT, Result.APPROVED);
-            long rejected =
-                    events.countByReleaseIdAndEventTypeAndResult(releaseId, Type.TESTER_VERDICT, Result.REJECTED);
+            long approved = events.countByReleaseIdAndEventTypeAndResult(
+                    releaseId, Type.TESTER_VERDICT, Result.APPROVED.name());
+            long rejected = events.countByReleaseIdAndEventTypeAndResult(
+                    releaseId, Type.TESTER_VERDICT, Result.REJECTED.name());
             long verdicts = approved + rejected;
             return verdicts == 0 ? Optional.empty() : Optional.of((double) approved / verdicts);
         }

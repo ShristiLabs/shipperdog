@@ -97,6 +97,18 @@ public class IdentitySecurityConfig {
                         // entire authority either way.
                         .requestMatchers(HttpMethod.GET, "/api/v1/downloads/*")
                         .permitAll()
+                        // The OTA device check (S16-07, issue #169, ADR-0010
+                        // D3/D4): anonymous at the chain exactly like the
+                        // download proxy — the Bearer sdc1. prefix is the
+                        // credential, and the otabundle module's filter
+                        // (registered above) resolves it against the hashed
+                        // registry with immediate revocation. The route's
+                        // method security carries the one-authority guard, so
+                        // a missing, invalid, or revoked token answers the
+                        // uniform 401 and an authenticated-but-wrong
+                        // credential the 403 — never a hint of what exists.
+                        .requestMatchers(HttpMethod.GET, "/api/v1/ota/check")
+                        .permitAll()
                         // Spring routes unhandled exceptions to /error via an ERROR
                         // dispatch that passes through this chain; without the permit a
                         // server fault would surface as a bare 401 instead of a 5xx.

@@ -461,8 +461,11 @@ and the batch history. Documented with its surface in
 
 The OTA update workstream's module (ADR-0010): bundle authoring and
 the `sdc1.` app-token registry. Registered here: the app-token
-surface (S16-04) and the rollout-control surface under
-`/api/v1/ota/rollouts` (S16-06, issue #168). The module's
+surface (S16-04), the rollout-control surface under
+`/api/v1/ota/rollouts` (S16-06, issue #168), and the device check
+`GET /api/v1/ota/check` (S16-07, issue #169 — the surface's own
+vocabulary is one 400; every other refusal is a 204 or the filter's
+uniform 401, never a coded problem). The module's
 bundle-authoring codes (S16-03, issue #165) are pending registration
 with the workstream's docs pass (S16-16, issue #178). Since S16-06
 the envelope's `detail` is the exception's authored message when one
@@ -473,7 +476,7 @@ static detail otherwise.
 | Code | HTTP | Detail |
 |---|---|---|
 | `TOKEN_NOT_FOUND` | 404 | Resource not found. (since S16-04, issue #166: the app-token registry's single answer for every failed revoke on `DELETE /api/v1/ota/app-tokens/{tokenId}/revoke` — a tokenId never issued to the named application or one that belongs to another application is the same concealed miss; revoking an already-revoked token replays the row and never answers this code) |
-| `INVALID_REQUEST` | 400 | The request is invalid. (since S16-06, issue #168, the rollout attach request's shape: `stages[i].basisPoints` a cumulative threshold of 1 to 10000, strictly ascending, the last exactly 10000 — the ladder only widens; `stages[i].note` 1 to 512 characters when present; an unknown `mode`; and a halt without its required reason — answered with the `errors` member naming every offending wire field) |
+| `INVALID_REQUEST` | 400 | The request is invalid. (since S16-06, issue #168, the rollout attach request's shape: `stages[i].basisPoints` a cumulative threshold of 1 to 10000, strictly ascending, the last exactly 10000 — the ladder only widens; `stages[i].note` 1 to 512 characters when present; an unknown `mode`; and a halt without its required reason — answered with the `errors` member naming every offending wire field. Since S16-07, issue #169, also the device check's query shape on `GET /api/v1/ota/check`: `deviceId`/`appVersion` required (at most 128/64 characters), `platform`/`channel` required normalized bounded strings (64), `bundleVersion` optional but at most 128 when present — every bound the neighboring surface's own, the bucketing's device id, V55's platform tag, the ring-code vocabulary; a malformed report is this field-addressed 400, never a 204, which would silently mis-bucket it) |
 | `ROLLOUT_NOT_FOUND` | 404 | Resource not found. (since S16-06, issue #168: the rollout surface's single answer for a release carrying no rollout plan on the get and every control route — never committed, or another application's release, is the same concealed miss) |
 | `ROLLOUT_CONFLICT` | 409 | The rollout plan already exists or changed concurrently; reload and retry. (the attach refusal — one plan per OTA release — and the optimistic `version` losing a control-act race) |
 | `ROLLOUT_ACTION_INVALID` | 409 | The action is not valid for the plan's standing. (advance, halt, pause, or resume against a standing that does not admit it, a complete plan's control refusals included) |

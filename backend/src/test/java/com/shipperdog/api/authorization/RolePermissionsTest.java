@@ -46,13 +46,16 @@ class RolePermissionsTest {
         List<String> codes =
                 Arrays.stream(Permission.values()).map(Permission::code).toList();
         assertThat(codes).doesNotHaveDuplicates();
-        // The four RBAC scopes plus the one capability scope: `analytics:`
-        // (issue #72, S15-01) is the telemetry token's ingest-only
-        // authority — cataloged so the annotation checklist resolves the
-        // ingest route's hasAuthority leg, but a capability scope by
-        // definition NEVER reaches a role mapping (asserted below).
+        // The four RBAC scopes plus the two capability scopes:
+        // `analytics:` (issue #72, S15-01) is the telemetry token's
+        // ingest-only authority and `ota:` (issue #169, S16-07) the OTA
+        // app token's device-check authority — both cataloged so the
+        // annotation checklist resolves their routes' hasAuthority legs,
+        // but a capability scope by definition NEVER reaches a role
+        // mapping (asserted below).
         assertThat(codes)
-                .allSatisfy(code -> assertThat(code).matches("^(platform|org|tenant|app|analytics):[a-z-]+:[a-z-]+$"));
+                .allSatisfy(
+                        code -> assertThat(code).matches("^(platform|org|tenant|app|analytics|ota):[a-z-]+:[a-z-]+$"));
         for (Permission permission : Permission.values()) {
             assertThat(Permission.fromCode(permission.code()))
                     .as("fromCode round-trips %s", permission.code())
@@ -67,12 +70,15 @@ class RolePermissionsTest {
         // Issue #72 (S15-01): the `analytics:` scope is a capability
         // scope, not an RBAC scope — its one authority rides exclusively
         // on the stateless HMAC telemetry token the download issuance
-        // mints. If any role ever mapped it, the narrow-capability
-        // guarantee would be gone, so this invariant fails the build.
+        // mints. Issue #169 (S16-07) adds the `ota:` scope beside it:
+        // the sdc1. app token's device-check authority. If any role ever
+        // mapped either, the narrow-capability guarantee would be gone,
+        // so this invariant fails the build.
         List<Permission> roleGranted = Stream.concat(
                         Stream.of(OrgRole.values()).flatMap(role -> RolePermissions.of(role).stream()),
                         Stream.of(TenantRole.values()).flatMap(role -> RolePermissions.of(role).stream()))
-                .filter(permission -> permission.scope().equals("analytics"))
+                .filter(permission -> permission.scope().equals("analytics")
+                        || permission.scope().equals("ota"))
                 .toList();
         assertThat(roleGranted)
                 .as("no role may hold a capability-scoped permission")

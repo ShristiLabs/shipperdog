@@ -211,7 +211,17 @@ public enum Permission {
     // permission: no RolePermissions mapping carries it and no user
     // authentication can hold it — the stateless HMAC token is its
     // only issuance path, which is what makes the capability narrow.
-    ANALYTICS_TELEMETRY_INGEST("analytics:telemetry:ingest"); // issue #72 (S15-01)
+    ANALYTICS_TELEMETRY_INGEST("analytics:telemetry:ingest"), // issue #72 (S15-01)
+    // Issue #169 (S16-07): the OTA app token's ONE authority — the
+    // device-check capability the otabundle module's authentication
+    // filter mints onto every sdc1. credential, honored by exactly one
+    // route (GET /api/v1/ota/check). The telemetry-ingest precedent:
+    // cataloged so the annotation checklist resolves the check route's
+    // hasAuthority leg, deliberately NOT a role permission — no
+    // RolePermissions mapping carries it and no user authentication
+    // can hold it, so the shipped app's identifier is the only key the
+    // device surface answers to.
+    OTA_APP_TOKEN_CHECK("ota:app-token:check"); // issue #169 (S16-07)
 
     private final String code;
 

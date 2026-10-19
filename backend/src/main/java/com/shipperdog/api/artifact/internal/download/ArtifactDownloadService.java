@@ -379,6 +379,87 @@ public class ArtifactDownloadService {
                 .build());
     }
 
+    /**
+     * The OTA bundle URL mint (S16-07, issue #169, ADR-0010 D5): the
+     * SAME issuance a tester download rides — the short-lived signed
+     * URL, the counter, the per-artifact download count, the
+     * {@code DOWNLOAD_ISSUED} audit — minus the tester legs (the
+     * layered engine's DOWNLOAD decision, the channel routing table,
+     * the tester bus event): the caller is the device check, whose own
+     * resolution chain (eligibility, rollout standing, deterministic
+     * bucketing) IS the authorization this mint records. The scope
+     * binding is the version's own ({@code issueAllowed}'s executor
+     * pattern) under the device surface's acting record — the {@code
+     * sdc1.} token's registry-row id — so the seam serves the artifact
+     * row exactly as it serves every issuance write.
+     */
+    @Transactional
+    public OtaBundleUrl issueOtaBundleUrl(UUID scopeActorId, UUID artifactId, UUID versionId) {
+        VersionOwnership ownership =
+                versions.ownershipOf(versionId).orElseThrow(ArtifactDownloadService::versionMissing);
+        return inScope(ownership, scopeActorId, () -> {
+            ArtifactEntity artifact =
+                    artifacts.findScoped(artifactId).orElseThrow(ArtifactDownloadService::artifactMissing);
+            if (!artifact.getVersionId().equals(versionId)) {
+                throw artifactMissing();
+            }
+            Duration ttl = downloadProperties.urlTtl();
+            Instant expiresAt = Instant.now(clock).plus(ttl);
+            String url = mintUrl(artifact, expiresAt);
+            artifact.recordDownloadIssued();
+            artifacts.saveScoped(artifact);
+            trace.application(ownership.applicationId());
+            trace.version(versionId);
+            trace.artifact(artifactId);
+            meters.counter(
+                            MetricNames.DOWNLOAD_COUNT,
+                            "platform",
+                            artifact.getPlatform().name())
+                    .increment();
+            Map<String, String> detail = new LinkedHashMap<>();
+            detail.put("platform", artifact.getPlatform().name());
+            detail.put("channel", "ota");
+            detail.put("fileName", artifact.getFileName());
+            detail.put("size", Long.toString(artifact.getSize()));
+            detail.put("urlTtlSeconds", Long.toString(ttl.toSeconds()));
+            detail.put("mechanism", storageProperties.emulatorMode() ? "backend-proxy" : "gcs-v4");
+            audit.publish(AuditEvent.builder(AuditEventType.DOWNLOAD_ISSUED)
+                    .occurredAt(Instant.now(clock))
+                    .userId(scopeActorId)
+                    .orgId(ownership.organizationId())
+                    .tenantId(ownership.tenantId())
+                    .applicationId(ownership.applicationId())
+                    .versionId(ownership.versionId())
+                    .artifactId(artifact.getId())
+                    .success(true)
+                    .detail(detail)
+                    .build());
+            return new OtaBundleUrl(url, expiresAt);
+        });
+    }
+
+    /** One minted OTA bundle URL: the opaque address and the instant it stops answering. */
+    public record OtaBundleUrl(String url, Instant expiresAt) {}
+
+    /**
+     * The one URL mechanism both issuance paths share (ADR-0003's
+     * download-tier amendment): the emulator deployment's HMAC proxy
+     * token, or the store's V4 signature in production — one contract,
+     * two mechanisms, the seam the ADR documents.
+     */
+    private String mintUrl(ArtifactEntity artifact, Instant expiresAt) {
+        return storageProperties.emulatorMode()
+                ? "/api/v1/downloads/"
+                        + tokens.mint(new DownloadTokenCodec.Grant(
+                                artifact.getId(),
+                                artifact.getStorageKey(),
+                                artifact.getFileName(),
+                                artifact.getSize(),
+                                expiresAt))
+                : store.signV4DownloadUrl(
+                        artifact.getStorageKey(), artifact.getFileName(), CONTENT_TYPE, downloadProperties.urlTtl());
+    }
+
     /** The conceal grain follows the route's addressing, never the failing layer (the artifact read's rule). */
     private static ConcealedResourceAccessDeniedException concealed(AuthorizationDecision decision) {
         DenialReason reason = decision.reason();

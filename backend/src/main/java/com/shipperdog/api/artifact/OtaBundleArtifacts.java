@@ -65,6 +65,33 @@ public interface OtaBundleArtifacts {
      */
     BundleRegistration finalizeBundleSession(UUID actorId, UUID artifactId, UUID versionId);
 
+    /**
+     * Mints the bundle binary's download URL (S16-07, issue #169,
+     * ADR-0010 D5): the SAME issuance machinery a tester download
+     * rides — the short-lived signed URL (the emulator token the
+     * {@code DownloadProxyController} serves, or the store's V4
+     * signature in production), the download counter, the per-artifact
+     * download count, and the {@code DOWNLOAD_ISSUED} audit line. The
+     * authorization is the CALLER's: the device check's own resolution
+     * chain (eligibility, rollout standing, bucketing) is the engine
+     * ALLOW here, so this mint records rather than decides — the
+     * tester-side engine decision, channel routing, and tester bus
+     * event deliberately do not run.
+     *
+     * @param scopeActorId the acting record of the issuance (the
+     *                     {@code sdc1.} token's registry-row id —
+     *                     the identity the device surface
+     *                     authenticated; names the audit line)
+     * @param artifactId   the bundle's binary (the bundle id IS the
+     *                     artifact id, D5)
+     * @param versionId    the bundle's dedicated versions row (D2)
+     * @return the URL (opaque, server-owned TTL) and its expiry
+     */
+    BundleDownloadUrl issueBundleDownloadUrl(UUID scopeActorId, UUID artifactId, UUID versionId);
+
+    /** One minted bundle URL: the opaque address and the instant it stops answering. */
+    record BundleDownloadUrl(String url, Instant expiresAt) {}
+
     /** The granted session: everything the client streams bytes with. */
     record SessionGrant(UUID sessionId, UUID artifactId, UUID versionId, String uploadUrl, Instant expiresAt) {}
 
