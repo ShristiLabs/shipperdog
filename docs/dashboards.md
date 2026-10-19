@@ -20,8 +20,10 @@ per-row service loops, no N+1 list scans (AC5). No schema of their own
 |---|---|---|---|
 | GET | `/api/v1/organizations/{id}/dashboard` | `org:dashboard:read` | `200` the org view (below); `404 ORGANIZATION_NOT_FOUND` concealed for callers without the permission or an unknown organization |
 | GET | `/api/v1/tenants/{id}/dashboard` | `tenant:dashboard:read` | `200` the tenant view; `404 TENANT_NOT_FOUND` concealed (foreign or unknown tenant) |
+| GET | `/api/v1/tenants/{id}/dashboard/ota/bundles/{bundleId}/funnel` | `tenant:dashboard:read` | `200` the OTA funnel view (below); `404 BUNDLE_NOT_FOUND` concealed (unknown, foreign, or unvisible bundle), `404 TENANT_NOT_FOUND`, `400 INVALID_REQUEST` for an unknown `ring` |
+| GET | `/api/v1/tenants/{id}/dashboard/ota/bundles/{bundleId}/health` | `tenant:dashboard:read` | `200` the crash-rate comparison (below); the funnel route's own concealments |
 
-Both routes are members of `IsolationEndpointRegistry` — the isolation
+All four routes are members of `IsolationEndpointRegistry` — the isolation
 suite's cross-tenant matrix proves the concealment parity, and the
 tenant read is scoped by the bound tenant id in every statement (the
 route's own permission target). The response carries `generatedAt`;
@@ -138,6 +140,58 @@ Each list is bounded at 25 items (newest release first).
 - **pendingReleases** — the non-terminal releases targeting the
   tenant, each with its tenant-facing ring label: `production` when
   this tenant's target sits at the final ring, else `testing`.
+
+## The OTA dashboard endpoints (S16-10, issue #172)
+
+The console's OtaDashboardPage reads the S16-09 bundle reads (docs/
+[analytics.md](analytics.md), "The OTA bundle reads") over HTTP: the
+funnel and the crash-rate comparison, both under the tenant
+dashboard's own authority (`tenant:dashboard:read` — TENANT_ADMIN
+with the owning organization's overlay; the DEVELOPER persona is
+denied, concealed as the 404 miss like every resource-scoped
+refusal). The bundle must belong to an application the addressed
+tenant can see — the same catalog union the tenant view's
+`applications` count serves — and every miss (unknown, foreign, or
+unvisible bundle) conceals as the one `404 BUNDLE_NOT_FOUND`; an
+unknown tenant is the tenant view's own `TENANT_NOT_FOUND`. The
+bundle listing the page's picker needs is no new surface: the
+console rides the authoring registry's `GET /api/v1/ota/bundles`.
+
+### The funnel
+
+`GET /api/v1/tenants/{id}/dashboard/ota/bundles/{bundleId}/funnel`
+serves the S16-09 `otaFunnel` read whole — one document, the three
+panels the page renders:
+
+```json
+{
+  "bundleId": "...", "bundleVersion": "1.4.2",
+  "applicationId": "...", "releaseId": "...", "releaseRef": "R-1028",
+  "stages": { "checks": 5, "seen": 5, "downloads": 4,
+              "applied": 3, "failed": 1, "rolledBack": 1 },
+  "failures": [ { "reason": "checksum_mismatch", "count": 1 } ],
+  "adoption": [ { "day": "2026-10-18", "seenDevices": 4,
+                  "appliedDevices": 2, "adoptionRate": 0.5 } ]
+}
+```
+
+The optional `?ring=` filter narrows every leg — stages, failure
+breakdown, and curve alike — to the reports that occurred while the
+bundle's release occupied the named ring; an unknown ring code is
+refused (`400 INVALID_REQUEST` naming `ring`), never a silently
+empty funnel. The computation doctrine (adoption's identity rule,
+the monotone cumulative curve, attribution-is-history for a detached
+bundle) is the S16-09 service's own, pinned there.
+
+### The crash-rate comparison
+
+`GET /api/v1/tenants/{id}/dashboard/ota/bundles/{bundleId}/health`
+serves the S16-09 `otaBundleHealth` read: the addressed (new)
+bundle beside the application's CURRENT bundle, each side carrying
+`sessions`, `crashSessions`, and `crashFreeRate`, with
+`crashFreeRateDelta` (new minus current — positive is better). A
+side without sessions carries the explicit null (`NO_DATA`), never
+a zero, and the delta serves only when both sides are evidenced.
 
 ## Permissions
 

@@ -5063,6 +5063,61 @@ paths:
             '*/*':
               schema:
                 $ref: "#/components/schemas/TenantDashboardView"
+  /api/v1/tenants/{tenantId}/dashboard/ota/bundles/{bundleId}/health:
+    get:
+      tags:
+      - dashboard-controller
+      operationId: otaBundleHealth
+      parameters:
+      - name: tenantId
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - name: bundleId
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      responses:
+        "200":
+          description: OK
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/OtaBundleHealthView"
+  /api/v1/tenants/{tenantId}/dashboard/ota/bundles/{bundleId}/funnel:
+    get:
+      tags:
+      - dashboard-controller
+      operationId: otaFunnel
+      parameters:
+      - name: tenantId
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - name: bundleId
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - name: ring
+        in: query
+        required: false
+        schema:
+          type: string
+      responses:
+        "200":
+          description: OK
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/OtaFunnelView"
   /api/v1/tenants/{id}/testers/{testerId}:
     get:
       tags:
@@ -10357,6 +10412,107 @@ components:
             $ref: "#/components/schemas/MetricPointView"
         next_cursor:
           type: string
+    OtaFunnelView:
+      type: object
+      properties:
+        bundleId:
+          type: string
+          format: uuid
+        bundleVersion:
+          type: string
+        applicationId:
+          type: string
+          format: uuid
+        releaseId:
+          type: string
+          format: uuid
+        releaseRef:
+          type: string
+        stages:
+          $ref: "#/components/schemas/OtaStagesView"
+        failures:
+          type: array
+          items:
+            $ref: "#/components/schemas/OtaFailureView"
+        adoption:
+          type: array
+          items:
+            $ref: "#/components/schemas/OtaAdoptionPointView"
+    OtaStagesView:
+      type: object
+      properties:
+        checks:
+          type: integer
+          format: int64
+        seen:
+          type: integer
+          format: int64
+        downloads:
+          type: integer
+          format: int64
+        applied:
+          type: integer
+          format: int64
+        failed:
+          type: integer
+          format: int64
+        rolledBack:
+          type: integer
+          format: int64
+    OtaFailureView:
+      type: object
+      properties:
+        reason:
+          type: string
+        count:
+          type: integer
+          format: int64
+    OtaAdoptionPointView:
+      type: object
+      properties:
+        day:
+          type: string
+        seenDevices:
+          type: integer
+          format: int64
+        appliedDevices:
+          type: integer
+          format: int64
+        adoptionRate:
+          type: number
+          format: double
+    OtaBundleHealthView:
+      type: object
+      properties:
+        newBundle:
+          $ref: "#/components/schemas/OtaBundleSideView"
+        currentBundle:
+          $ref: "#/components/schemas/OtaBundleSideView"
+        crashFreeRateDelta:
+          type: number
+          format: double
+    OtaBundleSideView:
+      type: object
+      properties:
+        bundleId:
+          type: string
+          format: uuid
+        bundleVersion:
+          type: string
+        releaseId:
+          type: string
+          format: uuid
+        releaseRef:
+          type: string
+        sessions:
+          type: integer
+          format: int64
+        crashSessions:
+          type: integer
+          format: int64
+        crashFreeRate:
+          type: number
+          format: double
     PendingReleaseView:
       type: object
       properties:
