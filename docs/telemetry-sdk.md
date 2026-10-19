@@ -137,6 +137,13 @@ configuration carries the registered device's id when operations
 pair one (the ingest validates it as the tenant's own ACTIVE device
 either way).
 
+A second minter exists since the OTA work: the S16-07 check manifest
+carries an `ingestToken` (`sdt1.`, device-unbound by design) for
+fleet devices, and the S16-08 OTA lifecycle types ride the same
+ingest under it — the SDK's OTA reporting lands with the updater
+work (S16-12/S16-13); the contract is the OTA family extension of
+[analytics](analytics.md).
+
 ## Privacy
 
 Structural, not promissory: the payload vocabulary is closed

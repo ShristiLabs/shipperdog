@@ -11,6 +11,8 @@ import com.shipperdog.api.audit.AuditEventPublisher;
 import com.shipperdog.api.audit.AuditEventType;
 import com.shipperdog.api.device.DeviceAccess;
 import com.shipperdog.api.device.DeviceAccess.DeviceFacts;
+import com.shipperdog.api.otabundle.OtaBundleAccess;
+import com.shipperdog.api.otabundle.OtaBundleAccess.BundleFact;
 import com.shipperdog.api.release.ReleaseAccess;
 import com.shipperdog.api.release.ReleaseAccess.ReleaseFacts;
 import com.shipperdog.api.tester.TesterAccess;
@@ -28,6 +30,7 @@ import java.util.UUID;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import tools.jackson.databind.ObjectMapper;
 
 /**
  * The events API's ingest (issue #49, S11-04, FR-029): the frozen
@@ -63,6 +66,34 @@ import org.springframework.transaction.annotation.Transactional;
  * {@code occurredAt} may lag {@code receivedAt} arbitrarily — the
  * rollup job's lookback heals late reports inside it, and the
  * backfill trigger repairs history beyond.
+ *
+ * <p><strong>The S16-08 OTA family extension (issue #170, ADR-0010
+ * workstream 5, D9):</strong> the five device lifecycle types —
+ * {@code OTA_SEEN}, {@code OTA_DOWNLOAD}, {@code OTA_APPLIED},
+ * {@code OTA_FAILED}, {@code OTA_ROLLED_BACK} — join the accepted
+ * vocabulary, each attributing itself to the bundle its manifest
+ * served ({@code ota_bundle_id}, proven against the release's own
+ * application through the otabundle seam) and optionally carrying the
+ * {@code ota_payload} object, whose {@code device_id} member is the
+ * fleet device identity's carrier (a fleet device is not the device
+ * registry's tester hardware — the S16-07 check-time {@code sdt1.}
+ * grant is deliberately device-unbound, so identity rides the
+ * payload, not the contract's {@code device_id} member).
+ * {@code OTA_CHECK} stays server-authoritative (D9: the check surface
+ * inserts the one row whose release is known) — the ingest refuses it
+ * exactly like an unknown word, so no client can forge the platform's
+ * own counting. The family's result vocabulary is validated per type
+ * in code beside V57's widened CHECKs: closed words where the plan
+ * names them ({@code SUCCEEDED}|{@code FAILED} on the download and
+ * apply reports), the documented open row-value set on
+ * {@code OTA_FAILED} (checksum_mismatch, apply_error,
+ * signature_invalid — the V42 provider doctrine), and no result at
+ * all on the two contextless types. The OTA rows share the funnel
+ * grain the server-side check row lands in (the bundle's version
+ * dimension — {@code OtaCheckEventRecorder}'s own choice) so
+ * S16-09/10 compose one funnel from both writers; the V54 event-id
+ * dedup and the whole-batch discipline above are byte-identical for
+ * the family.
  */
 @Service
 public class AnalyticsIngestService {
@@ -80,15 +111,46 @@ public class AnalyticsIngestService {
      */
     private static final long CONTENTION_RETRY_AFTER_SECONDS = 5;
 
+    /**
+     * The {@code OTA_FAILED} reason vocabulary (the documented open
+     * row-value set of V57/the plan — the V42 provider doctrine): the
+     * ingest admits exactly these words, stored as given.
+     */
+    private static final Set<String> OTA_FAILURE_REASONS =
+            Set.of("checksum_mismatch", "apply_error", "signature_invalid");
+
+    /** The OTA payload's member ceiling: a detail object, never a document. */
+    private static final int MAX_OTA_PAYLOAD_MEMBERS = 32;
+
+    /**
+     * The OTA payload's serialized size ceiling: the JSON serialization
+     * of the detail object (characters), nested content counted at its
+     * full serialized weight. The exact per-event byte bound on the
+     * fleet write path — measured with the context's own mapper, the
+     * same compact JSON the jsonb column stores.
+     */
+    private static final int MAX_OTA_PAYLOAD_FLAT_SIZE = 4096;
+
+    /**
+     * The payload's {@code device_id} member bound: the check surface's
+     * own raw identifier vocabulary (a non-blank string of at most 128
+     * characters, S16-07).
+     */
+    private static final int MAX_OTA_PAYLOAD_DEVICE_ID = 128;
+
     private final ReleaseAccess releases;
 
     private final DeviceAccess devices;
 
     private final TesterAccess testers;
 
+    private final OtaBundleAccess bundles;
+
     private final AnalyticsEventRepository events;
 
     private final AuditEventPublisher audit;
+
+    private final ObjectMapper mapper;
 
     private final Clock clock;
 
@@ -96,14 +158,18 @@ public class AnalyticsIngestService {
             ReleaseAccess releases,
             DeviceAccess devices,
             TesterAccess testers,
+            OtaBundleAccess bundles,
             AnalyticsEventRepository events,
             AuditEventPublisher audit,
+            ObjectMapper mapper,
             Clock clock) {
         this.releases = releases;
         this.devices = devices;
         this.testers = testers;
+        this.bundles = bundles;
         this.events = events;
         this.audit = audit;
+        this.mapper = mapper;
         this.clock = clock;
     }
 
@@ -174,11 +240,12 @@ public class AnalyticsIngestService {
             } else if (!facts.releaseId().equals(command.releaseId())) {
                 errors.put("release_id", "one release per batch");
             }
-            Result result = validateResult(type, command.result(), errors);
+            String result = validateResult(type, command.result(), errors);
             int[] sessionShape = validateSessions(type, command, errors);
             Instant occurredAt = validateOccurredAt(command.occurredAt(), futureBound, errors);
             UUID deviceId = validateDevice(tenantId, telemetry, tokenTesterId, command, errors);
             UUID eventId = validateEventId(command.eventId(), errors);
+            BundleFact bundle = validateOtaAttribution(type, command, facts, errors);
             if (!errors.isEmpty()) {
                 throw new AnalyticsException(
                         AnalyticsException.Code.INVALID_REQUEST, "an event of the batch is invalid", errors);
@@ -186,22 +253,29 @@ public class AnalyticsIngestService {
             UUID testerId = deviceId == null
                     ? tokenTesterId
                     : devices.factsOf(deviceId).map(DeviceFacts::testerId).orElse(tokenTesterId);
+            // The OTA family's version dimension is the BUNDLE's own —
+            // the server-side check row's choice (S16-07), kept here so
+            // both writers of one funnel land identical dimensions; the
+            // legacy family keeps the release's version as always.
+            UUID versionId = bundle != null ? bundle.versionId() : facts.versionId();
             rows.add(new AnalyticsEventEntity(
                     facts.organizationId(),
                     tenantId,
                     facts.applicationId(),
-                    facts.versionId(),
+                    versionId,
                     facts.releaseId(),
                     deviceId,
                     testerId,
                     type,
-                    result == null ? null : result.name(),
+                    result,
                     sessionShape[0] < 0 ? null : sessionShape[0],
                     sessionShape[1] < 0 ? null : sessionShape[1],
                     sessionShape[2] < 0 ? null : sessionShape[2],
                     occurredAt,
                     receivedAt,
-                    eventId));
+                    eventId,
+                    bundle == null ? null : bundle.id(),
+                    command.otaPayload()));
         }
 
         int deduplicated = land(rows, facts);
@@ -317,15 +391,14 @@ public class AnalyticsIngestService {
     }
 
     /**
-     * The ingest's type acceptance: the four pre-existing values of the
-     * frozen SDK contract. The entity's Type enum also carries the six
-     * OTA values of the DB vocabulary (V57) — the server-side
-     * OTA_CHECK writer (S16-07) and the S16-08 lifecycle ingest to come
-     * — but THIS contract does not accept them yet: a client-posted OTA
-     * row would need the bundle attribution ({@code
-     * ck_analytics_events_ota_shape}) the device payload does not
-     * carry, so the honest answer is the same field-addressed refusal
-     * every unknown type gets.
+     * The ingest's type acceptance: the legacy family's four values
+     * plus the five OTA device lifecycle values (S16-08) — every value
+     * of the entity's Type enum except {@code OTA_CHECK}, which stays
+     * server-authoritative (D9: the S16-07 recorder is its one writer;
+     * a device-posted check row would forge the platform's own
+     * counting). The refusal is the same field-addressed answer every
+     * unknown word gets, byte-identical — the wire teaches nothing
+     * about the server's vocabulary.
      */
     private static Type validateType(String token, Map<String, String> errors) {
         if (token == null || token.isBlank()) {
@@ -339,41 +412,171 @@ public class AnalyticsIngestService {
             errors.put("type", "unknown type " + token);
             return null;
         }
-        switch (type) {
-            case INSTALL, SESSION, UNINSTALL, TESTER_VERDICT -> {
-                return type;
-            }
-            default -> {
-                errors.put("type", "unknown type " + token);
-                return null;
-            }
+        if (type == Type.OTA_CHECK) {
+            errors.put("type", "unknown type " + token);
+            return null;
         }
+        return type;
     }
 
-    private static Result validateResult(Type type, String token, Map<String, String> errors) {
-        boolean needsResult = type == Type.INSTALL || type == Type.TESTER_VERDICT;
+    /**
+     * The result word, validated per type in code beside V57's widened
+     * CHECKs: the legacy family exactly as before (the closed enum
+     * words, stored as the enum's name), {@code OTA_DOWNLOAD} and
+     * {@code OTA_APPLIED} closed to SUCCEEDED|FAILED (uppercased onto
+     * the closed words — the INSTALL precedent's own pair),
+     * {@code OTA_FAILED} closed to the documented open row-value set
+     * (stored as given, the lowercase provider vocabulary), and no
+     * result at all on the remaining types — an OTA_SEEN or
+     * OTA_ROLLED_BACK carrying one is the field-addressed refusal, not
+     * a silent drop.
+     */
+    private static String validateResult(Type type, String token, Map<String, String> errors) {
+        boolean closedFamily = type == Type.INSTALL || type == Type.TESTER_VERDICT;
+        boolean outcomeFamily = type == Type.OTA_DOWNLOAD || type == Type.OTA_APPLIED;
+        boolean failureFamily = type == Type.OTA_FAILED;
+        boolean needsResult = closedFamily || outcomeFamily || failureFamily;
         if (token == null || token.isBlank()) {
             if (needsResult) {
                 errors.put("result", "result is required for " + type);
             }
             return null;
         }
-        Result result;
-        try {
-            result = Result.valueOf(token.trim().toUpperCase(java.util.Locale.ROOT));
-        } catch (IllegalArgumentException e) {
-            errors.put("result", "unknown result " + token);
+        String trimmed = token.trim();
+        if (closedFamily) {
+            Result result;
+            try {
+                result = Result.valueOf(trimmed.toUpperCase(java.util.Locale.ROOT));
+            } catch (IllegalArgumentException e) {
+                errors.put("result", "unknown result " + token);
+                return null;
+            }
+            boolean allowed = switch (type) {
+                case INSTALL -> result == Result.SUCCEEDED || result == Result.FAILED;
+                case TESTER_VERDICT -> result == Result.APPROVED || result == Result.REJECTED;
+                default -> false;
+            };
+            if (!allowed) {
+                errors.put("result", result + " is not a " + type + " result");
+            }
+            return result.name();
+        }
+        if (outcomeFamily) {
+            String word = trimmed.toUpperCase(java.util.Locale.ROOT);
+            if (!word.equals(Result.SUCCEEDED.name()) && !word.equals(Result.FAILED.name())) {
+                errors.put("result", trimmed + " is not a " + type + " result");
+                return null;
+            }
+            return word;
+        }
+        if (failureFamily) {
+            if (!OTA_FAILURE_REASONS.contains(trimmed)) {
+                errors.put("result", trimmed + " is not a " + type + " result");
+                return null;
+            }
+            return trimmed;
+        }
+        // SESSION, UNINSTALL, OTA_SEEN, OTA_ROLLED_BACK: resultless by
+        // shape — a carried word is refused, never silently dropped.
+        errors.put("result", trimmed + " is not a " + type + " result");
+        return null;
+    }
+
+    /**
+     * The OTA attribution (S16-08, V57's {@code
+     * ck_analytics_events_ota_shape} mirrored in code): a device
+     * lifecycle event MUST name the bundle its manifest served, and
+     * the name is proven — the bundle resolves (registry probe,
+     * whatever its status: attribution is history, not re-resolution)
+     * and belongs to the release's own application; an unknown or
+     * foreign bundle is one concealed field-addressed answer. The
+     * legacy family carries NO OTA members at all — a bundle id or
+     * payload on a legacy event is refused so the row it would land
+     * can never violate the ota_shape disjunction.
+     */
+    private BundleFact validateOtaAttribution(
+            Type type, EventCommand command, ReleaseFacts facts, Map<String, String> errors) {
+        if (type == null || !isOtaFamily(type)) {
+            if (command.otaBundleId() != null) {
+                errors.put("ota_bundle_id", "ota_bundle_id belongs to the OTA event types only");
+            }
+            if (command.otaPayload() != null) {
+                errors.put("ota_payload", "ota_payload belongs to the OTA event types only");
+            }
             return null;
         }
-        boolean allowed = switch (type) {
-            case INSTALL -> result == Result.SUCCEEDED || result == Result.FAILED;
-            case TESTER_VERDICT -> result == Result.APPROVED || result == Result.REJECTED;
+        UUID bundleId = null;
+        if (command.otaBundleId() == null || command.otaBundleId().isBlank()) {
+            errors.put("ota_bundle_id", "ota_bundle_id is required for " + type);
+        } else {
+            try {
+                bundleId = UUID.fromString(command.otaBundleId().trim());
+            } catch (IllegalArgumentException e) {
+                errors.put("ota_bundle_id", "ota_bundle_id must be a UUID");
+            }
+        }
+        validateOtaPayload(command.otaPayload(), errors);
+        if (bundleId == null || facts == null) {
+            return null;
+        }
+        BundleFact bundle = bundles.bundleOf(bundleId).orElse(null);
+        if (bundle == null || !bundle.applicationId().equals(facts.applicationId())) {
+            // The concealed miss: an unknown and a foreign bundle are
+            // one answer — no oracle distinguishing them.
+            errors.put("ota_bundle_id", "the bundle did not resolve");
+            return null;
+        }
+        return bundle;
+    }
+
+    /**
+     * The OTA payload's own bounds: optional (V57 admits NULL), but
+     * when present an object of at most {@value #MAX_OTA_PAYLOAD_MEMBERS}
+     * members whose JSON serialization — nested content at its full
+     * serialized weight — stays inside {@value #MAX_OTA_PAYLOAD_FLAT_SIZE}
+     * characters, with the {@code device_id} member — the fleet device
+     * identity's carrier — a non-blank string of at most
+     * {@value #MAX_OTA_PAYLOAD_DEVICE_ID} characters when present (the
+     * check surface's own raw identifier vocabulary).
+     */
+    private void validateOtaPayload(Map<String, Object> payload, Map<String, String> errors) {
+        if (payload == null) {
+            return;
+        }
+        if (payload.size() > MAX_OTA_PAYLOAD_MEMBERS) {
+            errors.put("ota_payload", "ota_payload carries at most " + MAX_OTA_PAYLOAD_MEMBERS + " members");
+            return;
+        }
+        String serialized;
+        try {
+            serialized = mapper.writeValueAsString(payload);
+        } catch (tools.jackson.core.JacksonException e) {
+            // Unreachable for a deserialized Map in practice — the
+            // defensive refusal keeps the answer a field-addressed
+            // problem, never a 500.
+            errors.put("ota_payload", "ota_payload must be a JSON object");
+            return;
+        }
+        if (serialized.length() > MAX_OTA_PAYLOAD_FLAT_SIZE) {
+            errors.put("ota_payload", "ota_payload exceeds " + MAX_OTA_PAYLOAD_FLAT_SIZE + " characters");
+            return;
+        }
+        Object device = payload.get("device_id");
+        boolean deviceValid = device == null
+                || (device instanceof String id && !id.isBlank() && id.trim().length() <= MAX_OTA_PAYLOAD_DEVICE_ID);
+        if (!deviceValid) {
+            errors.put(
+                    "ota_payload",
+                    "device_id is a non-blank string of at most " + MAX_OTA_PAYLOAD_DEVICE_ID + " characters");
+        }
+    }
+
+    /** The five device lifecycle types the ingest accepts (OTA_CHECK excluded — server-authoritative). */
+    private static boolean isOtaFamily(Type type) {
+        return switch (type) {
+            case OTA_SEEN, OTA_DOWNLOAD, OTA_APPLIED, OTA_FAILED, OTA_ROLLED_BACK -> true;
             default -> false;
         };
-        if (!allowed) {
-            errors.put("result", result + " is not a " + type + " result");
-        }
-        return result;
     }
 
     /** The SESSION shape: positive session count, non-negative crash/ANR counts, their sum inside the total. */
@@ -470,7 +673,13 @@ public class AnalyticsIngestService {
         }
     }
 
-    /** One event of the frozen contract, as the API receives it. */
+    /**
+     * One event of the frozen contract, as the API receives it. The
+     * OTA members ({@code otaBundleId}, {@code otaPayload}) are the
+     * S16-08 additive pair — the event_id precedent's own doctrine:
+     * optional members the legacy family never carries, required-ish
+     * (the bundle id) on the OTA family, validated whole-batch.
+     */
     public record EventCommand(
             String type,
             String result,
@@ -480,7 +689,9 @@ public class AnalyticsIngestService {
             Instant occurredAt,
             Integer sessions,
             Integer crashSessions,
-            Integer anrSessions) {}
+            Integer anrSessions,
+            String otaBundleId,
+            Map<String, Object> otaPayload) {}
 
     /**
      * The batch's receipt: how many events landed, against which

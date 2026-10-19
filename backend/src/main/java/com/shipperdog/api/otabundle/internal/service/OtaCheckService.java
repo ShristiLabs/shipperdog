@@ -224,6 +224,7 @@ public class OtaCheckService {
                 Instant.now(clock)));
         count(Outcome.UPDATE_AVAILABLE);
         return new Manifest(
+                bundle.getId(),
                 bundle.getBundleVersion(),
                 download.url(),
                 bundle.getSha256(),
@@ -291,13 +292,17 @@ public class OtaCheckService {
             String deviceId, String platform, String appVersion, String bundleVersion, String channel) {}
 
     /**
-     * The OTA manifest (issue #169's response contract): the bundle's
-     * version label and binary facts (checksum, signature + key of
-     * D8, size), the minted download URL (D5) and ingest grant (D4),
-     * the effective {@code forced}/{@code minAppVersion} (D7 overrides
-     * applied), and the server-owned poll cadence (D9).
+     * The OTA manifest (issue #169's response contract): the served
+     * bundle's id (S16-08's additive member — the lifecycle reports'
+     * {@code ota_bundle_id} attribution key, the one identifier the
+     * device cannot derive for itself), the version label and binary
+     * facts (checksum, signature + key of D8, size), the minted
+     * download URL (D5) and ingest grant (D4), the effective {@code
+     * forced}/{@code minAppVersion} (D7 overrides applied), and the
+     * server-owned poll cadence (D9).
      */
     public record Manifest(
+            UUID bundleId,
             String bundleVersion,
             String url,
             String sha256,

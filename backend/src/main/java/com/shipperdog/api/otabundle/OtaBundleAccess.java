@@ -39,6 +39,21 @@ public interface OtaBundleAccess {
     Optional<BundleFact> bundleOfArtifact(UUID applicationId, UUID artifactId);
 
     /**
+     * The bundle behind an id, whatever its status (the telemetry
+     * ingest's attribution validation, S16-08: a device lifecycle
+     * event names the bundle its manifest served, and the ingest
+     * proves the name — the bundle exists and belongs to the release's
+     * application — before the row lands). Registry-probed, not
+     * seam-served: the reporter's tenant is by construction not the
+     * bundle's owning scope (the {@code telemetryFactsOf} precedent —
+     * the analytics entity's own cross-tenant-by-design doctrine).
+     * Whatever the status: the attribution is HISTORY (a device may
+     * report a bundle the release has since rolled past — the row is
+     * an append-only fact, never a re-resolution).
+     */
+    Optional<BundleFact> bundleOf(UUID bundleId);
+
+    /**
      * The RELEASED bundle of a release (the crash-free gate's
      * bundle-scoped resolution and the rollback crossing's revert
      * target). Empty when the release carries no live bundle link.
