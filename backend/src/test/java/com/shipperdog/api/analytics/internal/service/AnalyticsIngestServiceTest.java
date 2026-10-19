@@ -471,6 +471,8 @@ class AnalyticsIngestServiceTest {
                         null,
                         "1.4.2",
                         "ios",
+                        "a".repeat(64),
+                        2048L,
                         false,
                         null,
                         "RELEASED")));

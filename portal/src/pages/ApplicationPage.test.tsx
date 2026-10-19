@@ -59,6 +59,28 @@ const V711_ARCHIVED = entry("40000000-0000-4000-8000-000000000011", "7.11.0", "A
 ]);
 const V710_REVOKED = entry("40000000-0000-4000-8000-000000000010", "7.10.0", "REVOKED", [], "2026-11-01T00:00:00Z");
 
+/** A bundle-backed entry (S16-16): its own versions row plus the OTA manifest. */
+const V900_OTA = {
+  ...entry("40000000-0000-4000-8000-000000000009", "9.0.0", "DRAFT", [
+    {
+      platform: "ANDROID",
+      artifactId: "50000000-0000-4000-8000-000000000009",
+      buildNumber: null,
+      sizeBytes: 4_096,
+      uploadedAt: "2026-10-15T10:00:00Z",
+    },
+  ]),
+  ota: {
+    bundleId: "50000000-0000-4000-8000-000000000009",
+    bundleVersion: "9.0.0",
+    platform: "android",
+    sha256: "b".repeat(64),
+    sizeBytes: 4096,
+    status: "RELEASED",
+    releaseId: "60000000-0000-4000-8000-000000000001",
+  },
+};
+
 beforeEach(() => {
   tokenStore.clear();
 });
@@ -96,6 +118,29 @@ describe("ApplicationPage version history", () => {
     expect(revoked).toHaveTextContent("No builds available for this version yet.");
 
     expect(screen.queryByTestId("history-load-more")).not.toBeInTheDocument();
+  });
+
+  it("renders the OTA manifest on a bundle-backed entry and nothing OTA on store entries (S16-16)", async () => {
+    installFetchRouter([]);
+    seedHistory([V900_OTA, V712]);
+    seedSession();
+    renderPortal(<App />, { route: APP_ROUTE });
+
+    await waitFor(() => expect(screen.getByTestId("history-list")).toBeInTheDocument());
+
+    expect(screen.getByTestId(`history-entry-${V900_OTA.versionId}`)).toBeInTheDocument();
+    expect(screen.getByTestId("history-entry-ota-chip")).toHaveTextContent("OTA update");
+    const manifest = screen.getByTestId("history-entry-ota-manifest");
+    expect(manifest).toHaveTextContent("OTA bundle 9.0.0");
+    expect(manifest).toHaveTextContent("android");
+    expect(manifest).toHaveTextContent("4 KB");
+    expect(manifest).toHaveTextContent("bundle RELEASED");
+    expect(manifest).toHaveTextContent("on an OTA release");
+    expect(screen.getByTestId("history-entry-ota-sha")).toHaveTextContent(`sha256 ${"b".repeat(64)}`);
+
+    // The store entry beside it carries no OTA surface at all.
+    const storeEntry = screen.getByTestId(`history-entry-${V712.versionId}`);
+    expect(storeEntry.querySelector("[data-testid='history-entry-ota-manifest']")).toBeNull();
   });
 
   it("pages through the cursor envelope with Load more", async () => {

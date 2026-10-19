@@ -280,6 +280,15 @@ Until then: the prototype stays in `companion/` (CI-gated, tested),
 the ledger stash keeps the UNINSTALL-emitter path open, and this memo
 is the decision of record.
 
+**OTA channels (S16-16, issue #178 — the D11-era judgment applied):**
+no companion updater ships in v1; the catalog's per-platform
+resolution instead carries an `ota` flag when the platform's newest
+authorized version is an OTA bundle's own row, and `UpdateState`
+derives the honest `OTA_CHANNEL` state from it — "updates arrive
+inside the app" — instead of misreporting `UPDATE_AVAILABLE` from a
+bundle label the device cannot compare. The OTA delivery itself is
+the embedded SDK updater's job ([ota.md](ota.md)).
+
 ## Acceptance criteria mapping
 
 | Spike AC | Delivered |

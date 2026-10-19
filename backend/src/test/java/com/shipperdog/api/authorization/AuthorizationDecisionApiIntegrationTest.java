@@ -445,6 +445,63 @@ class AuthorizationDecisionApiIntegrationTest {
                 .isEqualTo(expiresAt.truncatedTo(java.time.temporal.ChronoUnit.MICROS));
     }
 
+    // -----------------------------------------------------------------------
+    // S16-16 (issue #178): the OTA bundle manifest on bundle-backed
+    // entries — the portal's application/version views' data path
+    // -----------------------------------------------------------------------
+
+    @Test
+    void otaBundleVersionsCarryTheirManifestInTheEligibilityListing() throws Exception {
+        World world = world("s1616-manifest");
+        readyAndroidArtifact(world);
+        UUID bundleVersion = createVersion(world, "9.0.0");
+        UUID bundleArtifact = readyAndroidArtifactFor(world, bundleVersion, "9.0.0", "900");
+        insertReleasedBundle(world, bundleVersion, bundleArtifact, "9.0.0", "android");
+        TesterPerson john = testerOf(world, "s1616-manifest@example.com", "Manifest Viewer");
+        grantApplication(world, john);
+
+        JsonNode history = get(john.token(), eligibilityUri(world), 200);
+        assertThat(versionNamesOf(history)).containsExactly("9.0.0", AndroidFixtures.VERSION_NAME);
+
+        // The bundle-backed entry carries the OTA manifest beside its
+        // slot facts: the label, the open platform tag, the
+        // finalize-landed checksum and size, and the lifecycle status.
+        // The bundle id is the artifact id (ADR-0010 D5).
+        JsonNode bundleEntry = history.get("entries").get(0);
+        assertThat(bundleEntry.has("ota")).isTrue();
+        JsonNode ota = bundleEntry.get("ota");
+        assertThat(ota.get("bundleId").asText()).isEqualTo(bundleArtifact.toString());
+        assertThat(ota.get("bundleVersion").asText()).isEqualTo("9.0.0");
+        assertThat(ota.get("platform").asText()).isEqualTo("android");
+        assertThat(ota.get("sha256").asText()).hasSize(64);
+        assertThat(ota.get("sizeBytes").asLong()).isPositive();
+        assertThat(ota.get("status").asText()).isEqualTo("RELEASED");
+        assertThat(ota.hasNonNull("releaseId"))
+                .as("an unpublished fixture bundle omits the release link, never null-serves it")
+                .isFalse();
+
+        // The store entry carries no ota member at all — the flag is
+        // presence-shaped, never a null the clients must untangle.
+        assertThat(history.get("entries").get(1).has("ota")).isFalse();
+
+        // The deep-link probe (the version page's own data path) resolves
+        // the same manifest — one join, both portal views.
+        JsonNode probed =
+                get(john.token(), eligibilityProbeUriOf(world.tenantId, world.applicationId, bundleVersion), 200);
+        assertThat(probed.get("entries").get(0).get("ota").get("bundleVersion").asText())
+                .isEqualTo("9.0.0");
+
+        // A revoked bundle keeps its manifest — the listing is history,
+        // never a re-resolution: the status member flips, the checksum
+        // and size stay (the tester's audit trail).
+        jdbc.update("UPDATE ota_bundles SET status = 'REVOKED' WHERE id = ?", bundleArtifact);
+        JsonNode revoked = get(john.token(), eligibilityUri(world), 200);
+        JsonNode revokedOta = revoked.get("entries").get(0).get("ota");
+        assertThat(revokedOta.get("status").asText()).isEqualTo("REVOKED");
+        assertThat(revokedOta.get("sha256").asText()).hasSize(64);
+        assertThat(revokedOta.get("sizeBytes").asLong()).isPositive();
+    }
+
     @Test
     void suspendedTesterConcealsOnEveryHistorySurface() throws Exception {
         // The engine's tenant layer denies a suspended tester BEFORE
@@ -782,6 +839,40 @@ class AuthorizationDecisionApiIntegrationTest {
                 "/api/v1/applications/" + world.applicationId + "/versions/" + versionId + "/tags",
                 Map.of("tags", tags),
                 200);
+    }
+
+    /**
+     * Inserts a finalized RELEASED bundle row behind a fixture version
+     * (S16-16): the read-path fixture for the decision API's OTA join —
+     * the otabundle module's own suite owns the authoring flow that
+     * lands this row for real, so this test only needs the row the
+     * listing resolves. The bundle id IS the artifact id (ADR-0010
+     * D5); the release link stays NULL (the unpublished pool) so the
+     * view's optional releaseId omission is exercised too.
+     */
+    private void insertReleasedBundle(
+            World world, UUID versionId, UUID artifactId, String bundleVersion, String platformTag) {
+        jdbc.update(
+                "INSERT INTO ota_bundles (id, organization_id, tenant_id, application_id, version_id, artifact_id, "
+                        + "bundle_version, platform_tag, sha256, size_bytes, signature, key_id, forced, status, "
+                        + "created_by, created_at, updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                artifactId,
+                world.orgId,
+                world.tenantId,
+                world.applicationId,
+                versionId,
+                artifactId,
+                bundleVersion,
+                platformTag,
+                "b".repeat(64),
+                4096L,
+                "c2lnbmF0dXJlLWZpeHR1cmU",
+                "key-s1616",
+                false,
+                "RELEASED",
+                null,
+                java.time.OffsetDateTime.now(),
+                java.time.OffsetDateTime.now());
     }
 
     private static List<String> versionNamesOf(JsonNode eligibility) {

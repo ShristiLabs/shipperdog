@@ -91,6 +91,9 @@ class AuthorizationDecisionCatalogIntegrationTest {
     private AuditCapture audit;
 
     @Autowired
+    private org.springframework.jdbc.core.JdbcTemplate jdbc;
+
+    @Autowired
     private ObjectMapper mapper;
 
     private RestClient client;
@@ -243,6 +246,94 @@ class AuthorizationDecisionCatalogIntegrationTest {
                 .isEqualTo("7.12.0");
         assertThat(platformOf(card, "ANDROID").get("versionName").asText()).isEqualTo("7.12.0");
         assertThat(platformOf(card, "ANDROID").get("versionId").asText()).isEqualTo(v712.toString());
+    }
+
+    @Test
+    void otaBundlePlatformResolutionsCarryTheOtaFlag() throws Exception {
+        // S16-16 (issue #178): when a platform's newest authorized
+        // distributable version is an OTA bundle's own versions row
+        // (ADR-0010 D2), the card's platform row says so — the
+        // companion's update-state derivation then refuses to compare
+        // a bundle label against the installed store build. A store
+        // resolution carries no ota member at all.
+        World world = world("s1616-catalog", "Banking", "ANDROID", null);
+        readyAndroidArtifact(world, world.versionId, "7.12.0", "421");
+        UUID bundleVersion = createVersion(world, "9.0.0");
+        UUID bundleArtifact = readyAndroidArtifact(world, bundleVersion, "9.0.0", "900");
+        jdbc.update(
+                "INSERT INTO ota_bundles (id, organization_id, tenant_id, application_id, version_id, artifact_id, "
+                        + "bundle_version, platform_tag, sha256, size_bytes, signature, key_id, forced, status, "
+                        + "created_by, created_at, updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                bundleArtifact,
+                world.orgId,
+                world.tenantId,
+                world.applicationId,
+                bundleVersion,
+                bundleArtifact,
+                "9.0.0",
+                "android",
+                "b".repeat(64),
+                4096L,
+                "c2lnbmF0dXJlLWZpeHR1cmU",
+                "key-s1616",
+                false,
+                "RELEASED",
+                null,
+                java.time.OffsetDateTime.now(),
+                java.time.OffsetDateTime.now());
+        TesterPerson tester = testerOf(world, "s1616-catalog@example.com", "Catalog Ota");
+        grantLatestN(world, tester, 5);
+
+        JsonNode card = get(tester.token(), CATALOG_URI, 200).get("items").get(0);
+        JsonNode android = platformOf(card, "ANDROID");
+        assertThat(android.get("versionName").asText())
+                .as("the newest distributable ANDROID version is the bundle's own row")
+                .isEqualTo("9.0.0");
+        assertThat(android.get("ota").asBoolean())
+                .as("a bundle-backed platform resolution is flagged ota")
+                .isTrue();
+
+        // The store-only baseline: revoke nothing, just prove the OTHER
+        // world's card (no bundle row) carries no ota member — the
+        // presence-shaped contract, never a null to untangle.
+        World store = world("s1616-store", "Payments", "ANDROID", null);
+        readyAndroidArtifact(store, store.versionId, AndroidFixtures.VERSION_NAME, "200");
+        // An OLDER bundle version in the same authorized set: the flag
+        // tracks the RESOLVED version, not the application's
+        // bundle-ness — the newest distributable ANDROID build is the
+        // store's, so the resolution carries no ota member.
+        UUID olderBundleVersion = createVersion(store, "6.0.0");
+        UUID olderBundleArtifact = readyAndroidArtifact(store, olderBundleVersion, "6.0.0", "600");
+        jdbc.update(
+                "INSERT INTO ota_bundles (id, organization_id, tenant_id, application_id, version_id, artifact_id, "
+                        + "bundle_version, platform_tag, sha256, size_bytes, signature, key_id, forced, status, "
+                        + "created_by, created_at, updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                olderBundleArtifact,
+                store.orgId,
+                store.tenantId,
+                store.applicationId,
+                olderBundleVersion,
+                olderBundleArtifact,
+                "6.0.0",
+                "android",
+                "c".repeat(64),
+                2048L,
+                "c2lnbmF0dXJlLWZpeHR1cmU",
+                "key-s1616",
+                false,
+                "RELEASED",
+                null,
+                java.time.OffsetDateTime.now(),
+                java.time.OffsetDateTime.now());
+        TesterPerson storeTester = testerOf(store, "s1616-store@example.com", "Catalog Store");
+        grantLatestN(store, storeTester, 5);
+        JsonNode storeCard =
+                get(storeTester.token(), CATALOG_URI, 200).get("items").get(0);
+        assertThat(platformOf(storeCard, "ANDROID").get("versionName").asText())
+                .isEqualTo(AndroidFixtures.VERSION_NAME);
+        assertThat(platformOf(storeCard, "ANDROID").has("ota"))
+                .as("a store resolution carries no ota member even when an older bundle sits in the set")
+                .isFalse();
     }
 
     @Test

@@ -176,6 +176,18 @@ beside the catalog. The install/download flow (S8-04, next section)
 builds on the same contracts (the eligibility slots name the artifact
 a download decision would authorize).
 
+- **OTA-channel releases (S16-16, issue #178).** An entry that is an
+  OTA bundle's own versions row (ADR-0010 D2 — the bundle's label is
+  the version name) renders an **OTA update** chip and the bundle
+  manifest beside its platform rows: the bundle version, the open
+  platform tag, the byte size, the bundle's lifecycle status, and the
+  SHA-256 checksum the installed build's updater verified — the
+  tester-facing half of the device contract in [ota.md](ota.md). The
+  manifest rides the same eligibility entry (an optional `ota`
+  member); store versions carry nothing OTA-shaped. The portal stays
+  a viewer for OTA deliveries: the update itself ships to the
+  embedded SDK updater, not through the portal's download flow.
+
 ## Downloads and install guidance (S8-04)
 
 Each version-history platform row (and the deep-linked version page)

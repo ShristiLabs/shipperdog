@@ -1,7 +1,14 @@
 # OTA Updates — Implementation Plan
 
-Status: **planned, not yet implemented**. This is the design + breakdown
-for the `OTA Updates` milestone. Apps that declare OTA support (React
+Status: **shipped** — the `OTA Updates` milestone landed (S16-01
+through S16-16, issues #163-#178: ADR-0010, migrations V55-V61, the
+`otabundle` module, OTA releases + rollouts, the device check API,
+telemetry ingest, rollups/dashboards, alerts, both SDK updaters, CLI
+commands, console surfaces, and the portal/companion awareness below).
+This document stays as the frozen design record; the living
+device-facing contract documentation is [docs/ota.md](ota.md), and the
+migration ledger is [docs/database-migrations.md](database-migrations.md).
+Apps that declare OTA support (React
 Native / Flutter / Electron-style apps that self-apply bundle updates)
 will be able to receive over-the-air bundle updates from ShipperDog,
 with the same governance, monitoring, and telemetry rigor the platform
@@ -148,6 +155,15 @@ land **inside** each API-touching issue (#3, #4, #6, #7, #8, #10, #11,
   `analytics_events` (+ index `(ota_bundle_id, event_type,
   occurred_at)`); nullable `ota_bundle_id` on `metric_hourly` /
   `metric_daily`.
+
+  Addendum (post-implementation): the shipped milestone carried four
+  later migrations beyond this planned V55-V57 set — V58 (ota signing
+  keys), V59 (OTA release integration: `release_targets.forced` /
+  `min_app_version` + `uq_ota_bundles_release`), V60 (the rollout
+  PAUSED event vocabulary), and V61 (ota alert rules' organization
+  grain) — see [docs/database-migrations.md](database-migrations.md)
+  for the full ledger. This table records the plan as written, not a
+  rewrite of history.
 
 ### 2. `otabundle/` module — bundles + app tokens
 

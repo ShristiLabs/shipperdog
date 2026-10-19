@@ -4,16 +4,21 @@
  * M2-reserved ACTIVE, ARCHIVED, REVOKED — INV-006 keeps the terminal
  * states listed while a grant covers them), the entry's access TTL
  * when it has one, and the per-platform installable rows (build
- * number from artifact extraction, size, upload date — AC4). The
- * whole card deep-links to the version detail page so a build link
- * can be shared when reproducing an issue.
+ * number from artifact extraction, size, upload date — AC4). Since
+ * S16-16 (issue #178) an entry that is an OTA bundle's own versions
+ * row (ADR-0010 D2) also renders its manifest — the chip that says
+ * the version ships over the air and the checksum row a tester
+ * verifies an installed build against. The whole card deep-links to
+ * the version detail page so a build link can be shared when
+ * reproducing an issue.
  */
 import HistoryIcon from "@mui/icons-material/History";
 import BugReportIcon from "@mui/icons-material/BugReport";
+import CloudDownloadIcon from "@mui/icons-material/CloudDownload";
 import { Button, Card, CardActionArea, CardActions, CardContent, Chip, Stack, Typography } from "@mui/material";
 import { useState } from "react";
 import { Link as RouterLink } from "react-router-dom";
-import type { HistoryEntry } from "../api/history";
+import type { HistoryEntry, HistoryEntryOta } from "../api/history";
 import DownloadFlow from "./DownloadFlow";
 import FeedbackDialog from "./FeedbackDialog";
 
@@ -50,6 +55,15 @@ export default function HistoryEntryCard({
               <Typography variant="h6" component="h2" sx={{ flexGrow: 1 }} data-testid="history-entry-name">
                 {entry.versionName}
               </Typography>
+              {entry.ota ? (
+                <Chip
+                  size="small"
+                  color="secondary"
+                  icon={<CloudDownloadIcon />}
+                  label="OTA update"
+                  data-testid="history-entry-ota-chip"
+                />
+              ) : null}
               <StatusBadge status={entry.status} testId="history-entry-status" />
             </Stack>
             {entry.expiresAt ? (
@@ -57,6 +71,7 @@ export default function HistoryEntryCard({
                 Access until {formatDate(entry.expiresAt)}
               </Typography>
             ) : null}
+            {entry.ota ? <OtaManifest ota={entry.ota} /> : null}
             {entry.platforms.length > 0 ? (
               <Stack spacing={0.5}>
                 {entry.platforms.map((slot) => (
@@ -135,6 +150,34 @@ function StatusBadge({ status, testId }: { status: string; testId: string }) {
     return <Chip size="small" color="success" label="Active" data-testid={testId} />;
   }
   return <Chip size="small" variant="outlined" label="Draft" data-testid={testId} />;
+}
+
+/**
+ * The OTA bundle manifest rows (S16-16, issue #178): what the
+ * device-facing check serves, surfaced for the tester — the label and
+ * open platform tag the update identifies itself by, the byte size,
+ * the BUNDLE's own lifecycle (beside the entry badge, which carries
+ * the version row's status — two different axes), and the SHA-256 the
+ * installed build's update flow verified. A REVOKED bundle keeps its
+ * manifest (history, never re-resolution).
+ */
+function OtaManifest({ ota }: { ota: HistoryEntryOta }) {
+  return (
+    <Stack
+      spacing={0.5}
+      sx={{ backgroundColor: "action.hover", borderRadius: 1, p: 1 }}
+      data-testid="history-entry-ota-manifest"
+    >
+      <Typography variant="caption" color="text.secondary">
+        OTA bundle {ota.bundleVersion} · {ota.platform} ·{" "}
+        {ota.sizeBytes !== null ? formatBytes(ota.sizeBytes) : "size pending"} · bundle {ota.status}
+        {ota.releaseId ? " · on an OTA release" : ""}
+      </Typography>
+      <Typography variant="caption" sx={{ fontFamily: "monospace", wordBreak: "break-all" }} data-testid="history-entry-ota-sha">
+        sha256 {ota.sha256}
+      </Typography>
+    </Stack>
+  );
 }
 
 function platformLabel(platform: HistoryEntry["platforms"][number]["platform"]): string {

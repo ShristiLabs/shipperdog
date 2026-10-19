@@ -13,6 +13,14 @@ package com.shipperdog.companion.core
  * file manager) cannot be matched to its catalog card until the
  * companion installs it once — productionization closes this by
  * adding bundleId to the eligibility slot.
+ *
+ * OTA_CHANNEL (S16-16, issue #178) is the honest state for an app
+ * whose newest authorized ANDROID version is an OTA bundle's own
+ * versions row: that build ships to the embedded SDK updater over
+ * the air, so the companion has nothing to install and no label it
+ * may compare against the installed store build — deriving
+ * UPDATE_AVAILABLE from a bundle label would misreport (D11: no
+ * companion updater in v1).
  */
 enum class InstallState {
     /** No Android install path for this card (no authorized ANDROID version). */
@@ -29,13 +37,20 @@ enum class InstallState {
 
     /** Installed, and a strictly newer authorized version exists — the update badge. */
     UPDATE_AVAILABLE,
+
+    /**
+     * The newest authorized Android build is an OTA bundle: updates
+     * arrive in-app through the embedded SDK updater — nothing for the
+     * companion to install or compare.
+     */
+    OTA_CHANNEL,
 }
 
 /** One catalog row's derived state: the card, the ledger join, and what to render. */
 data class CatalogRow(
     val card: CatalogCard,
     val state: InstallState,
-    /** The authorized Android version the install button targets (null when NOT_INSTALLABLE). */
+    /** The authorized Android version the install button targets (null when NOT_INSTALLABLE or OTA_CHANNEL). */
     val installVersionName: String?,
     /** The installed version name when tracked (the package manager's own fact). */
     val installedVersionName: String?,
@@ -55,6 +70,12 @@ fun deriveRow(
     val authorized = card.androidVersionName
     if (authorized == null || card.androidVersionId == null) {
         return CatalogRow(card, InstallState.NOT_INSTALLABLE, null, null)
+    }
+    if (card.androidIsOta) {
+        // The bundle's label names the OTA delivery, not a store build
+        // the package manager could hold: no comparison is honest
+        // here, whatever the ledger recorded about the store install.
+        return CatalogRow(card, InstallState.OTA_CHANNEL, null, null)
     }
     val entry = ledger.find(card.tenantId, card.applicationId)
         ?: return CatalogRow(card, InstallState.UNTRACKED, authorized, null)

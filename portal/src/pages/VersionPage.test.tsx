@@ -36,6 +36,21 @@ const ENTRY = {
   ],
 };
 
+/** A bundle-backed probe answer (S16-16): the deep link lands on an OTA bundle's own version row. */
+const OTA_ENTRY = {
+  ...ENTRY,
+  versionName: "9.0.0",
+  ota: {
+    bundleId: "50000000-0000-4000-8000-000000000009",
+    bundleVersion: "9.0.0",
+    platform: "android",
+    sha256: "b".repeat(64),
+    sizeBytes: 4096,
+    status: "RELEASED",
+    releaseId: "60000000-0000-4000-8000-000000000001",
+  },
+};
+
 beforeEach(() => {
   tokenStore.clear();
 });
@@ -70,6 +85,23 @@ describe("VersionPage deep link", () => {
     expect(screen.getByTestId("history-entry-name")).toHaveTextContent("7.12.0");
     expect(screen.getByTestId("history-entry-status")).toHaveTextContent("Archived");
     expect(screen.getByTestId(`history-slot-${VERSION}-ANDROID`)).toHaveTextContent("Build 842");
+  });
+
+  it("renders the OTA manifest when the deep link lands on a bundle-backed version (S16-16)", async () => {
+    installFetchRouter([]);
+    seedHistoryProbe(200, [OTA_ENTRY]);
+    seedSession();
+    renderPortal(<App />, { route: VERSION_ROUTE });
+
+    await waitFor(() => expect(screen.getByTestId(`history-entry-${VERSION}`)).toBeInTheDocument());
+    expect(screen.getByTestId("history-entry-name")).toHaveTextContent("9.0.0");
+    expect(screen.getByTestId("history-entry-ota-chip")).toHaveTextContent("OTA update");
+    const manifest = screen.getByTestId("history-entry-ota-manifest");
+    expect(manifest).toHaveTextContent("OTA bundle 9.0.0");
+    expect(manifest).toHaveTextContent("android");
+    expect(manifest).toHaveTextContent("4 KB");
+    expect(manifest).toHaveTextContent("bundle RELEASED");
+    expect(screen.getByTestId("history-entry-ota-sha")).toHaveTextContent(`sha256 ${"b".repeat(64)}`);
   });
 
   it("renders the opaque 404 page for an unauthorized or unknown version id", async () => {

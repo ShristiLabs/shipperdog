@@ -67,7 +67,10 @@ class PortalClientTest {
             {"effectiveAccess":true,"items":[
               {"tenantId":"t1","application":{"applicationId":"a1","name":"Field Ops","status":"ACTIVE"},
                "latestAuthorizedVersion":{"versionId":"v9","versionName":"2.1.0","status":"ACTIVE"},
-               "platforms":[{"platform":"ANDROID","tenantId":"t1","versionId":"v9","versionName":"2.1.0"}]}
+               "platforms":[{"platform":"ANDROID","tenantId":"t1","versionId":"v9","versionName":"2.1.0"}]},
+              {"tenantId":"t1","application":{"applicationId":"a2","name":"Field Ops OTA","status":"ACTIVE"},
+               "latestAuthorizedVersion":{"versionId":"v11","versionName":"3.0.0","status":"ACTIVE"},
+               "platforms":[{"platform":"ANDROID","tenantId":"t1","versionId":"v11","versionName":"3.0.0","ota":true}]}
             ],"next_cursor":"c2"}
             """.trimIndent().toByteArray(),
         )
@@ -78,7 +81,7 @@ class PortalClientTest {
             request.url,
         )
         assertEquals("Bearer at", "Bearer " + request.bearerToken)
-        assertEquals(1, page.cards.size)
+        assertEquals(2, page.cards.size)
         val card = page.cards[0]
         assertEquals("t1", card.tenantId)
         assertEquals("a1", card.applicationId)
@@ -86,6 +89,13 @@ class PortalClientTest {
         assertEquals("v9", card.latestVersionId)
         assertEquals("2.1.0", card.androidVersionName)
         assertEquals("c2", page.nextCursor)
+
+        // S16-16: the S16-16 ota flag on the platform resolution parses
+        // fail-soft both ways — true when the backend marks the bundle
+        // row, false (absent member) for a store resolution.
+        assertEquals(false, card.androidIsOta)
+        assertEquals(true, page.cards[1].androidIsOta)
+        assertEquals("3.0.0", page.cards[1].androidVersionName)
 
         client.catalog(cursor = "c2", bearer = "at")
         assertTrue(

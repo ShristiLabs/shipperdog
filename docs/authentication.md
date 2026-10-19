@@ -402,6 +402,50 @@ leaver cascade, and the IdP setup guide — is documented in
 deliberate, documented deviation (see
 [error codes](error-codes.md)).
 
+## OTA device credentials — `sdc1.` app tokens (S16-04, ADR-0010 D3)
+
+The OTA update workstream carries the fourth credential posture: a
+per-application device identifier the console or CLI issues
+(`POST /api/v1/ota/app-tokens`) and the shipped app embeds — the
+credential the device check presents BEFORE any download exists (and
+so before any `sdt1.` telemetry grant could; that is why a new
+prefix was needed at all). The full device-facing OTA contract is
+[ota.md](ota.md); this section records only the credential doctrine.
+
+- **Identifier, not a secret** (D3): possession of an `sdc1.` token
+  grants exactly one thing — presenting the device check
+  (`GET /api/v1/ota/check`) under the single authority
+  `ota:app-token:check`. It exists to enable rate limiting and
+  unambiguous organization/application resolution (a bundleId is NOT
+  tenant-unique — the token, not the store listing, carries the
+  resolution). mTLS was rejected: mobile fleets cannot do it.
+- **Shape**: opaque to the client — `sdc1.<base64url(payload)>.
+  <base64url(hmac)>` — the `TelemetryTokenCodec` doctrine:
+  stateless, tamper-proof by HMAC-SHA256 under the deployment's
+  `OTA_APP_TOKEN_KEY`, the payload carrying the owning organization,
+  the application, and the registry row's id (so two tokens for one
+  application are always distinct material).
+- **Storage and display**: the registry (`ota_app_tokens`, V55)
+  keeps only the SHA-256 hex of the token — write-only, the
+  V39/V49/PAT precedent. The token value is returned exactly once at
+  issue (stdout alone in the CLI's plain mode); the console and CLI
+  listings show the name label, never the value.
+- **Lifetime — deliberately no expiry**: the identifier lives as
+  long as its registry row does, so a fleet's embedded token never
+  ages out of a shipped binary.
+- **Revocation**: row-level (`DELETE /api/v1/ota/app-tokens/{id}/revoke`
+  stamps `revoked_at`; the filter's registry lookup refuses it
+  immediately — an already-revoked token replays the row, never an
+  error) and global (rotating `OTA_APP_TOKEN_KEY` is the operator's
+  break-glass lever retiring every minted token at once — the same
+  posture as the telemetry and download-proxy keys).
+- **Chain placement**: the identity module's bearer resolver skips
+  the `sdc1.` prefix exactly as it skips PATs and `sdt1.`; the
+  otabundle module's `OtaAppTokenAuthenticationFilter` owns it. A
+  failed lookup is the filter's uniform 401 — never a coded problem
+  that would distinguish unknown from revoked (the concealment
+  discipline the rest of this document follows).
+
 ## Extension path
 
 The OIDC provider S1-03's structure reserved a place for has landed

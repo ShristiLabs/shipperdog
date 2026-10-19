@@ -1,5 +1,7 @@
 package com.shipperdog.api.otabundle;
 
+import java.util.Collection;
+import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 
@@ -61,6 +63,23 @@ public interface OtaBundleAccess {
     Optional<BundleFact> releasedBundleOfRelease(UUID releaseId);
 
     /**
+     * The bundles behind a set of version ids (S16-16, issue #178):
+     * the decision API's tester-facing listings resolve, per version
+     * the caller is already authorized for, whether that version is a
+     * bundle's own dedicated row (ADR-0010 D2) — the OTA manifest
+     * facts the portal's version views render and the companion's
+     * update-state derivation needs to not misreport. At most one
+     * bundle per version by V55's {@code uq_ota_bundles_version};
+     * versions that are no bundle's are simply absent from the
+     * answer. Registry-probed, not seam-served (the {@code bundleOf}
+     * precedent): the decision API's caller is the self-scoped tester
+     * persona, whose thread binds no operator scope, so the probe
+     * stays application-addressed and the authorization is the
+     * caller's own engine-resolved granted set.
+     */
+    List<BundleFact> bundlesOfVersions(UUID applicationId, Collection<UUID> versionIds);
+
+    /**
      * The publish crossing: SIGNED to RELEASED with the {@code
      * release_id} backfill, inside the caller's transaction. FALSE —
      * never an exception of this module's own — when the bundle is no
@@ -80,7 +99,8 @@ public interface OtaBundleAccess {
 
     /**
      * One bundle's cross-module facts: identity, ownership, the D2/D5
-     * linkage, the manifest's platform tag, and the D7 per-bundle
+     * linkage, the manifest (platform tag, sha256, byte size — the
+     * finalize-landed pair, null before it), and the D7 per-bundle
      * defaults. The status is the stable string vocabulary (the events
      * discipline: cross-module facts never leak the internal enum).
      */
@@ -93,6 +113,8 @@ public interface OtaBundleAccess {
             UUID releaseId,
             String bundleVersion,
             String platformTag,
+            String sha256Hex,
+            Long sizeBytes,
             boolean forced,
             String minAppVersion,
             String status) {}

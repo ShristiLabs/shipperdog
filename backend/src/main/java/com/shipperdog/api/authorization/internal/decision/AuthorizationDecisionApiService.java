@@ -16,6 +16,7 @@ import com.shipperdog.api.authorization.internal.cache.DecisionInputs;
 import com.shipperdog.api.authorization.internal.grant.VersionAccessGrantService;
 import com.shipperdog.api.config.CursorCodec;
 import com.shipperdog.api.config.ListQuery;
+import com.shipperdog.api.otabundle.OtaBundleAccess;
 import com.shipperdog.api.tester.TesterAccess;
 import com.shipperdog.api.version.VersionAccess;
 import java.time.Clock;
@@ -106,6 +107,7 @@ public class AuthorizationDecisionApiService {
     private final DecisionInputs decisionInputs;
     private final VersionAccessGrantService grants;
     private final TesterAccess testers;
+    private final OtaBundleAccess otaBundles;
     private final Clock clock;
 
     public AuthorizationDecisionApiService(
@@ -116,6 +118,7 @@ public class AuthorizationDecisionApiService {
             DecisionInputs decisionInputs,
             VersionAccessGrantService grants,
             TesterAccess testers,
+            OtaBundleAccess otaBundles,
             Clock clock) {
         this.authorization = authorization;
         this.applications = applications;
@@ -124,6 +127,7 @@ public class AuthorizationDecisionApiService {
         this.decisionInputs = decisionInputs;
         this.grants = grants;
         this.testers = testers;
+        this.otaBundles = otaBundles;
         this.clock = clock;
     }
 
@@ -171,7 +175,11 @@ public class AuthorizationDecisionApiService {
      * rows: one slot per platform carrying a distributable artifact —
      * the newest one, which is the artifact a download would serve
      * (S8-04 wires the entry point; the slot here is the metadata the
-     * tester compares builds with).
+     * tester compares builds with). Since S16-16 (issue #178) an entry
+     * whose version is an OTA bundle's own dedicated versions row
+     * (ADR-0010 D2) also carries {@code ota}: the bundle manifest
+     * facts the portal's application/version views render beside the
+     * store-build rows — absent on every store version.
      */
     public record Entry(
             UUID versionId,
@@ -179,10 +187,32 @@ public class AuthorizationDecisionApiService {
             String status,
             Instant expiresAt,
 
-            @JsonProperty("platforms") List<SlotView> platforms) {}
+            @JsonProperty("platforms") List<SlotView> platforms,
+
+            @JsonInclude(JsonInclude.Include.NON_NULL) OtaBundleView ota) {}
 
     /** One platform row of a history entry (AC4). */
     public record SlotView(String platform, UUID artifactId, Long buildNumber, long sizeBytes, Instant uploadedAt) {}
+
+    /**
+     * The OTA bundle manifest facts of a bundle-backed entry (S16-16,
+     * issue #178): what the device-facing check serves, surfaced for
+     * the tester's own version views — the bundle's version label and
+     * open platform tag, the finalize-landed checksum and byte size,
+     * the lifecycle status, and (when the bundle publishes) the OTA
+     * release that carries it. {@code releaseId} is null while the
+     * bundle sits unpublished; the manifest pair can be null only
+     * pre-finalize, which grants cannot front-run in practice.
+     */
+    public record OtaBundleView(
+            UUID bundleId,
+            String bundleVersion,
+            String platform,
+            String sha256,
+            Long sizeBytes,
+            String status,
+
+            @JsonInclude(JsonInclude.Include.NON_NULL) UUID releaseId) {}
 
     /**
      * The caller's authorized application catalog (issue #36, S8-02):
@@ -224,9 +254,21 @@ public class AuthorizationDecisionApiService {
      * One platform's install resolution: the newest authorized version
      * of the application carrying a distributable artifact for the
      * platform, with the tenant dimension the download decision for it
-     * is addressed through.
+     * is addressed through. Since S16-16 (issue #178) the row carries
+     * {@code ota: true} when the resolved version is an OTA bundle's
+     * own dedicated versions row (ADR-0010 D2): the companion's
+     * update-state derivation then knows the platform's newest
+     * authorized build is an in-app OTA delivery it can neither
+     * install nor version-compare, instead of misreporting "update
+     * available" from a bundle label. Absent on every store version.
      */
-    public record PlatformCardView(String platform, UUID tenantId, UUID versionId, String versionName) {}
+    public record PlatformCardView(
+            String platform,
+            UUID tenantId,
+            UUID versionId,
+            String versionName,
+
+            @JsonInclude(JsonInclude.Include.NON_NULL) Boolean ota) {}
 
     /**
      * Decides the caller's download (PRD 12's worked example, the
@@ -330,13 +372,19 @@ public class AuthorizationDecisionApiService {
         Map<UUID, List<ArtifactAccess.InstallableSlot>> slots = artifacts.installableSlotsOfVersions(page.stream()
                 .map(VersionAccessGrantService.EffectiveEntryView::versionId)
                 .toList());
+        Map<UUID, OtaBundleAccess.BundleFact> bundlesByVersion = otaBundlesByVersion(
+                applicationId,
+                page.stream()
+                        .map(VersionAccessGrantService.EffectiveEntryView::versionId)
+                        .toList());
         List<Entry> entries = page.stream()
                 .map(entry -> new Entry(
                         entry.versionId(),
                         entry.versionName(),
                         entry.status(),
                         entry.expiresAt(),
-                        slotViewsOf(slots.getOrDefault(entry.versionId(), List.of()))))
+                        slotViewsOf(slots.getOrDefault(entry.versionId(), List.of())),
+                        otaViewOf(bundlesByVersion.get(entry.versionId()))))
                 .toList();
         boolean hasMore = to < authorized.size();
         return new EligibilityView(
@@ -367,6 +415,38 @@ public class AuthorizationDecisionApiService {
                             slot.uploadedAt());
                 })
                 .toList();
+    }
+
+    /**
+     * The OTA bundle facts of a page of versions, keyed by the version
+     * id (S16-16): one seam read per listing, empty for the common
+     * all-store page. The empty-input guard keeps grantless and
+     * console-caller answers off the seam entirely.
+     */
+    private Map<UUID, OtaBundleAccess.BundleFact> otaBundlesByVersion(UUID applicationId, List<UUID> versionIds) {
+        if (versionIds.isEmpty()) {
+            return Map.of();
+        }
+        Map<UUID, OtaBundleAccess.BundleFact> byVersion = new LinkedHashMap<>();
+        for (OtaBundleAccess.BundleFact bundle : otaBundles.bundlesOfVersions(applicationId, versionIds)) {
+            byVersion.put(bundle.versionId(), bundle);
+        }
+        return byVersion;
+    }
+
+    /** The serialized OTA manifest of a bundle-backed entry, or null on a store version. */
+    private OtaBundleView otaViewOf(OtaBundleAccess.BundleFact bundle) {
+        if (bundle == null) {
+            return null;
+        }
+        return new OtaBundleView(
+                bundle.id(),
+                bundle.bundleVersion(),
+                bundle.platformTag(),
+                bundle.sha256Hex(),
+                bundle.sizeBytes(),
+                bundle.status(),
+                bundle.releaseId());
     }
 
     /**
@@ -480,13 +560,21 @@ public class AuthorizationDecisionApiService {
                 .toList();
         Map<UUID, Set<String>> platformsByVersion = artifacts.distributablePlatformsOfVersions(
                 newestFirst.stream().map(DimensionalEntry::versionId).toList());
+        Set<UUID> bundleVersionIds = otaBundlesByVersion(
+                        applicationId,
+                        newestFirst.stream().map(DimensionalEntry::versionId).toList())
+                .keySet();
         List<PlatformCardView> platforms = new ArrayList<>();
         Set<String> resolvedPlatforms = new HashSet<>();
         for (String platform : PLATFORM_ORDER) {
             for (DimensionalEntry entry : newestFirst) {
                 if (platformsByVersion.getOrDefault(entry.versionId(), Set.of()).contains(platform)) {
-                    platforms.add(
-                            new PlatformCardView(platform, entry.tenantId(), entry.versionId(), entry.versionName()));
+                    platforms.add(new PlatformCardView(
+                            platform,
+                            entry.tenantId(),
+                            entry.versionId(),
+                            entry.versionName(),
+                            bundleVersionIds.contains(entry.versionId()) ? Boolean.TRUE : null));
                     resolvedPlatforms.add(platform);
                     break;
                 }

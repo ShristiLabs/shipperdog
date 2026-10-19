@@ -664,6 +664,75 @@ paths:
             '*/*':
               schema:
                 $ref: "#/components/schemas/SkipAllowancesView"
+  /api/v1/ota/alert-rules/{ruleId}:
+    get:
+      tags:
+      - ota-alert-controller
+      operationId: getRule
+      parameters:
+      - name: ruleId
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - name: applicationId
+        in: query
+        required: true
+        schema:
+          type: string
+          format: uuid
+      responses:
+        "200":
+          description: OK
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/AlertRuleDetailView"
+    put:
+      tags:
+      - ota-alert-controller
+      operationId: updateRule
+      parameters:
+      - name: ruleId
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AlertRuleRequest"
+        required: true
+      responses:
+        "200":
+          description: OK
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/AlertRuleView"
+    delete:
+      tags:
+      - ota-alert-controller
+      operationId: deleteRule
+      parameters:
+      - name: ruleId
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - name: applicationId
+        in: query
+        required: true
+        schema:
+          type: string
+          format: uuid
+      responses:
+        "204":
+          description: No Content
   /api/v1/organizations/{id}:
     get:
       tags:
@@ -3045,121 +3114,6 @@ paths:
             '*/*':
               schema:
                 $ref: "#/components/schemas/OtaRolloutView"
-  /api/v1/ota/alert-rules:
-    post:
-      tags:
-      - ota-alert-controller
-      operationId: createRule
-      requestBody:
-        content:
-          application/json:
-            schema:
-              $ref: "#/components/schemas/AlertRuleRequest"
-        required: true
-      responses:
-        "201":
-          description: Created
-          content:
-            '*/*':
-              schema:
-                $ref: "#/components/schemas/AlertRuleView"
-    get:
-      tags:
-      - ota-alert-controller
-      operationId: listRules
-      parameters:
-      - name: applicationId
-        in: query
-        required: true
-        schema:
-          type: string
-          format: uuid
-      - name: limit
-        in: query
-        required: false
-        schema:
-          type: string
-      - name: cursor
-        in: query
-        required: false
-        schema:
-          type: string
-      responses:
-        "200":
-          description: OK
-          content:
-            '*/*':
-              schema:
-                $ref: "#/components/schemas/PageResponseAlertRuleView"
-  /api/v1/ota/alert-rules/{ruleId}:
-    get:
-      tags:
-      - ota-alert-controller
-      operationId: getRule
-      parameters:
-      - name: ruleId
-        in: path
-        required: true
-        schema:
-          type: string
-          format: uuid
-      - name: applicationId
-        in: query
-        required: true
-        schema:
-          type: string
-          format: uuid
-      responses:
-        "200":
-          description: OK
-          content:
-            '*/*':
-              schema:
-                $ref: "#/components/schemas/AlertRuleDetailView"
-    put:
-      tags:
-      - ota-alert-controller
-      operationId: updateRule
-      parameters:
-      - name: ruleId
-        in: path
-        required: true
-        schema:
-          type: string
-          format: uuid
-      requestBody:
-        content:
-          application/json:
-            schema:
-              $ref: "#/components/schemas/AlertRuleRequest"
-        required: true
-      responses:
-        "200":
-          description: OK
-          content:
-            '*/*':
-              schema:
-                $ref: "#/components/schemas/AlertRuleView"
-    delete:
-      tags:
-      - ota-alert-controller
-      operationId: deleteRule
-      parameters:
-      - name: ruleId
-        in: path
-        required: true
-        schema:
-          type: string
-          format: uuid
-      - name: applicationId
-        in: query
-        required: true
-        schema:
-          type: string
-          format: uuid
-      responses:
-        "204":
-          description: No Content
   /api/v1/ota/bundles:
     get:
       tags:
@@ -3332,6 +3286,52 @@ paths:
             '*/*':
               schema:
                 $ref: "#/components/schemas/OtaAppTokenView"
+  /api/v1/ota/alert-rules:
+    get:
+      tags:
+      - ota-alert-controller
+      operationId: listRules
+      parameters:
+      - name: applicationId
+        in: query
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - name: limit
+        in: query
+        required: false
+        schema:
+          type: string
+      - name: cursor
+        in: query
+        required: false
+        schema:
+          type: string
+      responses:
+        "200":
+          description: OK
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/PageResponseAlertRuleView"
+    post:
+      tags:
+      - ota-alert-controller
+      operationId: createRule
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AlertRuleRequest"
+        required: true
+      responses:
+        "201":
+          description: Created
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/AlertRuleView"
   /api/v1/organizations:
     get:
       tags:
@@ -7654,6 +7654,83 @@ components:
           type: array
           items:
             type: string
+    AlertRuleRequest:
+      type: object
+      description: "The alert rule to create or replace: applicationId, the optional\
+        \ otaBundleId scope, and the watch -- metric (OTA_CHECKS, OTA_SEEN, OTA_DOWNLOADS,\
+        \ OTA_APPLIED, OTA_FAILURES, OTA_ROLLBACKS, OTA_APPLY_FAILURE_RATE, OTA_CRASH_FREE_RATE),\
+        \ comparator (GT, GTE, LT, LTE), threshold, windowMinutes (1..10080), severity\
+        \ (INFO, WARNING, CRITICAL)."
+      properties:
+        applicationId:
+          type: string
+          format: uuid
+        otaBundleId:
+          type: string
+        metric:
+          type: string
+        comparator:
+          type: string
+        threshold:
+          type: number
+          format: double
+        windowMinutes:
+          type: integer
+          format: int32
+        severity:
+          type: string
+    AlertFiringView:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        otaBundleId:
+          type: string
+          format: uuid
+        observedValue:
+          type: number
+          format: double
+        detail:
+          type: string
+        firedAt:
+          type: string
+          format: date-time
+        resolvedAt:
+          type: string
+          format: date-time
+    AlertRuleView:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        applicationId:
+          type: string
+          format: uuid
+        otaBundleId:
+          type: string
+          format: uuid
+        metric:
+          type: string
+        comparator:
+          type: string
+        threshold:
+          type: number
+          format: double
+        windowMinutes:
+          type: integer
+          format: int32
+        severity:
+          type: string
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+        standingFiring:
+          $ref: "#/components/schemas/AlertFiringView"
     OrganizationUpdateRequest:
       type: object
       properties:
@@ -10551,6 +10628,106 @@ components:
             $ref: "#/components/schemas/MetricPointView"
         next_cursor:
           type: string
+    PendingReleaseView:
+      type: object
+      properties:
+        releaseId:
+          type: string
+          format: uuid
+        releaseRef:
+          type: string
+        applicationId:
+          type: string
+          format: uuid
+        applicationName:
+          type: string
+        status:
+          type: string
+        ring:
+          type: string
+    TenantCountsView:
+      type: object
+      properties:
+        applications:
+          type: integer
+          format: int32
+        availableVersions:
+          type: integer
+          format: int32
+        activeTesters:
+          type: integer
+          format: int32
+        pendingReleases:
+          type: integer
+          format: int32
+    TenantDashboardView:
+      type: object
+      properties:
+        tenantId:
+          type: string
+          format: uuid
+        generatedAt:
+          type: string
+        counts:
+          $ref: "#/components/schemas/TenantCountsView"
+        pendingReleases:
+          type: array
+          items:
+            $ref: "#/components/schemas/PendingReleaseView"
+    OtaBundleHealthView:
+      type: object
+      properties:
+        newBundle:
+          $ref: "#/components/schemas/OtaBundleSideView"
+        currentBundle:
+          $ref: "#/components/schemas/OtaBundleSideView"
+        crashFreeRateDelta:
+          type: number
+          format: double
+    OtaBundleSideView:
+      type: object
+      properties:
+        bundleId:
+          type: string
+          format: uuid
+        bundleVersion:
+          type: string
+        releaseId:
+          type: string
+          format: uuid
+        releaseRef:
+          type: string
+        sessions:
+          type: integer
+          format: int64
+        crashSessions:
+          type: integer
+          format: int64
+        crashFreeRate:
+          type: number
+          format: double
+    OtaAdoptionPointView:
+      type: object
+      properties:
+        day:
+          type: string
+        seenDevices:
+          type: integer
+          format: int64
+        appliedDevices:
+          type: integer
+          format: int64
+        adoptionRate:
+          type: number
+          format: double
+    OtaFailureView:
+      type: object
+      properties:
+        reason:
+          type: string
+        count:
+          type: integer
+          format: int64
     OtaFunnelView:
       type: object
       properties:
@@ -10598,93 +10775,19 @@ components:
         rolledBack:
           type: integer
           format: int64
-    OtaFailureView:
+    OtaAlertCountsView:
       type: object
       properties:
-        reason:
-          type: string
-        count:
-          type: integer
-          format: int64
-    OtaAdoptionPointView:
-      type: object
-      properties:
-        day:
-          type: string
-        seenDevices:
-          type: integer
-          format: int64
-        appliedDevices:
-          type: integer
-          format: int64
-        adoptionRate:
-          type: number
-          format: double
-    OtaBundleHealthView:
-      type: object
-      properties:
-        newBundle:
-          $ref: "#/components/schemas/OtaBundleSideView"
-        currentBundle:
-          $ref: "#/components/schemas/OtaBundleSideView"
-        crashFreeRateDelta:
-          type: number
-          format: double
-    OtaBundleSideView:
-      type: object
-      properties:
-        bundleId:
-          type: string
-          format: uuid
-        bundleVersion:
-          type: string
-        releaseId:
-          type: string
-          format: uuid
-        releaseRef:
-          type: string
-        sessions:
-          type: integer
-          format: int64
-        crashSessions:
-          type: integer
-          format: int64
-        crashFreeRate:
-          type: number
-          format: double
-    PendingReleaseView:
-      type: object
-      properties:
-        releaseId:
-          type: string
-          format: uuid
-        releaseRef:
-          type: string
-        applicationId:
-          type: string
-          format: uuid
-        applicationName:
-          type: string
-        status:
-          type: string
-        ring:
-          type: string
-    TenantCountsView:
-      type: object
-      properties:
-        applications:
+        critical:
           type: integer
           format: int32
-        availableVersions:
+        warning:
           type: integer
           format: int32
-        activeTesters:
+        info:
           type: integer
           format: int32
-        pendingReleases:
-          type: integer
-          format: int32
-    TenantDashboardView:
+    OtaAlertFeedView:
       type: object
       properties:
         tenantId:
@@ -10693,11 +10796,47 @@ components:
         generatedAt:
           type: string
         counts:
-          $ref: "#/components/schemas/TenantCountsView"
-        pendingReleases:
+          $ref: "#/components/schemas/OtaAlertCountsView"
+        standing:
           type: array
           items:
-            $ref: "#/components/schemas/PendingReleaseView"
+            $ref: "#/components/schemas/OtaAlertFiringView"
+        recent:
+          type: array
+          items:
+            $ref: "#/components/schemas/OtaAlertFiringView"
+    OtaAlertFiringView:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        ruleId:
+          type: string
+          format: uuid
+        applicationId:
+          type: string
+          format: uuid
+        otaBundleId:
+          type: string
+          format: uuid
+        metric:
+          type: string
+        comparator:
+          type: string
+        threshold:
+          type: number
+          format: double
+        severity:
+          type: string
+        observedValue:
+          type: number
+          format: double
+        detail:
+          type: string
+        firedAt:
+          type: string
+          format: date-time
     PageResponseMembershipView:
       type: object
       properties:
@@ -11384,6 +11523,24 @@ components:
             $ref: "#/components/schemas/OtaAppTokenView"
         next_cursor:
           type: string
+    PageResponseAlertRuleView:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/AlertRuleView"
+        next_cursor:
+          type: string
+    AlertRuleDetailView:
+      type: object
+      properties:
+        rule:
+          $ref: "#/components/schemas/AlertRuleView"
+        firings:
+          type: array
+          items:
+            $ref: "#/components/schemas/AlertFiringView"
     PageResponseOrganizationResponse:
       type: object
       properties:
@@ -11843,6 +12000,8 @@ components:
           format: uuid
         versionName:
           type: string
+        ota:
+          type: boolean
     VersionCardView:
       type: object
       properties:
@@ -12306,160 +12465,3 @@ components:
             $ref: "#/components/schemas/PolicyView"
         next_cursor:
           type: string
-    AlertRuleRequest:
-      type: object
-      description: "The alert rule to create or replace: applicationId, the optional otaBundleId\
-        \ scope, and the watch -- metric (OTA_CHECKS, OTA_SEEN, OTA_DOWNLOADS, OTA_APPLIED,\
-        \ OTA_FAILURES, OTA_ROLLBACKS, OTA_APPLY_FAILURE_RATE, OTA_CRASH_FREE_RATE), comparator\
-        \ (GT, GTE, LT, LTE), threshold, windowMinutes (1..10080), severity (INFO, WARNING,\
-        \ CRITICAL)."
-      properties:
-        applicationId:
-          type: string
-          format: uuid
-        otaBundleId:
-          type: string
-        metric:
-          type: string
-        comparator:
-          type: string
-        threshold:
-          type: number
-          format: double
-        windowMinutes:
-          type: integer
-          format: int32
-        severity:
-          type: string
-    AlertRuleView:
-      type: object
-      properties:
-        id:
-          type: string
-          format: uuid
-        applicationId:
-          type: string
-          format: uuid
-        otaBundleId:
-          type: string
-          format: uuid
-        metric:
-          type: string
-        comparator:
-          type: string
-        threshold:
-          type: number
-          format: double
-        windowMinutes:
-          type: integer
-          format: int32
-        severity:
-          type: string
-        createdAt:
-          type: string
-          format: date-time
-        updatedAt:
-          type: string
-          format: date-time
-        standingFiring:
-          $ref: "#/components/schemas/AlertFiringView"
-    AlertRuleDetailView:
-      type: object
-      properties:
-        rule:
-          $ref: "#/components/schemas/AlertRuleView"
-        firings:
-          type: array
-          items:
-            $ref: "#/components/schemas/AlertFiringView"
-    AlertFiringView:
-      type: object
-      properties:
-        id:
-          type: string
-          format: uuid
-        otaBundleId:
-          type: string
-          format: uuid
-        observedValue:
-          type: number
-          format: double
-        detail:
-          type: string
-        firedAt:
-          type: string
-          format: date-time
-        resolvedAt:
-          type: string
-          format: date-time
-    PageResponseAlertRuleView:
-      type: object
-      properties:
-        items:
-          type: array
-          items:
-            $ref: "#/components/schemas/AlertRuleView"
-        next_cursor:
-          type: string
-    OtaAlertFeedView:
-      type: object
-      properties:
-        tenantId:
-          type: string
-          format: uuid
-        generatedAt:
-          type: string
-        counts:
-          $ref: "#/components/schemas/OtaAlertCountsView"
-        standing:
-          type: array
-          items:
-            $ref: "#/components/schemas/OtaAlertFiringView"
-        recent:
-          type: array
-          items:
-            $ref: "#/components/schemas/OtaAlertFiringView"
-    OtaAlertCountsView:
-      type: object
-      properties:
-        critical:
-          type: integer
-          format: int32
-        warning:
-          type: integer
-          format: int32
-        info:
-          type: integer
-          format: int32
-    OtaAlertFiringView:
-      type: object
-      properties:
-        id:
-          type: string
-          format: uuid
-        ruleId:
-          type: string
-          format: uuid
-        applicationId:
-          type: string
-          format: uuid
-        otaBundleId:
-          type: string
-          format: uuid
-        metric:
-          type: string
-        comparator:
-          type: string
-        threshold:
-          type: number
-          format: double
-        severity:
-          type: string
-        observedValue:
-          type: number
-          format: double
-        detail:
-          type: string
-        firedAt:
-          type: string
-          format: date-time
