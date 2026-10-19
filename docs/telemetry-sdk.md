@@ -13,7 +13,7 @@ signal-level handlers).
 
 - What ships: [The two SDKs](#the-two-sdks)
 - The ≤ 5-line integration: [Android](#android) and [iOS](#ios)
-- The OTA updater: [OTA updater (Android)](#ota-updater-android)
+- The OTA updater: [OTA updater (Android)](#ota-updater-android) and [OTA updater (iOS)](#ota-updater-ios)
 - How the SDK authenticates: [The telemetry token](#the-telemetry-token)
 - What is (and is never) collected: [Privacy](#privacy)
 - Offline behavior: [Offline batching and dedup](#offline-batching-and-dedup)
@@ -29,7 +29,7 @@ signal-level handlers).
 | Platform | Path | Language | Dependencies | Size (stripped) |
 |---|---|---|---|---|
 | Android | `sdk/android` | Kotlin (JVM cores + Android adapters) | ZERO runtime deps | ~111 KB combined (telemetry core 32 KB + adapter 4 KB; OTA core 70 KB + adapter 4 KB) |
-| iOS | `sdk/ios` | Swift (Swift Package) | ZERO external deps (Foundation) | ~183 KB static library |
+| iOS | `sdk/ios` | Swift (Swift Package) | ZERO external deps (Foundation + CryptoKit) | ~72 KB telemetry, ~133 KB OTA — each a PER-LIBRARY contribution (see [Budgets](#budgets)) |
 
 The Android artifact is a pure Kotlin/JVM core (`:telemetry` — every
 platform API it touches is JDK API Android ships: HttpURLConnection,
@@ -45,10 +45,12 @@ cache directory wiring and the main-thread Handler poll loop). The
 adapters compile against the real framework classes (the
 Robolectric `android-all` stub, `compileOnly` — never packaged), so
 CI proves the integration compiles against actual Android API
-without an emulator. The iOS package is one Foundation-only target
-with the UIKit wiring guarded by `canImport(UIKit)`: the package
-builds and tests on macOS while shipping the iOS paths (CI
-typechecks them against an iOS simulator target).
+without an emulator. The iOS package is the same doctrine in two
+library targets — `ShipperDogTelemetry` (Foundation only) and, since
+S16-13, `ShipperDogOta` (Foundation + CryptoKit) — with the UIKit
+wiring guarded by `canImport(UIKit)`: the package builds and tests
+on macOS while shipping the iOS paths (CI typechecks them against an
+iOS simulator target).
 
 ## Android
 
@@ -134,6 +136,50 @@ the host's alone — a returned `Refused` reports OTA_APPLIED FAILED,
 a thrown applier reports OTA_FAILED `apply_error`, and
 `updater.reportRolledBack()` carries the app's post-apply verdict.
 
+## OTA updater (iOS)
+
+The S16-13 sibling (issue #175): the same funnel — check, resumable
+download, verify, apply, lifecycle report — as the `ShipperDogOta`
+target of the same Swift package, mirroring the Kotlin module's
+architecture one type at a time (`OtaConfig`, `OtaManifest`,
+`IngestGrant`, the `OtaHttp` seam, `OtaEventQueue`, `OtaReporter`,
+`OtaVerifier`, `OtaDownloader`, `BundleApplier`, `OtaUpdater`).
+Verification is CryptoKit's own Ed25519 + SHA-256 with the keyId pin
+(the key's 16-hex SHA-256 is re-derived at verify time), and the
+sample — `sdk/ios/Samples/SDOtaDemo` — is the proven-compiling
+integration. On iOS the poll loop is HOST-driven, the beacon's own
+doctrine: the core owns no timers, no services, no threads. The
+integration is the config, one start call, and the host's re-arming
+loop:
+
+```swift
+let updater = OtaUpdater.start(config: OtaConfig(
+    baseUrl: "https://shipperdog.example.com",
+    appToken: appTokenFromConsole,            // the fleet's sdc1. app token
+    deviceId: deviceId,
+    platform: "ios",
+    appVersion: "2.0.0",
+    verificationKeys: [keyId: base64PublicKey]  // the application's ACTIVE signing key(s)
+))
+// the host's own loop, re-armed unconditionally (the demo's shape):
+let standing = updater.updateNow(applier: applier)   // answers a standing, never throws
+timer.reschedule(after: .seconds(updater.nextPollSeconds()))  // the manifest's server-owned cadence
+```
+
+The loop re-arms on EVERY answer — the #174 review's liveness
+lesson, structural here: the seen report's enqueue is guarded and
+every flush is quiet, so a report leg never decides the funnel's
+answer and the host's loop has no failure path to arm around. The
+applier contract matches Android exactly (`.applied` reports
+OTA_APPLIED SUCCEEDED; `.refused` reports OTA_APPLIED FAILED; a
+THROWN applier reports OTA_FAILED `apply_error`;
+`updater.reportRolledBack(detail:)` carries the post-apply verdict).
+Malformed or non-http(s) URLs — config-derived or served on the
+manifest wire — are DATA, never crashes: the transport's URL
+construction seam answers `URLError(.badURL)`, which the funnel
+reports as the `transportFailure` (check leg) or `downloadFailed`
+(download leg) standing, the Kotlin sibling's own failure posture.
+
 ## The telemetry token
 
 The SDK's ONLY credential is the telemetry token the download
@@ -182,10 +228,10 @@ A second minter exists since the OTA work: the S16-07 check manifest
 carries an `ingestToken` (`sdt1.`, device-unbound by design) for
 fleet devices, and the S16-08 OTA lifecycle types ride the same
 ingest under it — the Kotlin SDK's OTA reporter rides it since
-S16-12 (the [updater](#ota-updater-android) binds the served
-manifest's grant; before the first manifest there is nothing to
-report), with the iOS updater landing at S16-13; the contract is
-the OTA family extension of [analytics](analytics.md).
+S16-12 and the iOS one since S16-13 (both [updaters](#ota-updater-android)
+bind the served manifest's grant; before the first manifest there is
+nothing to report); the contract is the OTA family extension of
+[analytics](analytics.md).
 
 ## Privacy
 
@@ -263,13 +309,19 @@ it via `ACTION_VIEW`; iOS via `UIApplication.open`.
 
 ## Budgets
 
-**Size (< 200 KB per platform, CI-asserted):** the Kotlin jars —
-telemetry core + adapter (~36 KB) and OTA updater core + adapter
-(~74 KB) — total ~111 KB of the combined 200 KB budget; the iOS
-static library, stripped, is ~183 KB for the whole macOS slice —
-and an app's dead-code elimination links only what the integration
-calls, so the shipped increment is smaller. `sdk-ci.yml` measures
-the Kotlin jars combined and the iOS library on every PR.
+**Size (< 200 KB, CI-asserted — read the platform's own line):** the
+budget is PER-LIBRARY on iOS and COMBINED on Android. The Kotlin
+jars — telemetry core + adapter (~36 KB) and OTA updater core +
+adapter (~74 KB) — total ~111 KB of the ONE combined 200 KB budget
+(all four jars together). Each iOS library gets its OWN full budget:
+what `sdk-ci.yml` measures per library is the linked-and-stripped
+contribution to a release binary — each demo executable (the
+canonical integration, complete funnel referenced) minus an
+empty-main baseline — currently ~72 KB for `ShipperDogTelemetry` and
+~133 KB for `ShipperDogOta`, each under its own 204,800-byte
+ceiling. The metric is honest by construction: it prices what a
+stripped app binary actually pays for the library, not the archive
+metadata an app never ships. Both jobs run on every PR.
 
 **Zero background battery (documented posture):** no services, no
 receivers, no timers, no background tasks, no push. Every network
