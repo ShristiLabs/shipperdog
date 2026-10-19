@@ -217,6 +217,51 @@ Exit codes are the branch points: 0 promoted, 4 blocked or rejected
   exits 4 printing the failing stage, code, and reason.
   `--no-wait` returns immediately after registration.
 
+## OTA bundles and rollouts (S16-14)
+
+The OTA surface (ADR-0010): author a bundle, ship it through a governed
+staged rollout, and watch the device funnel. Authoring is two steps —
+`create` answers the draft plus its upload grant, `upload` streams the
+bytes and lands the signed manifest:
+
+```bash
+# 1. Create the draft (the answer prints the bundle id, version id,
+#    and the granted uploadUrl):
+shipperdog ota create banking 1.4.0 --platform-tag rn --file-name bundle.zip
+
+# 2. Stream the bytes and finalize (signs under the app's Ed25519 key):
+shipperdog ota upload bundle.zip \
+    --bundle <id-from-create> --version <id-from-create> --url <uploadUrl-from-create>
+
+# Attach and commence the staged rollout on a live OTA release:
+shipperdog ota promote R-1028 --mode automatic --stages 1000,5000,10000
+
+# Operate and observe:
+shipperdog ota status R-1028
+shipperdog ota halt R-1028 --reason "crash spike on stage 1"
+shipperdog ota resume R-1028
+shipperdog ota funnel 1.4.0 --app banking --ring production
+
+# The device identifier (prints the sdc1. value ALONE, exactly once):
+TOKEN=$(shipperdog ota token issue banking --name prod-fleet)
+```
+
+- The `--stages` ladder is cumulative basis points, strictly ascending,
+  ending at 10000 (the full fleet); an entry may carry a note as
+  `bp=note`. `--mode automatic` lets the policy engine advance between
+  stages; `--mode checkpoint` makes every advance an explicit operator
+  approval (advance/pause live in the console).
+- `halt` is the manual, audit-trailed stop — `--reason` is mandatory.
+  The ladder never retreats: `resume` serves exactly what the plan had
+  reached.
+- `funnel` reads the dashboard funnel of one bundle (uuid or
+  bundleVersion label): checks -> seen -> downloads -> applied, failure
+  reasons, and adoption over time; `--app` is required (the route is
+  tenant-addressed).
+- The `sdc1.` token value exists only at issue time — the server stores
+  its SHA-256 — so the plain output is the value alone for capture;
+  `--json` carries it once inside the issued view.
+
 ## Exit codes
 
 | Code | Class | Meaning |

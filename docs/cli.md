@@ -1,9 +1,11 @@
-# CLI (S5-06 issue #25; releases S9-06 issue #60; promotion S10-05 issue #44)
+# CLI (S5-06 issue #25; releases S9-06 issue #60; promotion S10-05 issue #44; OTA S16-14 issue #176)
 
 The developer-side companion (PRD 20): `shipperdog login`, `artifact
-upload/list/view/revalidate`, `version list`, and the release verbs —
+upload/list/view/revalidate`, `version list`, the release verbs —
 `release create/list/get/transition/promote`, `release
-precheck/promotions`, `release manifest` — the
+precheck/promotions`, `release manifest` — and, since S16-14, the OTA
+verbs (`ota create/upload/promote/halt/resume/status/funnel`, `ota
+token issue`) — the
 surface CI pipelines drive. Implementation lives in `cli/` (Go 1.26,
 ADR-0004); user-facing
 usage, install, credentials handling, and the exit-code table live in
@@ -50,6 +52,13 @@ design.
 | `gate result` | `POST /api/v1/releases/{id}/gates/{gate}/result` (S10-03's CI ingestion — the command S9-06 deferred; `--status pass\|fail`, mandatory `--evidence-url`, `--value` for threshold/ceiling gates; latest wins with history) |
 | `gate list` | `GET /api/v1/releases/{id}/gates?applicationId=…` (the §32 block: states, thresholds, evidence, override records) |
 | `gate override` | `POST /api/v1/releases/{id}/gates/{gate}/override` (mandatory `--reason`; requires the `app:releases:gate-override` authority) |
+| `ota create` | `POST /api/v1/ota/bundles` (S16-14, ADR-0010 D2/D5/D7: the draft — the dedicated versions row plus the direct-to-storage grant; one `Idempotency-Key` per invocation) |
+| `ota upload` | direct `PUT` to the draft's granted `uploadUrl` (no bearer header — the URL carries its own grant), then `POST /api/v1/ota/bundles/{bundleId}/finalize` (hash-back, manifest, Ed25519 sign — D8; a replay answers `created=false`) |
+| `ota promote` | `POST /api/v1/ota/rollouts` (attach AND commence — D6: the cumulative basis-point ladder, strictly ascending, final stage 10000; `--mode AUTOMATIC\|CHECKPOINT`, `--stages 1000,5000,10000` with optional `bp=note`) |
+| `ota halt` / `ota resume` | `POST /api/v1/ota/rollouts/{releaseId}/halt` / `…/resume` (D10: halt's `--reason` is mandatory; the plan's ladder never retreats) |
+| `ota status` | `GET /api/v1/ota/rollouts/{releaseId}?applicationId=…` (the ladder with each stage's reach state plus the append-only timeline) |
+| `ota funnel` | `GET /api/v1/tenants/{tenantId}/dashboard/ota/bundles/{bundleId}/funnel` (D9: server-counted checks beside the device-reported lifecycle; optional `ring` filter; `--app` required — the application row carries the tenant) |
+| `ota token issue` | `POST /api/v1/ota/app-tokens` (D3: the `sdc1.` device identifier; the value prints exactly once — stdout alone in plain mode) |
 
 Name resolution: application and version arguments accept a UUID
 (direct read) or a name (resolved through the caller's organization
@@ -105,6 +114,24 @@ The CLI mirrors the server's upload routing rule locally
 `ARTIFACT_RESUMABLE_THRESHOLD_BYTES`) so a large binary never wastes a
 413 round trip, and rejects extension/platform mismatches locally with
 the server's own vocabulary (`ARTIFACT_FILE_TYPE_REJECTED`).
+
+OTA semantics (S16-14): the bundle surface follows the artifact
+surface's own two-step shape — `ota create` answers the draft with its
+direct-to-storage grant (the API exposes no re-grant path, so `ota
+upload` consumes the grant via `--bundle`/`--version`/`--url`, and
+create's output prints the exact next command line). The rollout
+ladder is validated locally exactly as the schema states it (1..10000,
+strictly ascending, final 10000) so a bad ladder refuses at exit 2
+before any request; halt renders the problem+json `errors` member as a
+reason list like every refusal. Bundle references accept a uuid
+(direct read; a foreign id conceals as the standard 404) or the
+bundleVersion label (listing walk — nothing is listable before
+finalize lands the SIGNED row). The device check route
+(`/api/v1/ota/check`) is deliberately not a CLI surface: it is the
+`sdc1.`-authenticated device side, and `ota token issue`'s plain
+output is the value ALONE on stdout (`TOKEN=$(shipperdog ota token
+issue App --name prod)`) — the registry stores only its SHA-256 and
+the value never prints twice.
 
 ## Conventions honored
 
