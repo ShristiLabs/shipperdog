@@ -8381,6 +8381,11 @@ components:
         anrSessions:
           type: integer
           format: int32
+        otaBundleId:
+          type: string
+        otaPayload:
+          type: object
+          additionalProperties: {}
     IngestReport:
       type: object
       properties:
@@ -11041,6 +11046,9 @@ components:
     Manifest:
       type: object
       properties:
+        bundleId:
+          type: string
+          format: uuid
         bundleVersion:
           type: string
         url:

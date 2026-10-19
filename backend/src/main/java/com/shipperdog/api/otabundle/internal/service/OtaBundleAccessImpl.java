@@ -2,6 +2,7 @@ package com.shipperdog.api.otabundle.internal.service;
 
 import com.shipperdog.api.otabundle.OtaBundleAccess;
 import com.shipperdog.api.otabundle.internal.entity.OtaBundleEntity;
+import com.shipperdog.api.otabundle.internal.repository.OtaBundleRegistryRepository;
 import com.shipperdog.api.otabundle.internal.repository.OtaBundleScopedRepository;
 import java.util.Optional;
 import java.util.UUID;
@@ -40,8 +41,11 @@ public class OtaBundleAccessImpl implements OtaBundleAccess {
 
     private final OtaBundleScopedRepository bundles;
 
-    OtaBundleAccessImpl(OtaBundleScopedRepository bundles) {
+    private final OtaBundleRegistryRepository registry;
+
+    OtaBundleAccessImpl(OtaBundleScopedRepository bundles, OtaBundleRegistryRepository registry) {
         this.bundles = bundles;
+        this.registry = registry;
     }
 
     @Override
@@ -53,6 +57,19 @@ public class OtaBundleAccessImpl implements OtaBundleAccess {
         return bundles.findOneScoped(ofApplication(applicationId)
                         .and((root, query, builder) -> builder.equal(root.get("artifactId"), artifactId)))
                 .map(OtaBundleAccessImpl::factOf);
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public Optional<BundleFact> bundleOf(UUID bundleId) {
+        if (bundleId == null) {
+            return Optional.empty();
+        }
+        // Registry-probed, not seam-served: the telemetry ingest's
+        // reporter tenant is not the bundle's owning scope (the
+        // telemetryFactsOf precedent), so the seam's bound filter
+        // would conceal every legitimate read on this path.
+        return registry.findById(bundleId).map(OtaBundleAccessImpl::factOf);
     }
 
     @Override

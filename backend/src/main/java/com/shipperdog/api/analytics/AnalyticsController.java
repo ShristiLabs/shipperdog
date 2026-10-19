@@ -166,7 +166,9 @@ public class AnalyticsController {
                                 parseInstant("occurred_at", event.occurredAt()),
                                 event.sessions(),
                                 event.crashSessions(),
-                                event.anrSessions()))
+                                event.anrSessions(),
+                                event.otaBundleId(),
+                                event.otaPayload()))
                         .toList();
         return ingest.ingest(requireUserId(principal), tenantId, telemetry, batch);
     }
@@ -236,7 +238,15 @@ public class AnalyticsController {
     /** The ingest body: a bounded batch (analytics-distinct schema name — springdoc keys by simple name). */
     public record AnalyticsEventBatchRequest(List<AnalyticsEventRequest> events) {}
 
-    /** One SDK event as the frozen contract receives it (the type's shape is validated whole-batch). */
+    /**
+     * One SDK event as the frozen contract receives it (the type's
+     * shape is validated whole-batch). The OTA members are the S16-08
+     * additive pair: {@code otaBundleId} (required on the OTA family,
+     * forbidden on the legacy family) and {@code otaPayload} (the
+     * optional detail object whose {@code device_id} member carries
+     * the fleet device identity) — the event_id precedent's own
+     * optional-member doctrine.
+     */
     public record AnalyticsEventRequest(
             String type,
             String result,
@@ -246,7 +256,9 @@ public class AnalyticsController {
             String occurredAt,
             Integer sessions,
             Integer crashSessions,
-            Integer anrSessions) {}
+            Integer anrSessions,
+            String otaBundleId,
+            Map<String, Object> otaPayload) {}
 
     /** The recompute body: one bounded historical window. */
     public record RollupRecomputeRequest(String from, String to) {}

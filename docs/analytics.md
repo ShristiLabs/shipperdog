@@ -118,7 +118,8 @@ numbers. The receipt is `{rows, from, to}` (rows written or refreshed).
 since S15-01 (issue #72): the tenant administrator's
 `tenant:analytics:ingest` (the CI and operations path) and the
 tester telemetry SDK's token (`sdt1.…`, minted by the S8-04 download
-issuance — see [telemetry-sdk](telemetry-sdk.md)). The token carries
+issuance for store testers — see [telemetry-sdk](telemetry-sdk.md) —
+and by the S16-07 OTA check manifest for fleet devices). The token carries
 exactly one authority (`analytics:telemetry:ingest`) and its
 bindings are enforced per batch: the path tenant and every event's
 release must be the token's own, a device-bound token accepts only
@@ -162,6 +163,60 @@ at-least-once duplicates were recognized and dropped. The ingest
 is audited as `ANALYTICS_EVENTS_INGESTED` with the batch's shape (counts
 by type, the release ref); device identifiers never reach the audit trail.
 
+### The S16-08 OTA family extension (issue #170 implements this)
+
+Five device lifecycle types join the accepted vocabulary on the SAME
+endpoint and the SAME whole-batch discipline: `OTA_SEEN`,
+`OTA_DOWNLOAD`, `OTA_APPLIED`, `OTA_FAILED`, `OTA_ROLLED_BACK`. The
+fleet device authenticates with the check-minted `sdt1.` grant (the
+manifest's `ingestToken`, D4 — deliberately device-unbound: a fleet
+device is not the device registry's tester hardware), so the batch
+carries no registry `deviceId`; the fleet device's identity rides the
+payload's `device_id` member instead, and the landed rows carry no
+registry device or tester. `OTA_CHECK` is NOT one of them — it stays
+server-authoritative (D9: the S16-07 check recorder is its one writer;
+a device-posted check row would forge the platform's own counting),
+and the ingest refuses it byte-identically to an unknown type: the
+wire teaches nothing about the server's vocabulary.
+
+The additive OTA members (the `eventId` precedent's own doctrine —
+optional on the wire, validated whole-batch):
+
+- `otaBundleId` — REQUIRED on the five lifecycle types, forbidden on
+  the legacy four (the row it would land can never violate V57's
+  `ck_analytics_events_ota_shape` disjunction). It names the bundle
+  the manifest served — the manifest's additive `bundleId` (S16-08),
+  the one identifier a device cannot derive for itself — and the
+  ingest proves it: the bundle must resolve and belong to the
+  release's own application, an unknown and a foreign bundle one
+  concealed field-addressed answer (no oracle). Attribution is
+  history, not re-resolution: a bundle the release has since rolled
+  past still attributes (whatever its status), and so does a bundle
+  of the application's OTHER releases — funnel readers (S16-09/S16-10)
+  must therefore key on `ota_bundle_id`, never on an assumed
+  release-to-bundle uniqueness.
+- `otaPayload` — OPTIONAL: an object of at most 32 members whose JSON
+  serialization stays within 4096 characters (nested content at full
+  serialized weight — the per-event byte bound on the fleet write
+  path), with the `device_id` member, when present, a non-blank string
+  of at most 128 characters (the check surface's own raw identifier
+  vocabulary, S16-07).
+
+The per-type result vocabulary, validated in code beside V57's widened
+CHECKs: `OTA_DOWNLOAD` and `OTA_APPLIED` take the closed
+`SUCCEEDED`|`FAILED` pair (case-insensitive, stored uppercase — the
+INSTALL precedent); `OTA_FAILED` takes the documented open row-value
+set `checksum_mismatch`|`apply_error`|`signature_invalid` (stored as
+given, lowercase — the V42 provider doctrine); `OTA_SEEN` and
+`OTA_ROLLED_BACK` are resultless — a carried word is the
+field-addressed refusal, never a silent drop. OTA rows carry no
+session columns (the DB's own closed disjunction) and — the one
+deliberate dimension swap — their `versionId` is the BUNDLE's, not
+the release's: the server-side `OTA_CHECK` row's own funnel grain,
+so both writers of one funnel land identical dimensions and the
+S16-09/S16-10 reads compose them. The V54 `eventId` dedup is
+byte-identical for the family.
+
 ## The evaluation seams
 
 The gate engine (S10-03) and the policy engine (S10-06) resolve
@@ -180,9 +235,10 @@ metric-backed questions at evaluation time through their seams
   seam for `bundle-crash-free-threshold` — "crash-free sessions on the
   CURRENT bundle" (ADR-0010 workstream 3): 1 - crash sessions / total
   sessions over the SESSION reports V57's `ota_bundle_id` attributes to
-  the release's linked bundle. While the bundle holds none — until the
-  S16-08 ingest lands the funnel attribution — the documented fallback
-  is the release-keyed SESSION standing the SDK already reports (an OTA
+  the release's linked bundle. While the bundle holds none — before
+  the fleet's attributed reports arrive, or in their gaps — the
+  documented fallback is the release-keyed SESSION standing the SDK
+  already reports (an OTA
   release carries exactly one bundle, so its release-attributed sessions
   are by construction sessions on that bundle). A release with no bundle
   link is not this metric's to answer: the empty step-aside, so a store

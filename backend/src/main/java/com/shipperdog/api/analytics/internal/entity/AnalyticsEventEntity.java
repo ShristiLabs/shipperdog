@@ -8,6 +8,7 @@ import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
 import jakarta.persistence.Table;
 import java.time.Instant;
+import java.util.Map;
 import java.util.UUID;
 import org.hibernate.annotations.JdbcTypeCode;
 import org.hibernate.type.SqlTypes;
@@ -39,11 +40,12 @@ public class AnalyticsEventEntity {
 
     /**
      * The {@code analytics_event_type} vocabulary (V38, extended by V57).
-     * The four pre-existing values are the frozen SDK contract the ingest
-     * accepts; the six OTA values are the DB vocabulary since V57 — the
-     * server-side {@code OTA_CHECK} writer (S16-07) lands first, the five
-     * device lifecycle values await the S16-08 ingest extension and are
-     * refused by the ingest's own acceptance guard until then.
+     * The four pre-existing values are the frozen SDK contract's legacy
+     * family; the five device lifecycle values ride the {@code sdt1.}-
+     * bound ingest since S16-08; {@code OTA_CHECK} stays
+     * server-authoritative (D9 — the check surface's recorder, S16-07,
+     * is its only writer, and the ingest refuses it like an unknown
+     * word: a device cannot forge the platform's own counting).
      */
     public enum Type {
         /** A device install report ({@code result}: SUCCEEDED or FAILED). */
@@ -135,14 +137,26 @@ public class AnalyticsEventEntity {
     private UUID eventId;
 
     /**
-     * The OTA bundle the report attributes to (V57, S16-05): NULL on
-     * every store-release report and on OTA reports until the S16-08
-     * ingest lands the funnel attribution. The read side (the
-     * bundle-scoped crash-free arithmetic) keys on it when present and
-     * composes with the release-keyed standing until then.
+     * The OTA bundle the report attributes to (V57, S16-05/S16-08):
+     * NULL on every legacy-family report, the manifest-served bundle's
+     * id on every OTA report (the ingest's validated attribution —
+     * {@code ck_analytics_events_ota_shape} requires it). The read
+     * side (the bundle-scoped crash-free arithmetic and the S16-09/10
+     * funnels) keys on it.
      */
     @jakarta.persistence.Column(name = "ota_bundle_id")
     private UUID otaBundleId;
+
+    /**
+     * The OTA report's free-form detail object (V57, S16-08): a JSON
+     * object or NULL — the fleet device identity's carrier (the
+     * {@code device_id} member, the check surface's own raw
+     * identifier vocabulary) beside whatever lifecycle context the
+     * report carries. Never secret material (V57's own comment).
+     */
+    @JdbcTypeCode(SqlTypes.JSON)
+    @jakarta.persistence.Column(name = "ota_payload")
+    private Map<String, Object> otaPayload;
 
     protected AnalyticsEventEntity() {}
 
@@ -150,10 +164,13 @@ public class AnalyticsEventEntity {
      * One validated report: the release's owning dimensions beside the
      * reporter's tenant, the device and tester the service has proven
      * against that tenant, and the type's own shape (the checks of
-     * V38 mirrored in code — the database refuses what the service
+     * V38/V57 mirrored in code — the database refuses what the service
      * missed). The result crosses as its storage word (the ingest
-     * writes the validated enum's name; the pre-existing family's
-     * closed vocabulary renders here exactly as before).
+     * writes the validated enum's name; the OTA family's open row
+     * values render exactly as validated). The OTA attribution pair
+     * (bundle, payload) is non-null only on the OTA family — the
+     * legacy family's events carry both NULL (the ota_shape check's
+     * own closed disjunction).
      */
     public AnalyticsEventEntity(
             UUID organizationId,
@@ -170,7 +187,9 @@ public class AnalyticsEventEntity {
             Integer anrSessions,
             Instant occurredAt,
             Instant receivedAt,
-            UUID eventId) {
+            UUID eventId,
+            UUID otaBundleId,
+            Map<String, Object> otaPayload) {
         this.organizationId = organizationId;
         this.tenantId = tenantId;
         this.applicationId = applicationId;
@@ -186,6 +205,8 @@ public class AnalyticsEventEntity {
         this.occurredAt = occurredAt;
         this.receivedAt = receivedAt;
         this.eventId = eventId;
+        this.otaBundleId = otaBundleId;
+        this.otaPayload = otaPayload;
     }
 
     /**
@@ -287,5 +308,10 @@ public class AnalyticsEventEntity {
     /** The OTA bundle the report attributes to (V57); null on unattributed rows. */
     public UUID otaBundleId() {
         return otaBundleId;
+    }
+
+    /** The OTA report's detail object (V57); null on rows without one. */
+    public Map<String, Object> otaPayload() {
+        return otaPayload;
     }
 }
