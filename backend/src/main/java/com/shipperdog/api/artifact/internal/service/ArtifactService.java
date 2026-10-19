@@ -542,8 +542,29 @@ public class ArtifactService implements VersionArtifacts, OtaBundleArtifacts {
                     healed.getSize(),
                     healed.getProvenance());
         }
+        // The serialization point of concurrent finalizes of one bundle
+        // (#181, S16-05): every racing finalize must delete this one
+        // session row, so the locked read holds the loser until the
+        // winner's transaction commits — its delete leaves the locked
+        // read empty and the re-read below finds the winner's
+        // registered artifact, answering the replay instead of
+        // colliding on the artifact primary key inside a transaction
+        // the collision would poison. An absent row with no registered
+        // artifact is the honest miss it always was.
         ArtifactUploadSessionEntity session =
-                sessions.findOneScoped(sessionOf(artifactId)).orElseThrow(ArtifactService::artifactMissing);
+                sessions.findOneScopedForUpdate(sessionOf(artifactId)).orElse(null);
+        if (session == null) {
+            ArtifactEntity raced = artifacts.findScoped(artifactId).orElseThrow(ArtifactService::artifactMissing);
+            requireOwnVersion(raced, versionId);
+            return new BundleRegistration(
+                    false,
+                    raced.getId(),
+                    versionId,
+                    raced.getFileName(),
+                    raced.getSha256(),
+                    raced.getSize(),
+                    raced.getProvenance());
+        }
         requireOwnVersion(session, versionId);
         distributionGuard.requireArtifactsMutable(ownership.applicationId(), versionId);
         if (Instant.now(clock).isAfter(session.getExpiresAt())) {

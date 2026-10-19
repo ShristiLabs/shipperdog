@@ -92,6 +92,29 @@ public class ReleaseException extends RuntimeException {
                 "RELEASE_ARTIFACT_NOT_READY",
                 "One or more selected artifacts are not READY."),
         /**
+         * The OTA-channel bundle rule of S16-05 (issue #167, ADR-0010
+         * D1): a release on an {@code ota}-channel ring carries exactly
+         * one SIGNED OTA bundle as its one artifact slot, its version
+         * the bundle's own versions row (D2) — zero bundles, more than
+         * one bundle, a not-SIGNED bundle, or a bundle's bytes on a
+         * store-channel ring are all this one 422, the {@code errors}
+         * member carrying the offending facts.
+         */
+        RELEASE_OTA_BUNDLE_INVALID(
+                HttpStatus.UNPROCESSABLE_ENTITY,
+                "RELEASE_OTA_BUNDLE_INVALID",
+                "An OTA-channel release requires exactly one SIGNED bundle; bundle bytes belong on no other release."),
+        /**
+         * The publish crossing lost its bundle (S16-05): the bundle was
+         * SIGNED at validation but is not at the linkage write — a
+         * concurrent revoke or second publish won the race. The precise
+         * 409; the create attempt resolves fresh on retry.
+         */
+        RELEASE_OTA_BUNDLE_UNAVAILABLE(
+                HttpStatus.CONFLICT,
+                "RELEASE_OTA_BUNDLE_UNAVAILABLE",
+                "The bundle is no longer available to publish; re-validate and retry."),
+        /**
          * The crossing is not one of PRD 17's edges (issue #56 AC1): a
          * conflict with the stored state, answered 409 with the
          * {@code errors} member carrying {@code current} and

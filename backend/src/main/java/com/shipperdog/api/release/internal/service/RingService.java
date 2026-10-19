@@ -592,11 +592,16 @@ public class RingService implements RingProvisioning {
     }
 
     /**
-     * The eligibility rules (AC2's vocabulary): {@code null}
-     * unconstrained; otherwise an object whose ONLY keys are {@code
-     * tenants} and {@code groups}, each an absent-or-non-empty array of
-     * ids, every tenant one of the organization's and every group one
-     * of its tenants' — one 422 keyed by the offending member so an
+     * The eligibility rules (AC2's vocabulary; the device axes since
+     * S16-05, issue #167): {@code null} unconstrained; otherwise an
+     * object whose ONLY keys are {@code tenants} and {@code groups} —
+     * each an absent-or-non-empty array of ids, every tenant one of the
+     * organization's and every group one of its tenants' — plus the
+     * device axes {@code bundleIds} and {@code platformTags} (the OTA
+     * check resolution's eligibility leg: an absent-or-non-empty array
+     * of strings, a bundle identifier at most 255 characters, a
+     * platform tag at most 32 and stored lowercase — V55's open tag
+     * vocabulary). One 422 keyed by the offending member so an
      * Organization Admin fixes the whole rule in one pass.
      */
     private Map<String, Object> validatedEligibility(UUID organizationId, Map<String, Object> eligibility) {
@@ -604,10 +609,13 @@ public class RingService implements RingProvisioning {
             return null;
         }
         Map<String, String> errors = new LinkedHashMap<>();
-        Set<String> allowed = Set.of("tenants", "groups");
+        Set<String> allowed = Set.of("tenants", "groups", "bundleIds", "platformTags");
         for (String key : eligibility.keySet()) {
             if (!allowed.contains(key)) {
-                errors.put("eligibility." + key, "unknown eligibility axis; only 'tenants' and 'groups' are defined");
+                errors.put(
+                        "eligibility." + key,
+                        "unknown eligibility axis; only 'tenants', 'groups', 'bundleIds', and 'platformTags'"
+                                + " are defined");
             }
         }
         if (!errors.isEmpty()) {
@@ -671,6 +679,39 @@ public class RingService implements RingProvisioning {
             }
             if (!ids.isEmpty()) {
                 normalized.put(axis, ids);
+            }
+        }
+        for (String axis : List.of("bundleIds", "platformTags")) {
+            Object value = eligibility.get(axis);
+            if (value == null) {
+                continue;
+            }
+            if (!(value instanceof List<?> list) || list.isEmpty()) {
+                errors.put("eligibility." + axis, axis + " is an array of strings; omit the axis or list at least one");
+                continue;
+            }
+            if (list.size() > MAX_ELIGIBILITY_IDS) {
+                errors.put("eligibility." + axis, axis + " lists at most " + MAX_ELIGIBILITY_IDS + " entries");
+                continue;
+            }
+            int width = "bundleIds".equals(axis) ? 255 : 32;
+            List<String> entries = new ArrayList<>(list.size());
+            for (Object element : list) {
+                if (element == null) {
+                    errors.putIfAbsent("eligibility." + axis, "every " + axis + " entry is a string");
+                    continue;
+                }
+                String text = element.toString().trim();
+                if (text.isEmpty() || text.length() > width) {
+                    errors.put(
+                            "eligibility." + axis + "[" + element + "]",
+                            axis + " entries are 1 to " + width + " characters once trimmed");
+                    continue;
+                }
+                entries.add("bundleIds".equals(axis) ? text : text.toLowerCase(java.util.Locale.ROOT));
+            }
+            if (!entries.isEmpty()) {
+                normalized.put(axis, entries.stream().distinct().toList());
             }
         }
         if (!errors.isEmpty()) {

@@ -27,9 +27,11 @@ import org.springframework.data.domain.Persistable;
  * module's upload session), never a bundle row.
  *
  * <p>INV-003's discipline mirrors over: no setter touches the binary
- * or manifest fields after insert — the only post-insert transition
- * this entity knows is the status column (finalize's SIGNED landing,
- * revoke's REVOKED, and the S16-05 RELEASED crossing to come).
+ * or manifest fields after insert — the only post-insert transitions
+ * this entity knows are the status column and the release link
+ * (finalize's SIGNED landing, revoke's REVOKED, and the S16-05
+ * publish pair: RELEASED with the {@code release_id} backfill, back to
+ * SIGNED when a rollback returns the bundle to the pool).
  */
 @Entity
 @Table(name = "ota_bundles")
@@ -276,6 +278,33 @@ public class OtaBundleEntity implements OrganizationScope, Persistable<UUID> {
     /** The author's withdrawal: SIGNED to REVOKED (V55's vocabulary). */
     public void revoke() {
         this.status = Status.REVOKED;
+    }
+
+    /**
+     * The publish linkage (S16-05, ADR-0010 D1): the release-side
+     * crossing SIGNED to RELEASED with the {@code release_id} backfill
+     * the exactly-one-bundle rule writes. The caller (the release
+     * module, through the {@code OtaBundleAccess} port's implementation)
+     * owns the precondition -- a SIGNED bundle of the addressed
+     * application -- so the entity only carries the write.
+     */
+    public void markReleased(UUID releaseId) {
+        this.releaseId = releaseId;
+        this.status = Status.RELEASED;
+    }
+
+    /**
+     * The rollback twin of {@link #markReleased}: a ROLLED_BACK release
+     * returns its bundle to the SIGNED authoring pool, the live
+     * ownership link cleared ({@code uq_ota_bundles_release} keeps only
+     * live links unique). The release's own history rows keep the
+     * linkage's record; this column is current ownership, not history.
+     */
+    public void unmarkReleased(UUID releaseId) {
+        if (releaseId != null && releaseId.equals(this.releaseId)) {
+            this.releaseId = null;
+            this.status = Status.SIGNED;
+        }
     }
 
     @Override

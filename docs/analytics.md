@@ -176,6 +176,19 @@ metric-backed questions at evaluation time through their seams
   seam speaks its own unit: the policy seam the dictionary's 0..1 rate,
   the gate seam the `NUMERIC_MIN` surface's percentage (a 0.98 rate
   answers 98.0 there — the registrant is the conversion boundary).
+- analytics (S16-05, the OTA twin): `BUNDLE_CRASH_FREE_RATE` on the gate
+  seam for `bundle-crash-free-threshold` — "crash-free sessions on the
+  CURRENT bundle" (ADR-0010 workstream 3): 1 - crash sessions / total
+  sessions over the SESSION reports V57's `ota_bundle_id` attributes to
+  the release's linked bundle. While the bundle holds none — until the
+  S16-08 ingest lands the funnel attribution — the documented fallback
+  is the release-keyed SESSION standing the SDK already reports (an OTA
+  release carries exactly one bundle, so its release-attributed sessions
+  are by construction sessions on that bundle). A release with no bundle
+  link is not this metric's to answer: the empty step-aside, so a store
+  release that attaches the gate type evaluates the honest NO_DATA,
+  never another release's numbers. Same percentage boundary as its
+  store twin; same fail-closed NO_DATA until data exists.
 
 The engines iterate registrants and take the first definitive answer; an
 empty answer means "this source cannot speak to it", never zero. A gate or

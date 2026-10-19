@@ -184,6 +184,97 @@ public class RingEligibilityService implements RingEligibility {
     }
 
     // -------------------------------------------------------------------------
+    // The device axis (S16-05): the OTA check resolution's leg
+    // -------------------------------------------------------------------------
+
+    /**
+     * The device admission (S16-05, issue #167 AC2): the release's
+     * CURRENT standing — every DISTINCT organization-effective ring its
+     * targets occupy — checked against each ring rule's device axes.
+     * A device is admitted when ANY occupied ring's rule admits it
+     * (the widest standing the release currently holds, the same
+     * honest arithmetic the tester leg runs over admitted targets); a
+     * ring with no device axis admits every device, a rule naming
+     * neither the reported bundle identifier nor the platform tag
+     * excludes. Unknown and out-of-scope releases answer empty — the
+     * concealed miss. The bundle identifier axis matches exactly
+     * (identifiers are case-sensitive strings, not codes); the
+     * platform-tag axis matches the tag's lowercase standing (V55's
+     * open vocabulary is lowercase by convention, the platform-tag
+     * write surface's own normalization).
+     */
+    @Override
+    @Transactional(readOnly = true)
+    public Optional<Boolean> admitsDevice(UUID releaseId, String bundleId, String platformTag) {
+        return releases.findScoped(releaseId).map(release -> {
+            Map<String, RingEntity> effectiveRings = new LinkedHashMap<>();
+            boolean admitted = false;
+            for (ReleaseTargetEntity target : targets.findByReleaseIdOrderByTenantIdAsc(release.getId())) {
+                RingEntity effective = effectiveRingOf(effectiveRings, release.getOrganizationId(), target.getRingId());
+                if (effective == null) {
+                    continue;
+                }
+                if (deviceAdmittedBy(effective, bundleId, platformTag)) {
+                    admitted = true;
+                    break;
+                }
+            }
+            return admitted;
+        });
+    }
+
+    /**
+     * One ring's device verdict: an absent axis unconstrained, a
+     * present axis an exact-member test. Stored rules were validated at
+     * write; a malformed row (hand-edited data) fails toward the
+     * STRICTER reading — it matches nothing, like the id axes.
+     */
+    private static boolean deviceAdmittedBy(RingEntity ring, String bundleId, String platformTag) {
+        Set<String> ruleBundleIds = textsOf(ring.getEligibility(), "bundleIds");
+        Set<String> rulePlatformTags = lowercase(textsOf(ring.getEligibility(), "platformTags"));
+        if (ruleBundleIds != null && (bundleId == null || !ruleBundleIds.contains(bundleId))) {
+            return false;
+        }
+        if (rulePlatformTags != null
+                && (platformTag == null
+                        || !rulePlatformTags.contains(platformTag.trim().toLowerCase(java.util.Locale.ROOT)))) {
+            return false;
+        }
+        return true;
+    }
+
+    /** One string axis of a rule as the exact member set: null when the rule carries no axis (unconstrained). */
+    private static Set<String> textsOf(Map<String, Object> eligibility, String axis) {
+        if (eligibility == null) {
+            return null;
+        }
+        Object value = eligibility.get(axis);
+        if (value == null) {
+            return null;
+        }
+        if (!(value instanceof List<?> list)) {
+            return Set.of();
+        }
+        Set<String> texts = new LinkedHashSet<>();
+        for (Object element : list) {
+            if (element != null && !element.toString().isBlank()) {
+                texts.add(element.toString());
+            }
+        }
+        return texts;
+    }
+
+    /** The lowercase standing of a tag set (the platform-tag vocabulary's own normalization). */
+    private static Set<String> lowercase(Set<String> tags) {
+        if (tags == null) {
+            return null;
+        }
+        Set<String> lower = new LinkedHashSet<>();
+        tags.forEach(tag -> lower.add(tag.toLowerCase(java.util.Locale.ROOT)));
+        return lower;
+    }
+
+    // -------------------------------------------------------------------------
     // Helpers: the admission arithmetic
     // -------------------------------------------------------------------------
 

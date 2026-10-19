@@ -42,6 +42,19 @@ public interface AnalyticsEventRepository extends JpaRepository<AnalyticsEventEn
     List<Object[]> sessionArithmeticOf(@Param("releaseId") UUID releaseId, @Param("eventType") Type eventType);
 
     /**
+     * The bundle-attributed session arithmetic (V57's {@code
+     * ota_bundle_id}, S16-05): the same one-pass totals keyed on the
+     * bundle instead of the release — the bundle-scoped crash-free
+     * gate's own query (the S16-08 ingest lands the attribution; the
+     * empty answer until then is the documented NO_DATA the gate's
+     * release-keyed fallback covers).
+     */
+    @Query("select coalesce(sum(e.sessions), 0), coalesce(sum(e.crashSessions), 0), coalesce(sum(e.anrSessions), 0) "
+            + "from AnalyticsEventEntity e "
+            + "where e.otaBundleId = :bundleId and e.eventType = :eventType")
+    List<Object[]> sessionArithmeticOfBundle(@Param("bundleId") UUID bundleId, @Param("eventType") Type eventType);
+
+    /**
      * The (device, event id) pairs already landed for the release's
      * batch (S15-01, V54) — the dedup probe the ingest re-filters a
      * batch through before any write, so at-least-once delivery lands

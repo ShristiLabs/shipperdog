@@ -132,7 +132,11 @@ public class ReleaseController {
                         request.targets() == null
                                 ? List.of()
                                 : request.targets().stream()
-                                        .map(target -> new TargetCommand(target.tenantId(), target.testerGroupIds()))
+                                        .map(target -> new TargetCommand(
+                                                target.tenantId(),
+                                                target.testerGroupIds(),
+                                                target.forced(),
+                                                target.minAppVersion()))
                                         .toList()));
     }
 
@@ -376,8 +380,18 @@ public class ReleaseController {
     /** One per-platform artifact slot: the platform and the artifact of the version selected for it. */
     public record ArtifactRequest(String platform, UUID artifactId) {}
 
-    /** One target: the tenant and its tester groups (empty targets the tenant at large). */
-    public record TargetRequest(UUID tenantId, List<UUID> testerGroupIds) {}
+    /**
+     * One target: the tenant and its tester groups (empty targets the
+     * tenant at large), plus — on an OTA-channel release (D7, S16-05)
+     * — the target's overrides of the bundle's {@code forced} and
+     * {@code min_app_version} defaults. Either override may be null:
+     * the bundle's own value then applies.
+     */
+    @Schema(
+            description = "One release target: the tenant, its tester groups (empty targets the tenant at large), "
+                    + "and the OTA-only overrides of the bundle's forced/min_app_version defaults "
+                    + "(null: the bundle's value applies).")
+    public record TargetRequest(UUID tenantId, List<UUID> testerGroupIds, Boolean forced, String minAppVersion) {}
 
     /**
      * The transition body (PRD 17): the application id (the permission

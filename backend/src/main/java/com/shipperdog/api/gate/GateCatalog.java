@@ -50,9 +50,18 @@ public final class GateCatalog {
         COUNT_MAX
     }
 
-    /** The analytics-backed metrics a gate can resolve at evaluation time (the {@link GateMetricSource} vocabulary). */
+    /**
+     * The analytics-backed metrics a gate can resolve at evaluation time
+     * (the {@link GateMetricSource} vocabulary). {@code
+     * BUNDLE_CRASH_FREE_RATE} (S16-05, issue #167) is the OTA
+     * discipline's own crash-free standing: the rate over the release's
+     * CURRENT BUNDLE's sessions, not the release-attributed pool at
+     * large — the promotion decision an OTA ring makes is about the
+     * bundle it is widening.
+     */
     public enum Metric {
         CRASH_FREE_RATE,
+        BUNDLE_CRASH_FREE_RATE,
         OPEN_CRITICAL_BUGS
     }
 
@@ -79,6 +88,14 @@ public final class GateCatalog {
         catalog.put(
                 "crash-free-threshold",
                 new Entry("crash-free-threshold", ResultSchema.NUMERIC_MIN, Metric.CRASH_FREE_RATE));
+        // S16-05, issue #167 (ADR-0010 workstream 3): the OTA rings'
+        // "crash-free sessions on current bundle >= X%" — the same
+        // NUMERIC_MIN percentage surface, resolved against the bundle
+        // the release carries rather than the release's whole attributed
+        // pool.
+        catalog.put(
+                "bundle-crash-free-threshold",
+                new Entry("bundle-crash-free-threshold", ResultSchema.NUMERIC_MIN, Metric.BUNDLE_CRASH_FREE_RATE));
         catalog.put(
                 "open-critical-bugs",
                 new Entry("open-critical-bugs", ResultSchema.COUNT_MAX, Metric.OPEN_CRITICAL_BUGS));

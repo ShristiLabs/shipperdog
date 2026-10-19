@@ -8,6 +8,8 @@ import com.shipperdog.api.audit.AuditEventType;
 import com.shipperdog.api.config.CursorPageable;
 import com.shipperdog.api.config.TraceAttributes;
 import com.shipperdog.api.environment.EnvironmentAccess;
+import com.shipperdog.api.otabundle.OtaBundleAccess;
+import com.shipperdog.api.otabundle.OtaBundleAccess.BundleFact;
 import com.shipperdog.api.release.ReleaseAccess;
 import com.shipperdog.api.release.ReleaseCreatedEvent;
 import com.shipperdog.api.release.ReleaseException;
@@ -124,6 +126,9 @@ public class ReleaseService implements ReleaseAccess, VersionDistributionContrib
     /** The reason cap (V25's database check pins the same width, the V14 cap). */
     private static final int MAX_REASON_LENGTH = 1000;
 
+    /** The D7 override's width (V59's release_targets column, V55's bundle column — one vocabulary). */
+    private static final int MAX_MIN_APP_VERSION_LENGTH = 100;
+
     private final ReleaseScopedRepository releases;
     private final ReleaseTargetRepository targets;
     private final ReleaseTargetGroupRepository targetGroups;
@@ -135,6 +140,7 @@ public class ReleaseService implements ReleaseAccess, VersionDistributionContrib
     private final ApplicationAccess applications;
     private final VersionAccess versions;
     private final ArtifactAccess artifacts;
+    private final OtaBundleAccess otaBundles;
     private final TesterGroupAccess testerGroups;
     private final EnvironmentAccess environments;
     private final TenantScopeExecutor scopeExecutor;
@@ -157,6 +163,7 @@ public class ReleaseService implements ReleaseAccess, VersionDistributionContrib
             ApplicationAccess applications,
             VersionAccess versions,
             ArtifactAccess artifacts,
+            OtaBundleAccess otaBundles,
             TesterGroupAccess testerGroups,
             EnvironmentAccess environments,
             TenantScopeExecutor scopeExecutor,
@@ -177,6 +184,7 @@ public class ReleaseService implements ReleaseAccess, VersionDistributionContrib
         this.applications = applications;
         this.versions = versions;
         this.artifacts = artifacts;
+        this.otaBundles = otaBundles;
         this.testerGroups = testerGroups;
         this.environments = environments;
         this.scopeExecutor = scopeExecutor;
@@ -220,18 +228,28 @@ public class ReleaseService implements ReleaseAccess, VersionDistributionContrib
                     VersionException.Code.VERSION_REVOKED, "version's distribution is revoked; it cannot be released");
         }
         RingEntity ring = ringOf(command.ring(), application.organizationId());
+        boolean otaChannel = isOtaChannel(ring);
         EnvironmentAccess.EnvironmentState environment =
                 environmentOf(command.environmentId(), application.organizationId());
         Set<UUID> environmentTenants = environment == null ? null : environments.assignedTenantIdsOf(environment.id());
         List<ArtifactSlot> slots =
                 validatedArtifacts(command.applicationId(), command.versionId(), command.artifacts());
-        Map<UUID, List<UUID>> groupsByTenant =
-                validatedTargets(command.applicationId(), command.targets(), environmentTenants);
+        Targets targetSet =
+                validatedTargets(command.applicationId(), command.targets(), environmentTenants, otaChannel);
+        Map<UUID, List<UUID>> groupsByTenant = targetSet.groupsByTenant();
+        Map<UUID, TargetCommand> commandsByTenant = targetSet.commandsByTenant();
 
+        // The OTA linkage (S16-05, ADR-0010 D1/D2) resolves INSIDE the
+        // owning scope below — the bundle read is seam-served, and the
+        // resolution must share the transaction the linkage writes. The
+        // holder carries the resolved bundle out for the audit trail.
+        BundleFact[] bundleLink = new BundleFact[1];
         ReleaseDetail detail = inScope(application, actorId, () -> {
             if (releases.existsScoped(ofApplication(command.applicationId()).and(versionIs(command.versionId())))) {
                 throw releaseExists();
             }
+            BundleFact bundle = validatedOtaBundle(otaChannel, command.applicationId(), command.versionId(), slots);
+            bundleLink[0] = bundle;
             long releaseNumber = jdbc.queryForObject("select nextval('release_number_seq')", Long.class);
             ReleaseEntity release = new ReleaseEntity(
                     command.applicationId(),
@@ -246,7 +264,13 @@ public class ReleaseService implements ReleaseAccess, VersionDistributionContrib
             try {
                 saved = releases.saveScoped(release);
                 for (Map.Entry<UUID, List<UUID>> target : groupsByTenant.entrySet()) {
-                    targets.save(new ReleaseTargetEntity(saved.getId(), target.getKey(), ring.getId()));
+                    TargetCommand commandOfTenant = commandsByTenant.get(target.getKey());
+                    targets.save(new ReleaseTargetEntity(
+                            saved.getId(),
+                            target.getKey(),
+                            ring.getId(),
+                            commandOfTenant == null ? null : commandOfTenant.forced(),
+                            commandOfTenant == null ? null : commandOfTenant.minAppVersion()));
                     for (UUID groupId : target.getValue()) {
                         targetGroups.save(new ReleaseTargetGroupEntity(saved.getId(), target.getKey(), groupId));
                     }
@@ -270,6 +294,14 @@ public class ReleaseService implements ReleaseAccess, VersionDistributionContrib
                 }
                 throw e;
             }
+            if (bundle != null && !otaBundles.attachToRelease(bundle.id(), saved.getId())) {
+                // The bundle was SIGNED at validation and is not at the
+                // linkage write: a revoke or second publish won the race.
+                // Everything above rolls back with this crossing.
+                throw new ReleaseException(
+                        ReleaseException.Code.RELEASE_OTA_BUNDLE_UNAVAILABLE,
+                        "the bundle is no longer available to publish; re-validate and retry");
+            }
             return detailOf(saved, ring);
         });
 
@@ -277,6 +309,7 @@ public class ReleaseService implements ReleaseAccess, VersionDistributionContrib
         if (environment != null) {
             trace.environment(environment.id());
         }
+        BundleFact bundle = bundleLink[0];
         Map<String, String> auditDetail = new LinkedHashMap<>();
         auditDetail.put("releaseRef", detail.releaseRef());
         auditDetail.put("versionId", command.versionId().toString());
@@ -291,6 +324,10 @@ public class ReleaseService implements ReleaseAccess, VersionDistributionContrib
                         .map(slot -> slot.platform() + ":" + slot.artifactId())
                         .toList()
                         .toString());
+        if (bundle != null) {
+            auditDetail.put("bundle", bundle.id() + ":" + bundle.bundleVersion());
+            auditDetail.put("channel", "ota");
+        }
         auditDetail.put(
                 "targets",
                 groupsByTenant.entrySet().stream()
@@ -448,6 +485,19 @@ public class ReleaseService implements ReleaseAccess, VersionDistributionContrib
                     Instant occurredAt = Instant.now(clock);
                     statusHistory.save(new ReleaseStatusHistoryEntity(
                             release.getId(), from, target, validatedReason, actorId, occurredAt));
+                    if (target == ReleaseEntity.Status.ROLLED_BACK) {
+                        // The rollback's release-side OTA twin (S16-05):
+                        // a pulled OTA release returns its bundle to the
+                        // SIGNED authoring pool, the live link cleared
+                        // inside this crossing's transaction — coherent
+                        // with the machine (only an ACTIVE release can
+                        // cross here, so only a live RELEASED link can
+                        // revert; a store release's empty answer is a
+                        // no-op).
+                        otaBundles
+                                .releasedBundleOfRelease(release.getId())
+                                .ifPresent(released -> otaBundles.detachFromRelease(released.id(), release.getId()));
+                    }
                     trace.application(applicationId);
                     Map<String, String> auditDetail = new LinkedHashMap<>();
                     auditDetail.put("releaseRef", release.releaseRef());
@@ -975,8 +1025,15 @@ public class ReleaseService implements ReleaseAccess, VersionDistributionContrib
     /** One per-platform artifact slot of the detail: the platform and its selected artifact. */
     public record ArtifactSlotView(String platform, UUID artifactId) {}
 
-    /** One target of the detail: the tenant, its ring, and its tester-group selection. */
-    public record TargetView(UUID tenantId, String ring, List<UUID> testerGroupIds) {}
+    /**
+     * One target of the detail: the tenant, its ring, its tester-group
+     * selection, and — on an OTA-channel release — the target's D7
+     * overrides of the bundle's {@code forced}/{@code min_app_version}
+     * defaults (null: the bundle's value applies; the S16-07 manifest
+     * resolves the pair at serve time).
+     */
+    public record TargetView(
+            UUID tenantId, String ring, List<UUID> testerGroupIds, Boolean forced, String minAppVersion) {}
 
     /**
      * One timeline entry of the history view (issue #56 AC5): the
@@ -1014,8 +1071,17 @@ public class ReleaseService implements ReleaseAccess, VersionDistributionContrib
     /** One per-platform artifact selection: the platform and a READY artifact of the version. */
     public record ArtifactSlot(String platform, UUID artifactId) {}
 
-    /** One target: the tenant and its tester-group selection (empty targets the tenant at large). */
-    public record TargetCommand(UUID tenantId, List<UUID> testerGroupIds) {}
+    /**
+     * One target: the tenant, its tester-group selection (empty targets
+     * the tenant at large), and — on an OTA-channel release only (D7,
+     * S16-05) — the target's overrides of the bundle's per-bundle
+     * {@code forced}/{@code min_app_version} defaults. Either override
+     * may be null: the bundle's own value then applies.
+     */
+    public record TargetCommand(UUID tenantId, List<UUID> testerGroupIds, Boolean forced, String minAppVersion) {}
+
+    /** The validated target set: the group selection per tenant beside each tenant's own command (the D7 overrides). */
+    private record Targets(Map<UUID, List<UUID>> groupsByTenant, Map<UUID, TargetCommand> commandsByTenant) {}
 
     // -------------------------------------------------------------------------
     // Helpers: resolution, validation, scope, audit
@@ -1218,18 +1284,21 @@ public class ReleaseService implements ReleaseAccess, VersionDistributionContrib
     }
 
     /**
-     * The target set (AC2/AC3; the environment leg since S9-04, AC4):
-     * at least one target, distinct tenants, every tenant holding the
-     * application (tenant-owned or shared+authorized — the S3-03
-     * effective-visibility predicate), every tester group belonging to
-     * its target tenant, and — when creation names an environment —
-     * every target tenant sitting inside that environment's
-     * assignments (deny-by-default: an empty assignment set admits no
-     * tenant). Every offense accumulates into ONE 422 keyed by tenant
-     * or group id.
+     * The target set (AC2/AC3; the environment leg since S9-04, AC4;
+     * the D7 override leg since S16-05): at least one target, distinct
+     * tenants, every tenant holding the application (tenant-owned or
+     * shared+authorized — the S3-03 effective-visibility predicate),
+     * every tester group belonging to its target tenant, and — when
+     * creation names an environment — every target tenant sitting
+     * inside that environment's assignments (deny-by-default: an empty
+     * assignment set admits no tenant). The {@code forced}/{@code
+     * minAppVersion} overrides are OTA-channel facts only (D7): on a
+     * store release either override is refused with the rest of the
+     * target offenses. Every offense accumulates into ONE 422 keyed by
+     * tenant or group id.
      */
-    private Map<UUID, List<UUID>> validatedTargets(
-            UUID applicationId, List<TargetCommand> request, Set<UUID> environmentTenants) {
+    private Targets validatedTargets(
+            UUID applicationId, List<TargetCommand> request, Set<UUID> environmentTenants, boolean otaChannel) {
         if (request == null || request.isEmpty()) {
             throw invalid(Map.of("targets", "at least one target is required"));
         }
@@ -1247,6 +1316,7 @@ public class ReleaseService implements ReleaseAccess, VersionDistributionContrib
         }
         Map<String, String> invalid = new LinkedHashMap<>();
         Map<UUID, List<UUID>> groupsByTenant = new LinkedHashMap<>();
+        Map<UUID, TargetCommand> commandsByTenant = new LinkedHashMap<>();
         for (TargetCommand target : request) {
             if (!applications.visibleToTenant(applicationId, target.tenantId())) {
                 invalid.put(
@@ -1258,6 +1328,21 @@ public class ReleaseService implements ReleaseAccess, VersionDistributionContrib
                         target.tenantId().toString(),
                         "tenant is not assigned to the release environment (environment assignments are "
                                 + "deny-by-default)");
+            }
+            String override = null;
+            if (!otaChannel && (target.forced() != null || target.minAppVersion() != null)) {
+                invalid.put(
+                        target.tenantId().toString(),
+                        "forced/minAppVersion overrides apply to OTA-channel releases only (the bundle carries the defaults)");
+            } else if (target.minAppVersion() != null) {
+                override = target.minAppVersion().trim();
+                if (override.isEmpty()) {
+                    override = null;
+                } else if (override.length() > MAX_MIN_APP_VERSION_LENGTH) {
+                    invalid.put(
+                            target.tenantId().toString(),
+                            "minAppVersion override is at most " + MAX_MIN_APP_VERSION_LENGTH + " characters");
+                }
             }
             List<UUID> groups = target.testerGroupIds() == null ? List.of() : target.testerGroupIds();
             Set<UUID> distinct = new LinkedHashSet<>();
@@ -1272,12 +1357,84 @@ public class ReleaseService implements ReleaseAccess, VersionDistributionContrib
                 }
             }
             groupsByTenant.put(target.tenantId(), List.copyOf(distinct));
+            commandsByTenant.put(
+                    target.tenantId(),
+                    new TargetCommand(
+                            target.tenantId(),
+                            List.copyOf(distinct),
+                            otaChannel ? target.forced() : null,
+                            otaChannel ? override : null));
         }
         if (!invalid.isEmpty()) {
             throw new ReleaseException(
                     ReleaseException.Code.RELEASE_TARGETS_INVALID, "invalid release targets", invalid);
         }
-        return groupsByTenant;
+        return new Targets(groupsByTenant, commandsByTenant);
+    }
+
+    /**
+     * The OTA-channel bundle rule (S16-05, issue #167 AC1, ADR-0010
+     * D1/D2): an {@code ota}-channel ring's release carries EXACTLY ONE
+     * artifact — the bytes of exactly one SIGNED bundle of the
+     * addressed application — and the release's version is that
+     * bundle's own versions row. A store-channel ring refuses a
+     * bundle's bytes: bundles publish through the OTA linkage only.
+     * Answers the resolved bundle for an OTA release, null for a store
+     * release.
+     */
+    private BundleFact validatedOtaBundle(
+            boolean otaChannel, UUID applicationId, UUID versionId, List<ArtifactSlot> slots) {
+        List<BundleFact> bundles = new ArrayList<>();
+        for (ArtifactSlot slot : slots) {
+            otaBundles.bundleOfArtifact(applicationId, slot.artifactId()).ifPresent(bundles::add);
+        }
+        if (!otaChannel) {
+            if (!bundles.isEmpty()) {
+                throw new ReleaseException(
+                        ReleaseException.Code.RELEASE_OTA_BUNDLE_INVALID,
+                        "a bundle's bytes publish on an ota-channel ring only",
+                        Map.of("artifacts", "OTA bundle bytes do not belong on a store-channel release"));
+            }
+            return null;
+        }
+        Map<String, String> errors = new LinkedHashMap<>();
+        if (slots.size() != 1) {
+            errors.put("artifacts", "an OTA-channel release carries exactly one artifact: the bundle");
+        }
+        if (bundles.isEmpty()) {
+            errors.putIfAbsent("artifacts", "the artifact is not an OTA bundle of this application");
+        } else if (bundles.size() > 1) {
+            errors.put("artifacts", "an OTA-channel release carries exactly one bundle");
+        } else {
+            BundleFact bundle = bundles.get(0);
+            if (!"SIGNED".equals(bundle.status())) {
+                errors.put("artifacts", "the bundle is " + bundle.status() + "; only a SIGNED bundle can publish");
+            }
+            if (!bundle.versionId().equals(versionId)) {
+                errors.put(
+                        "versionId",
+                        "an OTA-channel release's version is the bundle's own version row (" + bundle.versionId()
+                                + ")");
+            }
+        }
+        if (!errors.isEmpty()) {
+            throw new ReleaseException(
+                    ReleaseException.Code.RELEASE_OTA_BUNDLE_INVALID,
+                    "the OTA-channel release's bundle selection is invalid",
+                    errors);
+        }
+        return bundles.get(0);
+    }
+
+    /**
+     * The OTA-channel predicate (S16-05, ADR-0010 D1): the ring's
+     * name-only distribution-channel reference resolved against the
+     * plan's {@code ota} channel name — trimmed, case-insensitive, the
+     * ring-code vocabulary's normalization discipline.
+     */
+    private static boolean isOtaChannel(RingEntity ring) {
+        return ring.getDistributionChannel() != null
+                && "ota".equals(ring.getDistributionChannel().trim().toLowerCase(Locale.ROOT));
     }
 
     /** Establishes the application's owning scope and runs the work inside it (the artifact module's executor pattern). */
@@ -1337,7 +1494,9 @@ public class ReleaseService implements ReleaseAccess, VersionDistributionContrib
                         .map(row -> new TargetView(
                                 row.getTenantId(),
                                 targetRingCodes.getOrDefault(row.getRingId(), ring == null ? null : ring.getCode()),
-                                groupsByTenant.getOrDefault(row.getTenantId(), List.of())))
+                                groupsByTenant.getOrDefault(row.getTenantId(), List.of()),
+                                row.getForced(),
+                                row.getMinAppVersion()))
                         .toList(),
                 release.getCreatedBy(),
                 release.getCreatedAt(),

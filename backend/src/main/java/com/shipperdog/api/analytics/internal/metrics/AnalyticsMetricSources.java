@@ -48,28 +48,63 @@ final class AnalyticsMetricSources {
                 .map(row -> 1.0 - ((Number) row[1]).doubleValue() / ((Number) row[0]).doubleValue());
     }
 
-    /** The gate seam's registrant (S10-03's {@code crash-free-threshold} gate). */
+    /** The gate seam's registrant (S10-03's {@code crash-free-threshold} gate; S16-05's bundle twin). */
     @Component
     static class Gate implements GateMetricSource {
 
         private final AnalyticsEventRepository events;
 
-        Gate(AnalyticsEventRepository events) {
+        private final com.shipperdog.api.otabundle.OtaBundleAccess otaBundles;
+
+        private final com.shipperdog.api.analytics.internal.service.AnalyticsQueryService queries;
+
+        Gate(
+                AnalyticsEventRepository events,
+                com.shipperdog.api.otabundle.OtaBundleAccess otaBundles,
+                com.shipperdog.api.analytics.internal.service.AnalyticsQueryService queries) {
             this.events = events;
+            this.otaBundles = otaBundles;
+            this.queries = queries;
         }
 
         @Override
         public Optional<Double> metricOf(UUID releaseId, GateCatalog.Metric metric) {
-            if (metric != GateCatalog.Metric.CRASH_FREE_RATE) {
+            // The gates' NUMERIC_MIN surface speaks PERCENTAGES — its
+            // thresholds are validated 0..100 and its dashboard renders
+            // are percent — while the dictionary and the policy seam
+            // speak the 0..1 rate. This adapter is the conversion
+            // boundary (a raw 0.999 would read as "failed" against a
+            // 99.5 threshold).
+            return switch (metric) {
+                case CRASH_FREE_RATE -> crashFreeRate(events, releaseId).map(rate -> rate * 100.0);
+                case BUNDLE_CRASH_FREE_RATE -> bundleCrashFreeRate(releaseId).map(rate -> rate * 100.0);
+                default -> Optional.empty();
+            };
+        }
+
+        /**
+         * The OTA gate's own arithmetic (S16-05, issue #167 AC4):
+         * "crash-free sessions on the CURRENT bundle". The bundle-keyed
+         * attribution (V57's {@code ota_bundle_id}, resolved through
+         * {@code AnalyticsQueryService} — one formula, three readers)
+         * is the honest answer; while the bundle holds none — the S16-08
+         * ingest has not attributed the funnel yet — the documented
+         * fallback is the release-keyed SESSION standing the SDK
+         * already reports: an OTA release carries EXACTLY ONE bundle,
+         * so its release-attributed sessions are by construction
+         * sessions on that bundle (the issue's "initially rely on
+         * existing SESSION metrics"). A release with no bundle link is
+         * not this metric's to answer — the empty step-aside, so a
+         * store ring that attaches the gate evaluates the honest
+         * NO_DATA, never another release's numbers.
+         */
+        private Optional<Double> bundleCrashFreeRate(UUID releaseId) {
+            Optional<com.shipperdog.api.otabundle.OtaBundleAccess.BundleFact> bundle =
+                    otaBundles.releasedBundleOfRelease(releaseId);
+            if (bundle.isEmpty()) {
                 return Optional.empty();
             }
-            // The gate's NUMERIC_MIN surface speaks PERCENTAGES — its
-            // threshold is validated 0..100 and its manual submissions
-            // and dashboard renders are percent — while the dictionary
-            // and the policy seam speak the 0..1 rate. This adapter is
-            // the conversion boundary (a raw 0.999 would read as
-            // "failed" against a 99.5 threshold).
-            return crashFreeRate(events, releaseId).map(rate -> rate * 100.0);
+            return queries.crashFreeRateOfBundle(bundle.get().id()).or(() -> crashFreeRate(events, releaseId));
         }
     }
 
