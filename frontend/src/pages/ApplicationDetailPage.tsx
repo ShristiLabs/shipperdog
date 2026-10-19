@@ -12,6 +12,7 @@
  */
 import ArrowBackIcon from "@mui/icons-material/ArrowBack";
 import ArchiveIcon from "@mui/icons-material/Archive";
+import ContentCopyIcon from "@mui/icons-material/ContentCopy";
 import EditIcon from "@mui/icons-material/Edit";
 import UnarchiveIcon from "@mui/icons-material/Unarchive";
 import {
@@ -23,8 +24,10 @@ import {
   DialogActions,
   DialogContent,
   DialogTitle,
+  LinearProgress,
   Paper,
   Stack,
+  Switch,
   TextField,
   Tooltip,
   Typography,
@@ -33,6 +36,8 @@ import { DataGrid, type GridColDef } from "@mui/x-data-grid";
 import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useMemo, useState } from "react";
 import { Link, useParams } from "react-router-dom";
+import { getOtaSigningKey } from "../api/ota";
+import { ApiError } from "../api/problem";
 import {
   authorizeTenant,
   deauthorizeTenant,
@@ -320,6 +325,8 @@ export default function ApplicationDetailPage() {
         </Stack>
       </Paper>
 
+      <OtaSection applicationId={app.id} otaEnabled={app.otaEnabled ?? false} onFlipped={invalidateApplication} />
+
       {shared ? (
         <Paper variant="outlined" sx={{ padding: 2 }} data-testid="authorization-section">
           <Stack direction="row" spacing={2} sx={{ alignItems: "center", marginBottom: 1 }}>
@@ -456,6 +463,140 @@ function DetailRow({ label, value }: { label: string; value: string | null }) {
       <Typography sx={{ minWidth: 140, color: "text.secondary" }}>{label}</Typography>
       <Typography>{value ?? "—"}</Typography>
     </Stack>
+  );
+}
+
+/** The OTA block (S16-15, issue #177): the application's OTA gate —
+ * the ota_enabled toggle (a disabled application refuses every bundle
+ * authoring and device check) — and the ACTIVE signing key's public
+ * half with its keyId, the copyable pair an SDK embeds before it
+ * ships (D8). Before the first finalized bundle there is no key:
+ * generation is a finalize-time act, never a read side effect, and
+ * the read's honest 404 renders the explaining empty state. */
+function OtaSection({
+  applicationId,
+  otaEnabled,
+  onFlipped,
+}: {
+  applicationId: string;
+  otaEnabled: boolean;
+  onFlipped: () => void;
+}) {
+  const toast = useToast();
+
+  const key = useQuery({
+    queryKey: ["ota-signing-key", applicationId],
+    queryFn: () => getOtaSigningKey(applicationId),
+    retry: false,
+  });
+  const keyMissing = key.isError && key.error instanceof ApiError && key.error.status === 404;
+
+  const flip = useMutation({
+    mutationFn: (next: boolean) => updateApplication(applicationId, { otaEnabled: next }),
+    onSuccess: (updated) => {
+      onFlipped();
+      toast.showSuccess(
+        updated.otaEnabled === true
+          ? "OTA enabled — bundles can be authored and devices can check"
+          : "OTA disabled — the device check answers no-update for this application",
+      );
+    },
+    onError: toast.showError,
+  });
+
+  async function copy(label: string, value: string) {
+    try {
+      await navigator.clipboard.writeText(value);
+      toast.showSuccess(`${label} copied`);
+    } catch {
+      toast.showError(new Error("clipboard-unavailable"));
+    }
+  }
+
+  return (
+    <Paper variant="outlined" sx={{ padding: 2 }} data-testid="ota-section">
+      <Stack direction="row" spacing={2} sx={{ alignItems: "center", marginBottom: 1 }}>
+        <Typography variant="h6" sx={{ flexGrow: 1 }}>
+          Over-the-air updates
+        </Typography>
+        <Button
+          size="small"
+          component={Link}
+          to={`/ota/bundles/${applicationId}`}
+          data-testid="manage-ota-bundles"
+        >
+          Manage OTA bundles
+        </Button>
+      </Stack>
+      <Stack direction="row" spacing={1} sx={{ alignItems: "center" }}>
+        <Switch
+          checked={otaEnabled}
+          disabled={flip.isPending}
+          onChange={(event) => flip.mutate(event.target.checked)}
+          data-testid="ota-enabled-toggle"
+        />
+        <Typography variant="body2">
+          {otaEnabled ? "OTA enabled" : "OTA disabled"} — a disabled application refuses bundle
+          authoring, app-token issue, and the device check.
+        </Typography>
+        {flip.isPending ? <LinearProgress sx={{ width: 80 }} /> : null}
+      </Stack>
+      {key.isPending ? (
+        <Typography color="text.secondary" sx={{ marginTop: 1 }} aria-busy="true">
+          Loading the signing key...
+        </Typography>
+      ) : keyMissing ? (
+        <Typography color="text.secondary" sx={{ marginTop: 1 }} data-testid="ota-key-empty">
+          No signing key yet — the application&apos;s first finalized bundle generates the active
+          Ed25519 key (a finalize-time act, never a read side effect).
+        </Typography>
+      ) : key.isError ? (
+        <Alert severity="error" sx={{ marginTop: 1 }}>
+          Failed to load the signing key.
+        </Alert>
+      ) : key.data ? (
+        <Stack spacing={1} sx={{ marginTop: 1 }} data-testid="ota-signing-key">
+          <Stack direction="row" spacing={1} sx={{ alignItems: "center" }}>
+            <Chip size="small" variant="outlined" label={key.data.algorithm} />
+            <Typography variant="body2" sx={{ fontFamily: "monospace" }}>
+              keyId {key.data.keyId}
+            </Typography>
+            <Tooltip title="Copy the keyId">
+              <Button
+                size="small"
+                startIcon={<ContentCopyIcon />}
+                onClick={() => void copy("keyId", key.data.keyId)}
+                data-testid="copy-ota-key-id"
+              >
+                Copy keyId
+              </Button>
+            </Tooltip>
+            <Typography variant="caption" color="text.secondary">
+              created {new Date(key.data.createdAt).toLocaleString()}
+            </Typography>
+          </Stack>
+          <Stack direction="row" spacing={1} sx={{ alignItems: "flex-start" }}>
+            <Typography
+              variant="body2"
+              sx={{ fontFamily: "monospace", wordBreak: "break-all", flexGrow: 1 }}
+              data-testid="ota-public-key"
+            >
+              {key.data.publicKey}
+            </Typography>
+            <Tooltip title="Copy the public key (Base64) for the SDK's verifier">
+              <Button
+                size="small"
+                startIcon={<ContentCopyIcon />}
+                onClick={() => void copy("Public key", key.data.publicKey)}
+                data-testid="copy-ota-public-key"
+              >
+                Copy
+              </Button>
+            </Tooltip>
+          </Stack>
+        </Stack>
+      ) : null}
+    </Paper>
   );
 }
 

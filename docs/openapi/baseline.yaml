@@ -10079,6 +10079,8 @@ components:
           type: string
         status:
           type: string
+        otaEnabled:
+          type: boolean
         createdAt:
           type: string
           format: date-time
@@ -10291,6 +10293,8 @@ components:
           type: string
         status:
           type: string
+        otaEnabled:
+          type: boolean
         ownershipScope:
           type: string
         tenantId:

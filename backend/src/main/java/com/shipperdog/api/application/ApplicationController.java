@@ -118,6 +118,7 @@ public class ApplicationController {
                 request.bundleId(),
                 request.packageName(),
                 request.status(),
+                request.otaEnabled(),
                 request.ownershipScope(),
                 request.tenantId());
     }
@@ -154,7 +155,11 @@ public class ApplicationController {
     /**
      * Partial update: null fields are left unchanged; an empty
      * description clears it; removing a platform retires its identifier.
-     * A changed {@code ownershipScope} requests the audited scope
+     * Since S16-15 an optional {@code otaEnabled} boolean carries the
+     * OTA opt-in toggle (V55's {@code applications.ota_enabled}) — the
+     * same application-manage write grain as every sibling field, the
+     * console's OTA-enable switch its only caller. A changed
+     * {@code ownershipScope} requests the audited scope
      * transition (issue #14): converting to TENANT requires the new
      * owner {@code tenantId}, converting to ORGANIZATION requires none;
      * a {@code tenantId} without a scope change is rejected
@@ -167,6 +172,7 @@ public class ApplicationController {
             String bundleId,
             String packageName,
             String status,
+            Boolean otaEnabled,
             String ownershipScope,
             UUID tenantId) {}
 }

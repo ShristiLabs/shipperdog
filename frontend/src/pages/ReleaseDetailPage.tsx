@@ -99,6 +99,12 @@ import {
 } from "../api/distribution";
 import { getApplicationVersion } from "../api/versions";
 import {
+  controlOtaRollout,
+  getOtaRollout,
+  type OtaRolloutAction,
+  type OtaRolloutView,
+} from "../api/ota";
+import {
   decideReleaseApproval,
   getReleaseApprovals,
   restartApprovalRound,
@@ -133,6 +139,11 @@ import {
   legalTransitions,
   transitionRequiresReason,
 } from "./releaseRules";
+import {
+  OTA_ROLLOUT_STATUS_COLORS,
+  OTA_ROLLOUT_STATUS_LABELS,
+  basisPointsPercent,
+} from "../otaRules";
 
 const REFRESH_MS = 30_000;
 
@@ -599,6 +610,7 @@ export default function ReleaseDetailPage() {
         <PhasedReleaseCurve releaseId={release.id} />
         <PlayRolloutCurve releaseId={release.id} />
         <StagedTenantRollout releaseId={release.id} />
+        <OtaRolloutSection applicationId={applicationIdSafe} releaseId={release.id} />
       </Paper>
 
       <Paper variant="outlined" sx={{ padding: 2 }} data-testid="timeline-section">
@@ -853,6 +865,215 @@ interface PrecheckDialogProps {
   failed: boolean;
   tenantNameById: Map<string, string>;
   onClose: () => void;
+}
+
+/** The OTA rollout block (S16-15, issue #177; ADR-0010 workstream 6 —
+ * D6/D10): the release's staged OTA plan — the cumulative
+ * basis-points ladder with its rungs' standings, the append-only
+ * timeline, and the operator controls (advance, pause, resume, halt),
+ * each behind a confirmation dialog; halt explains itself (the reason
+ * is mandatory and audited — the check resolution answers no-update
+ * while the plan stands HALTED). Concurrent control answers the
+ * optimistic-lock 409 (ROLLOUT_CONFLICT): the toast carries the
+ * problem's own actionable wording and the view re-reads the current
+ * plan, so the operator acts on fresh state, never a stale write. A
+ * release without an OTA plan keeps this block quiet (the honest
+ * miss). */
+function OtaRolloutSection({ applicationId, releaseId }: { applicationId: string; releaseId: string }) {
+  const toast = useToast();
+  const queryClient = useQueryClient();
+  const [confirming, setConfirming] = useState<OtaRolloutAction | null>(null);
+  const [reason, setReason] = useState("");
+
+  const rollout = useQuery({
+    queryKey: ["ota-rollout", releaseId],
+    queryFn: () => getOtaRollout(applicationId, releaseId),
+    enabled: applicationId !== "" && releaseId !== "",
+    retry: false,
+    refetchInterval: REFRESH_MS,
+  });
+
+  const control = useMutation({
+    mutationFn: (input: { action: OtaRolloutAction; reason?: string }) =>
+      controlOtaRollout(releaseId, input.action, { applicationId, reason: input.reason }),
+    onSuccess: async (view: OtaRolloutView) => {
+      setConfirming(null);
+      setReason("");
+      toast.showSuccess(
+        `OTA rollout: ${OTA_ROLLOUT_STATUS_LABELS[view.status].toLowerCase()} at stage ${view.currentStage} of ${view.stages.length}`,
+      );
+      await queryClient.invalidateQueries({ queryKey: ["ota-rollout", releaseId] });
+    },
+    onError: (error) => {
+      // The optimistic-lock 409 is the concurrency contract (V48's
+      // pattern): the problem's own wording says what to do, and the
+      // invalidation re-reads the plan so the next attempt acts on
+      // the winner's state.
+      toast.showError(error);
+      void queryClient.invalidateQueries({ queryKey: ["ota-rollout", releaseId] });
+    },
+  });
+
+  if (rollout.error || !rollout.data) {
+    // A release carrying no OTA rollout plan (the ordinary release)
+    // keeps this block quiet.
+    return null;
+  }
+  const view = rollout.data;
+  const reachedBasis =
+    view.currentStage > 0 ? view.stages[view.currentStage - 1]?.basisPoints ?? 0 : 0;
+  const progress = Math.round((reachedBasis / 10_000) * 100);
+  const haltNeedsReason = confirming === "halt";
+  const reasonReady = reason.trim() !== "";
+  const canAdvance = view.status === "RUNNING" && view.currentStage < view.stages.length;
+  const canPause = view.status === "RUNNING";
+  const canResume = view.status === "PAUSED" || view.status === "HALTED";
+  const canHalt = view.status === "RUNNING" || view.status === "PAUSED";
+
+  return (
+    <Box sx={{ marginTop: 2 }} data-testid="ota-rollout">
+      <Divider sx={{ marginBottom: 1 }} />
+      <Stack direction="row" spacing={1} sx={{ alignItems: "center", marginBottom: 1, flexWrap: "wrap" }}>
+        <Typography variant="subtitle2">OTA staged rollout</Typography>
+        <Chip
+          size="small"
+          variant="outlined"
+          color={OTA_ROLLOUT_STATUS_COLORS[view.status]}
+          label={OTA_ROLLOUT_STATUS_LABELS[view.status].toLowerCase()}
+          data-testid="ota-rollout-status"
+        />
+        <Chip
+          size="small"
+          variant="outlined"
+          label={view.mode === "AUTOMATIC" ? "automatic (policy-gated)" : "checkpoint (RM approval)"}
+        />
+        <Typography variant="caption" color="text.secondary">
+          stage {view.currentStage} of {view.stages.length} — {basisPointsPercent(reachedBasis)} of the fleet
+        </Typography>
+      </Stack>
+      <Stack spacing={1} sx={{ maxWidth: 480 }}>
+        <LinearProgress variant="determinate" value={progress} data-testid="ota-rollout-progress" />
+        {view.stages.map((stage) => (
+          <Typography variant="caption" color="text.secondary" key={stage.position}>
+            Stage {stage.position}: {basisPointsPercent(stage.basisPoints)} of devices
+            {stage.note ? ` — ${stage.note}` : ""} — {stage.status.toLowerCase()}
+            {stage.reachedAt !== null
+              ? ` at ${stage.reachedAt.slice(0, 19).replace("T", " ")}`
+              : ""}
+          </Typography>
+        ))}
+        <Stack direction="row" spacing={1} sx={{ alignItems: "center" }}>
+          <Button
+            size="small"
+            disabled={control.isPending || !canAdvance}
+            onClick={() => setConfirming("advance")}
+            data-testid="ota-rollout-advance"
+          >
+            {view.mode === "CHECKPOINT" ? "Approve and advance" : "Advance"}
+          </Button>
+          <Button
+            size="small"
+            disabled={control.isPending || !canPause}
+            onClick={() => setConfirming("pause")}
+            data-testid="ota-rollout-pause"
+          >
+            Pause
+          </Button>
+          <Button
+            size="small"
+            disabled={control.isPending || !canResume}
+            onClick={() => setConfirming("resume")}
+            data-testid="ota-rollout-resume"
+          >
+            Resume
+          </Button>
+          <Button
+            size="small"
+            color="error"
+            disabled={control.isPending || !canHalt}
+            onClick={() => setConfirming("halt")}
+            data-testid="ota-rollout-halt"
+          >
+            Halt
+          </Button>
+        </Stack>
+        <Stack spacing={0.5} data-testid="ota-rollout-timeline">
+          {view.timeline.map((event, index) => (
+            <Typography variant="caption" color="text.secondary" key={index}>
+              {event.occurredAt.slice(0, 19).replace("T", " ")} — {event.action.toLowerCase()}
+              {event.stagePosition > 0 ? ` (stage ${event.stagePosition})` : ""}
+              {event.detail !== null ? ` ${event.detail}` : ""}
+            </Typography>
+          ))}
+        </Stack>
+      </Stack>
+
+      <Dialog open={confirming !== null} onClose={() => setConfirming(null)} maxWidth="sm" fullWidth>
+        <DialogTitle data-testid="ota-rollout-confirm-title">
+          {confirming === "halt"
+            ? "Halt the OTA rollout?"
+            : confirming === "advance"
+              ? "Advance the OTA rollout to the next stage?"
+              : confirming === "pause"
+                ? "Pause the OTA rollout?"
+                : "Resume the OTA rollout?"}
+        </DialogTitle>
+        <DialogContent>
+          <Stack spacing={2} sx={{ marginTop: 1 }}>
+            <Typography>
+              {confirming === "halt"
+                ? "Halting stops the staged widening: the device check answers no-update while the plan stands HALTED (D10 — the manual, audit-trailed stop). Resuming later serves what the plan had reached."
+                : confirming === "advance"
+                  ? `Widening to stage ${Math.min(view.currentStage + 1, view.stages.length)} of ${view.stages.length} — ${basisPointsPercent(view.stages[view.currentStage]?.basisPoints ?? 10_000)} of the fleet.`
+                  : confirming === "pause"
+                    ? "A paused plan keeps serving its current stage to new devices but does not widen."
+                    : "A halted or paused plan returns to RUNNING, serving what it had reached — resuming widens nothing by itself."}
+            </Typography>
+            <TextField
+              label={haltNeedsReason ? "Reason (required, audited)" : "Reason (optional, audited)"}
+              value={reason}
+              onChange={(event) => setReason(event.target.value)}
+              error={haltNeedsReason && !reasonReady}
+              helperText={
+                haltNeedsReason && !reasonReady
+                  ? "A halt explains itself — the reason rides the timeline and the audit event"
+                  : "Recorded with the action"
+              }
+              multiline
+              minRows={2}
+              slotProps={{ htmlInput: { "data-testid": "ota-rollout-reason" } }}
+            />
+          </Stack>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setConfirming(null)}>Cancel</Button>
+          <Button
+            color={confirming === "halt" ? "error" : "primary"}
+            variant="contained"
+            disabled={control.isPending || (haltNeedsReason && !reasonReady)}
+            data-testid="ota-rollout-confirm"
+            onClick={() => {
+              if (confirming === null) return;
+              control.mutate({
+                action: confirming,
+                ...(reason.trim() !== "" ? { reason: reason.trim() } : {}),
+              });
+            }}
+          >
+            {control.isPending
+              ? "Working..."
+              : confirming === "halt"
+                ? "Halt"
+                : confirming === "advance"
+                  ? "Advance"
+                  : confirming === "pause"
+                    ? "Pause"
+                    : "Resume"}
+          </Button>
+        </DialogActions>
+      </Dialog>
+    </Box>
+  );
 }
 
 /** The staged TENANT rollout block (S13-06, AC1/AC2/AC3/AC4): the

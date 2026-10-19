@@ -252,7 +252,13 @@ allowed.
   for shared applications only, the authorized-tenants screen: grant
   with an optional reason (1-500), revoke the same way, grantedBy
   resolved through the organization roster where possible (raw UUID
-  otherwise — no user-name port exists yet). Versions and artifacts
+  otherwise — no user-name port exists yet). Since S16-15 the
+  over-the-air block rides the detail page: the OTA opt-in toggle
+  (PATCHes `applications.ota_enabled` on the registry's write grain)
+  and the ACTIVE signing key's public half with its keyId — the
+  copyable pair an SDK embeds; before the first finalized bundle the
+  honest empty state explains that key generation is a finalize-time
+  act. Versions and artifacts
   render honest empty states until E4/E5; mutations invalidate the
   `["applications"]` query-key prefix, which covers both listing views
   and per-application reads.
@@ -308,7 +314,14 @@ allowed.
   the YAML compliance render, a YAML download, and a diff against
   another APPROVED release of the same application (artifact pins
   rendered by their content facts — the identity a CHANGED verdict
-  actually used). Detail, history, approvals, and manifest queries
+  actually used). Since S16-15 a release carrying an OTA plan renders
+  the staged-rollout block: the cumulative basis-points ladder with
+  each rung's standing, the append-only timeline, and the operator
+  controls (advance, pause, resume, halt — each behind a
+  confirmation; halt's reason is mandatory), the optimistic-lock 409
+  surfacing the problem's own wording while the view re-reads the
+  winner's state; a release without a plan keeps the block quiet.
+  Detail, history, approvals, and manifest queries
   auto-refresh every 30 seconds; before APPROVED the manifest panel
   shows the honest not-frozen state (the surface's 404), never an
   error.
@@ -359,6 +372,34 @@ allowed.
   set — the PUT is whole-set). The nav section renders under the
   `org:release-policies:read` probe (limit-1, the sibling probes'
   shape).
+- **OTA bundles** (`/ota/bundles`, S16-15, issue #177): the OTA
+  authoring home, application-addressed like the releases listing
+  (the picker's pattern; deep links preselect via
+  `/ota/bundles/:applicationId`). The listing carries only
+  SIGNED-and-later rows with the V55 status filter and the author's
+  revocation (behind a confirmation naming the bundle). The upload
+  wizard walks create -> direct-to-storage PUT (the granted session
+  URL, octet-stream, deliberately no bearer — the CLI's PutToStorage
+  doctrine) -> finalize+sign, then answers the SIGNED manifest's
+  embedding facts (sha256, size, platformTag, keyId — copyable); a
+  failed leg returns the form with the problem's wording and never
+  advances past the failure. Below the grid: the sdc1. device app
+  tokens (issue shows the value exactly once; revoke behind a
+  confirmation) and the per-application OTA alert-rule store (the
+  dashboard feed's source; the editor writes metric, comparator,
+  threshold, window, severity, and the optional bundle scope). The
+  nav section renders under the applications probe, like Releases.
+- **OTA dashboard** (`/ota/dashboard`, S16-15, issue #177; reached
+  from the tenants listing's OTA action, deep links via
+  `/ota/dashboard/:tenantId`): the tenant-grain live view — the alert
+  badges and firings feed (standing and recent), and per bundle
+  (tenant/application/bundle pickers, optional ring filter) the
+  device funnel with the apply success rate and failure-reason
+  breakdown, the adoption curve, and the crash-rate comparison
+  against the current RELEASED bundle with its delta (a negative
+  delta is the halt signal). Every read auto-refreshes every 30
+  seconds; blocks without traffic render honest empty states, never
+  errors.
 
 ## CI and verification
 

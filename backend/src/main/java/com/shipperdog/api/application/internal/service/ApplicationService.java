@@ -334,7 +334,12 @@ public class ApplicationService {
      * audited with before/after pairs (identifier changes affect
      * artifact matching, S5-05). The status field carries the reversible
      * ACTIVE/ARCHIVED transition; V1's DISABLED label stays
-     * reserved-unused. A changed {@code ownershipScope} carries the
+     * reserved-unused. Since S16-15 the same PATCH carries the OTA
+     * opt-in toggle (V55's {@code ota_enabled}): a present boolean
+     * flips the gate the otabundle module's authoring guard and the
+     * device-check resolution read through the profile tuple — audited
+     * with before/after pairs exactly like every sibling field. A
+     * changed {@code ownershipScope} carries the
      * audited scope transition (see {@link #transitionOf}), executed
      * after the metadata edit inside the same request.
      */
@@ -348,6 +353,7 @@ public class ApplicationService {
             String bundleId,
             String packageName,
             String status,
+            Boolean otaEnabled,
             String ownershipScope,
             UUID targetTenantId) {
         ApplicationEntity application = load(applicationId);
@@ -395,6 +401,10 @@ public class ApplicationService {
                 application.setStatus(parsed);
             }
         }
+        if (otaEnabled != null && otaEnabled != application.isOtaEnabled()) {
+            putChange(changes, "otaEnabled", String.valueOf(application.isOtaEnabled()), String.valueOf(otaEnabled));
+            application.setOtaEnabled(otaEnabled);
+        }
         try {
             applications.saveScoped(application);
             // Same race discipline as creation: the constraints speak at
@@ -424,7 +434,12 @@ public class ApplicationService {
     // Views
     // -------------------------------------------------------------------------
 
-    /** The registry view (PRD 8.3 properties minus versions, which are E4). */
+    /**
+     * The registry view (PRD 8.3 properties minus versions, which are E4).
+     * Since S16-15 it carries the OTA opt-in flag (V55's
+     * {@code ota_enabled}) beside the lifecycle status — the console's
+     * toggle renders from it and PATCHes it back.
+     */
     public record ApplicationView(
             UUID id,
             UUID organizationId,
@@ -436,6 +451,7 @@ public class ApplicationService {
             String bundleId,
             String packageName,
             String status,
+            boolean otaEnabled,
             Instant createdAt,
             Instant updatedAt) {
 
@@ -451,6 +467,7 @@ public class ApplicationService {
                     application.getBundleId(),
                     application.getPackageName(),
                     application.getStatus().name(),
+                    application.isOtaEnabled(),
                     application.getCreatedAt(),
                     application.getUpdatedAt());
         }
@@ -648,6 +665,7 @@ public class ApplicationService {
                 application.getBundleId(),
                 application.getPackageName(),
                 application.getStatus().name(),
+                application.isOtaEnabled(),
                 application.getCreatedAt(),
                 Instant.now(clock));
     }

@@ -9,6 +9,7 @@
 import AddIcon from "@mui/icons-material/Add";
 import DevicesIcon from "@mui/icons-material/Devices";
 import SpaceDashboardIcon from "@mui/icons-material/SpaceDashboard";
+import SystemUpdateAltIcon from "@mui/icons-material/SystemUpdateAlt";
 import GroupsIcon from "@mui/icons-material/Groups";
 import {
   Alert,
@@ -140,6 +141,16 @@ export default function TenantsPage() {
                 data-testid={`dashboard-${tenant.id}`}
               >
                 Dashboard
+              </Button>
+            </Tooltip>
+            <Tooltip title="OTA dashboard (S16-15)">
+              <Button
+                size="small"
+                startIcon={<SystemUpdateAltIcon />}
+                onClick={() => navigate(`/ota/dashboard/${tenant.id}`)}
+                data-testid={`ota-dashboard-${tenant.id}`}
+              >
+                OTA
               </Button>
             </Tooltip>
             {tenant.status === "ACTIVE" ? (

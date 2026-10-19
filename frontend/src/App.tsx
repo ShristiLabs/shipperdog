@@ -12,6 +12,8 @@ import DashboardPage from "./pages/DashboardPage";
 import LoginPage from "./pages/LoginPage";
 import SsoCallbackPage from "./pages/SsoCallbackPage";
 import NotificationsPage from "./pages/NotificationsPage";
+import OtaBundlesPage from "./pages/OtaBundlesPage";
+import OtaDashboardPage from "./pages/OtaDashboardPage";
 import ReleaseDetailPage from "./pages/ReleaseDetailPage";
 import ReleasePoliciesPage from "./pages/ReleasePoliciesPage";
 import RingsPage from "./pages/RingsPage";
@@ -58,6 +60,10 @@ export default function App() {
               path="releases/:applicationId/:releaseId"
               element={<ReleaseDetailPage />}
             />
+            <Route path="ota/bundles" element={<OtaBundlesPage />} />
+            <Route path="ota/bundles/:applicationId" element={<OtaBundlesPage />} />
+            <Route path="ota/dashboard" element={<OtaDashboardPage />} />
+            <Route path="ota/dashboard/:tenantId" element={<OtaDashboardPage />} />
           </Route>
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
