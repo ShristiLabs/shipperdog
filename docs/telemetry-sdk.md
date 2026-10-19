@@ -13,6 +13,7 @@ signal-level handlers).
 
 - What ships: [The two SDKs](#the-two-sdks)
 - The ≤ 5-line integration: [Android](#android) and [iOS](#ios)
+- The OTA updater: [OTA updater (Android)](#ota-updater-android)
 - How the SDK authenticates: [The telemetry token](#the-telemetry-token)
 - What is (and is never) collected: [Privacy](#privacy)
 - Offline behavior: [Offline batching and dedup](#offline-batching-and-dedup)
@@ -27,7 +28,7 @@ signal-level handlers).
 
 | Platform | Path | Language | Dependencies | Size (stripped) |
 |---|---|---|---|---|
-| Android | `sdk/android` | Kotlin (JVM core + Android adapter) | ZERO runtime deps | ~36 KB (core 32 KB + adapter 4 KB) |
+| Android | `sdk/android` | Kotlin (JVM cores + Android adapters) | ZERO runtime deps | ~111 KB combined (telemetry core 32 KB + adapter 4 KB; OTA core 70 KB + adapter 4 KB) |
 | iOS | `sdk/ios` | Swift (Swift Package) | ZERO external deps (Foundation) | ~183 KB static library |
 
 The Android artifact is a pure Kotlin/JVM core (`:telemetry` — every
@@ -35,7 +36,13 @@ platform API it touches is JDK API Android ships: HttpURLConnection,
 Files, Thread's uncaught handler) plus a thin adapter
 (`:telemetry-android`) holding the ONLY Android-framework code: the
 Application-lifecycle session tracking and the feedback deep-link
-intent. The adapter compiles against the real framework classes (the
+intent. Since S16-12 the same build carries the OTA updater the same
+way: a pure Kotlin/JVM core (`:ota` — the check, resumable download,
+Ed25519/SHA-256 verify, apply, report funnel; Ed25519 and SHA-256 via
+`java.security`, resumable persistence via `Files`) and a thin
+adapter (`:ota-android`) holding its only framework code (the files/
+cache directory wiring and the main-thread Handler poll loop). The
+adapters compile against the real framework classes (the
 Robolectric `android-all` stub, `compileOnly` — never packaged), so
 CI proves the integration compiles against actual Android API
 without an emulator. The iOS package is one Foundation-only target
@@ -93,6 +100,40 @@ func application(_ application: UIApplication,
 }
 ```
 
+## OTA updater (Android)
+
+The S16-12 companion to the beacon (issue #174): the complete
+update funnel — check (`sdc1.` fleet app token; 204 no-op / 200
+manifest), resumable download, signature + checksum verify, apply,
+lifecycle report — as the same doctrine: no services, no timers the
+SDK owns. The integration, proven compiling in `sdk/android/sample`
+(the `:ota` and `:ota-android` Gradle modules of the
+`shipperdog-telemetry-sdk` build), is one more start call beside the
+telemetry one:
+
+```kotlin
+val ota = OtaConfig(                     // the fleet device's own identity + the console-issued sdc1. app token
+    baseUrl = "https://shipperdog.example.com",
+    appToken = appTokenFromConsole,
+    deviceId = deviceId,
+    platform = "android",
+    appVersion = "2.0.0",
+    verificationKeys = mapOf(keyId to base64PublicKey),  // the application's ACTIVE signing key(s)
+)
+val updater = ShipperDogOtaAndroid.start(this, ota, applier = ::applyBundle)
+```
+
+`start` wires the lifecycle-event queue under the files dir, bundle
+staging under the cache dir, and the main-thread Handler poll at the
+manifest's server-owned cadence — each cycle runs on a background
+thread, re-arms even when the funnel throws, and only
+`ShipperDogOtaAndroid.stop()` halts it. The host's one
+responsibility is the `applier`: the SDK hands over the VERIFIED
+bundle, and what "apply" means (hot-load, next-launch staging) is
+the host's alone — a returned `Refused` reports OTA_APPLIED FAILED,
+a thrown applier reports OTA_FAILED `apply_error`, and
+`updater.reportRolledBack()` carries the app's post-apply verdict.
+
 ## The telemetry token
 
 The SDK's ONLY credential is the telemetry token the download
@@ -140,9 +181,11 @@ either way).
 A second minter exists since the OTA work: the S16-07 check manifest
 carries an `ingestToken` (`sdt1.`, device-unbound by design) for
 fleet devices, and the S16-08 OTA lifecycle types ride the same
-ingest under it — the SDK's OTA reporting lands with the updater
-work (S16-12/S16-13); the contract is the OTA family extension of
-[analytics](analytics.md).
+ingest under it — the Kotlin SDK's OTA reporter rides it since
+S16-12 (the [updater](#ota-updater-android) binds the served
+manifest's grant; before the first manifest there is nothing to
+report), with the iOS updater landing at S16-13; the contract is
+the OTA family extension of [analytics](analytics.md).
 
 ## Privacy
 
@@ -220,11 +263,13 @@ it via `ACTION_VIEW`; iOS via `UIApplication.open`.
 
 ## Budgets
 
-**Size (< 200 KB per platform, CI-asserted):** the Kotlin core +
-adapter jars total ~36 KB; the iOS static library, stripped, is
-~183 KB for the whole macOS slice — and an app's dead-code
-elimination links only what the integration calls, so the shipped
-increment is smaller. `sdk-ci.yml` measures both on every PR.
+**Size (< 200 KB per platform, CI-asserted):** the Kotlin jars —
+telemetry core + adapter (~36 KB) and OTA updater core + adapter
+(~74 KB) — total ~111 KB of the combined 200 KB budget; the iOS
+static library, stripped, is ~183 KB for the whole macOS slice —
+and an app's dead-code elimination links only what the integration
+calls, so the shipped increment is smaller. `sdk-ci.yml` measures
+the Kotlin jars combined and the iOS library on every PR.
 
 **Zero background battery (documented posture):** no services, no
 receivers, no timers, no background tasks, no push. Every network

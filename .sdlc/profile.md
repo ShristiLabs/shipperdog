@@ -67,10 +67,11 @@ Tester telemetry SDK (from `sdk/android` and `sdk/ios`, since S15-01 —
 see [docs/telemetry-sdk.md]):
 
 - Kotlin/Android (from `sdk/android`, Gradle wrapper, JDK 21+):
-  build-cmd/test-cmd: `./gradlew --no-daemon build` (core module's
-  JVM test suite; adapter + sample compile against the compileOnly
-  Robolectric android-all framework stub). Zero runtime deps; the
-  built jars must stay under 200 KB combined (sdk-ci asserts it).
+  build-cmd/test-cmd: `./gradlew --no-daemon build` (the `:telemetry`
+  and `:ota` cores' JVM test suites; adapters + sample compile
+  against the compileOnly Robolectric android-all framework stub).
+  Zero runtime deps; the built jars (all four) must stay under
+  200 KB combined (sdk-ci asserts it).
 - iOS/Swift (from `sdk/`, Swift Package, Xcode toolchain):
   test-cmd: `swift test`; iOS-path typecheck:
   `xcrun -sdk iphonesimulator swiftc -typecheck -target
@@ -109,7 +110,7 @@ Android companion app (from `companion/`, since S15-02 — see
 | frontend | frontend/ | Admin console: React 19 + TS strict + MUI 9 + React Query 5 + Router 7 on Vite 7 (S2-04) |
 | portal | portal/ | Tester portal: React 19 + TS strict + MUI 9 + React Query 5 + Router 7 on Vite 7, separate app on :5174 (S8-01) |
 | cli | cli/ | Go 1.26 developer CLI: login, artifact upload/list/view/revalidate, version list (S5-06); release create/list/get/transition/promote, release manifest (S9-06) |
-| sdk | sdk/ | Tester telemetry SDK (S15-01): `sdk/android` Kotlin/JVM core + Android adapter + sample (Gradle), `sdk/ios` Swift package + demo — zero runtime deps, < 200 KB per platform |
+| sdk | sdk/ | Tester telemetry SDK (S15-01) + OTA updater (S16-12): `sdk/android` Kotlin/JVM cores (`:telemetry`, `:ota`) + Android adapters (`:telemetry-android`, `:ota-android`) + sample (Gradle), `sdk/ios` Swift package + demo — zero runtime deps, < 200 KB per platform (Kotlin: all four jars combined) |
 | companion | companion/ | Android companion installer app spike (S15-02): `core` pure Kotlin/JVM + `app` + `demo` install target (AGP, plain widgets) — decision memo docs/companion-spike.md; no-go on productionization with revisit triggers |
 | infrastructure | infrastructure/ | local docker compose stack (API, console, portal, data, observability) + terraform Cloud Run deployment, smoke + security-header checks (S8-05) |
 | docs | docs/ | developer docs |
