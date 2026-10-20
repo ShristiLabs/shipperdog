@@ -31,6 +31,16 @@ data class CatalogCard(
     val latestVersionName: String?,
     val androidVersionId: String?,
     val androidVersionName: String?,
+    /**
+     * True when the ANDROID resolution's version is an OTA bundle's
+     * own versions row (S16-16): the platform's newest authorized
+     * build ships over the air to the embedded updater — the
+     * companion can neither install it nor compare its label against
+     * the installed store build. Absent on the wire for store
+     * resolutions (presence-shaped, so false is the fail-soft default
+     * of an older backend).
+     */
+    val androidIsOta: Boolean,
 )
 
 /** One cursor page of the catalog. */
@@ -97,6 +107,7 @@ internal object PortalModelsJson {
                 latestVersionName = optionalString(card["latestAuthorizedVersion"] as? Map<*, *>, "versionName"),
                 androidVersionId = optionalString(android, "versionId"),
                 androidVersionName = optionalString(android, "versionName"),
+                androidIsOta = (android?.get("ota") as? Boolean) == true,
             )
         }
         return CatalogPage(cards = cards, nextCursor = optionalString(root, "next_cursor"))

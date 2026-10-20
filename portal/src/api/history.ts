@@ -7,7 +7,10 @@
  * installable slots (build number, size, upload date). INV-006 rides
  * the server's grant semantics: ARCHIVED and REVOKED versions stay
  * listed while a live grant covers them, and grant revocation drops a
- * version from view on the next read (deny-by-default).
+ * version from view on the next read (deny-by-default). Since S16-16
+ * an entry that is an OTA bundle's own versions row also carries its
+ * `ota` manifest — the facts the application/version views render
+ * beside the store-build rows.
  */
 import { apiFetch } from "./client";
 
@@ -27,6 +30,24 @@ export interface HistoryPlatformSlot {
   uploadedAt: string;
 }
 
+/**
+ * The OTA bundle manifest of a bundle-backed entry (S16-16): present
+ * exactly when the version is an OTA bundle's own dedicated versions
+ * row (ADR-0010 D2) — the label, the open platform tag, the
+ * finalize-landed checksum and byte size, and the lifecycle status.
+ * `releaseId` names the carrying OTA release once the bundle
+ * publishes.
+ */
+export interface HistoryEntryOta {
+  bundleId: string;
+  bundleVersion: string;
+  platform: string;
+  sha256: string;
+  sizeBytes: number | null;
+  status: string;
+  releaseId?: string;
+}
+
 /** One authorized version of the application. */
 export interface HistoryEntry {
   versionId: string;
@@ -34,6 +55,7 @@ export interface HistoryEntry {
   status: string;
   expiresAt: string | null;
   platforms: HistoryPlatformSlot[];
+  ota?: HistoryEntryOta;
 }
 
 /** One cursor page of the version history. */

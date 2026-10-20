@@ -457,17 +457,16 @@ and the batch history. Documented with its surface in
 | `AUDIT_STREAM_EXPORT_INVALID` | 422 | The export is invalid: an unknown kind or format, an unknown audit event type in the filter, a non-routable collector URL (the webhook SSRF policy), a non-`gs://` bucket URI (the `s3://` connector is the documented follow-up), a malformed secret reference, or a kind/destination shape violation — one 422 keyed by the offending member |
 | `AUDIT_STREAM_EXPORT_CONFLICT` | 409 | The export changed; reload and retry. (The optimistic `version` column — a rotated secret reference or replaced destination is never silently resurrected by a stale writer) |
 
-## OTA bundle — S16-04/issue #166 (`OtaBundleException.Code`)
+## OTA bundle — S16-03/issue #165 (`OtaBundleException.Code`)
 
-The OTA update workstream's module (ADR-0010): bundle authoring and
-the `sdc1.` app-token registry. Registered here: the app-token
-surface (S16-04), the rollout-control surface under
-`/api/v1/ota/rollouts` (S16-06, issue #168), and the device check
-`GET /api/v1/ota/check` (S16-07, issue #169 — the surface's own
-vocabulary is one 400; every other refusal is a 204 or the filter's
-uniform 401, never a coded problem). The module's
-bundle-authoring codes (S16-03, issue #165) are pending registration
-with the workstream's docs pass (S16-16, issue #178). Since S16-06
+The OTA update workstream's module (ADR-0010): bundle authoring, the
+Ed25519 signing-key registry, the `sdc1.` app-token registry, the
+rollout-control surface under `/api/v1/ota/rollouts` (S16-06, issue
+#168), the alert-rule surface under `/api/v1/ota/alert-rules`
+(S16-11, issue #173), and the device check `GET /api/v1/ota/check`
+(S16-07, issue #169 — the surface's own vocabulary is one 400; every
+other refusal is a 204 or the filter's uniform 401, never a coded
+problem). Since S16-06
 the envelope's `detail` is the exception's authored message when one
 was written — this module's messages are deliberate safe-for-callers
 prose carrying the refusal's specifics — and the code's stable
@@ -475,11 +474,19 @@ static detail otherwise.
 
 | Code | HTTP | Detail |
 |---|---|---|
+| `BUNDLE_NOT_FOUND` | 404 | Resource not found. (since S16-03, issue #165: the bundle surfaces' single answer for every miss the id-addressed routes can render — a bundle never authored, one of another application's, and the artifact-session miss a finalize replay re-reads are the same concealed miss; the S16-11 alert-rule resolution reuses it for a rule naming a bundle the application never had) |
+| `APPLICATION_NOT_FOUND` | 404 | Resource not found. (since S16-03, issue #165: the module's shared refusal for an application the addressed surface cannot resolve — unknown, archived, or another organization's — on bundle authoring, app-token issue/revoke, rollout reads, and alert-rule resolution alike) |
+| `SIGNING_KEY_NOT_FOUND` | 404 | Resource not found. (since S16-03, issue #165: a finalize reaching the sign crossing with no ACTIVE signing key for the application — create and activate a key first, ADR-0010 D8) |
 | `TOKEN_NOT_FOUND` | 404 | Resource not found. (since S16-04, issue #166: the app-token registry's single answer for every failed revoke on `DELETE /api/v1/ota/app-tokens/{tokenId}/revoke` — a tokenId never issued to the named application or one that belongs to another application is the same concealed miss; revoking an already-revoked token replays the row and never answers this code) |
-| `INVALID_REQUEST` | 400 | The request is invalid. (since S16-06, issue #168, the rollout attach request's shape: `stages[i].basisPoints` a cumulative threshold of 1 to 10000, strictly ascending, the last exactly 10000 — the ladder only widens; `stages[i].note` 1 to 512 characters when present; an unknown `mode`; and a halt without its required reason — answered with the `errors` member naming every offending wire field. Since S16-07, issue #169, also the device check's query shape on `GET /api/v1/ota/check`: `deviceId`/`appVersion` required (at most 128/64 characters), `platform`/`channel` required normalized bounded strings (64), `bundleVersion` optional but at most 128 when present — every bound the neighboring surface's own, the bucketing's device id, V55's platform tag, the ring-code vocabulary; a malformed report is this field-addressed 400, never a 204, which would silently mis-bucket it) |
+| `INVALID_REQUEST` | 400 | The request is invalid. (since S16-06, issue #168, the rollout attach request's shape: `stages[i].basisPoints` a cumulative threshold of 1 to 10000, strictly ascending, the last exactly 10000 — the ladder only widens; `stages[i].note` 1 to 512 characters when present; an unknown `mode`; and a halt without its required reason — answered with the `errors` member naming every offending wire field. Since S16-07, issue #169, also the device check's query shape on `GET /api/v1/ota/check`: `deviceId`/`appVersion` required (at most 128/64 characters), `platform`/`channel` required normalized bounded strings (64), `bundleVersion` optional but at most 128 when present — every bound the neighboring surface's own, the bucketing's device id, V55's platform tag, the ring-code vocabulary; a malformed report is this field-addressed 400, never a 204, which would silently mis-bucket it. Since S16-03, issue #165, the bundle-authoring bodies' shape — the semver-triple `bundleVersion`, the shaped open `platformTag`, the bounded file name and `minAppVersion` — and since S16-11, issue #173, the alert-rule body's thresholds, all the same field-addressed 400) |
+| `APPLICATION_NOT_OTA_ENABLED` | 409 | The application has not enabled OTA bundle updates; enable OTA before authoring bundles. (since S16-03, issue #165: the opt-in gate — bundle authoring, app-token issue, and alert-rule creation all refuse until the console's OTA toggle is on; the device check resolves the same flag silently, ADR-0010) |
+| `BUNDLE_NOT_REVOKABLE` | 409 | Only a SIGNED bundle can be revoked. (since S16-03, issue #165: the author's withdrawal crossing — a RELEASED bundle is the release's to roll back, not the author's to revoke) |
 | `ROLLOUT_NOT_FOUND` | 404 | Resource not found. (since S16-06, issue #168: the rollout surface's single answer for a release carrying no rollout plan on the get and every control route — never committed, or another application's release, is the same concealed miss) |
 | `ROLLOUT_CONFLICT` | 409 | The rollout plan already exists or changed concurrently; reload and retry. (the attach refusal — one plan per OTA release — and the optimistic `version` losing a control-act race) |
 | `ROLLOUT_ACTION_INVALID` | 409 | The action is not valid for the plan's standing. (advance, halt, pause, or resume against a standing that does not admit it, a complete plan's control refusals included) |
 | `ROLLOUT_BLOCKED` | 409 | The advancement is blocked: resolve the policy rule first. (the AUTOMATIC mode's policy-refused advance — the refusal's evidence rides the detail) |
 | `ROLLOUT_RELEASE_NOT_LIVE` | 409 | The release is not distributing; a rollout plan commences on a live (ACTIVE or PROMOTED) release. |
 | `ROLLOUT_RELEASE_NOT_OTA` | 409 | The release carries no OTA bundle; rollout plans belong to OTA releases. |
+| `SIGNING_UNAVAILABLE` | 503 | Bundle signing is unavailable; retry the finalize. (since S16-03, issue #165: the secret-store port itself refused — key material unreadable or the provider down — never a silent unsigned bundle; ADR-0008's fail-closed doctrine) |
+| `ALERT_RULE_NOT_FOUND` | 404 | Resource not found. (since S16-11, issue #173: the alert-rule surface's miss on every id-addressed route — never created, or another application's rule, the same concealed miss) |
+| `ALERT_RULE_HAS_FIRINGS` | 409 | The rule has firing history; keep the rule (update it) so the trail stays addressable. (since S16-11, issue #173: deletion refuses a rule that has ever fired — the firings stay joinable to their rule, the audit-trail doctrine) |

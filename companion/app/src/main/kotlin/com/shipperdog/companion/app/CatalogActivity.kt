@@ -234,7 +234,8 @@ class CatalogActivity : Activity() {
             actions.orientation = LinearLayout.HORIZONTAL
             val installButton = Button(this@CatalogActivity)
             installButton.text = installLabelOf(row.state)
-            installButton.isEnabled = row.state != InstallState.NOT_INSTALLABLE
+            installButton.isEnabled =
+                row.state != InstallState.NOT_INSTALLABLE && row.state != InstallState.OTA_CHANNEL
             installButton.setOnClickListener { install(row) }
             actions.addView(installButton)
             val reportButton = Button(this@CatalogActivity)
@@ -255,6 +256,8 @@ class CatalogActivity : Activity() {
                 "Installed " + row.installedVersionName + " — newest authorized Android build"
             InstallState.UPDATE_AVAILABLE ->
                 "Installed " + row.installedVersionName + " — Android " + row.installVersionName + " available"
+            InstallState.OTA_CHANNEL ->
+                "Newest Android build ships over the air — updates arrive inside the app"
         }
 
         private fun installLabelOf(state: InstallState): String = when (state) {

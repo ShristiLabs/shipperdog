@@ -108,7 +108,8 @@ The S16-12 companion to the beacon (issue #174): the complete
 update funnel — check (`sdc1.` fleet app token; 204 no-op / 200
 manifest), resumable download, signature + checksum verify, apply,
 lifecycle report — as the same doctrine: no services, no timers the
-SDK owns. The integration, proven compiling in `sdk/android/sample`
+SDK owns. The wire contract both updaters speak is
+[ota.md](ota.md). The integration, proven compiling in `sdk/android/sample`
 (the `:ota` and `:ota-android` Gradle modules of the
 `shipperdog-telemetry-sdk` build), is one more start call beside the
 telemetry one:

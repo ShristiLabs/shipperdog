@@ -121,6 +121,11 @@ Current contents:
   batching with (device, release, event id) dedup, chainable crash
   context, the feedback deep link, the OTA updater (Android, S16-12),
   and the size/battery budgets
+- [OTA updates](ota.md) — the device-facing contract of the OTA
+  milestone (S16, ADR-0010): the `sdc1.`-authenticated check and its
+  manifest, the Ed25519 signing contract, the lifecycle telemetry
+  vocabulary, rollout bucketing and halt semantics, and where every
+  surface lives (console, CLI, portal, SDKs)
 - [Companion app spike](companion-spike.md) — the S15-02 decision
   memo for PRD §38's conditional Android companion installer app:
   the working prototype in companion/ (catalog, PackageInstaller

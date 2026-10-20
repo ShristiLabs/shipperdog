@@ -4,6 +4,8 @@ import com.shipperdog.api.otabundle.OtaBundleAccess;
 import com.shipperdog.api.otabundle.internal.entity.OtaBundleEntity;
 import com.shipperdog.api.otabundle.internal.repository.OtaBundleRegistryRepository;
 import com.shipperdog.api.otabundle.internal.repository.OtaBundleScopedRepository;
+import java.util.Collection;
+import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 import org.springframework.data.jpa.domain.Specification;
@@ -84,6 +86,24 @@ public class OtaBundleAccessImpl implements OtaBundleAccess {
     }
 
     @Override
+    @Transactional(readOnly = true)
+    public List<BundleFact> bundlesOfVersions(UUID applicationId, Collection<UUID> versionIds) {
+        if (applicationId == null || versionIds == null || versionIds.isEmpty()) {
+            return List.of();
+        }
+        // Registry-probed, not seam-served (the bundleOf precedent):
+        // the decision API's caller is the self-scoped tester persona,
+        // whose thread binds no operator scope -- by construction not
+        // the bundles' owning dimension's -- so the seam's bound
+        // filter would refuse every legitimate read on this path. The
+        // probe stays application-addressed; the version ids arrive
+        // from the caller's own engine-resolved authorized page.
+        return registry.findByApplicationIdAndVersionIdIn(applicationId, versionIds).stream()
+                .map(OtaBundleAccessImpl::factOf)
+                .toList();
+    }
+
+    @Override
     @Transactional(propagation = Propagation.MANDATORY)
     public boolean attachToRelease(UUID bundleId, UUID releaseId) {
         OtaBundleEntity bundle = bundles.findScoped(bundleId).orElse(null);
@@ -127,6 +147,8 @@ public class OtaBundleAccessImpl implements OtaBundleAccess {
                 bundle.getReleaseId(),
                 bundle.getBundleVersion(),
                 bundle.getPlatformTag(),
+                bundle.getSha256(),
+                bundle.getSizeBytes(),
                 bundle.isForced(),
                 bundle.getMinAppVersion(),
                 bundle.getStatus().name());

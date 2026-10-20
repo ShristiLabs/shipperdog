@@ -20,7 +20,8 @@ subsequent story builds on.
 | `frontend/` | Admin console — React 19 + TypeScript + MUI (Vite; S2-04) |
 | `portal/` | Tester portal — React 19 + TypeScript + MUI, separate app (S8) |
 | `cli/` | Developer CLI — Go 1.26, artifact upload/inspect + login (S5-06) |
-| `sdk/` | Tester telemetry SDK — Kotlin/Android + Swift/iOS, zero deps, < 200 KB (S15-01, [docs/telemetry-sdk.md](docs/telemetry-sdk.md)) |
+| `sdk/` | Tester telemetry SDK — Kotlin/Android + Swift/iOS, zero deps, < 200 KB; OTA updaters (S16-12/S16-13, [docs/telemetry-sdk.md](docs/telemetry-sdk.md)) |
+| `companion/` | Android companion installer app spike (S15-02, no-go with revisit triggers; [docs/companion-spike.md](docs/companion-spike.md)) |
 | `infrastructure/` | Local docker compose stack, terraform (Cloud Run, S8-05), smoke + security-header checks, Grafana/Prometheus |
 | `docs/` | Developer documentation |
 | `docs-site/` | User documentation site — VitePress, versioned, mermaid diagrams (WP1; [docs-site/README.md](docs-site/README.md)) |
@@ -28,6 +29,16 @@ subsequent story builds on.
 
 Production deployment (Cloud Run, terraform, post-deploy smoke test):
 see [docs/deployment.md](docs/deployment.md).
+
+**OTA updates (S16):** apps that declare OTA support ship
+platform-agnostic, Ed25519-signed bundles through the ordinary
+release machinery — authored in the console or CLI, staged by
+deterministic per-device rollout buckets, checked by the embedded SDK
+updaters with an `sdc1.` device identifier, and reported back as
+lifecycle telemetry that feeds the OTA dashboard and alerts. The
+device-facing contract is [docs/ota.md](docs/ota.md); the decision
+record is [docs/adr/ADR-0010-ota-updates.md](docs/adr/ADR-0010-ota-updates.md)
+and the frozen design [docs/ota-updates-plan.md](docs/ota-updates-plan.md).
 
 The backend is a modular monolith: one deployable, with one package per
 bounded context (identity, organization, tenant, application, version,

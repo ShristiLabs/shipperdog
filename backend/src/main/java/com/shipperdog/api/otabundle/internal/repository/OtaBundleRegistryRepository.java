@@ -2,6 +2,7 @@ package com.shipperdog.api.otabundle.internal.repository;
 
 import com.shipperdog.api.otabundle.internal.entity.OtaBundleEntity;
 import com.shipperdog.api.tenant.CrossTenantByDesign;
+import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
@@ -64,4 +65,20 @@ public interface OtaBundleRegistryRepository extends JpaRepository<OtaBundleEnti
      * application's bundles are unreachable through this path.
      */
     Optional<OtaBundleEntity> findByIdAndApplicationId(UUID id, UUID applicationId);
+
+    /**
+     * The bundles behind a page of the application's version ids
+     * (S16-16, issue #178): the decision API's tester-facing listings
+     * resolve, per version the CALLER is already authorized for,
+     * whether that version is a bundle's own dedicated row (ADR-0010
+     * D2) -- the OTA manifest facts the portal renders and the
+     * companion's update-state derivation needs. Self-scoped like the
+     * check probes above: the tester persona binds no operator scope,
+     * by construction not the bundles' owning dimension's, so the
+     * registry's application-addressed surface is the sanctioned
+     * read. The authorization is the CALLER's own granted set: the
+     * version ids arrive from the engine-resolved eligibility page,
+     * never from this probe.
+     */
+    List<OtaBundleEntity> findByApplicationIdAndVersionIdIn(UUID applicationId, Collection<UUID> versionIds);
 }
