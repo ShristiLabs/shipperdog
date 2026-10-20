@@ -203,8 +203,14 @@ class OtaAnalyticsQueriesIntegrationTest {
     @Test
     void funnelEdgesCoverBreakdownOrderingAdoptionSemanticsDailySplitAndSeriesVocabulary() {
         World world = world("q-edges");
-        Instant day1 = Instant.now().minus(Duration.ofHours(30));
-        Instant day2 = Instant.now().minus(Duration.ofMinutes(2));
+        // Midnight-safe anchors: the daily buckets assert EXACTLY two
+        // days, so both anchors derive from the UTC day boundary, not
+        // from bare now-offsets — a run at 00:01 would otherwise
+        // straddle now-2min and now-1min across midnight and grow a
+        // third bucket (the CI time bomb this pin removes).
+        Instant day2 =
+                Instant.now().truncatedTo(java.time.temporal.ChronoUnit.DAYS).minus(Duration.ofMinutes(2));
+        Instant day1 = day2.minus(Duration.ofHours(24));
         check(world.appToken, "edge-x");
         check(world.appToken, "edge-w");
         // Day one: three identified observers and one without identity
@@ -450,7 +456,11 @@ class OtaAnalyticsQueriesIntegrationTest {
                         world.bundle1,
                         "OTA_SEEN",
                         null,
-                        Instant.now().minus(Duration.ofMinutes(1)),
+                        // The same midnight-safe day-two bucket as the
+                        // fixture's events (never a bare now-offset).
+                        Instant.now()
+                                .truncatedTo(java.time.temporal.ChronoUnit.DAYS)
+                                .minus(Duration.ofMinutes(1)),
                         null)));
         triggerRollups(world);
         assertThat(jdbc.queryForMap(
@@ -571,8 +581,12 @@ class OtaAnalyticsQueriesIntegrationTest {
 
     /** The fleet's lifecycle reports across two days. */
     private void ingestLifecycle(World world, String devicePrefix) {
-        Instant day1 = Instant.now().minus(Duration.ofHours(30));
-        Instant day2 = Instant.now().minus(Duration.ofMinutes(2));
+        // Midnight-safe anchors (see the edges test): deterministic
+        // UTC days, strictly in the past, never straddling a boundary
+        // however the run is timed.
+        Instant day2 =
+                Instant.now().truncatedTo(java.time.temporal.ChronoUnit.DAYS).minus(Duration.ofMinutes(2));
+        Instant day1 = day2.minus(Duration.ofHours(24));
         List<Map<String, Object>> day1Events = List.of(
                 lifecycle(world, "OTA_SEEN", null, day1.plusSeconds(60), device(devicePrefix, "a")),
                 lifecycle(world, "OTA_SEEN", null, day1.plusSeconds(61), device(devicePrefix, "b")),
