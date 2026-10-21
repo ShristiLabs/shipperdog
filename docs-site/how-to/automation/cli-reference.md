@@ -10,7 +10,7 @@ promote) without curl and JSON.
 
 ::: tip About this page
 The command tables below are **generated from the CLI's own
-`--help` output** — captured from the CLI as of commit `74aa320`.
+`--help` output** — captured from the CLI as of commit `a4b1b73`.
 The full help text of every command is committed at the
 bottom as the source of truth. The CLI does not self-update this
 page: after a CLI change, regenerate manually with
@@ -96,6 +96,22 @@ Pipelines branch on these — they are a stable contract:
 | `gate result <release> <gate>` | Submit a pass/fail with the mandatory evidence URL (latest wins) | `--status pass\|fail` (required), `--evidence-url` (required), `--value`, `--app` |
 | `gate override <release> <gate>` | The governed exception — once, audited, with a mandatory reason | `--reason` (required), `--app` |
 
+### `ota` — author bundles and drive staged rollouts
+
+The console path for the same rollouts — advance, pause, and the OTA
+dashboard — is [Run OTA rollouts](/how-to/console/ota-rollouts.md).
+
+| Command | Purpose | Key flags |
+|---|---|---|
+| `ota create <app> <bundleVersion>` | The bundle draft: a dedicated versions row plus the direct-to-storage upload grant (nothing is listable until finalize signs) | `--platform-tag` (required), `--file-name` (required), `--forced`, `--min-app-version`, `--size-hint`, `--json` |
+| `ota upload <file>` | Stream the archive to the granted URL, then finalize: hash-back, manifest, and the Ed25519 signature (SIGNED) | `--bundle` (required), `--version` (required), `--url` (required), `--json` |
+| `ota promote <release>` | Attach the cumulative basis-point ladder to a live OTA release and commence it (born RUNNING; one plan per release, ever) | `--stages` (required; strictly ascending, final 10000; notes as `bp=note`), `--mode AUTOMATIC\|CHECKPOINT` (required), `--app`, `--json` |
+| `ota halt <release>` | The manual, audit-trailed stop — the device check answers no-update while halted | `--reason` (required), `--app`, `--json` |
+| `ota resume <release>` | HALTED or PAUSED back to RUNNING — serving exactly what the ladder had reached | `--app`, `--reason` (optional note), `--json` |
+| `ota status <release>` | The plan's mode and standing, every ladder stage with its reach moment, and the append-only operator timeline | `--app`, `--json` |
+| `ota funnel <bundle>` | The bundle's device funnel: server-counted checks beside seen/download/applied/failed/rolled back | `--app` (required), `--ring`, `--json` |
+| `ota token issue <app>` | Mint the application's `sdc1.` device token — the value prints exactly once (plain output is the token alone) | `--name` (required), `--json` |
+
 ### Shell completion
 
 `shipperdog completion bash|zsh|fish|powershell` generates the
@@ -133,7 +149,7 @@ and [GitLab](/how-to/automation/gitlab.md) templates do the same ·
 
 ## Full help output (source of truth)
 
-Captured from the CLI's own `--help` at commit `74aa320`.
+Captured from the CLI's own `--help` at commit `a4b1b73`.
 
 #### `shipperdog` (root)
 
@@ -153,6 +169,7 @@ Available Commands:
   help        Help about any command
   login       Store a personal access token after verifying it
   logout      Remove the stored credentials
+  ota         Author OTA bundles and drive their staged rollouts
   release     Create, inspect, and drive releases
   version     Inspect versions
 
@@ -249,6 +266,39 @@ Flags:
 
 Global Flags:
       --api string   API base URL (env SHIPPERDOG_API, default http://localhost:8080)
+```
+
+#### `shipperdog ota`
+
+```text
+The OTA surface (ADR-0010): create a bundle draft and stream its bytes to
+the granted storage URL, finalize into the signed manifest, attach a
+cumulative basis-point rollout ladder to a live OTA release (promote),
+halt/resume the rollout as audited operator actions, read the plan's
+standing and timeline (status), the device funnel (funnel), and mint
+the application's sdc1. device token (token issue - the value prints
+exactly once). JSON output everywhere for pipelines.
+
+Usage:
+  shipperdog ota [command]
+
+Available Commands:
+  create      Create an OTA bundle draft with its upload grant (UPLOADING)
+  funnel      Read the bundle's device funnel (checks, seen, downloads, applied)
+  halt        Halt the rollout (the manual, audit-trailed stop; reason mandatory)
+  promote     Attach and commence the release's staged rollout plan (born RUNNING)
+  resume      Resume a HALTED or PAUSED rollout (serving what it had reached)
+  status      Read the rollout plan: standing, ladder, and append-only timeline
+  token       Mint and manage the application's sdc1. device tokens
+  upload      Stream the bundle's bytes to the granted URL, then finalize and sign
+
+Flags:
+  -h, --help   help for ota
+
+Global Flags:
+      --api string   API base URL (env SHIPPERDOG_API, default http://localhost:8080)
+
+Use "shipperdog ota [command] --help" for more information about a command.
 ```
 
 #### `shipperdog release`
@@ -477,6 +527,225 @@ Flags:
       --json                  machine-readable output (the gate view JSON)
       --status string         reported outcome: pass or fail (required)
       --value float           observed value of a threshold/ceiling gate (e.g. coverage 87.5; a 0 is legitimate)
+
+Global Flags:
+      --api string   API base URL (env SHIPPERDOG_API, default http://localhost:8080)
+```
+
+#### `shipperdog ota create`
+
+```text
+POST /api/v1/ota/bundles (ADR-0010 D2/D5/D7): creates the bundle's
+dedicated versions row (label = the semver-triple bundleVersion) and
+grants the direct-to-storage session for the bundle's bytes. The answer
+carries the bundle id (the pre-allocated artifact id - the bytes ARE the
+bundle), the version id, and the upload URL with its expiry: copy the
+uploadUrl and the ids into `ota upload` next. --forced and
+--min-app-version are the per-bundle defaults devices compare against
+(overridable per release target at release time). Nothing is listable
+until finalize lands the SIGNED row.
+
+Usage:
+  shipperdog ota create <app> <bundleVersion> [flags]
+
+Flags:
+      --file-name string         bare file name of the bundle archive (required)
+      --forced                   force-install default for devices (D7 per-bundle default)
+  -h, --help                     help for create
+      --json                     machine-readable output (the draft view JSON)
+      --min-app-version string   minimum app version that may apply this bundle
+      --platform-tag string      open-vocabulary platform tag, 1-32 chars (e.g. rn, flutter, electron) (required)
+      --size-hint int            expected bundle size in bytes (optional)
+
+Global Flags:
+      --api string   API base URL (env SHIPPERDOG_API, default http://localhost:8080)
+```
+
+#### `shipperdog ota funnel`
+
+```text
+GET /api/v1/tenants/{tenantId}/dashboard/ota/bundles/{bundleId}/funnel
+(ADR-0010 D9): the dashboard funnel of one bundle - the server-counted
+checks beside the device-reported lifecycle (seen, download, applied,
+failed, rolled back), the failure-reason breakdown, and the adoption
+curve over time. --app names the owning application (the dashboard
+route is tenant-addressed; the application carries the tenant and the
+permission target). <bundle> is the bundle uuid or its bundleVersion
+label. --ring narrows to one ring's devices.
+
+Usage:
+  shipperdog ota funnel <bundle> [flags]
+
+Flags:
+      --app string    owning application (name or uuid) (required)
+  -h, --help          help for funnel
+      --json          machine-readable output (the funnel view JSON)
+      --ring string   narrow the funnel to one ring's devices
+
+Global Flags:
+      --api string   API base URL (env SHIPPERDOG_API, default http://localhost:8080)
+```
+
+#### `shipperdog ota halt`
+
+```text
+POST /api/v1/ota/rollouts/{releaseId}/halt (ADR-0010 D10): the manual,
+audit-trailed stop - the reason is mandatory, the plan stands HALTED,
+and the device check answers no-update while it does. A paused plan is
+still stoppable; nothing halts on its own, ever. Resume with
+`ota resume`. Requires app:releases:manage.
+
+Usage:
+  shipperdog ota halt <release> [flags]
+
+Flags:
+      --app string      owning application (name or uuid; skips the lookup walk)
+  -h, --help            help for halt
+      --json            machine-readable output (the rollout view JSON)
+      --reason string   why the rollout stops (mandatory; lands on the audit trail) (required)
+
+Global Flags:
+      --api string   API base URL (env SHIPPERDOG_API, default http://localhost:8080)
+```
+
+#### `shipperdog ota promote`
+
+```text
+POST /api/v1/ota/rollouts (ADR-0010 D6): attaches the cumulative
+basis-point ladder to a live (ACTIVE or PROMOTED) OTA release and
+COMMENCES it - stage 1 reached, the plan RUNNING, a COMMENCED timeline
+row. One plan per release, ever. --stages is the strictly ascending
+comma-separated ladder whose final stage is 10000 (the full fleet);
+each entry may carry an operator note as bp=note. --mode picks the
+advancement discipline: AUTOMATIC consults the policy engine between
+stages, CHECKPOINT makes every advance an operator's explicit
+approval (advance/pause live in the console; halt/resume ride this
+CLI). Devices resolve membership deterministically on the fly - the
+bucket never retreats. Requires app:releases:manage.
+
+Usage:
+  shipperdog ota promote <release> [flags]
+
+Flags:
+      --app string      owning application (name or uuid; skips the lookup walk)
+  -h, --help            help for promote
+      --json            machine-readable output (the rollout view JSON)
+      --mode string     advancement discipline: AUTOMATIC or CHECKPOINT (required)
+      --stages string   cumulative basis-point ladder, strictly ascending, final 10000 (e.g. 1000,5000,10000; notes as bp=note) (required)
+
+Global Flags:
+      --api string   API base URL (env SHIPPERDOG_API, default http://localhost:8080)
+```
+
+#### `shipperdog ota resume`
+
+```text
+POST /api/v1/ota/rollouts/{releaseId}/resume: from HALTED or PAUSED
+back to RUNNING - serving exactly what the plan had reached, because
+the ladder never retreats and resuming widens nothing by itself.
+Requires app:releases:manage.
+
+Usage:
+  shipperdog ota resume <release> [flags]
+
+Flags:
+      --app string      owning application (name or uuid; skips the lookup walk)
+  -h, --help            help for resume
+      --json            machine-readable output (the rollout view JSON)
+      --reason string   resume note (optional; lands on the audit trail)
+
+Global Flags:
+      --api string   API base URL (env SHIPPERDOG_API, default http://localhost:8080)
+```
+
+#### `shipperdog ota status`
+
+```text
+GET /api/v1/ota/rollouts/{releaseId}: the plan's mode and standing
+(RUNNING, HALTED, PAUSED, COMPLETE), every stage of the ladder with its
+cumulative basis-point threshold and reach moment, and the append-only
+operator timeline (commenced/halted/resumed/advanced). Requires
+app:releases:read.
+
+Usage:
+  shipperdog ota status <release> [flags]
+
+Flags:
+      --app string   owning application (name or uuid; skips the lookup walk)
+  -h, --help         help for status
+      --json         machine-readable output (the rollout view JSON)
+
+Global Flags:
+      --api string   API base URL (env SHIPPERDOG_API, default http://localhost:8080)
+```
+
+#### `shipperdog ota token`
+
+```text
+The sdc1. app-token surface (ADR-0010 D3): the identifier the shipped
+binary presents at /api/v1/ota/check. The value prints EXACTLY ONCE -
+the registry stores only its SHA-256 - so capture it in the issue
+moment.
+
+Usage:
+  shipperdog ota token [command]
+
+Available Commands:
+  issue       Issue a sdc1. app token (the value prints exactly once)
+
+Flags:
+  -h, --help   help for token
+
+Global Flags:
+      --api string   API base URL (env SHIPPERDOG_API, default http://localhost:8080)
+
+Use "shipperdog ota token [command] --help" for more information about a command.
+```
+
+#### `shipperdog ota token issue`
+
+```text
+POST /api/v1/ota/app-tokens (ADR-0010 D3): mints the application's
+sdc1. device identifier - the value the shipped binary embeds for
+/api/v1/ota/check. The plain output is the token VALUE ALONE on stdout
+(capture it: TOKEN=$(shipperdog ota token issue App --name prod); the
+registry stores only its SHA-256 and the value never leaves the server
+again). --name is the human label the registry distinguishes tokens by
+(1-200 chars). Revocation lives in the console.
+
+Usage:
+  shipperdog ota token issue <app> [flags]
+
+Flags:
+  -h, --help          help for issue
+      --json          machine-readable output (the issued view JSON - carries the value once)
+      --name string   human label for the registry (1-200 chars) (required)
+
+Global Flags:
+      --api string   API base URL (env SHIPPERDOG_API, default http://localhost:8080)
+```
+
+#### `shipperdog ota upload`
+
+```text
+The second half of authoring (ADR-0010 D5/D8): streams the archive
+direct to the storage URL `ota create` granted (as-is, without the API
+bearer header - the grant embeds its own authority), then POST
+/api/v1/ota/bundles/{id}/finalize: the artifact port hashes the stored
+bytes back, the manifest lands (sha256, sizeBytes, platformTag), and
+the checksum is signed under the app's active Ed25519 key (generated
+now if this is the app's first bundle). The answer is the SIGNED
+bundle; a replay answers created=false with the same row.
+
+Usage:
+  shipperdog ota upload <file> [flags]
+
+Flags:
+      --bundle ota create    bundle uuid from ota create (required)
+  -h, --help                 help for upload
+      --json                 machine-readable output (the finalize view JSON)
+      --url ota create       the uploadUrl of ota create's grant (required)
+      --version ota create   the draft's dedicated version uuid from ota create (required)
 
 Global Flags:
       --api string   API base URL (env SHIPPERDOG_API, default http://localhost:8080)

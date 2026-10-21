@@ -23,6 +23,8 @@ Task guides, grouped by surface:
   [rings and promotion](/how-to/console/rings-and-promotion.md),
   [staged rollout](/how-to/console/staged-rollout.md),
   [roll back a release](/how-to/console/rollback.md),
+  [manage OTA bundles](/how-to/console/ota-bundles.md),
+  [run OTA rollouts](/how-to/console/ota-rollouts.md),
   [triage feedback](/how-to/console/feedback-triage.md),
   [manage devices](/how-to/console/devices.md),
   [dashboards](/how-to/console/analytics-and-dashboards.md),
