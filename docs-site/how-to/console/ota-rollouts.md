@@ -57,6 +57,8 @@ complete), the mode badge (*automatic (policy-gated)* or
 each stage's line with its note and reach time, and the
 append-only timeline beneath.
 
+![The OTA staged rollout block on the release dashboard](/screenshots/console-ota-rollout.png)
+
 ```mermaid
 stateDiagram-v2
     [*] --> RUNNING: attach and commence
@@ -108,6 +110,8 @@ Open it from **Tenants** — the **OTA** action on a tenant's row.
 Pick the application and bundle (SIGNED-and-later bundles); an
 optional ring filter narrows the funnel to one ring's devices.
 The view is live, refreshing every 30 seconds.
+
+![The OTA dashboard](/screenshots/console-ota-dashboard.png)
 
 - **Alerts** — severity badges (critical, warning, info), the
   standing firings, and the recent resolved history, each with

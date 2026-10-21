@@ -23,6 +23,8 @@ OTA block, in the order a first bundle needs them.
 The same block carries the **Manage OTA bundles** button, which
 jumps straight to the authoring screen.
 
+![The over-the-air updates block on the application detail page](/screenshots/console-ota-app-block.png)
+
 ## Copy the signing key for the SDK
 
 Every bundle is Ed25519-signed by an app-scoped key. The key does
@@ -57,6 +59,8 @@ identifier, not a secret — issued once per application from the
    [SDK integration](/how-to/ota-sdk.md)'s `appToken`), and only
    then click **I have stored it**.
 
+![The once-only device app token dialog](/screenshots/console-ota-app-token.png)
+
 To retire a compromised or retired-build token, click **Revoke**
 on its row: every device check presenting it fails from that
 moment on. Revoking an already-revoked token is a safe replay.
@@ -74,6 +78,8 @@ Click **Upload bundle** to open the wizard. Fill in:
 - **Forced** — whether the update applies without asking.
 - **Choose the bundle archive** — the platform-agnostic archive
   itself.
+
+![The upload bundle wizard](/screenshots/console-ota-upload-wizard.png)
 
 One click — **Create, upload, and sign** — runs the whole chain:
 
@@ -94,6 +100,8 @@ retry it.
 The screen's listing carries the SIGNED-and-later rows (Signed,
 Released, Revoked) with the status filter; draft and mid-upload
 rows are not listable.
+
+![The OTA bundles screen](/screenshots/console-ota-bundles.png)
 
 ## Revoke a bundle
 
