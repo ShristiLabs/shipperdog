@@ -6,6 +6,8 @@ description: Task guides grouped by surface - tester portal how-tos, console adm
 
 Task guides, grouped by surface:
 
+- **SDK** — [integrate the OTA SDK](/how-to/ota-sdk.md) in your app
+  (Kotlin or Swift): check, download, verify, apply, report.
 - **Portal** — tester how-tos: [accept an invite](/how-to/portal/accept-invite.md),
   [browse apps](/how-to/portal/browse-apps.md), [install on iOS](/how-to/portal/install-ios.md),
   [install on Android](/how-to/portal/install-android.md),

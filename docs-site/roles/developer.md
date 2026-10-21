@@ -91,6 +91,9 @@ Hand-off task list:
 - [ ] How-tos as they land:
       [CLI reference](/how-to/automation/cli-reference.md),
       [GitHub Actions](/how-to/automation/github-actions.md)
+- [ ] Self-updating app? [Integrate the OTA SDK](/how-to/ota-sdk.md)
+      (Kotlin or Swift) so your build checks, verifies, and applies
+      OTA bundles
 - [ ] Ask your App Owner for the version slot before your first upload
       (versions are created on the
       [App Owner](/roles/app-owner.md) track)
