@@ -164,6 +164,7 @@ export default withMermaid({
           { text: 'Tenancy and isolation', link: '/concepts/tenancy-isolation' },
           { text: 'Release lifecycle', link: '/concepts/release-lifecycle' },
           { text: 'Rings and rollout', link: '/concepts/rings-and-rollout' },
+          { text: 'OTA updates', link: '/concepts/ota-updates' },
           { text: 'Approvals and gates', link: '/concepts/approvals-gates' },
           { text: 'Artifact pipeline', link: '/concepts/artifact-pipeline' },
           { text: 'Authorization', link: '/concepts/authorization' },

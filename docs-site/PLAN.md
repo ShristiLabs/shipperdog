@@ -115,6 +115,19 @@ docs-site/
 WP6, plus the four reference pages of WP7; only `snapshot/` edits in-tree,
 releases are frozen copies).
 
+Post-delivery additions: the OTA updates docs tree (issues #195-#199,
+tracking the OTA Updates milestone that shipped as PRs #179-#194)
+lands on top of the WP1-WP7 inventory rather than forking it — the
+concepts page plus reference/navigation plumbing (#195: this file,
+`concepts/ota-updates.md` in the sidebar after Rings and rollout, the
+glossary OTA terms, the error-codes OTA section, three FAQ entries,
+four cross-links from existing pages), then the console OTA how-tos
+(#196), the SDK how-to at `how-to/ota-sdk.md` (#197), the CLI
+reference regen (#198), and the screenshot pass (#199). Recorded here
+the same way the audit-log and environments folds were: the inventory
+above stays the as-built WP1-WP7 record; this note is the running
+addendum.
+
 ## 4. Mermaid diagram inventory (14)
 
 | Diagram | Type | Placed in |

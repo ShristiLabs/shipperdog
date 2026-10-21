@@ -1,5 +1,5 @@
 ---
-description: Frequently asked questions about ShipperDog, answered from the system's real behavior - invitations, installs, approvals, promotion blockers, CI tokens, and what a 404 really means.
+description: Frequently asked questions about ShipperDog, answered from the system's real behavior - invitations, installs, approvals, promotion blockers, CI tokens, OTA 204s, and what a 404 really means.
 ---
 
 # FAQ
@@ -125,6 +125,31 @@ The **version** is the logical release-train (7.12.0); the
 and its artifact set freezes the moment any release references it —
 new binaries mean a new version:
 [core concepts](/get-started/concepts.md).
+
+## OTA updates
+
+### Why does a device's check come back 204 — is that an error?
+
+No — 204 is the normal "nothing to do" answer, and it is deliberately
+uninformative: up to date, not eligible, a paused or halted rollout, a
+stage the device's bucket has not reached, or no live release all
+return the same bytes. The breakdown lives in the server-side
+counters on the OTA dashboard, never on the wire. See
+[OTA updates](/concepts/ota-updates.md).
+
+### Can a rollout stop itself when failures spike?
+
+No, by design. Alert rules watch failure rates and crash-free
+regressions and notify a human, but halting is a manual, audit-trailed
+action — pause, resume, advance, and halt are one-action controls.
+Automatic halt was considered and rejected so a degradation always
+ends in a recorded human decision.
+
+### Do OTA updates download deltas?
+
+Not in v1 — every device downloads the full bundle archive, verified
+by sha256 and the Ed25519 signature before it applies. Delta bundles
+are a recorded future direction, not current behavior.
 
 ## Everyone
 

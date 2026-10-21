@@ -98,6 +98,9 @@ prefilled; nothing posts itself.
   the gates, approvals, and timelines.
 - **The organization and tenant dashboards** — counts, per-application
   release health, pending actions, and downloads-per-day charts.
+- **The OTA dashboard** — the update funnel for OTA-enabled
+  applications: checks counted server-side, the download-apply journey
+  device-reported ([OTA updates](/concepts/ota-updates.md)).
 - **Gates and policies** — the two engines above.
 
 ## Where to go deeper
