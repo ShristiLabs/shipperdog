@@ -57,6 +57,8 @@ summarize:
   [quality gates](/how-to/console/quality-gates.md).
 - Per-channel distribution standing (TestFlight beta review, Play
   processing): the release dashboard's Channel distributions block.
+- Per-bundle OTA funnel, adoption, and crash-rate comparison:
+  [run OTA rollouts](/how-to/console/ota-rollouts.md).
 
 ::: tip Downloads drive gates
 Metric-backed gates (`crash-free-threshold`,
