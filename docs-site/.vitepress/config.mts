@@ -131,6 +131,8 @@ export default withMermaid({
               { text: 'Promote through rings', link: '/how-to/console/rings-and-promotion' },
               { text: 'Run a staged rollout', link: '/how-to/console/staged-rollout' },
               { text: 'Roll back a release', link: '/how-to/console/rollback' },
+              { text: 'Manage OTA bundles', link: '/how-to/console/ota-bundles' },
+              { text: 'Run OTA rollouts', link: '/how-to/console/ota-rollouts' },
               { text: 'Triage tester feedback', link: '/how-to/console/feedback-triage' },
               { text: 'Manage the device fleet', link: '/how-to/console/devices' },
               { text: 'Read the dashboards', link: '/how-to/console/analytics-and-dashboards' },

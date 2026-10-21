@@ -9,7 +9,9 @@ target tenants in controlled stages — pilot tenants, then 10%, 50%,
 100% — with one action that rolls the whole thing back. It is the
 *tenant* axis, deliberately distinct from the store-side curves
 (Apple's phased-release days, Play's user-fraction), which the
-engine drives as its per-channel arms.
+engine drives as its per-channel arms. OTA-channel releases stage
+on a second axis — devices, not tenants; see
+[run OTA rollouts](/how-to/console/ota-rollouts.md).
 
 The staged block renders on the
 [release dashboard](/how-to/console/releases.md) inside the

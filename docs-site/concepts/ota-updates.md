@@ -140,6 +140,11 @@ behavior.
 
 ## Where to go deeper
 
+- [Manage OTA bundles](/how-to/console/ota-bundles.md) — enable
+  OTA, upload and sign a bundle, issue device tokens, author
+  alert rules
+- [Run OTA rollouts](/how-to/console/ota-rollouts.md) — attach
+  the ladder, drive the controls, read the OTA dashboard
 - [Release lifecycle](/concepts/release-lifecycle.md) — the machine
   every OTA release rides
 - [Rings and rollout](/concepts/rings-and-rollout.md) — the promotion
