@@ -132,8 +132,12 @@ TOP-LEVEL How-To sidebar item directly under the overview, per the
 telemetry-SDK pattern: user-site page with Kotlin and Swift code
 samples from the shipped SDKs and blob link-outs to the developer
 depth, with cross-links from the concept page, the bundles how-to,
-the how-to index, and roles/developer).
-Pending: the CLI reference regen (#198), and the screenshot pass
+the how-to index, and roles/developer), then the CLI reference regen
+(#198 — the `ota` command group in the automation inventory with the
+console-rollouts cross-link, the ten OTA full-help appendix blocks
+captured verbatim from the CLI at `a4b1b73`, and the how-to index's
+console OTA entries).
+Pending: the screenshot pass
 (#199). Recorded here the same way the audit-log and environments
 folds were: the inventory above stays the as-built WP1-WP7 record;
 this note is the running addendum.
