@@ -97,6 +97,8 @@ can be diffed artifact-by-artifact.
   that guard two of these crossings
 - [Rings and rollout](/concepts/rings-and-rollout.md) — what happens
   between `ACTIVE` and `PROMOTED`
+- [OTA updates](/concepts/ota-updates.md) — OTA-channel releases ride
+  this same machine, one signed bundle per release
 - Developer detail: the
   [releases](https://github.com/ShristiLabs/shipperdog/blob/main/docs/releases.md)
   module doc (model, transitions API, manifest, promotion engine).

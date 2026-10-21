@@ -76,7 +76,9 @@ itself").
 - To walk a release forward hop by hop, see
   [rings and promotion](/how-to/console/rings-and-promotion.md).
 - To widen a production rollout in stages, see
-  [staged rollout](/how-to/console/staged-rollout.md).
+  [staged rollout](/how-to/console/staged-rollout.md); a release that
+  carries an OTA bundle instead stages through
+  [OTA updates](/concepts/ota-updates.md).
 - To undo one, see [roll back a release](/how-to/console/rollback.md).
 
 The same moves exist as CLI verbs (`release transition`, `release

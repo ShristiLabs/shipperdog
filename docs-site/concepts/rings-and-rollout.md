@@ -110,8 +110,11 @@ ticket.
 Inside the final ring, distribution can stage across the tenant
 population — pilot tenants, then a percentage of tenants, advancing in
 stages — with a one-action rollback that cuts direct downloads,
-reverts store assignments, and records everything. The staged rollout
-walk-through is a Console how-to; this page is the model it rides.
+reverts store assignments, and records everything. Apps that opted
+into [OTA updates](/concepts/ota-updates.md) stage by deterministic
+device buckets instead, on a ring whose channel is `ota`. The staged
+rollout walk-through is a Console how-to; this page is the model it
+rides.
 
 ## Where to go deeper
 

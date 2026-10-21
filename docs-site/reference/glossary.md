@@ -79,6 +79,21 @@ Deep dives: [staged rollout how-to](/how-to/console/staged-rollout.md) ·
 [distribution channels](/how-to/console/distribution-channels.md) ·
 [feedback and analytics](/concepts/feedback-analytics.md)
 
+## OTA updates
+
+| Term | In one line |
+|---|---|
+| **OTA bundle** | A platform-agnostic self-applying archive (its own version row, signed at finalize with sha256 + Ed25519) an opted-in app downloads, verifies, and applies itself. |
+| **OTA release** | An ordinary release on a ring whose distribution channel is `ota`, carrying exactly one bundle — approvals, gates, and history unchanged. |
+| **`sdc1.` app token** | The per-application token embedded in a shipped app to authenticate the OTA check — an identifier, not a secret. |
+| **Rollout plan (OTA)** | The per-release ladder of cumulative stages that decides which devices see the update — RUNNING, PAUSED, HALTED, or COMPLETE. |
+| **Basis points** | A stage's threshold on a 10000-point scale; a device is admitted when its deterministic bucket (`hash(deviceId, planSalt) mod 10000`) falls under it. |
+| **Halt** | The manual, audit-trailed stop of a rollout plan — alert rules notify, but never stop a rollout automatically. |
+| **Signing key (`keyId`)** | The app-scoped Ed25519 key behind ShipperDog's secret store whose public half and id ride the manifest for device-side verification. |
+
+Deep dives: [OTA updates](/concepts/ota-updates.md) ·
+[feedback and analytics](/concepts/feedback-analytics.md)
+
 ## Reading an error
 
 | Term | In one line |

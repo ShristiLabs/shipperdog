@@ -45,6 +45,34 @@ The codes an operator meets in day-to-day administration.
 | `ENVIRONMENT_DISABLED` | A parked environment cannot be named by a new release. | Reactivate the environment or choose another. |
 | `INTERNAL_ERROR` | Something unexpected failed on the platform side; no internals leak. | Retry once; if it repeats, report with the trace id. |
 
+## OTA updates
+
+The codes an operator meets authoring bundles and driving rollouts
+for an OTA-enabled application — the
+[OTA updates](/concepts/ota-updates.md) model in brief: one signed
+bundle per `ota`-channel release, one rollout plan per release.
+
+| Code | What it means | What to do |
+|---|---|---|
+| `APPLICATION_NOT_OTA_ENABLED` | The application has not turned OTA updates on; bundle authoring, app-token issue, and alert-rule creation all refuse. | Flip the application's OTA toggle first. |
+| `BUNDLE_NOT_FOUND` | The bundle id addresses nothing you can see — never authored, another application's, or an alert rule naming a bundle the app never had (refusals conceal as misses). | Verify the bundle id and the application; if it should exist, your access is the question. |
+| `SIGNING_KEY_NOT_FOUND` | A bundle finalize reached the signing step with no active signing key for the application. | Create and activate the app's Ed25519 signing key first. |
+| `SIGNING_UNAVAILABLE` | The secret store refused the signing call — a bundle is never silently left unsigned. | Retry the finalize once the store is healthy; if it repeats, report with the trace id. |
+| `ROLLOUT_NOT_FOUND` | The release carries no rollout plan — never attached, or not this application's release. | Attach a plan to the OTA release first. |
+| `ROLLOUT_CONFLICT` | The plan already exists (one per release) or changed concurrently under you. | Reload the plan and retry the control. |
+| `ROLLOUT_ACTION_INVALID` | The control does not fit the plan's standing — pause, resume, advance, or halt against a standing that does not admit it, a complete plan included. | Check the plan's standing; use the control it admits. |
+| `ROLLOUT_BLOCKED` | An automatic stage advance was refused by a release policy rule (evidence in the error). | Resolve the named policy rule first, then advance. |
+| `ROLLOUT_RELEASE_NOT_LIVE` | A rollout plan starts only on a live release (ACTIVE or PROMOTED). | Drive the release live first. |
+| `ROLLOUT_RELEASE_NOT_OTA` | The release carries no OTA bundle; rollout plans belong to OTA releases. | Attach the plan to the release that carries the bundle. |
+| `ALERT_RULE_NOT_FOUND` | The alert-rule id addresses nothing you can see — never created, or another application's rule. | Verify the rule id and the application. |
+| `ALERT_RULE_HAS_FIRINGS` | The rule has firing history, so deletion refuses — the firings stay joinable to their rule. | Keep the rule and update it instead of deleting. |
+
+The rest of the OTA surface — the release-linkage refusals
+(`RELEASE_OTA_BUNDLE_*`), the app-token registry's `TOKEN_NOT_FOUND`,
+the bundle-revoke rule — lives in the
+[developer registry](https://github.com/ShristiLabs/shipperdog/blob/main/docs/error-codes.md)'s
+OTA bundle section.
+
 ## Tester Portal
 
 The codes a tester can meet — all of them are one screen away from a
