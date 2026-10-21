@@ -106,6 +106,7 @@ export default withMermaid({
         text: 'How-To',
         items: [
           { text: 'Overview', link: '/how-to/' },
+          { text: 'Integrate the OTA SDK', link: '/how-to/ota-sdk' },
           {
             text: 'Tester Portal',
             collapsed: false,

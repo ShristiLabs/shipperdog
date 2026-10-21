@@ -126,12 +126,17 @@ cross-links from existing pages), then the console OTA how-tos (#196 —
 `how-to/console/ota-bundles.md` and `ota-rollouts.md` in the console
 sidebar after Roll back a release, with an upload-chain flowchart and
 a rollout-standing state diagram, the concept page's how-to links,
-and cross-links from staged-rollout and analytics-and-dashboards).
-Pending: the SDK how-to at `how-to/ota-sdk.md` (#197), the CLI
-reference regen (#198), and the screenshot pass (#199). Recorded here
-the same way the audit-log and environments folds were: the inventory
-above stays the as-built WP1-WP7 record; this note is the running
-addendum.
+and cross-links from staged-rollout and analytics-and-dashboards),
+then the SDK integration how-to (#197 — `how-to/ota-sdk.md` as a
+TOP-LEVEL How-To sidebar item directly under the overview, per the
+telemetry-SDK pattern: user-site page with Kotlin and Swift code
+samples from the shipped SDKs and blob link-outs to the developer
+depth, with cross-links from the concept page, the bundles how-to,
+the how-to index, and roles/developer).
+Pending: the CLI reference regen (#198), and the screenshot pass
+(#199). Recorded here the same way the audit-log and environments
+folds were: the inventory above stays the as-built WP1-WP7 record;
+this note is the running addendum.
 
 ## 4. Mermaid diagram inventory (14)
 

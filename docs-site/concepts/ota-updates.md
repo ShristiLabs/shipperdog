@@ -145,6 +145,8 @@ behavior.
   alert rules
 - [Run OTA rollouts](/how-to/console/ota-rollouts.md) — attach
   the ladder, drive the controls, read the OTA dashboard
+- [Integrate the OTA SDK](/how-to/ota-sdk.md) — wire the Kotlin or
+  Swift updater into your app
 - [Release lifecycle](/concepts/release-lifecycle.md) — the machine
   every OTA release rides
 - [Rings and rollout](/concepts/rings-and-rollout.md) — the promotion

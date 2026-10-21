@@ -36,7 +36,9 @@ the Base64 public key — with a **Copy keyId** button beside the
 
 - **Copy keyId** and **Copy** (the public key) — the pair an app
   embeds so devices can verify signatures themselves. The private
-  half never leaves ShipperDog's secret store.
+  half never leaves ShipperDog's secret store. The embedding itself
+  is the [SDK integration](/how-to/ota-sdk.md)'s `verificationKeys`
+  map.
 - Rotation is generational: a new `keyId` supersedes the old one,
   and signatures made under the old generation stay verifiable
   against its retained public half until the generation retires.
@@ -51,8 +53,9 @@ identifier, not a secret — issued once per application from the
    the registry distinguishes tokens), and confirm.
 2. The **Copy the app token now** dialog shows the value **exactly
    once** — the registry stores only its SHA-256 and cannot
-   recover it. Copy it, embed it in the app, and only then click
-   **I have stored it**.
+   recover it. Copy it, embed it in the app (the
+   [SDK integration](/how-to/ota-sdk.md)'s `appToken`), and only
+   then click **I have stored it**.
 
 To retire a compromised or retired-build token, click **Revoke**
 on its row: every device check presenting it fails from that
@@ -135,6 +138,7 @@ rollout is its own job:
 [run OTA rollouts](/how-to/console/ota-rollouts.md).
 
 **Related guides:** [run OTA rollouts](/how-to/console/ota-rollouts.md) ·
+[integrate the OTA SDK](/how-to/ota-sdk.md) ·
 [work with releases](/how-to/console/releases.md) ·
 [roll back a release](/how-to/console/rollback.md) ·
 [OTA updates concepts](/concepts/ota-updates.md)
