@@ -136,9 +136,13 @@ the how-to index, and roles/developer), then the CLI reference regen
 (#198 — the `ota` command group in the automation inventory with the
 console-rollouts cross-link, the ten OTA full-help appendix blocks
 captured verbatim from the CLI at `a4b1b73`, and the how-to index's
-console OTA entries).
-Pending: the screenshot pass
-(#199). Recorded here the same way the audit-log and environments
+console OTA entries), then the screenshot pass (#199 — six 1440px
+console captures under `public/screenshots/` — the application
+detail's OTA block, the once-only device app-token reveal dialog, the
+filled upload wizard, the bundles listing, the release dashboard's
+rollout standing, and the OTA dashboard — embedded at their steps in
+the two console OTA how-tos).
+Recorded here the same way the audit-log and environments
 folds were: the inventory above stays the as-built WP1-WP7 record;
 this note is the running addendum.
 
